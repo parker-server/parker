@@ -28,20 +28,30 @@ async def list_series(db: Session = Depends(get_db)):
         "series": result
     }
 
-@router.get("/library/{library_id}")
-async def list_series_for_library(library_id: int, db: Session = Depends(get_db)):
-    """List all series for a library"""
-    series = db.query(Series).filter(Series.library_id == library_id).all()
+@router.get("/{series_id}")
+async def get_series(series_id: int, db: Session = Depends(get_db)):
+    """Get a specific series"""
+    series = db.query(Series).filter(Series.id == series_id).first()
+
+    if not series:
+        raise HTTPException(status_code=404, detail="Series not found")
+
+    return series
+
+@router.get("/{series_id}/volumes/")
+async def list_volumes_for_series(series_id: int, db: Session = Depends(get_db)):
+    """List all volumes for a series"""
+    volumes = db.query(Volume).filter(Volume.series_id == series_id).all()
 
     result = []
-    for s in series:
+    for v in volumes:
         result.append({
-            "id": s.id,
-            "name": s.name,
-            "library_id": s.library_id
+            "id": v.id,
+            "series_id": v.series_id,
+            "volume_number": v.volume_number
         })
 
     return {
         "total": len(result),
-        "series": result
+        "volumes": result
     }
