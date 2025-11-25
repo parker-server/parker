@@ -35,13 +35,17 @@ class CreditService:
         return person
 
     def parse_credit_field(self, field_value: str) -> List[str]:
-        """Parse comma-separated names from a credit field"""
+        """Parse comma-separated names from a credit field and deduplicate"""
         if not field_value:
             return []
 
         # Split by comma and clean up
         names = [n.strip() for n in field_value.split(',') if n.strip()]
-        return names
+
+        # Deduplicate while preserving order
+        unique_names = list(dict.fromkeys(names))
+
+        return unique_names
 
     def add_credits_to_comic(self, comic: Comic, metadata: Dict):
         """Add all credits from metadata to a comic"""
