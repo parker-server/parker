@@ -3,11 +3,7 @@
 {% block title %}Collections - Comic Server{% endblock %}
 
 {% block content %}
-<div class="space-y-6" x-data="{ 
-    showDetails: false,
-    selectedCollection: null,
-    collectionComics: []
-}">
+<div class="space-y-6">
     <div class="flex items-center justify-between">
         <h1 class="text-3xl font-bold">Collections</h1>
     </div>
@@ -21,34 +17,6 @@
     >
         <div class="flex items-center justify-center py-12">
             <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-        </div>
-    </div>
-    
-    <!-- Selected collection details -->
-    <div 
-        x-show="showDetails"
-        x-transition:enter="transition ease-out duration-300"
-        x-transition:enter-start="opacity-0 transform translate-y-4"
-        x-transition:enter-end="opacity-100 transform translate-y-0"
-        x-transition:leave="transition ease-in duration-200"
-        x-transition:leave-start="opacity-100 transform translate-y-0"
-        x-transition:leave-end="opacity-0 transform translate-y-4"
-    >
-        <div class="bg-gray-800 rounded-lg p-6">
-            <div class="flex items-center justify-between mb-4">
-                <div>
-                    <h2 class="text-2xl font-bold" x-text="selectedCollection?.name"></h2>
-                    <p class="text-gray-400" x-text="selectedCollection?.description"></p>
-                </div>
-                <button class="btn-secondary" @click="showDetails = false; selectedCollection = null">
-                    Close
-                </button>
-            </div>
-            
-            <div 
-                id="collection-comics"
-                class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4"
-            ></div>
         </div>
     </div>
 </div>
@@ -76,8 +44,7 @@ function renderCollections(data) {
     }
     
     const html = data.collections.map(collection => `
-        <div class="bg-gray-800 rounded-lg p-6 hover:bg-gray-750 transition-colors cursor-pointer"
-             onclick="viewCollection(${collection.id})">
+        <a href="/collections/${collection.id}" class="block bg-gray-800 rounded-lg p-6 hover:bg-gray-750 transition-colors">
             <div class="flex items-center justify-between">
                 <div class="flex-1">
                     <h3 class="text-xl font-bold">${collection.name}</h3>
@@ -88,52 +55,10 @@ function renderCollections(data) {
             </div>
             ${collection.auto_generated ? 
                 '<div class="mt-2 text-xs text-gray-500">Auto-generated</div>' : ''}
-        </div>
+        </a>
     `).join('');
     
     container.innerHTML = `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">${html}</div>`;
-}
-
-async function viewCollection(collectionId) {
-    try {
-        const response = await fetch(`/api/collections/${collectionId}`);
-        const data = await response.json();
-        
-        // Update Alpine state through Alpine magic
-        const alpineData = Alpine.$data(document.querySelector('[x-data]'));
-        alpineData.selectedCollection = data;
-        alpineData.showDetails = true;
-        
-        const comicsHtml = data.comics.map(comic => `
-            <a href="/reader/${comic.comic_id}" class="comic-card">
-                <div class="aspect-[2/3] bg-gray-800 rounded-lg overflow-hidden relative group">
-                    <img 
-                        src="/api/comics/${comic.comic_id}/thumbnail" 
-                        alt="${comic.title}"
-                        class="w-full h-full object-cover"
-                        loading="lazy"
-                    >
-                    <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-70 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">
-                        <span class="text-white font-bold">Read</span>
-                    </div>
-                </div>
-                <div class="mt-2">
-                    <p class="font-medium truncate">${comic.series}</p>
-                    <p class="text-sm text-gray-400 truncate">#${comic.number} ${comic.title || ''}</p>
-                    <p class="text-xs text-gray-500">${comic.year || ''}</p>
-                </div>
-            </a>
-        `).join('');
-        
-        document.getElementById('collection-comics').innerHTML = comicsHtml;
-        
-        // Scroll to details
-        setTimeout(() => {
-            document.querySelector('[x-show="showDetails"]').scrollIntoView({ behavior: 'smooth' });
-        }, 100);
-    } catch (error) {
-        console.error('Error loading collection:', error);
-    }
 }
 </script>
 {% endblock %}

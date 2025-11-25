@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block title %}Collection - Comic Server{% endblock %}
+
+{% block content %}
+<div class="space-y-6" x-data="collectionDetail()" x-init="loadCollection()">
+    <!-- Back button and header -->
+    <div class="flex items-center space-x-4">
+        <a href="/collections" class="text-blue-400 hover:text-blue-300">
+            ← Back to Collections
+        </a>
+    </div>
+    
+    <!-- Loading state -->
+    <div x-show="loading" class="flex items-center justify-center py-12">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+    </div>
+    
+    <!-- Collection details -->
+    <div x-show="!loading && collection" style="display: none;">
+        <!-- Header -->
+        <div class="bg-gray-800 rounded-lg p-6 mb-6">
+            <div class="flex items-start justify-between">
+                <div class="flex-1">
+                    <h1 class="text-3xl font-bold" x-text="collection?.name"></h1>
+                    <p class="text-gray-400 mt-2" x-text="collection?.description"></p>
+                    <div class="flex items-center space-x-4 mt-4 text-sm text-gray-500">
+                        <span x-show="collection?.auto_generated">
+                            🤖 Auto-generated
+                        </span>
+                        <span x-text="`${collection?.comic_count || 0} comics`"></span>
+                        <span x-show="collection?.created_at" x-text="`Created ${new Date(collection?.created_at).toLocaleDateString()}`"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Comics grid -->
+        <div>
+            <h2 class="text-2xl font-bold mb-4">Comics in this Collection</h2>
+            
+            <!-- Empty state -->
+            <div x-show="collection?.comics?.length === 0" class="text-center py-12 text-gray-400">
+                <p class="text-lg">This collection is empty.</p>
+            </div>
+            
+            <!-- Comics grid -->
+            <div x-show="collection?.comics?.length > 0" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                <template x-for="comic in collection?.comics" :key="comic.comic_id">
+                    <a :href="`/reader/${comic.comic_id}`" class="comic-card">
+                        <div class="aspect-[2/3] bg-gray-800 rounded-lg overflow-hidden relative group">
+                            <img 
+                                :src="`/api/comics/${comic.comic_id}/thumbnail`" 
+                                :alt="comic.title || comic.series"
+                                class="w-full h-full object-cover"
+                                loading="lazy"
+                            >
+                            <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-70 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">
+                                <span class="text-white font-bold">Read</span>
+                            </div>
+                        </div>
+                        <div class="mt-2">
+                            <p class="font-medium truncate" x-text="comic.series"></p>
+                            <p class="text-sm text-gray-400 truncate" x-text="`#${comic.number} ${comic.title || ''}`"></p>
+                            <p class="text-xs text-gray-500" x-text="comic.year || ''"></p>
+                        </div>
+                    </a>
+                </template>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Error state -->
+    <div x-show="!loading && error" style="display: none;" class="text-center py-12 text-red-400">
+        <p class="text-lg" x-text="error"></p>
+        <a href="/collections" class="btn-secondary mt-4">Back to Collections</a>
+    </div>
+</div>
+
+<script>
+function collectionDetail() {
+    return {
+        collection: null,
+        loading: true,
+        error: null,
+        collectionId: {{ collection_id }},
+        
+        async loadCollection() {
+            try {
+                const response = await fetch(`/api/collections/${this.collectionId}`);
+                if (!response.ok) {
+                    throw new Error('Collection not found');
+                }
+                
+                const data = await response.json();
+                this.collection = data;
+                this.loading = false;
+                
+                // Update page title
+                document.title = `${data.name} - Comic Server`;
+            } catch (err) {
+                console.error('Error loading collection:', err);
+                this.error = 'Failed to load collection. Please try again.';
+                this.loading = false;
+            }
+        }
+    }
+}
+</script>
+{% endblock %}

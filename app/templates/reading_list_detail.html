@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+
+{% block title %}Reading List - Comic Server{% endblock %}
+
+{% block content %}
+<div class="space-y-6" x-data="readingListDetail()" x-init="loadReadingList()">
+    <!-- Back button and header -->
+    <div class="flex items-center space-x-4">
+        <a href="/reading-lists" class="text-blue-400 hover:text-blue-300">
+            ← Back to Reading Lists
+        </a>
+    </div>
+    
+    <!-- Loading state -->
+    <div x-show="loading" class="flex items-center justify-center py-12">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+    </div>
+    
+    <!-- Reading list details -->
+    <div x-show="!loading && readingList" style="display: none;">
+        <!-- Header -->
+        <div class="bg-gray-800 rounded-lg p-6 mb-6">
+            <div class="flex items-start justify-between">
+                <div class="flex-1">
+                    <h1 class="text-3xl font-bold" x-text="readingList?.name"></h1>
+                    <p class="text-gray-400 mt-2" x-text="readingList?.description"></p>
+                    <div class="flex items-center space-x-4 mt-4 text-sm text-gray-500">
+                        <span x-show="readingList?.auto_generated">
+                            🤖 Auto-generated
+                        </span>
+                        <span x-text="`${readingList?.comic_count || 0} comics`"></span>
+                        <span x-show="readingList?.created_at" x-text="`Created ${new Date(readingList?.created_at).toLocaleDateString()}`"></span>
+                    </div>
+                </div>
+                <button 
+                    class="btn-primary"
+                    @click="startReading()"
+                    x-show="readingList?.comics?.length > 0"
+                >
+                    📖 Start Reading
+                </button>
+            </div>
+        </div>
+        
+        <!-- Comics list (ordered) -->
+        <div>
+            <h2 class="text-2xl font-bold mb-4">Reading Order</h2>
+            
+            <!-- Empty state -->
+            <div x-show="readingList?.comics?.length === 0" class="text-center py-12 text-gray-400">
+                <p class="text-lg">This reading list is empty.</p>
+            </div>
+            
+            <!-- Comics list -->
+            <div x-show="readingList?.comics?.length > 0" class="space-y-3">
+                <template x-for="(comic, index) in readingList?.comics" :key="comic.comic_id">
+                    <div class="bg-gray-700 rounded-lg p-4 hover:bg-gray-650 transition-colors">
+                        <div class="flex items-center space-x-4">
+                            <!-- Position number -->
+                            <div class="flex-shrink-0 w-12 h-12 bg-gray-600 rounded-full flex items-center justify-center font-bold text-lg">
+                                <span x-text="index + 1"></span>
+                            </div>
+                            
+                            <!-- Thumbnail -->
+                            <a :href="`/reader/${comic.comic_id}`" class="flex-shrink-0">
+                                <img 
+                                    :src="`/api/comics/${comic.comic_id}/thumbnail?width=80&height=120`" 
+                                    :alt="comic.title || comic.series"
+                                    class="w-16 h-24 object-cover rounded"
+                                >
+                            </a>
+                            
+                            <!-- Comic info -->
+                            <div class="flex-1 min-w-0">
+                                <a :href="`/reader/${comic.comic_id}`" class="hover:text-blue-400">
+                                    <h4 class="font-bold truncate" x-text="comic.series"></h4>
+                                    <p class="text-sm text-gray-400 truncate" x-text="`#${comic.number} ${comic.title || ''}`"></p>
+                                    <p class="text-xs text-gray-500" x-text="comic.year || ''"></p>
+                                </a>
+                            </div>
+                            
+                            <!-- Read button -->
+                            <a 
+                                :href="`/reader/${comic.comic_id}`"
+                                class="btn-primary text-sm flex-shrink-0"
+                            >
+                                Read
+                            </a>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Error state -->
+    <div x-show="!loading && error" style="display: none;" class="text-center py-12 text-red-400">
+        <p class="text-lg" x-text="error"></p>
+        <a href="/reading-lists" class="btn-secondary mt-4">Back to Reading Lists</a>
+    </div>
+</div>
+
+<script>
+function readingListDetail() {
+    return {
+        readingList: null,
+        loading: true,
+        error: null,
+        readingListId: {{ reading_list_id }},
+        
+        async loadReadingList() {
+            try {
+                const response = await fetch(`/api/reading-lists/${this.readingListId}`);
+                if (!response.ok) {
+                    throw new Error('Reading list not found');
+                }
+                
+                const data = await response.json();
+                this.readingList = data;
+                this.loading = false;
+                
+                // Update page title
+                document.title = `${data.name} - Comic Server`;
+            } catch (err) {
+                console.error('Error loading reading list:', err);
+                this.error = 'Failed to load reading list. Please try again.';
+                this.loading = false;
+            }
+        },
+        
+        startReading() {
+            if (this.readingList?.comics?.length > 0) {
+                window.location.href = `/reader/${this.readingList.comics[0].comic_id}`;
+            }
+        }
+    }
+}
+</script>
+
+<style>
+.hover\:bg-gray-650:hover {
+    background-color: #3d4756;
+}
+</style>
+{% endblock %}

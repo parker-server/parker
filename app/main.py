@@ -22,7 +22,7 @@ from app.models.collection import Collection, CollectionItem
 from app.models.reading_list import ReadingList, ReadingListItem
 
 # API Routes
-from app.api import libraries, comics, reader, reading_lists, collections, progress
+from app.api import libraries, comics, reader, reading_lists, collections, progress, series, volumes
 
 
 # Setup logging
@@ -101,6 +101,8 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 # Include routers
 app.include_router(libraries.router, prefix="/api/libraries", tags=["libraries"])
+app.include_router(series.router, prefix="/api/series", tags=["series"])
+app.include_router(volumes.router, prefix="/api/volumes", tags=["volumes"])
 app.include_router(comics.router, prefix="/api/comics", tags=["comics"])
 app.include_router(reader.router, prefix="/api/reader", tags=["reader"])
 app.include_router(reading_lists.router, prefix="/api/reading-lists", tags=["reading-lists"])
@@ -147,10 +149,25 @@ async def collections_view(request: Request):
     """Collections page"""
     return templates.TemplateResponse("collections.html", {"request": request})
 
+@app.get("/collections/{collection_id}", response_class=HTMLResponse)
+async def collection_detail(request: Request, collection_id: int):
+    return templates.TemplateResponse("collection_detail.html", {
+        "request": request,
+        "collection_id": collection_id
+    })
+
 @app.get("/reading-lists", response_class=HTMLResponse)
 async def reading_lists_view(request: Request):
     """Reading lists page"""
     return templates.TemplateResponse("reading_lists.html", {"request": request})
+
+@app.get("/reading-lists/{reading_list_id}", response_class=HTMLResponse)
+async def reading_list_detail(request: Request, reading_list_id: int):
+    return templates.TemplateResponse("reading_list_detail.html", {
+        "request": request,
+        "reading_list_id": reading_list_id
+    })
+
 
 @app.get("/continue-reading", response_class=HTMLResponse)
 async def continue_reading(request: Request):
