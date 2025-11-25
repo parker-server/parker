@@ -67,6 +67,9 @@ class Comic(Base):
 
     volume = relationship("Volume", back_populates="comics")
 
+    reading_list_items = relationship("ReadingListItem", back_populates="comic", cascade="all, delete-orphan")
+
+
     # Helper methods to get credits by role
     def get_credits_by_role(self, role: str) -> list:
         """Get all people for a specific role"""

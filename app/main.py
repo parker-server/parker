@@ -13,8 +13,9 @@ from app.models.series import Series
 from app.models.comic import Volume, Comic
 from app.models.tags import Character, Team, Location
 from app.models.credits import Person, ComicCredit
+from app.models.reading_list import ReadingList, ReadingListItem
 
-from app.api import libraries, comics, reader
+from app.api import libraries, comics, reader, reading_lists
 
 
 @asynccontextmanager
@@ -46,6 +47,8 @@ templates = Jinja2Templates(directory="app/templates")
 app.include_router(libraries.router, prefix="/libraries", tags=["libraries"])
 app.include_router(comics.router, prefix="/comics", tags=["comics"])
 app.include_router(reader.router, prefix="/reader", tags=["reader"])
+
+app.include_router(reading_lists.router, prefix="/reading-lists", tags=["reading-lists"])  # Add this
 
 
 @app.get("/")

@@ -12,6 +12,7 @@ from app.services.archive import ComicArchive
 from app.services.metadata import parse_comicinfo
 from app.services.tags import TagService
 from app.services.credits import CreditService
+from app.services.reading_list import ReadingListService
 
 class LibraryScanner:
     """Scans library directories and imports comics"""
@@ -22,6 +23,7 @@ class LibraryScanner:
         self.supported_extensions = ['.cbz', '.cbr']
         self.tag_service = TagService(db)
         self.credit_service = CreditService(db)
+        self.reading_list_service = ReadingListService(db)
 
     def scan(self, force: bool = False) -> dict:
         """
@@ -93,6 +95,9 @@ class LibraryScanner:
 
         # Find and remove comics whose files no longer exist
         deleted = self._cleanup_missing_files(scanned_paths)
+
+        # Clean up empty reading lists
+        self.reading_list_service.cleanup_empty_lists()
 
         # Update library scan time
         self.library.last_scanned = datetime.utcnow()
@@ -197,6 +202,13 @@ class LibraryScanner:
         if metadata.get('locations'):
             comic.locations = self.tag_service.get_or_create_locations(metadata.get('locations'))
 
+        # Add to reading lists based on AlternateSeries
+        self.reading_list_service.update_comic_reading_lists(
+            comic,
+            metadata.get('alternate_series'),
+            metadata.get('alternate_number')
+        )
+
         self.db.commit()
 
         print(f"Imported: {series_name} #{metadata.get('number', '?')} - {file_path.name}")
@@ -263,6 +275,13 @@ class LibraryScanner:
         comic.alternate_series = metadata.get('alternate_series')
         comic.alternate_number = metadata.get('alternate_number')
         comic.story_arc = metadata.get('story_arc')
+
+        # Update reading list membership
+        self.reading_list_service.update_comic_reading_lists(
+            comic,
+            metadata.get('alternate_series'),
+            metadata.get('alternate_number')
+        )
 
         # Full metadata
         comic.metadata_json = json.dumps(metadata.get('raw_metadata', {}))
