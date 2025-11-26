@@ -38,7 +38,7 @@ async def list_comics(db: Session = Depends(get_db)):
     }
 
 
-@router.post("/search")
+@router.post("/search", response_model=SearchResponse)
 async def search_comics(request: SearchRequest, db: Session = Depends(get_db)):
     """
     Search comics with complex filters
