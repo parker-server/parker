@@ -13,7 +13,7 @@
     </div>
 
     <div x-show="!loading" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <template x-for="collection in collections" :key="collection.id">
+        <template x-for="col in collections" :key="col.id">
             {% include "partials/collection_card.html" %}
         </template>
     </div>
