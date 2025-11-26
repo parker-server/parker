@@ -1,12 +1,12 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_, func
 from typing import List, Dict, Any
-from app.models.comic import Comic, Volume
-from app.models.series import Series
-from app.models.tags import Character, Team, Location
-from app.models.credits import Person, ComicCredit
-from app.models.collection import Collection, CollectionItem
-from app.models.reading_list import ReadingList, ReadingListItem
+from app.models import (Comic, Volume, Series,
+                        Character, Team, Location,
+                        Person, ComicCredit,
+                        Collection, CollectionItem,
+                        ReadingList, ReadingListItem)
+
 from app.schemas.search import SearchRequest, SearchFilter
 
 

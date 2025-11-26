@@ -1,7 +1,6 @@
 from sqlalchemy.orm import Session
 from typing import Optional, Dict
-from app.models.reading_list import ReadingList, ReadingListItem
-from app.models.comic import Comic
+from app.models import ReadingList, ReadingListItem, Comic
 
 
 class ReadingListService:

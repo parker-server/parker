@@ -1,8 +1,7 @@
 from sqlalchemy.orm import Session
 from typing import Optional, Dict
-from app.models.collection import Collection, CollectionItem
-from app.models.comic import Comic
 
+from app.models import Collection, CollectionItem, Comic
 
 class CollectionService:
     def __init__(self, db: Session):

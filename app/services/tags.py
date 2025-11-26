@@ -1,7 +1,6 @@
 from sqlalchemy.orm import Session
 from typing import List, Dict
-from app.models.tags import Character, Team, Location
-
+from app.models import Character, Team, Location
 
 class TagService:
     """Service for managing tags with Caching and Deferred Commits"""

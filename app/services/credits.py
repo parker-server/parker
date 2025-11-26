@@ -1,8 +1,6 @@
 from sqlalchemy.orm import Session
 from typing import Dict, List
-from app.models.credits import Person, ComicCredit
-from app.models.comic import Comic
-
+from app.models import Person, ComicCredit, Comic
 
 class CreditService:
     """Service for managing comic credits with Caching"""

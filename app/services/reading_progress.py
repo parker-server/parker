@@ -1,9 +1,7 @@
 from sqlalchemy.orm import Session
 from datetime import datetime
 from typing import Optional, List
-from app.models.reading_progress import ReadingProgress
-from app.models.comic import Comic, Volume  # Added Volume import
-
+from app.models import ReadingProgress, Comic, Volume
 
 class ReadingProgressService:
     """
