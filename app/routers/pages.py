@@ -75,3 +75,10 @@ async def continue_reading(request: Request):
     """Continue reading page"""
     return templates.TemplateResponse("continue_reading.html", {"request": request})
 
+@router.get("/comics/{comic_id}", response_class=HTMLResponse)
+async def comic_detail(request: Request, comic_id: int):
+    """Comic metadata detail page"""
+    return templates.TemplateResponse("comic_detail.html", {
+        "request": request,
+        "comic_id": comic_id
+    })
