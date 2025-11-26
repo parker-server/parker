@@ -57,6 +57,9 @@ class LibraryScanner:
 
         print(f"Scanning {library_path}... (force={force})")
 
+        # Start timing
+        start_time = time.time()
+
         # 1. OPTIMIZATION: Pre-fetch all existing comics for this library.
         # This avoids executing a SELECT query for every single file in the loop.
         print("Pre-fetching existing file list...")
@@ -150,6 +153,8 @@ class LibraryScanner:
         self.library.last_scanned = datetime.utcnow()
         self.db.commit()
 
+        elapsed_time = round(time.time() - start_time, 2)
+
         return {
             "library": self.library.name,
             "path": self.library.path,
@@ -161,7 +166,8 @@ class LibraryScanner:
             "skipped": skipped,
             "errors": len(errors),
             "comics": found_comics[:10],
-            "error_details": errors[:5]
+            "error_details": errors[:5],
+            "elapsed": elapsed_time
         }
 
     def _cleanup_missing_files(self, scanned_paths_on_disk: set, existing_map: dict) -> int:
