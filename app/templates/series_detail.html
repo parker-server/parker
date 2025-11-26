@@ -204,7 +204,9 @@
                                 <h3 class="text-lg font-bold mb-3 text-gray-200">Writers</h3>
                                 <div class="flex flex-wrap gap-2">
                                     <template x-for="name in series.details.writers" :key="name">
-                                        <span class="bg-gray-700 hover:bg-gray-600 px-3 py-1.5 rounded text-sm text-gray-200 transition-colors cursor-default" x-text="name"></span>
+                                    {% with type='writer', item='name' %}
+                                        {% include "partials/tag_chip.html" %}
+                                    {% endwith %}
                                     </template>
                                 </div>
                             </div>
@@ -215,7 +217,9 @@
                                 <h3 class="text-lg font-bold mb-3 text-gray-200">Pencillers</h3>
                                 <div class="flex flex-wrap gap-2">
                                     <template x-for="name in series.details.pencillers" :key="name">
-                                        <span class="bg-gray-700 hover:bg-gray-600 px-3 py-1.5 rounded text-sm text-gray-200 transition-colors cursor-default" x-text="name"></span>
+                                    {% with type='penciller', item='name' %}
+                                        {% include "partials/tag_chip.html" %}
+                                    {% endwith %}
                                     </template>
                                 </div>
                             </div>
@@ -228,7 +232,9 @@
                                 <h3 class="text-lg font-bold mb-3 text-gray-200">Characters</h3>
                                 <div class="flex flex-wrap gap-2">
                                     <template x-for="name in series.details.characters" :key="name">
-                                        <span class="bg-blue-900/40 border border-blue-800 hover:bg-blue-900/60 px-3 py-1.5 rounded-full text-sm text-blue-100 transition-colors cursor-default" x-text="name"></span>
+                                    {% with type='character', item='name' %}
+                                        {% include "partials/tag_chip.html" %}
+                                    {% endwith %}
                                     </template>
                                 </div>
                             </div>
@@ -239,7 +245,9 @@
                                 <h3 class="text-lg font-bold mb-3 text-gray-200">Teams</h3>
                                 <div class="flex flex-wrap gap-2">
                                     <template x-for="name in series.details.teams" :key="name">
-                                        <span class="bg-green-900/40 border border-green-800 hover:bg-green-900/60 px-3 py-1.5 rounded-full text-sm text-green-100 transition-colors cursor-default" x-text="name"></span>
+                                    {% with type='team', item='name' %}
+                                        {% include "partials/tag_chip.html" %}
+                                    {% endwith %}
                                     </template>
                                 </div>
                             </div>
@@ -250,7 +258,9 @@
                                 <h3 class="text-lg font-bold mb-3 text-gray-200">Locations</h3>
                                 <div class="flex flex-wrap gap-2">
                                     <template x-for="name in series.details.locations" :key="name">
-                                        <span class="bg-purple-900/40 border border-purple-800 hover:bg-purple-900/60 px-3 py-1.5 rounded-full text-sm text-purple-100 transition-colors cursor-default" x-text="name"></span>
+                                    {% with type='location', item='name' %}
+                                        {% include "partials/tag_chip.html" %}
+                                    {% endwith %}
                                     </template>
                                 </div>
                             </div>

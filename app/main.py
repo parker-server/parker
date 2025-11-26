@@ -22,8 +22,9 @@ from app.models.collection import Collection, CollectionItem
 from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.job import ScanJob
 
+
 # API Routes
-from app.api import libraries, comics, reader, reading_lists, collections, progress, series, volumes, jobs
+from app.api import libraries, comics, reader, reading_lists, collections, progress, series, volumes, jobs, search
 
 # Frontend Routes (HTML)
 from app.routers import pages, admin
@@ -114,6 +115,8 @@ app.include_router(reading_lists.router, prefix="/api/reading-lists", tags=["rea
 app.include_router(collections.router, prefix="/api/collections", tags=["collections"])
 app.include_router(progress.router, prefix="/api/progress", tags=["progress"])
 app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"])
+app.include_router(search.router, prefix="/api/search", tags=["search"])
+
 
 # 2. Frontend Routers (HTML)
 # We don't use a prefix for 'pages' because they live at the root (/)

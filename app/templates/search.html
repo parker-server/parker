@@ -1,331 +1,335 @@
 {% extends "base.html" %}
 
-{% block title %}Search - Comic Server{% endblock %}
+{% block title %}Advanced Search - Comic Server{% endblock %}
 
 {% block content %}
-<div class="space-y-6" x-data="{
-    searchQuery: '',
-    publisher: '',
-    yearFrom: '',
-    yearTo: '',
-    format: '',
-    character: '',
-    team: '',
-    writer: '',
-    artist: '',
-    searching: false
-}">
-    <h1 class="text-3xl font-bold">Search Comics</h1>
-    
-    <!-- Search form -->
-    <div class="bg-gray-800 rounded-lg p-6">
-        <form @submit.prevent="performSearch()" class="space-y-4">
-            <!-- Basic search -->
-            <div>
-                <label class="block text-sm font-medium mb-2">Search</label>
-                <input 
-                    type="text" 
-                    x-model="searchQuery"
-                    class="w-full px-4 py-2 bg-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Search by title, series, character..."
-                    @keydown.enter="performSearch()"
-                >
-            </div>
-            
-            <!-- Advanced filters -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                    <label class="block text-sm font-medium mb-2">Publisher</label>
-                    <select x-model="publisher" class="w-full px-4 py-2 bg-gray-700 rounded-lg">
-                        <option value="">All Publishers</option>
-                        <option value="DC Comics">DC Comics</option>
-                        <option value="Marvel Comics">Marvel Comics</option>
-                        <option value="Image Comics">Image Comics</option>
-                        <option value="Dark Horse Comics">Dark Horse Comics</option>
-                    </select>
-                </div>
-                
-                <div>
-                    <label class="block text-sm font-medium mb-2">Year</label>
-                    <div class="flex space-x-2">
-                        <input 
-                            type="number" 
-                            x-model="yearFrom"
-                            placeholder="From"
-                            class="w-1/2 px-4 py-2 bg-gray-700 rounded-lg"
-                        >
-                        <input 
-                            type="number" 
-                            x-model="yearTo"
-                            placeholder="To"
-                            class="w-1/2 px-4 py-2 bg-gray-700 rounded-lg"
-                        >
-                    </div>
-                </div>
-                
-                <div>
-                    <label class="block text-sm font-medium mb-2">Format</label>
-                    <select x-model="format" class="w-full px-4 py-2 bg-gray-700 rounded-lg">
-                        <option value="">All Formats</option>
-                        <option value="Limited Series">Limited Series</option>
-                        <option value="Ongoing Series">Ongoing Series</option>
-                        <option value="One Shot">One Shot</option>
-                        <option value="TPB">Trade Paperback</option>
-                    </select>
-                </div>
-            </div>
-            
-            <!-- Character/Team search -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                    <label class="block text-sm font-medium mb-2">Character</label>
-                    <input 
-                        type="text" 
-                        x-model="character"
-                        class="w-full px-4 py-2 bg-gray-700 rounded-lg"
-                        placeholder="Batman, Superman, Spider-Man..."
-                    >
-                </div>
-                
-                <div>
-                    <label class="block text-sm font-medium mb-2">Team</label>
-                    <input 
-                        type="text" 
-                        x-model="team"
-                        class="w-full px-4 py-2 bg-gray-700 rounded-lg"
-                        placeholder="Justice League, Avengers..."
-                    >
-                </div>
-            </div>
-            
-            <!-- Writer/Artist search -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                    <label class="block text-sm font-medium mb-2">Writer</label>
-                    <input 
-                        type="text" 
-                        x-model="writer"
-                        class="w-full px-4 py-2 bg-gray-700 rounded-lg"
-                        placeholder="Writer name..."
-                    >
-                </div>
-                
-                <div>
-                    <label class="block text-sm font-medium mb-2">Artist</label>
-                    <input 
-                        type="text" 
-                        x-model="artist"
-                        class="w-full px-4 py-2 bg-gray-700 rounded-lg"
-                        placeholder="Artist name..."
-                    >
-                </div>
-            </div>
-            
-            <!-- Search buttons -->
-            <div class="flex space-x-2">
-                <button 
-                    type="submit"
-                    class="btn-primary"
-                    :disabled="searching"
-                >
-                    <span x-show="!searching">Search</span>
-                    <span x-show="searching">Searching...</span>
-                </button>
-                <button 
-                    type="button"
-                    class="btn-secondary"
-                    @click="clearSearch()"
-                >
-                    Clear
-                </button>
-            </div>
-        </form>
+<div class="max-w-6xl mx-auto" x-data="searchBuilder()">
+
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold text-white">Advanced Search</h1>
     </div>
-    
-    <!-- Results -->
-    <div id="search-results">
-        <div class="text-center py-12 text-gray-400">
-            <p class="text-lg">Enter search criteria to find comics</p>
+
+    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700 shadow-xl">
+
+        <div class="flex items-center space-x-4 mb-6 border-b border-gray-700 pb-4">
+            <span class="text-gray-400">Match</span>
+            <select x-model="match" class="bg-gray-700 text-white rounded px-3 py-1 border border-gray-600 focus:ring-2 focus:ring-blue-500 outline-none">
+                <option value="all">All Rules (AND)</option>
+                <option value="any">Any Rule (OR)</option>
+            </select>
+            <span class="text-gray-400">of the following:</span>
+        </div>
+
+        <div class="space-y-4">
+            <template x-for="(rule, index) in rules" :key="rule.id">
+                <div class="flex flex-col md:flex-row gap-3 items-start md:items-center bg-gray-900/50 p-3 rounded-lg border border-gray-700/50">
+
+                    <select x-model="rule.field" @change="resetRule(rule)" class="w-full md:w-48 bg-gray-700 text-white rounded px-3 py-2 border border-gray-600 outline-none">
+                        <optgroup label="Metadata">
+                            <option value="series">Series Name</option>
+                            <option value="title">Issue Title</option>
+                            <option value="publisher">Publisher</option>
+                            <option value="year">Release Year</option>
+                            <option value="format">Format</option>
+                            <option value="imprint">Imprint</option>
+                        </optgroup>
+                        <optgroup label="Creators">
+                            <option value="writer">Writer</option>
+                            <option value="penciller">Penciller</option>
+                            <option value="inker">Inker</option>
+                            <option value="colorist">Colorist</option>
+                            <option value="editor">Editor</option>
+                        </optgroup>
+                        <optgroup label="Tags">
+                            <option value="character">Character</option>
+                            <option value="team">Team</option>
+                            <option value="location">Location</option>
+                        </optgroup>
+                        <optgroup label="Organization">
+                            <option value="library">Library</option>
+                            <option value="collection">Collection</option>
+                            <option value="reading_list">Reading List</option>
+                        </optgroup>
+                    </select>
+
+                    <select x-model="rule.operator" class="w-full md:w-40 bg-gray-700 text-white rounded px-3 py-2 border border-gray-600 outline-none">
+                        <option value="equal">Equals</option>
+                        <option value="not_equal">Not Equals</option>
+                        <option value="contains">Contains (Any)</option>
+                        <option value="does_not_contain">Does Not Contain</option>
+                        <option value="must_contain">Must Contain (All)</option>
+                        <option value="is_empty">Is Empty</option>
+                        <option value="is_not_empty">Is Not Empty</option>
+                    </select>
+
+                    <div class="flex-1 w-full" x-show="!['is_empty', 'is_not_empty'].includes(rule.operator)">
+
+                        <div x-show="['title', 'year'].includes(rule.field)">
+                            <input type="text" x-model="rule.value" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600 outline-none focus:border-blue-500">
+                        </div>
+
+                        <div x-show="!['title', 'year'].includes(rule.field)">
+                            <div
+                                x-data="tagInput(rule)"
+                                class="relative w-full"
+                            >
+                                <div class="bg-gray-700 border border-gray-600 rounded p-1 flex flex-wrap gap-2 min-h-[42px]">
+                                    <template x-for="(tag, i) in tags" :key="i">
+                                        <span class="bg-blue-600 text-white text-sm px-2 py-0.5 rounded flex items-center">
+                                            <span x-text="tag"></span>
+                                            <button @click="removeTag(i)" class="ml-1 hover:text-red-300 font-bold">×</button>
+                                        </span>
+                                    </template>
+
+                                    <input
+                                        type="text"
+                                        x-model="input"
+                                        @input.debounce.300ms="fetchSuggestions()"
+                                        @keydown.enter.prevent="addTag()"
+                                        @keydown.backspace="handleBackspace()"
+                                        class="bg-transparent border-none focus:ring-0 text-white flex-1 min-w-[120px] outline-none h-8 px-1"
+                                        placeholder="Type to find..."
+                                    >
+                                </div>
+
+                                <div x-show="suggestions.length > 0" @click.away="suggestions = []" class="absolute z-10 w-full bg-gray-700 border border-gray-600 rounded mt-1 shadow-lg max-h-60 overflow-y-auto">
+                                    <template x-for="sugg in suggestions" :key="sugg">
+                                        <div
+                                            @click="selectSuggestion(sugg)"
+                                            class="px-3 py-2 hover:bg-blue-600 cursor-pointer text-white border-b border-gray-600 last:border-0"
+                                            x-text="sugg"
+                                        ></div>
+                                    </template>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <button @click="removeRule(index)" class="text-red-400 hover:text-red-300 p-2 hover:bg-red-900/30 rounded" title="Remove Rule">
+                        ✕
+                    </button>
+                </div>
+            </template>
+        </div>
+
+        <div class="mt-4">
+            <button @click="addRule()" class="text-blue-400 hover:text-blue-300 font-bold flex items-center px-3 py-2 hover:bg-gray-700 rounded transition-colors">
+                <span class="text-xl mr-2">+</span> Add Rule
+            </button>
+        </div>
+
+        <div class="border-t border-gray-700 my-6"></div>
+
+        <div class="flex flex-col md:flex-row justify-between items-center gap-4">
+            <div class="flex items-center space-x-6">
+                <div class="flex items-center space-x-2">
+                    <span class="text-gray-400 text-sm">Sort By</span>
+                    <select x-model="sortBy" class="bg-gray-700 text-white rounded px-2 py-1 text-sm border border-gray-600 outline-none">
+                        <option value="created">Date Added</option>
+                        <option value="year">Release Year</option>
+                        <option value="series">Series Name</option>
+                        <option value="title">Issue Title</option>
+                        <option value="page_count">Page Count</option>
+                    </select>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <span class="text-gray-400 text-sm">Limit</span>
+                    <input type="number" x-model="limit" class="w-20 bg-gray-700 text-white rounded px-2 py-1 text-sm border border-gray-600 outline-none text-center">
+                </div>
+            </div>
+
+            <button @click="performSearch()" class="w-full md:w-auto bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-8 rounded-lg shadow-lg flex items-center justify-center gap-2 transition-colors">
+                <span x-show="loading" class="animate-spin">↻</span>
+                <span>Search Comics</span>
+            </button>
         </div>
     </div>
+
+    <div class="mt-8" x-show="hasSearched" style="display: none;">
+        <h2 class="text-xl font-bold mb-4 flex items-center text-white">
+            Results
+            <span class="ml-3 text-sm font-normal text-gray-300 bg-gray-800 px-3 py-1 rounded-full border border-gray-700" x-text="`${totalResults} found`"></span>
+        </h2>
+
+        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+             <template x-for="comic in results" :key="comic.id">
+                {% include "partials/comic_card.html" %}
+             </template>
+        </div>
+
+        <div x-show="!loading && results.length === 0" class="text-center py-20 bg-gray-800/50 rounded-xl border border-dashed border-gray-700">
+            <p class="text-gray-400 text-lg">No comics found matching your criteria.</p>
+            <button @click="rules=[{id:1, field:'series', operator:'contains', value:[]}]" class="mt-4 text-blue-400 hover:underline">Reset Filters</button>
+        </div>
+    </div>
+
 </div>
 
 <script>
-async function performSearch() {
-    const alpineData = Alpine.$data(document.querySelector('[x-data]'));
-    alpineData.searching = true;
-    
-    // Build filters array
-    const filters = [];
-    
-    if (alpineData.searchQuery) {
-        filters.push({
-            field: "title",
-            operator: "contains",
-            value: alpineData.searchQuery
-        });
-    }
-    
-    if (alpineData.publisher) {
-        filters.push({
-            field: "publisher",
-            operator: "equal",
-            value: alpineData.publisher
-        });
-    }
-    
-    if (alpineData.yearFrom && alpineData.yearTo) {
-        filters.push({
-            field: "year",
-            operator: "between",
-            value: [parseInt(alpineData.yearFrom), parseInt(alpineData.yearTo)]
-        });
-    } else if (alpineData.yearFrom) {
-        filters.push({
-            field: "year",
-            operator: "greater_than_or_equal",
-            value: parseInt(alpineData.yearFrom)
-        });
-    } else if (alpineData.yearTo) {
-        filters.push({
-            field: "year",
-            operator: "less_than_or_equal",
-            value: parseInt(alpineData.yearTo)
-        });
-    }
-    
-    if (alpineData.format) {
-        filters.push({
-            field: "format",
-            operator: "equal",
-            value: alpineData.format
-        });
-    }
-    
-    if (alpineData.character) {
-        filters.push({
-            field: "character",
-            operator: "contains",
-            value: alpineData.character.split(',').map(c => c.trim())
-        });
-    }
-    
-    if (alpineData.team) {
-        filters.push({
-            field: "team",
-            operator: "contains",
-            value: alpineData.team.split(',').map(t => t.trim())
-        });
-    }
-    
-    if (alpineData.writer) {
-        filters.push({
-            field: "writer",
-            operator: "contains",
-            value: alpineData.writer
-        });
-    }
-    
-    if (alpineData.artist) {
-        filters.push({
-            field: "penciller",
-            operator: "contains",
-            value: alpineData.artist
-        });
-    }
-    
-    // Perform search
-    try {
-        const response = await fetch('/api/comics/search', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                match: "all",
-                filters: filters,
-                sort_by: "year",
-                sort_order: "desc",
-                limit: 100
-            })
-        });
-        
-        const data = await response.json();
-        renderResults(data);
-    } catch (error) {
-        console.error('Search error:', error);
-        document.getElementById('search-results').innerHTML = `
-            <div class="text-center py-12 text-red-400">
-                <p class="text-lg">Search failed. Please try again.</p>
-            </div>
-        `;
-    } finally {
-        alpineData.searching = false;
-    }
-}
+document.addEventListener('alpine:init', () => {
 
-function renderResults(data) {
-    const container = document.getElementById('search-results');
-    
-    if (!data.comics || data.comics.length === 0) {
-        container.innerHTML = `
-            <div class="text-center py-12 text-gray-400">
-                <p class="text-lg">No comics found matching your criteria</p>
-            </div>
-        `;
-        return;
-    }
-    
-    const html = `
-        <div class="mb-4">
-            <p class="text-gray-400">Found ${data.total} comics</p>
-        </div>
-        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-            ${data.comics.map(comic => `
-                <a href="/reader/${comic.id}" class="comic-card">
-                    <div class="aspect-[2/3] bg-gray-800 rounded-lg overflow-hidden relative group">
-                        <img 
-                            src="/api/comics/${comic.id}/thumbnail" 
-                            alt="${comic.title}"
-                            class="w-full h-full object-cover"
-                            loading="lazy"
-                        >
-                        <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-70 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">
-                            <span class="text-white font-bold">Read</span>
-                        </div>
-                    </div>
-                    <div class="mt-2">
-                        <p class="font-medium truncate">${comic.series}</p>
-                        <p class="text-sm text-gray-400 truncate">#${comic.number} ${comic.title || ''}</p>
-                        <p class="text-xs text-gray-500">${comic.year || ''}</p>
-                    </div>
-                </a>
-            `).join('')}
-        </div>
-    `;
-    
-    container.innerHTML = html;
-}
+    // 1. Tag Input Component (Reusable for each row)
+    Alpine.data('tagInput', (rule) => ({
+        input: '',
+        tags: [], // Local array to hold badges
+        suggestions: [],
 
-function clearSearch() {
-    const alpineData = Alpine.$data(document.querySelector('[x-data]'));
-    alpineData.searchQuery = '';
-    alpineData.publisher = '';
-    alpineData.yearFrom = '';
-    alpineData.yearTo = '';
-    alpineData.format = '';
-    alpineData.character = '';
-    alpineData.team = '';
-    alpineData.writer = '';
-    alpineData.artist = '';
-    
-    document.getElementById('search-results').innerHTML = `
-        <div class="text-center py-12 text-gray-400">
-            <p class="text-lg">Enter search criteria to find comics</p>
-        </div>
-    `;
-}
+        init() {
+            // If rule has value loaded from save, populate tags
+            // Ensure we handle both single value (string/int) and array
+            if (rule.value) {
+                this.tags = Array.isArray(rule.value) ? rule.value : [rule.value];
+            }
+        },
 
-// Search on Enter key (now handled by Alpine @submit.prevent)
+        async fetchSuggestions() {
+            if (this.input.length < 2) {
+                this.suggestions = [];
+                return;
+            }
+            try {
+                // Call our new API
+                const res = await fetch(`/api/search/suggestions?field=${rule.field}&query=${this.input}`);
+                this.suggestions = await res.json();
+            } catch(e) { console.error(e); }
+        },
+
+        addTag() {
+            if (this.input.trim()) {
+                this.tags.push(this.input.trim());
+                this.updateRuleValue();
+                this.input = '';
+                this.suggestions = [];
+            }
+        },
+
+        selectSuggestion(val) {
+            this.tags.push(val);
+            this.updateRuleValue();
+            this.input = '';
+            this.suggestions = [];
+        },
+
+        removeTag(index) {
+            this.tags.splice(index, 1);
+            this.updateRuleValue();
+        },
+
+        handleBackspace() {
+            if (this.input === '' && this.tags.length > 0) {
+                this.tags.pop();
+                this.updateRuleValue();
+            }
+        },
+
+        updateRuleValue() {
+            // Update the parent rule object
+            rule.value = this.tags;
+        }
+    }));
+
+    // 2. Main Search Builder Logic
+    Alpine.data('searchBuilder', () => ({
+        rules: [
+            { id: 1, field: 'series', operator: 'contains', value: [] }
+        ],
+        match: 'all',
+        limit: 50,
+        sortBy: 'created',
+        results: [],
+        totalResults: 0,
+        loading: false,
+        hasSearched: false,
+        nextId: 2,
+
+        init() {
+            this.checkUrlParams();
+        },
+
+        checkUrlParams() {
+            const params = new URLSearchParams(window.location.search);
+
+            // Check if we have the minimum required params
+            if (params.has('field') && params.has('value')) {
+                const field = params.get('field');
+                const value = params.get('value');
+                // Default to 'contains' if not specified
+                const operator = params.get('operator') || 'contains';
+
+                // Overwrite the default rule with the URL rule
+                this.rules = [{
+                    id: 1,
+                    field: field,
+                    operator: operator,
+                    // TagInput expects an array
+                    value: [value]
+                }];
+
+                // Auto-execute the search
+                // Use $nextTick to ensure the DOM/Alpine data is ready
+                this.$nextTick(() => {
+                    this.performSearch();
+                });
+            }
+        },
+
+        addRule() {
+            this.rules.push({ id: this.nextId++, field: 'character', operator: 'contains', value: [] });
+        },
+
+        removeRule(index) {
+            // Don't remove the last rule, just reset it
+            if (this.rules.length === 1) {
+                this.rules[0].value = [];
+                return;
+            }
+            this.rules.splice(index, 1);
+        },
+
+        resetRule(rule) {
+            rule.value = []; // Clear values when field changes
+        },
+
+        async performSearch() {
+            this.loading = true;
+            this.hasSearched = true;
+            this.results = []; // Clear previous results while loading
+
+            // Prepare payload
+            const payload = {
+                match: this.match,
+                filters: this.rules.map(r => ({
+                    field: r.field,
+                    operator: r.operator,
+                    // If the user typed nothing in a text box, send null to be safe,
+                    // but for tags (arrays), send the array.
+                    value: (Array.isArray(r.value) && r.value.length === 0) ? null : r.value
+                })).filter(r => r.operator === 'is_empty' || r.operator === 'is_not_empty' || r.value !== null), // Filter out incomplete rules
+
+                sort_by: this.sortBy,
+                limit: parseInt(this.limit)
+            };
+
+            try {
+                const res = await fetch('/api/comics/search', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+
+                if (!res.ok) throw new Error("Search failed");
+
+                const data = await res.json();
+                this.results = data.results;
+                this.totalResults = data.total;
+            } catch(e) {
+                console.error("Search failed", e);
+            } finally {
+                this.loading = false;
+            }
+        }
+    }));
+});
 </script>
 {% endblock %}
