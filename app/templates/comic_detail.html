@@ -1,0 +1,253 @@
+{% extends "base.html" %}
+
+{% block title %}Comic Details - Comic Server{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto" x-data="comicDetail()">
+    
+    <div class="flex items-center space-x-2 text-gray-400 mb-6 text-sm">
+        <a href="/" class="hover:text-white">Home</a>
+        <span>/</span>
+        <a :href="`/series/${comic?.series_id}`" class="hover:text-blue-400" x-text="comic?.series || 'Series'"></a>
+        <span>/</span>
+        <span class="text-white" x-text="`#${comic?.number}`"></span>
+    </div>
+
+    <div x-show="loading" class="flex justify-center py-20">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+    </div>
+
+    <div x-show="!loading && comic" style="display: none;" class="grid grid-cols-1 md:grid-cols-3 gap-8">
+        
+        <div class="md:col-span-1 space-y-6">
+            <div class="aspect-[2/3] bg-gray-800 rounded-lg overflow-hidden shadow-2xl relative group border border-gray-700">
+                <img 
+                    :src="`/api/comics/${comicId}/thumbnail?width=400&height=600`" 
+                    :alt="comic?.title"
+                    class="w-full h-full object-cover"
+                >
+            </div>
+            
+            <div class="grid grid-cols-1 gap-3">
+                <a :href="`/reader/${comicId}`" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded-lg text-center transition-colors flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20">
+                    <span class="text-xl">📖</span> Read Now
+                </a>
+                
+                <div class="grid grid-cols-2 gap-3">
+                    <button @click="markRead()" class="bg-gray-700 hover:bg-green-700 hover:text-white text-gray-200 py-2 px-4 rounded-lg transition-colors border border-gray-600">
+                        ✓ Mark Read
+                    </button>
+                    <button @click="markUnread()" class="bg-gray-700 hover:bg-red-700 hover:text-white text-gray-200 py-2 px-4 rounded-lg transition-colors border border-gray-600">
+                        ✕ Mark Unread
+                    </button>
+                </div>
+            </div>
+
+            <div class="bg-gray-800 rounded-lg p-4 space-y-4 border border-gray-700">
+                <h3 class="font-bold text-gray-300 border-b border-gray-700 pb-2">File Info</h3>
+                
+                <div>
+                    <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Location</div>
+                    <div class="text-xs font-mono text-gray-400 bg-black/30 p-2 rounded break-all select-all border border-gray-700/50" x-text="comic?.file_path"></div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <div class="text-[10px] text-gray-500 uppercase tracking-wider">Size</div>
+                        <div class="text-sm text-gray-300" x-text="formatBytes(comic?.file_size)"></div>
+                    </div>
+                    <div>
+                        <div class="text-[10px] text-gray-500 uppercase tracking-wider">Pages</div>
+                        <div class="text-sm text-gray-300" x-text="comic?.page_count"></div>
+                    </div>
+                </div>
+
+                <template x-if="comic?.scan_information">
+                    <div>
+                        <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Scan Details</div>
+                        <div class="text-xs text-yellow-400/90 bg-yellow-900/10 p-2 rounded border border-yellow-900/20" x-text="comic?.scan_information"></div>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <div class="md:col-span-2 space-y-8">
+            
+            <div>
+                <div class="flex items-baseline justify-between">
+                    <h1 class="text-4xl font-bold text-white mb-2 leading-tight" x-text="`${comic?.series} #${comic?.number}`"></h1>
+                </div>
+                
+                <h2 class="text-2xl text-gray-400 font-light" x-show="comic?.title" x-text="comic?.title"></h2>
+                
+                <div class="flex items-center gap-3 mt-4 text-sm text-gray-300">
+                    <span x-text="comic?.year" class="bg-gray-700 px-2 py-1 rounded"></span>
+                    <a :href="`/search?field=publisher&value=${encodeURIComponent(comic?.publisher)}&operator=equal`" class="hover:text-blue-400 transition-colors" x-show="comic?.publisher" x-text="comic?.publisher"></a>
+                    <template x-if="comic?.format">
+                        <span class="border border-gray-600 px-2 py-1 rounded uppercase text-xs tracking-wide" x-text="comic?.format"></span>
+                    </template>
+
+                    <template x-if="comic?.web">
+                        <a :href="comic.web" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1 text-green-400 hover:text-green-300 transition-colors border border-green-500/30 px-2 py-1 rounded hover:bg-green-500/10" title="View on ComicVine">
+                            <span>ComicVine</span>
+                            <span class="text-xs">↗</span>
+                        </a>
+                    </template>
+
+                </div>
+            </div>
+
+            <div x-show="comic?.summary">
+                <h3 class="text-lg font-bold text-gray-200 mb-2">Summary</h3>
+                <p class="text-gray-300 leading-relaxed whitespace-pre-line text-base" x-text="comic?.summary"></p>
+            </div>
+
+            <div class="space-y-4">
+                <h3 class="text-lg font-bold text-gray-200 border-b border-gray-700 pb-2">Credits</h3>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-y-6 gap-x-8">
+                    
+                    <template x-if="comic?.credits?.writer?.length">
+                        <div>
+                            <span class="text-gray-500 text-xs uppercase tracking-wider block mb-2">Writers</span>
+                            <div class="flex flex-wrap gap-2">
+                                <template x-for="person in comic.credits.writer">
+                                    {% with type='writer', item='person' %}
+                                        {% include "partials/tag_chip.html" %}
+                                    {% endwith %}
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+
+                    <template x-if="comic?.credits?.penciller?.length">
+                        <div>
+                            <span class="text-gray-500 text-xs uppercase tracking-wider block mb-2">Pencillers</span>
+                            <div class="flex flex-wrap gap-2">
+                                <template x-for="person in comic.credits.penciller">
+                                    {% with type='penciller', item='person' %}
+                                        {% include "partials/tag_chip.html" %}
+                                    {% endwith %}
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                    
+                    <template x-if="comic?.credits?.inker?.length">
+                        <div>
+                            <span class="text-gray-500 text-xs uppercase tracking-wider block mb-2">Inkers</span>
+                            <div class="flex flex-wrap gap-2">
+                                <template x-for="person in comic.credits.inker">
+                                    {% with type='inker', item='person' %}
+                                        {% include "partials/tag_chip.html" %}
+                                    {% endwith %}
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+
+                    <template x-if="comic?.credits?.colorist?.length">
+                        <div>
+                            <span class="text-gray-500 text-xs uppercase tracking-wider block mb-2">Colorists</span>
+                            <div class="flex flex-wrap gap-2">
+                                <template x-for="person in comic.credits.colorist">
+                                    {% with type='colorist', item='person' %}
+                                        {% include "partials/tag_chip.html" %}
+                                    {% endwith %}
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <div class="space-y-4 pt-6">
+                <h3 class="text-lg font-bold text-gray-200 border-b border-gray-700 pb-2">Tags</h3>
+                
+                <template x-if="comic?.characters?.length">
+                    <div class="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4">
+                        <span class="text-gray-500 text-xs uppercase tracking-wider sm:w-24 sm:flex-shrink-0 sm:pt-1.5">Characters</span>
+                        <div class="flex flex-wrap gap-2">
+                            <template x-for="char in comic.characters">
+                                {% with type='character', item='char' %}
+                                    {% include "partials/tag_chip.html" %}
+                                {% endwith %}
+                            </template>
+                        </div>
+                    </div>
+                </template>
+
+                <template x-if="comic?.teams?.length">
+                    <div class="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4">
+                        <span class="text-gray-500 text-xs uppercase tracking-wider sm:w-24 sm:flex-shrink-0 sm:pt-1.5">Teams</span>
+                        <div class="flex flex-wrap gap-2">
+                            <template x-for="team in comic.teams">
+                                {% with type='team', item='team' %}
+                                    {% include "partials/tag_chip.html" %}
+                                {% endwith %}
+                            </template>
+                        </div>
+                    </div>
+                </template>
+
+                <template x-if="comic?.locations?.length">
+                    <div class="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4">
+                        <span class="text-gray-500 text-xs uppercase tracking-wider sm:w-24 sm:flex-shrink-0 sm:pt-1.5">Locations</span>
+                        <div class="flex flex-wrap gap-2">
+                            <template x-for="loc in comic.locations">
+                                {% with type='location', item='loc' %}
+                                    {% include "partials/tag_chip.html" %}
+                                {% endwith %}
+                            </template>
+                        </div>
+                    </div>
+                </template>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<script>
+function comicDetail() {
+    return {
+        comicId: {{ comic_id }},
+        comic: null,
+        loading: true,
+
+        init() {
+            this.loadComic();
+        },
+
+        async loadComic() {
+            try {
+                const res = await fetch(`/api/comics/${this.comicId}`);
+                if (!res.ok) throw new Error("Comic not found");
+                this.comic = await res.json();
+                this.loading = false;
+                document.title = `${this.comic.series} #${this.comic.number} - Comic Server`;
+            } catch (e) {
+                console.error(e);
+            }
+        },
+
+        async markRead() {
+            await fetch(`/api/progress/${this.comicId}/mark-read`, { method: 'POST' });
+            // You could show a toast here
+        },
+
+        async markUnread() {
+            await fetch(`/api/progress/${this.comicId}`, { method: 'DELETE' });
+        },
+
+        formatBytes(bytes, decimals = 2) {
+            if (!bytes) return '0 Bytes';
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
+    }
+}
+</script>
+{% endblock %}

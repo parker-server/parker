@@ -1,36 +1,161 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import Response
 from sqlalchemy.orm import Session
+from sqlalchemy import func, case, or_, asc
 from typing import List
-from pathlib import Path
 
 from app.database import get_db
 from app.models.comic import Comic, Volume
 from app.models.series import Series
+from app.models.credits import Person, ComicCredit
+from app.models.tags import Character, Team, Location
+from app.api.deps import PaginationParams, PaginatedResponse
 
 router = APIRouter()
 
-@router.get("/{volume_id}/comics/")
-async def list_comics_for_volumes(volume_id: int, db: Session = Depends(get_db)):
-    """List all comics for a volume"""
-    comics = db.query(Comic).filter(Comic.volume_id == volume_id).all()
+NON_PLAIN_FORMATS = [
+    'annual',
+    'giant size',
+    'giant-size',
+    'graphic novel',
+    'one shot',
+    'one-shot',
+    'hardcover',
+    'trade paperback',
+    'trade paper back',
+    'tpb',
+    'preview',
+    'special'
+]
 
-    result = []
 
-    # This is a limited subset of the comic data returned.
-    # No need for all the related information for this return
-    for comic in comics:
-        result.append({
-            "id": comic.id,
-            "filename": comic.filename,
-            "file_path": comic.file_path,
-            "thumbnail_path": comic.thumbnail_path,
-            "page_count": comic.page_count,
-            "number": comic.number,
-            "title": comic.title,
-        })
+
+def comic_to_simple_dict(comic: Comic):
+    return {
+        "id": comic.id,
+        "volume_number": comic.volume.volume_number,
+        "number": comic.number,
+        "title": comic.title,
+        "year": comic.year,
+        "format": comic.format,
+        "filename": comic.filename,
+        "thumbnail_path": f"/api/comics/{comic.id}/thumbnail"
+    }
+
+
+@router.get("/{volume_id}")
+async def get_volume_detail(volume_id: int, db: Session = Depends(get_db)):
+    """
+    Get volume summary with categorized counts.
+    """
+    volume = db.query(Volume).join(Series).filter(Volume.id == volume_id).first()
+    if not volume:
+        raise HTTPException(status_code=404, detail="Volume not found")
+
+    # 1. Categorized Counts
+    is_plain = or_(
+        Comic.format == None,
+        func.lower(Comic.format).not_in(NON_PLAIN_FORMATS)
+    )
+    is_annual = func.lower(Comic.format) == 'annual'
+    is_special = (func.lower(Comic.format) != 'annual') & (func.lower(Comic.format).in_(NON_PLAIN_FORMATS))
+
+    stats = db.query(
+        func.count(case((is_plain, 1))).label('plain_count'),
+        func.count(case((is_annual, 1))).label('annual_count'),
+        func.count(case((is_special, 1))).label('special_count'),
+        func.min(Comic.year).label('start_year'),
+        func.max(Comic.year).label('end_year')
+    ).filter(Comic.volume_id == volume_id).first()
+
+    # 2. Find Cover (Plain issues priority)
+    first_issue = db.query(Comic) \
+        .filter(Comic.volume_id == volume_id) \
+        .filter(is_plain) \
+        .filter(Comic.number != '0') \
+        .order_by(Comic.year, Comic.number) \
+        .first()
+
+    if not first_issue:
+        first_issue = db.query(Comic).filter(Comic.volume_id == volume_id).order_by(Comic.year, Comic.number).first()
+
+
+    # 3. Aggregated Metadata (Scoped ONLY to this volume)
+    writers = db.query(Person.name).join(ComicCredit).join(Comic) \
+        .filter(Comic.volume_id == volume_id).filter(ComicCredit.role == 'writer').distinct().all()
+
+    pencillers = db.query(Person.name).join(ComicCredit).join(Comic) \
+        .filter(Comic.volume_id == volume_id).filter(ComicCredit.role == 'penciller').distinct().all()
+
+    characters = db.query(Character.name).join(Comic.characters) \
+        .filter(Comic.volume_id == volume_id).distinct().all()
+
+    teams = db.query(Team.name).join(Comic.teams) \
+        .filter(Comic.volume_id == volume_id).distinct().all()
+
+    locations = db.query(Location.name).join(Comic.locations) \
+        .filter(Comic.volume_id == volume_id).distinct().all()
 
     return {
-        "total": len(result),
-        "comics": result
+        "id": volume.id,
+        "volume_number": volume.volume_number,
+        "series_id": volume.series.id,
+        "series_name": volume.series.name,
+
+        # Counts
+        "total_issues": stats.plain_count,  # Use plain count as main count
+        "annual_count": stats.annual_count,
+        "special_count": stats.special_count,
+
+        "start_year": stats.start_year,
+        "end_year": stats.end_year,
+        "first_issue_id": first_issue.id if first_issue else None,
+        "details": {
+            "writers": sorted([r[0] for r in writers]),
+            "pencillers": sorted([r[0] for r in pencillers]),
+            "characters": sorted([r[0] for r in characters]),
+            "teams": sorted([r[0] for r in teams]),
+            "locations": sorted([r[0] for r in locations])
+        }
+    }
+
+
+@router.get("/{volume_id}/issues", response_model=PaginatedResponse)
+async def get_volume_issues(
+        volume_id: int,
+        type: str = Query("plain", regex="^(plain|annual|special|all)$"), # Added Type Filter
+        params: PaginationParams = Depends(),
+        db: Session = Depends(get_db)
+):
+    """
+    Get paginated issues for a specific volume, filtered by type.
+    """
+    query = db.query(Comic).filter(Comic.volume_id == volume_id)
+
+    # Apply Filters
+    if type == "plain":
+        query = query.filter(or_(
+            Comic.format == None,
+            func.lower(Comic.format).not_in(NON_PLAIN_FORMATS)
+        ))
+    elif type == "annual":
+        query = query.filter(func.lower(Comic.format) == 'annual')
+    elif type == "special":
+        query = query.filter(
+            func.lower(Comic.format) != 'annual',
+            func.lower(Comic.format).in_(NON_PLAIN_FORMATS)
+        )
+
+    total = query.count()
+
+    # Sort by Issue Number
+    comics = query.order_by(Comic.number) \
+        .offset(params.skip) \
+        .limit(params.size) \
+        .all()
+
+    return {
+        "total": total,
+        "page": params.page,
+        "size": params.size,
+        "items": [comic_to_simple_dict(c) for c in comics]
     }

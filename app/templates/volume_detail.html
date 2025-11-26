@@ -1,0 +1,290 @@
+{% extends "base.html" %}
+
+{% block title %}Volume Details - Comic Server{% endblock %}
+
+{% block content %}
+<div class="space-y-6" x-data="volumeDetail()">
+    
+    <div class="flex items-center space-x-2 text-gray-400 mb-6 text-sm">
+        <a href="/" class="hover:text-white">Home</a>
+        <span>/</span>
+        <a :href="`/series/${volume?.series_id}`" class="hover:text-blue-400" x-text="volume?.series_name || 'Series'"></a>
+        <span>/</span>
+        <span class="text-white" x-text="`Vol ${volume?.volume_number}`"></span>
+    </div>
+
+    <div x-show="loading" class="flex justify-center py-20">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+    </div>
+
+    <div x-show="!loading && volume" style="display: none;">
+        
+        <div class="bg-gray-800 rounded-lg p-6 mb-6 shadow-lg border border-gray-700">
+            <div class="flex items-start space-x-6">
+                <div class="flex-shrink-0">
+                    <div x-show="volume?.first_issue_id" class="w-40 h-60 bg-gray-700 rounded-lg overflow-hidden shadow-lg border border-gray-600">
+                        <img 
+                            :src="volume?.first_issue_id ? `/api/comics/${volume.first_issue_id}/thumbnail?width=300&height=450` : ''"
+                            class="w-full h-full object-cover"
+                        >
+                    </div>
+                    <div x-show="!volume?.first_issue_id" class="w-40 h-60 bg-gray-700 rounded-lg flex items-center justify-center text-gray-500">
+                        No Cover
+                    </div>
+                </div>
+                
+                <div class="flex-1 pt-2">
+                    <h2 class="text-2xl text-gray-400 font-light" x-text="volume?.series_name"></h2>
+                    <h1 class="text-4xl font-bold text-white mb-3" x-text="`Volume ${volume?.volume_number}`"></h1>
+                    
+                    <div class="flex items-center space-x-4 text-sm text-gray-300">
+                        <span class="bg-blue-900/50 px-3 py-1 rounded-full border border-blue-800 text-blue-100" x-text="`${volume?.total_issues || 0} Issues`"></span>
+
+                        <template x-if="volume?.annual_count > 0">
+                            <span class="bg-yellow-900/50 px-3 py-1 rounded-full border border-yellow-800 text-yellow-100" x-text="`${volume?.annual_count} Annuals`"></span>
+                        </template>
+
+                        <span x-show="volume?.start_year" x-text="`${volume?.start_year} - ${volume?.end_year || 'Present'}`"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-gray-800 rounded-lg overflow-hidden min-h-[500px] border border-gray-700 shadow-lg">
+            <div class="flex border-b border-gray-700">
+                <button
+                    @click="switchTab('issues')"
+                    :class="activeTab === 'issues' ? 'bg-gray-700 text-white border-b-2 border-blue-500' : 'text-gray-400 hover:text-white hover:bg-gray-750'"
+                    class="px-8 py-4 font-medium transition-colors"
+                >
+                    Issues
+                </button>
+
+                <template x-if="volume?.annual_count > 0">
+                    <button
+                        @click="switchTab('annuals')"
+                        :class="activeTab === 'annuals' ? 'bg-gray-700 text-white border-b-2 border-blue-500' : 'text-gray-400 hover:text-white hover:bg-gray-750'"
+                        class="px-8 py-4 font-medium transition-colors"
+                    >
+                        Annuals
+                    </button>
+                </template>
+
+                <template x-if="volume?.special_count > 0">
+                    <button
+                        @click="switchTab('specials')"
+                        :class="activeTab === 'specials' ? 'bg-gray-700 text-white border-b-2 border-blue-500' : 'text-gray-400 hover:text-white hover:bg-gray-750'"
+                        class="px-8 py-4 font-medium transition-colors"
+                    >
+                        Specials
+                    </button>
+                </template>
+
+                <button
+                    @click="activeTab = 'details'"
+                    :class="activeTab === 'details' ? 'bg-gray-700 text-white border-b-2 border-blue-500' : 'text-gray-400 hover:text-white hover:bg-gray-750'"
+                    class="px-8 py-4 font-medium transition-colors"
+                >
+                    Details
+                </button>
+            </div>
+
+            <div class="p-6">
+
+                <div x-show="['issues', 'annuals', 'specials'].includes(activeTab)">
+                    <div x-show="gridLoading" class="py-12 text-center">
+                        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                        <p class="text-gray-400">Loading...</p>
+                    </div>
+
+                    <div x-show="!gridLoading && currentItems.length > 0">
+                        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                            <template x-for="comic in currentItems" :key="comic.id">
+                                {% include "partials/comic_card.html" %}
+                            </template>
+                        </div>
+
+                        <div class="mt-8 flex justify-center items-center space-x-4 border-t border-gray-700 pt-6">
+                            <button
+                                @click="changePage(currentPage - 1)"
+                                :disabled="currentPage === 1"
+                                class="px-4 py-2 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors"
+                            >
+                                Previous
+                            </button>
+                            <span class="text-gray-400">
+                                Page <span class="text-white font-bold" x-text="currentPage"></span> of <span x-text="Math.ceil(totalItems / pageSize)"></span>
+                            </span>
+                            <button
+                                @click="changePage(currentPage + 1)"
+                                :disabled="currentPage >= Math.ceil(totalItems / pageSize)"
+                                class="px-4 py-2 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors"
+                            >
+                                Next
+                            </button>
+                        </div>
+                    </div>
+
+                    <div x-show="!gridLoading && currentItems.length === 0" class="text-center py-20 text-gray-500">
+                        <p>No comics found in this section.</p>
+                    </div>
+                </div>
+
+                <div x-show="activeTab === 'details'">
+                    <div class="space-y-8">
+                        <template x-if="volume?.details?.writers?.length > 0">
+                            <div>
+                                <h3 class="text-lg font-bold mb-3 text-gray-200">Writers</h3>
+                                <div class="flex flex-wrap gap-2">
+                                    <template x-for="name in volume.details.writers" :key="name">
+                                        {% with type='writer', item='name' %}
+                                            {% include "partials/tag_chip.html" %}
+                                        {% endwith %}
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+
+                        <template x-if="volume?.details?.pencillers?.length > 0">
+                            <div>
+                                <h3 class="text-lg font-bold mb-3 text-gray-200">Pencillers</h3>
+                                <div class="flex flex-wrap gap-2">
+                                    <template x-for="name in volume.details.pencillers" :key="name">
+                                        {% with type='penciller', item='name' %}
+                                            {% include "partials/tag_chip.html" %}
+                                        {% endwith %}
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+
+                        <div class="border-t border-gray-700 my-6"></div>
+
+                        <template x-if="volume?.details?.characters?.length > 0">
+                            <div>
+                                <h3 class="text-lg font-bold mb-3 text-gray-200">Characters</h3>
+                                <div class="flex flex-wrap gap-2">
+                                    <template x-for="name in volume.details.characters" :key="name">
+                                        {% with type='character', item='name' %}
+                                            {% include "partials/tag_chip.html" %}
+                                        {% endwith %}
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+
+                        <template x-if="volume?.details?.teams?.length > 0">
+                            <div>
+                                <h3 class="text-lg font-bold mb-3 text-gray-200">Teams</h3>
+                                <div class="flex flex-wrap gap-2">
+                                    <template x-for="name in volume.details.teams" :key="name">
+                                        {% with type='team', item='name' %}
+                                            {% include "partials/tag_chip.html" %}
+                                        {% endwith %}
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+
+                        <template x-if="volume?.details?.locations?.length > 0">
+                            <div>
+                                <h3 class="text-lg font-bold mb-3 text-gray-200">Locations</h3>
+                                <div class="flex flex-wrap gap-2">
+                                    <template x-for="name in volume.details.locations" :key="name">
+                                        {% with type='location', item='name' %}
+                                            {% include "partials/tag_chip.html" %}
+                                        {% endwith %}
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function volumeDetail() {
+    return {
+        volumeId: {{ volume_id }},
+        volume: null,
+        loading: true,
+        
+        // Tab State
+        activeTab: 'issues',
+        
+        // Grid Data
+        gridLoading: false,
+        currentItems: [],
+        currentPage: 1,
+        pageSize: 48,
+        totalItems: 0,
+        currentType: 'plain',
+
+        init() {
+            this.loadVolumeSummary();
+            this.fetchIssues();
+        },
+
+        async loadVolumeSummary() {
+            try {
+                const res = await fetch(`/api/volumes/${this.volumeId}`);
+                if (!res.ok) throw new Error("Failed to load volume");
+                this.volume = await res.json();
+                document.title = `${this.volume.series_name} Vol ${this.volume.volume_number} - Comic Server`;
+                this.loading = false;
+            } catch (e) {
+                console.error(e);
+            }
+        },
+
+        switchTab(tabName) {
+            this.activeTab = tabName;
+
+            if (tabName === 'details') return;
+
+            // Reset Pagination
+            this.currentPage = 1;
+            this.currentItems = [];
+
+            // Map tabs to API types
+            const typeMap = {
+                'issues': 'plain',
+                'annuals': 'annual',
+                'specials': 'special'
+            };
+
+            this.currentType = typeMap[tabName] || 'plain';
+            this.fetchIssues();
+        },
+
+        async fetchIssues() {
+            this.gridLoading = true;
+            try {
+                const url = `/api/volumes/${this.volumeId}/issues?type=${this.currentType}&page=${this.currentPage}&size=${this.pageSize}`;
+                const res = await fetch(url);
+                const data = await res.json();
+                this.currentItems = data.items;
+                this.totalItems = data.total;
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            } catch (e) {
+                console.error("Failed to load issues", e);
+            } finally {
+                this.gridLoading = false;
+            }
+        },
+
+        changePage(newPage) {
+            if (newPage < 1) return;
+            const maxPage = Math.ceil(this.totalItems / this.pageSize);
+            if (newPage > maxPage) return;
+            this.currentPage = newPage;
+            this.fetchIssues();
+        }
+    }
+}
+</script>
+{% endblock %}
