@@ -234,5 +234,6 @@ class SearchService:
             "title": comic.title,
             "year": comic.year,
             "publisher": comic.publisher,
+            "format": comic.format,
             "thumbnail_path": f"/api/comics/{comic.id}/thumbnail"
         }
