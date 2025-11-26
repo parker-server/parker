@@ -1,0 +1,33 @@
+<a :href="`/reader/${comic.id}`" class="block group relative">
+    <div class="aspect-[2/3] bg-gray-700 rounded-lg overflow-hidden relative shadow-md transition-transform duration-200 group-hover:scale-[1.02]">
+
+        <img
+            :src="comic.thumbnail_path"
+            :alt="comic.title"
+            class="w-full h-full object-cover transition-opacity duration-300"
+            loading="lazy"
+        >
+
+        <template x-if="comic.format && comic.format !== 'Comic'">
+            <div
+                class="absolute top-2 right-2 text-white text-[10px] uppercase font-bold px-2 py-1 rounded shadow-md z-10"
+                :class="comic.format.toLowerCase() === 'annual' ? 'bg-yellow-600' : 'bg-purple-600'"
+                x-text="comic.format"
+            ></div>
+        </template>
+
+        <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-60 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">
+            <span class="text-white font-bold bg-blue-600 px-4 py-2 rounded-full transform scale-90 group-hover:scale-100 transition-all shadow-lg">
+                Read
+            </span>
+        </div>
+    </div>
+
+    <div class="mt-2">
+        <div class="flex justify-between items-baseline">
+            <p class="font-bold text-gray-200 truncate" x-text="`#${comic.number}`"></p>
+            <p class="text-xs text-gray-500" x-text="comic.year"></p>
+        </div>
+        <p class="text-sm text-gray-400 truncate" x-text="comic.title || `Issue ${comic.number}`"></p>
+    </div>
+</a>
