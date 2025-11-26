@@ -46,7 +46,7 @@ async def get_reading_list(list_id: int, db: Session = Depends(get_db)):
         comic = item.comic
         comics.append({
             "position": item.position,
-            "comic_id": comic.id,
+            "id": comic.id,
             "series_id": comic.volume.series_id,
             "series": comic.volume.series.name,
             "volume": comic.volume.volume_number,
