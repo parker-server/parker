@@ -55,6 +55,21 @@
                         <span class="text-xs text-blue-200" x-text="`Scanning ${libraryName}...`"></span>
                     </div>
 
+<div x-data="{ token: localStorage.getItem('token') }" x-show="token" class="flex items-center ml-4">
+    <button
+        @click="localStorage.removeItem('token'); window.location.href = '/login'"
+        class="text-sm text-gray-400 hover:text-white border border-gray-600 px-3 py-1 rounded transition-colors"
+    >
+        Logout
+    </button>
+</div>
+
+<div x-data="{ token: localStorage.getItem('token') }" x-show="!token" class="flex items-center ml-4">
+    <a href="/login" class="text-sm font-bold text-blue-400 hover:text-white transition-colors">
+        Login
+    </a>
+</div>
+
                     <div class="hidden sm:block" x-data="{ searching: false, results: [] }">
                         <input 
                             type="search" 
