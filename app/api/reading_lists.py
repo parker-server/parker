@@ -1,16 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from typing import List
 
-from app.api.deps import get_db
+from app.api.deps import SessionDep, CurrentUser
 from app.models.reading_list import ReadingList, ReadingListItem
-from app.models.comic import Comic
 
 router = APIRouter()
 
 
 @router.get("/")
-async def list_reading_lists(db: Session = Depends(get_db)):
+async def list_reading_lists(db: SessionDep, current_user: CurrentUser):
     """List all reading lists"""
     reading_lists = db.query(ReadingList).all()
 
@@ -33,7 +30,7 @@ async def list_reading_lists(db: Session = Depends(get_db)):
 
 
 @router.get("/{list_id}")
-async def get_reading_list(list_id: int, db: Session = Depends(get_db)):
+async def get_reading_list(list_id: int, db: SessionDep, current_user: CurrentUser):
     """Get a specific reading list with all comics in order"""
     reading_list = db.query(ReadingList).filter(ReadingList.id == list_id).first()
 
@@ -71,7 +68,7 @@ async def get_reading_list(list_id: int, db: Session = Depends(get_db)):
 
 
 @router.delete("/{list_id}")
-async def delete_reading_list(list_id: int, db: Session = Depends(get_db)):
+async def delete_reading_list(list_id: int, db: SessionDep, current_user: CurrentUser):
     """Delete a reading list"""
     reading_list = db.query(ReadingList).filter(ReadingList.id == list_id).first()
 

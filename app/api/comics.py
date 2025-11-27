@@ -4,9 +4,10 @@ from sqlalchemy.orm import Session
 from typing import List
 from pathlib import Path
 
-from app.api.deps import get_db
+from app.api.deps import SessionDep, CurrentUser
 from app.models.comic import Comic, Volume
 from app.models.series import Series
+
 from app.schemas.search import SearchRequest, SearchResponse
 from app.services.search import SearchService
 from app.services.images import ImageService
@@ -15,7 +16,7 @@ router = APIRouter()
 
 
 @router.get("/")
-async def list_comics(db: Session = Depends(get_db)):
+async def list_comics(db: SessionDep, current_user: CurrentUser):
     """List all comics"""
     comics = db.query(Comic).join(Volume).join(Series).all()
 
@@ -39,7 +40,7 @@ async def list_comics(db: Session = Depends(get_db)):
 
 
 @router.post("/search", response_model=SearchResponse)
-async def search_comics(request: SearchRequest, db: Session = Depends(get_db)):
+async def search_comics(request: SearchRequest, db: SessionDep, current_user: CurrentUser):
     """
     Search comics with complex filters
 
@@ -63,7 +64,7 @@ async def search_comics(request: SearchRequest, db: Session = Depends(get_db)):
     return results
 
 @router.get("/{comic_id}")
-async def get_comic(comic_id: int, db: Session = Depends(get_db)):
+async def get_comic(comic_id: int, db: SessionDep, current_user: CurrentUser):
     """Get a specific comic with all metadata"""
     comic = db.query(Comic).filter(Comic.id == comic_id).first()
 
@@ -138,7 +139,7 @@ async def get_comic(comic_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{comic_id}/pages")
-async def get_comic_pages(comic_id: int, db: Session = Depends(get_db)):
+async def get_comic_pages(comic_id: int, db: SessionDep, current_user: CurrentUser):
     """Get list of all pages in a comic"""
     comic = db.query(Comic).filter(Comic.id == comic_id).first()
 
@@ -165,7 +166,7 @@ async def get_comic_pages(comic_id: int, db: Session = Depends(get_db)):
 async def get_comic_page(
         comic_id: int,
         page_index: int,
-        db: Session = Depends(get_db)
+        db: SessionDep
 ):
     """
     Get a specific page image from a comic
@@ -207,7 +208,7 @@ async def get_comic_page(
     )
 
 @router.get("/{comic_id}/cover")
-async def get_comic_cover(comic_id: int, db: Session = Depends(get_db)):
+async def get_comic_cover(comic_id: int, db: SessionDep):
     """Get the cover image (first page) of a comic"""
     return await get_comic_page(comic_id, 0, db)
 
@@ -215,7 +216,7 @@ async def get_comic_cover(comic_id: int, db: Session = Depends(get_db)):
 @router.get("/{comic_id}/thumbnail")
 async def get_comic_thumbnail(
         comic_id: int,
-        db: Session = Depends(get_db)
+        db: SessionDep
 ):
     """
         Get the thumbnail for a comic.

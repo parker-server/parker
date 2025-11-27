@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case, or_
-from typing import List, Optional
+from typing import List, Optional, Annotated
 
-from app.api.deps import get_db
+from app.api.deps import SessionDep, CurrentUser
+
 from app.models.comic import Comic, Volume
 from app.models.series import Series
 
@@ -48,7 +49,7 @@ def comic_to_simple_dict(comic: Comic):
 
 
 @router.get("/{series_id}")
-async def get_series_detail(series_id: int, db: Session = Depends(get_db)):
+async def get_series_detail(series_id: int, db: SessionDep, current_user: CurrentUser):
     """
     Get series summary including Related content and Metadata Details.
     """
@@ -171,10 +172,11 @@ async def get_series_detail(series_id: int, db: Session = Depends(get_db)):
 
 @router.get("/{series_id}/issues", response_model=PaginatedResponse)
 async def get_series_issues(
+        current_user: CurrentUser,
         series_id: int,
-        type: str = Query("plain", regex="^(plain|annual|special|all)$"),
-        params: PaginationParams = Depends(),
-        db: Session = Depends(get_db)
+        params: Annotated[PaginationParams, Depends()],
+        db: SessionDep,
+        type: Annotated[str, Query(pattern="^(plain|annual|special|all)$")] = "plain"
 ):
     """
     Get paginated issues for a series, filtered by type.

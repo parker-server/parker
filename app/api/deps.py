@@ -69,3 +69,19 @@ async def get_current_user(
         raise credentials_exception
 
     return user
+
+async def get_current_active_superuser(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> User:
+    """
+    Dependency that ensures the user is a Superuser (Admin).
+    """
+    if not current_user.is_superuser:
+        raise HTTPException(
+            status_code=400, detail="The user doesn't have enough privileges"
+        )
+    return current_user
+
+SessionDep = Annotated[Session, Depends(get_db)]
+CurrentUser = Annotated[User, Depends(get_current_user)]
+AdminUser = Annotated[User, Depends(get_current_active_superuser)]

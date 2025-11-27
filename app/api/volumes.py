@@ -1,14 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case, or_, asc
-from typing import List
+from typing import List, Annotated
 
-from app.api.deps import get_db
+from app.api.deps import SessionDep, CurrentUser
+from app.api.deps import PaginationParams, PaginatedResponse
+
 from app.models.comic import Comic, Volume
 from app.models.series import Series
 from app.models.credits import Person, ComicCredit
 from app.models.tags import Character, Team, Location
-from app.api.deps import PaginationParams, PaginatedResponse
+
 
 router = APIRouter()
 
@@ -43,7 +45,7 @@ def comic_to_simple_dict(comic: Comic):
 
 
 @router.get("/{volume_id}")
-async def get_volume_detail(volume_id: int, db: Session = Depends(get_db)):
+async def get_volume_detail(volume_id: int, db: SessionDep, current_user: CurrentUser):
     """
     Get volume summary with categorized counts.
     """
@@ -121,10 +123,11 @@ async def get_volume_detail(volume_id: int, db: Session = Depends(get_db)):
 
 @router.get("/{volume_id}/issues", response_model=PaginatedResponse)
 async def get_volume_issues(
+        current_user: CurrentUser,
         volume_id: int,
-        type: str = Query("plain", regex="^(plain|annual|special|all)$"), # Added Type Filter
-        params: PaginationParams = Depends(),
-        db: Session = Depends(get_db)
+        params: Annotated[PaginationParams, Depends()],
+        db: SessionDep,
+        type: Annotated[str, Query(pattern="^(plain|annual|special|all)$")] = "plain"
 ):
     """
     Get paginated issues for a specific volume, filtered by type.
