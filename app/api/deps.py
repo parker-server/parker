@@ -1,4 +1,4 @@
-from typing import Generator
+from typing import Generator, Annotated
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
@@ -48,8 +48,8 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
 
 
 async def get_current_user(
-        db: Session = Depends(get_db),
-        token: str = Depends(oauth2_scheme)
+        db: Annotated[Session, Depends(get_db)],
+        token: Annotated[str, Depends(oauth2_scheme)]
 ) -> User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
