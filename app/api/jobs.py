@@ -57,6 +57,7 @@ async def list_jobs(
         results.append({
             "id": job.id,
             "library_name": job.library.name if job.library else "Deleted Library",
+            "job_type": job.job_type,
             "status": job.status,
             "created_at": job.created_at,
             "completed_at": job.completed_at,
