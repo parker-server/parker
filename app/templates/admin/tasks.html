@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block title %}System Tasks - Comic Server{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto" x-data="taskManager()">
+
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold text-white">System Maintenance</h1>
+        <p class="text-gray-400 mt-2">Run manual maintenance tasks to keep your server clean.</p>
+    </div>
+
+    <div class="grid grid-cols-1 gap-6">
+
+        <div class="bg-gray-800 rounded-lg p-6 border border-gray-700 shadow-lg">
+            <div class="flex justify-between items-start">
+                <div>
+                    <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                        <span>🧹</span> Orphan Cleanup
+                    </h3>
+                    <p class="text-gray-400 mt-2 text-sm max-w-xl">
+                        Scans the database for metadata (Characters, Writers, Locations) and containers (Collections) that are no longer linked to any comics.
+                    </p>
+                    <p class="text-gray-500 text-xs mt-2 italic">
+                        Recommended after deleting a large library.
+                    </p>
+                </div>
+                <button
+                    @click="runTask('cleanup')"
+                    class="btn-primary flex items-center gap-2"
+                    :disabled="loading"
+                    :class="loading ? 'opacity-50 cursor-not-allowed' : ''"
+                >
+                    <span x-show="loading" class="animate-spin">↻</span>
+                    <span x-show="!loading">Run Task</span>
+                </button>
+            </div>
+
+            <div x-show="lastResult" x-transition class="mt-6 bg-black/30 rounded p-4 border border-gray-700/50 font-mono text-sm">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-green-400 font-bold">Result: Success</span>
+                    <button @click="lastResult = null" class="text-gray-500 hover:text-white text-xs">Clear</button>
+                </div>
+                <div class="grid grid-cols-2 gap-2 text-gray-300">
+                    <template x-for="(count, key) in lastResult?.stats" :key="key">
+                        <div class="flex justify-between border-b border-gray-700/50 pb-1">
+                            <span class="capitalize" x-text="key.replace('_', ' ')"></span>
+                            <span class="text-white" x-text="count + ' deleted'"></span>
+                        </div>
+                    </template>
+                </div>
+                <div x-show="Object.values(lastResult?.stats || {}).reduce((a, b) => a + b, 0) === 0" class="text-gray-500 mt-2">
+                    Database is already clean. No orphans found.
+                </div>
+            </div>
+        </div>
+
+        </div>
+</div>
+
+<script>
+function taskManager() {
+    return {
+        loading: false,
+        lastResult: null,
+
+        async runTask(taskName) {
+            this.loading = true;
+            this.lastResult = null;
+
+            try {
+                const res = await fetch(`/api/tasks/${taskName}`, { method: 'POST' });
+                if (res.ok) {
+                    this.lastResult = await res.json();
+                } else {
+                    const err = await res.json();
+                    alert("Task Failed: " + err.detail);
+                }
+            } catch (e) {
+                console.error(e);
+                alert("Network error occurred");
+            } finally {
+                this.loading = false;
+            }
+        }
+    }
+}
+</script>
+{% endblock %}
