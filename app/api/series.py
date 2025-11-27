@@ -3,36 +3,22 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, case, or_
 from typing import List, Optional, Annotated
 
-from app.api.deps import SessionDep, CurrentUser
+from app.core.comic_helpers import NON_PLAIN_FORMATS, get_format_filters, get_smart_cover
 
-from app.models.comic import Comic, Volume
-from app.models.series import Series
+from app.api.deps import SessionDep, CurrentUser
+from app.api.deps import PaginationParams, PaginatedResponse
 
 # Import related models
+from app.models.comic import Comic, Volume
+from app.models.series import Series
 from app.models.collection import Collection, CollectionItem
 from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.credits import Person, ComicCredit
 from app.models.tags import Character, Team, Location
 
-from app.api.deps import PaginationParams, PaginatedResponse
+
 
 router = APIRouter()
-
-NON_PLAIN_FORMATS = [
-    'annual',
-    'giant size',
-    'giant-size',
-    'graphic novel',
-    'one shot',
-    'one-shot',
-    'hardcover',
-    'trade paperback',
-    'trade paper back',
-    'tpb',
-    'preview',
-    'special'
-]
-
 
 def comic_to_simple_dict(comic: Comic):
     """Lightweight dict for list views"""
@@ -73,17 +59,10 @@ async def get_series_detail(series_id: int, db: SessionDep, current_user: Curren
             "details": {}
         }
 
-    # Define "Plain Issue" logic (Not an Annual/Special)
-    is_plain = or_(
-        Comic.format == None,
-        func.lower(Comic.format).not_in(NON_PLAIN_FORMATS)
-    )
+    # Get centralized filters
+    is_plain, is_annual, is_special = get_format_filters()
 
     # 2. Aggregation Stats (Counts)
-    # ... (Same as before) ...
-    is_annual = func.lower(Comic.format) == 'annual'
-    is_special = (func.lower(Comic.format) != 'annual') & (func.lower(Comic.format).in_(NON_PLAIN_FORMATS))
-
     stats = db.query(
         func.count(case((is_plain, 1))).label('plain_count'),
         func.count(case((is_annual, 1))).label('annual_count'),
@@ -93,7 +72,6 @@ async def get_series_detail(series_id: int, db: SessionDep, current_user: Curren
     ).filter(Comic.volume_id.in_(volume_ids)).first()
 
     # 3. Related Content & Metadata (Collections, Reading Lists, Credits)
-    # ... (Same distinct queries as before) ...
     related_collections = db.query(Collection).join(CollectionItem).join(Comic).filter(
         Comic.volume_id.in_(volume_ids)).distinct().all()
     related_reading_lists = db.query(ReadingList).join(ReadingListItem).join(Comic).filter(
@@ -110,35 +88,17 @@ async def get_series_detail(series_id: int, db: SessionDep, current_user: Curren
 
     # 4. SERIES COVER Logic
     # Priority: Plain issue, not #0, sorted by year/number
-    first_issue = db.query(Comic) \
-        .filter(Comic.volume_id.in_(volume_ids)) \
-        .filter(is_plain) \
-        .filter(Comic.number != '0') \
-        .order_by(Comic.year, Comic.number) \
-        .first()
-
-    # Fallback for Series Cover (if only #0 exists)
-    if not first_issue:
-        first_issue = db.query(Comic).filter(Comic.volume_id.in_(volume_ids)).order_by(Comic.year).first()
+    base_query = db.query(Comic).filter(Comic.volume_id.in_(volume_ids))
+    first_issue = get_smart_cover(base_query)
 
     # 5. VOLUMES DATA Loop (Fixed)
     volumes_data = []
     for vol in volumes:
         count = db.query(Comic).filter(Comic.volume_id == vol.id).count()
 
-        # --- FIXED COVER LOGIC ---
-        # Try to find a plain issue that is NOT #0
-        vol_first = db.query(Comic) \
-            .filter(Comic.volume_id == vol.id) \
-            .filter(is_plain) \
-            .filter(Comic.number != '0') \
-            .order_by(Comic.year, Comic.number) \
-            .first()
-
-        # Fallback: If volume is ONLY issue #0 or ONLY Annuals, just take the first thing we have
-        if not vol_first:
-            vol_first = db.query(Comic).filter(Comic.volume_id == vol.id).order_by(Comic.year, Comic.number).first()
-        # -------------------------
+        # Scoped query for this volume
+        vol_base_query = db.query(Comic).filter(Comic.volume_id == vol.id)
+        vol_first = get_smart_cover(vol_base_query)
 
         volumes_data.append({
             "volume_id": vol.id,
@@ -183,18 +143,15 @@ async def get_series_issues(
     """
     query = db.query(Comic).join(Volume).join(Series).filter(Series.id == series_id)
 
+    # Get filters
+    is_plain, is_annual, is_special = get_format_filters()
+
     if type == "plain":
-        query = query.filter(or_(
-            Comic.format == None,
-            func.lower(Comic.format).not_in(NON_PLAIN_FORMATS)
-        ))
+        query = query.filter(is_plain)
     elif type == "annual":
-        query = query.filter(func.lower(Comic.format) == 'annual')
+        query = query.filter(is_annual)
     elif type == "special":
-        query = query.filter(
-            func.lower(Comic.format) != 'annual',
-            func.lower(Comic.format).in_(NON_PLAIN_FORMATS)
-        )
+        query = query.filter(is_special)
 
     total = query.count()
 
@@ -209,4 +166,67 @@ async def get_series_issues(
         "page": params.page,
         "size": params.size,
         "items": [comic_to_simple_dict(c) for c in comics]
+    }
+
+
+@router.get("/", response_model=PaginatedResponse)
+async def list_series(
+        db: SessionDep,
+        current_user: CurrentUser,
+        params: Annotated[PaginationParams, Depends()],
+        sort_by: Annotated[str, Query(pattern="^(name|created|updated)$")] = "name",
+        sort_desc: bool = False
+
+):
+    """
+    List series with sorting and user-access filtering.
+    Used for Home Page 'Recently Added' sliders.
+    """
+    query = db.query(Series)
+
+    # 1. Apply Security Filter (unless Superuser)
+    if not current_user.is_superuser:
+        # Join Library to check permissions
+        # Filter where Series.library_id is in user.accessible_libraries
+        allowed_ids = [lib.id for lib in current_user.accessible_libraries]
+        query = query.filter(Series.library_id.in_(allowed_ids))
+
+    # 2. Apply Sorting
+    if sort_by == "created":
+        sort_col = Series.created_at
+    elif sort_by == "updated":
+        sort_col = Series.updated_at
+    else:
+        sort_col = Series.name
+
+    if sort_desc:
+        query = query.order_by(sort_col.desc())
+    else:
+        query = query.order_by(sort_col.asc())
+
+    # 3. Pagination
+    total = query.count()
+    series_list = query.offset(params.skip).limit(params.size).all()
+
+    # 4. Format Results (Need thumbnails)
+    items = []
+    for s in series_list:
+        # Find a cover image (First issue of first volume)
+        # Optimization: In a real large scale app, this should be denormalized or eager loaded
+        base_query = db.query(Comic).join(Volume).filter(Volume.series_id == s.id)
+        first_issue = get_smart_cover(base_query)
+
+        items.append({
+            "id": s.id,
+            "name": s.name,
+            "library_id": s.library_id,
+            "thumbnail_path": f"/api/comics/{first_issue.id}/thumbnail" if first_issue else None,
+            "created_at": s.created_at
+        })
+
+    return {
+        "total": total,
+        "page": params.page,
+        "size": params.size,
+        "items": items
     }
