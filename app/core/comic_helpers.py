@@ -1,4 +1,4 @@
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, not_
 from app.models.comic import Comic
 
 # Centralized list of non-standard formats
@@ -44,9 +44,10 @@ def get_smart_cover(base_query):
     """
     is_plain, _, _ = get_format_filters()
 
-    # 1. Try to find a standard issue (No #0, No Annuals)
+    # 1. Try to find a *positive* standard issue (No #-1, #0, No Annuals)
     cover = base_query.filter(is_plain) \
         .filter(Comic.number != '0') \
+        .filter(not_(Comic.number.like('-%'))) \
         .order_by(Comic.year, Comic.number) \
         .first()
 
