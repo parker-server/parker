@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends
-from typing import Annotated
 
 from app.api.deps import SessionDep, AdminUser
 from app.services.maintenance import MaintenanceService
+from app.services.backup import BackupService
 
 router = APIRouter()
 
@@ -22,4 +22,20 @@ async def run_cleanup_task(
     return {
         "message": "Cleanup complete",
         "stats": stats
+    }
+
+
+@router.post("/backup")
+async def run_backup_task(
+        admin: AdminUser
+):
+    """
+    Trigger a database backup immediately.
+    """
+    service = BackupService()
+    result = service.create_backup()
+
+    return {
+        "message": "Backup created successfully",
+        "details": result
     }

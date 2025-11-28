@@ -36,10 +36,10 @@
                 </button>
             </div>
 
-            <div x-show="lastResult" x-transition class="mt-6 bg-black/30 rounded p-4 border border-gray-700/50 font-mono text-sm">
+            <div x-show="lastResult && lastResult.stats" x-transition class="mt-6 bg-black/30 rounded p-4 border border-gray-700/50 font-mono text-sm">
                 <div class="flex justify-between items-center mb-2">
-                    <span class="text-green-400 font-bold">Result: Success</span>
-                    <button @click="lastResult = null" class="text-gray-500 hover:text-white text-xs">Clear</button>
+                    <span class="text-green-400 font-bold">Cleanup Complete</span>
+                    <button @click="lastResult = null" class="text-gray-500 hover:text-white text-xs">Dismiss</button>
                 </div>
                 <div class="grid grid-cols-2 gap-2 text-gray-300">
                     <template x-for="(count, key) in lastResult?.stats" :key="key">
@@ -55,7 +55,61 @@
             </div>
         </div>
 
+
+        <div class="bg-gray-800 rounded-lg p-6 border border-gray-700 shadow-lg">
+            <div class="flex justify-between items-start">
+                <div>
+                    <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                        <span>💾</span> Backup Database
+                    </h3>
+                    <p class="text-gray-400 mt-2 text-sm max-w-xl">
+                        Creates a hot snapshot of the database (safe for running apps) and compresses it into a <code>.tar.gz</code> archive.
+                    </p>
+                    <p class="text-gray-500 text-xs mt-2 italic">
+                        Saved to: ./storage/backups/
+                    </p>
+                </div>
+                <button
+                    @click="runTask('backup')"
+                    class="btn-primary flex items-center gap-2"
+                    :disabled="loading"
+                    :class="loading ? 'opacity-50 cursor-not-allowed' : ''"
+                >
+                    <span x-show="loading" class="animate-spin">↻</span>
+                    <span x-show="!loading">Backup Now</span>
+                </button>
+            </div>
+
+            <div x-show="lastResult && lastResult.details" x-transition class="mt-6 bg-green-900/20 rounded p-4 border border-green-500/30 font-mono text-sm" style="display: none;">
+                <div class="flex justify-between items-center mb-3">
+                    <span class="text-green-400 font-bold flex items-center gap-2">
+                        <span>✓</span> Backup Successful
+                    </span>
+                    <button @click="lastResult = null" class="text-gray-500 hover:text-white text-xs">Dismiss</button>
+                </div>
+
+                <div class="space-y-2 text-gray-300">
+                    <div class="flex flex-col">
+                        <span class="text-xs text-gray-500 uppercase">Filename</span>
+                        <span class="text-white break-all" x-text="lastResult?.details?.filename"></span>
+                    </div>
+                    <div class="flex justify-between">
+                        <div class="flex flex-col">
+                            <span class="text-xs text-gray-500 uppercase">Size</span>
+                            <span class="text-white" x-text="window.comicServer.formatBytes(lastResult?.details?.size_bytes)"></span>
+                        </div>
+                        <div class="flex flex-col text-right">
+                            <span class="text-xs text-gray-500 uppercase">Timestamp</span>
+                            <span class="text-white" x-text="lastResult?.details?.timestamp"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
         </div>
+
+
+    </div>
 </div>
 
 <script>
@@ -83,6 +137,7 @@ function taskManager() {
                 this.loading = false;
             }
         }
+
     }
 }
 </script>
