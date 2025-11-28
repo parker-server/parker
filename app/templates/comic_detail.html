@@ -53,7 +53,7 @@
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <div class="text-[10px] text-gray-500 uppercase tracking-wider">Size</div>
-                        <div class="text-sm text-gray-300" x-text="formatBytes(comic?.file_size)"></div>
+                        <div class="text-sm text-gray-300" x-text="window.comicServer.formatBytes(comic?.file_size)"></div>
                     </div>
                     <div>
                         <div class="text-[10px] text-gray-500 uppercase tracking-wider">Pages</div>
@@ -260,14 +260,6 @@ function comicDetail() {
             await fetch(`/api/progress/${this.comicId}`, { method: 'DELETE' });
         },
 
-        formatBytes(bytes, decimals = 2) {
-            if (!bytes) return '0 Bytes';
-            const k = 1024;
-            const dm = decimals < 0 ? 0 : decimals;
-            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-            const i = Math.floor(Math.log(bytes) / Math.log(k));
-            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-        }
     }
 }
 </script>

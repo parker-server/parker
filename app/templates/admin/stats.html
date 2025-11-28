@@ -38,7 +38,7 @@
                 </div>
 
                 <div class="bg-gray-800 rounded-lg p-6 border border-gray-700 shadow-lg">
-                    <div class="text-3xl font-bold text-purple-400 mb-1" x-text="formatBytes(stats?.storage?.total_bytes)"></div>
+                    <div class="text-3xl font-bold text-purple-400 mb-1" x-text="window.comicServer.formatBytes(stats?.storage?.total_bytes)"></div>
                     <div class="text-sm text-gray-400">Disk Usage</div>
                 </div>
             </div>
@@ -102,15 +102,6 @@ function serverStats() {
                 this.loading = false;
             }
         },
-
-        formatBytes(bytes, decimals = 2) {
-            if (!bytes) return '0 Bytes';
-            const k = 1024;
-            const dm = decimals < 0 ? 0 : decimals;
-            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB'];
-            const i = Math.floor(Math.log(bytes) / Math.log(k));
-            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-        }
     }
 }
 </script>
