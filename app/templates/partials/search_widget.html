@@ -1,0 +1,122 @@
+<div class="relative w-full" x-data="quickSearch()">
+
+    <div class="relative">
+        <input
+            type="search"
+            x-model="query"
+            @input.debounce.300ms="fetchResults()"
+            @keydown.escape="close()"
+            @click.away="close()"
+            @focus="isOpen = query.length > 1"
+            placeholder="Search library..."
+            class="w-full px-4 py-2 bg-gray-700 text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 pl-10 transition-shadow"
+            autocomplete="off"
+        >
+        <div class="absolute left-3 top-2.5 text-gray-400">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+        </div>
+        <div x-show="loading" class="absolute right-3 top-2.5" style="display: none;">
+            <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500"></div>
+        </div>
+    </div>
+
+    <div
+        x-show="isOpen && hasResults"
+        x-transition.opacity.duration.200ms
+        class="absolute top-full left-0 right-0 mt-2 bg-gray-800 rounded-lg shadow-2xl border border-gray-700 overflow-hidden z-50 max-h-[80vh] overflow-y-auto"
+        style="display: none;"
+    >
+        <template x-if="results.series?.length > 0">
+            <div>
+                <div class="px-4 py-2 bg-gray-900/50 text-xs font-bold text-gray-400 uppercase tracking-wider sticky top-0 backdrop-blur-sm">Series</div>
+                <template x-for="item in results.series" :key="item.id">
+                    <a :href="`/series/${item.id}`" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
+                        <span class="text-xl group-hover:scale-110 transition-transform">📚</span>
+                        <div class="min-w-0">
+                            <div class="font-bold text-white truncate" x-text="item.name"></div>
+                            <div class="text-xs text-gray-500" x-text="item.year || 'Series'"></div>
+                        </div>
+                    </a>
+                </template>
+            </div>
+        </template>
+
+        <template x-if="results.collections?.length > 0">
+            <div>
+                <div class="px-4 py-2 bg-gray-900/50 text-xs font-bold text-gray-400 uppercase tracking-wider sticky top-0 backdrop-blur-sm">Collections</div>
+                <template x-for="item in results.collections" :key="item.id">
+                    <a :href="`/collections/${item.id}`" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
+                        <span class="text-xl group-hover:scale-110 transition-transform">📦</span>
+                        <div class="font-bold text-white truncate" x-text="item.name"></div>
+                    </a>
+                </template>
+            </div>
+        </template>
+
+        <template x-if="results.reading_lists?.length > 0">
+            <div>
+                <div class="px-4 py-2 bg-gray-900/50 text-xs font-bold text-gray-400 uppercase tracking-wider sticky top-0 backdrop-blur-sm">Reading Lists</div>
+                <template x-for="item in results.reading_lists" :key="item.id">
+                    <a :href="`/reading-lists/${item.id}`" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
+                        <span class="text-xl group-hover:scale-110 transition-transform">📖</span>
+                        <div class="font-bold text-white truncate" x-text="item.name"></div>
+                    </a>
+                </template>
+            </div>
+        </template>
+
+        <template x-if="results.people?.length > 0">
+            <div>
+                <div class="px-4 py-2 bg-gray-900/50 text-xs font-bold text-gray-400 uppercase tracking-wider sticky top-0 backdrop-blur-sm">People</div>
+                <template x-for="item in results.people" :key="item.id">
+                    <a :href="`/search?field=writer&value=${encodeURIComponent(item.name)}&operator=contains`" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
+                        <span class="text-xl group-hover:scale-110 transition-transform">👤</span>
+                        <div class="font-bold text-white truncate" x-text="item.name"></div>
+                    </a>
+                </template>
+            </div>
+        </template>
+
+        <template x-if="results.characters?.length > 0 || results.teams?.length > 0 || results.locations?.length > 0">
+            <div>
+                <div class="px-4 py-2 bg-gray-900/50 text-xs font-bold text-gray-400 uppercase tracking-wider sticky top-0 backdrop-blur-sm">Tags</div>
+
+                <template x-for="item in results.characters" :key="'char'+item.id">
+                    <a :href="`/search?field=character&value=${encodeURIComponent(item.name)}&operator=contains`" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
+                        <span class="text-xl group-hover:scale-110 transition-transform">🦸‍♂️</span>
+                        <div class="min-w-0">
+                            <div class="font-bold text-white truncate" x-text="item.name"></div>
+                            <div class="text-xs text-blue-400">Character</div>
+                        </div>
+                    </a>
+                </template>
+
+                <template x-for="item in results.teams" :key="'team'+item.id">
+                    <a :href="`/search?field=team&value=${encodeURIComponent(item.name)}&operator=contains`" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
+                        <span class="text-xl group-hover:scale-110 transition-transform">🛡️</span>
+                        <div class="min-w-0">
+                            <div class="font-bold text-white truncate" x-text="item.name"></div>
+                            <div class="text-xs text-green-400">Team</div>
+                        </div>
+                    </a>
+                </template>
+
+                <template x-for="item in results.locations" :key="'loc'+item.id">
+                    <a :href="`/search?field=location&value=${encodeURIComponent(item.name)}&operator=contains`" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
+                        <span class="text-xl group-hover:scale-110 transition-transform">📍</span>
+                        <div class="min-w-0">
+                            <div class="font-bold text-white truncate" x-text="item.name"></div>
+                            <div class="text-xs text-purple-400">Location</div>
+                        </div>
+                    </a>
+                </template>
+            </div>
+        </template>
+
+        <a :href="`/search?field=series&value=${encodeURIComponent(query)}&operator=contains`" class="block px-4 py-3 bg-gray-750 text-center text-blue-400 hover:text-white hover:bg-gray-700 text-sm font-medium border-t border-gray-700">
+            Advanced Search for "<span x-text="query"></span>"
+        </a>
+    </div>
+</div>

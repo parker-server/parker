@@ -40,6 +40,47 @@
     };
 })();
 
+document.addEventListener('alpine:init', () => {
+
+    // Quick Search Component Logic
+    Alpine.data('quickSearch', () => ({
+        query: '',
+        results: {},
+        isOpen: false,
+        loading: false,
+
+        get hasResults() {
+            return Object.values(this.results).some(arr => arr && arr.length > 0);
+        },
+
+        async fetchResults() {
+            if (this.query.length < 2) {
+                this.isOpen = false;
+                return;
+            }
+            this.loading = true;
+            try {
+                const res = await fetch(`/api/search/quick?q=${encodeURIComponent(this.query)}`);
+                if (res.ok) {
+                    this.results = await res.json();
+                    this.isOpen = true;
+                }
+            } catch (e) {
+                console.error(e);
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        close() {
+            setTimeout(() => { this.isOpen = false; }, 200);
+        }
+    }));
+
+    // ... (Your scannerStatus component should also be here ideally) ...
+});
+
+
 // Toast notifications
 function showToast(message, type = 'info') {
     const container = document.getElementById('toast-container');

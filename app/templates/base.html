@@ -55,31 +55,26 @@
                         <span class="text-xs text-blue-200" x-text="`Scanning ${libraryName}...`"></span>
                     </div>
 
-<div x-data="{ token: localStorage.getItem('token') }" x-show="token" class="flex items-center ml-4">
-    <button
-        @click="localStorage.removeItem('token'); window.location.href = '/login'"
-        class="text-sm text-gray-400 hover:text-white border border-gray-600 px-3 py-1 rounded transition-colors"
-    >
-        Logout
-    </button>
-</div>
-
-<div x-data="{ token: localStorage.getItem('token') }" x-show="!token" class="flex items-center ml-4">
-    <a href="/login" class="text-sm font-bold text-blue-400 hover:text-white transition-colors">
-        Login
-    </a>
-</div>
-
-                    <div class="hidden sm:block" x-data="{ searching: false, results: [] }">
-                        <input 
-                            type="search" 
-                            placeholder="Quick search..." 
-                            class="px-4 py-2 bg-gray-700 text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            @focus="searching = true"
-                            @blur="setTimeout(() => searching = false, 200)"
+                    <div x-data="{ token: localStorage.getItem('token') }" x-show="token" class="flex items-center ml-4">
+                        <button
+                            @click="localStorage.removeItem('token'); window.location.href = '/login'"
+                            class="text-sm text-gray-400 hover:text-white border border-gray-600 px-3 py-1 rounded transition-colors"
                         >
+                            Logout
+                        </button>
                     </div>
-                    
+
+                    <div x-data="{ token: localStorage.getItem('token') }" x-show="!token" class="flex items-center ml-4">
+                        <a href="/login" class="text-sm font-bold text-blue-400 hover:text-white transition-colors">
+                            Login
+                        </a>
+                    </div>
+
+                    <div class="hidden sm:block relative w-64 lg:w-96">
+                        {% include "partials/search_widget.html" %}
+                    </div>
+
+
                     <!-- Mobile menu button -->
                     <button 
                         @click="mobileMenuOpen = !mobileMenuOpen"
@@ -109,6 +104,11 @@
                 <a href="/collections" class="block py-2 nav-link">Collections</a>
                 <a href="/reading-lists" class="block py-2 nav-link">Reading Lists</a>
                 <a href="/search" class="block py-2 nav-link">Search</a>
+
+                <div class="px-4 py-2">
+                    {% include "partials/search_widget.html" %}
+                </div>
+
             </div>
         </div>
     </nav>

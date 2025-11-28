@@ -1,10 +1,8 @@
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session
-from sqlalchemy import func, select
 from typing import List, Annotated
 
-from app.api.deps import get_db, SessionDep, CurrentUser
-from app.models.comic import Comic
+from app.api.deps import SessionDep, CurrentUser
+from app.models.comic import Comic, Volume
 from app.models.series import Series
 from app.models.library import Library
 from app.models.tags import Character, Team, Location
@@ -70,3 +68,52 @@ async def get_search_suggestions(
 
     # Flatten list of tuples [('Name',), ...] -> ['Name', ...]
     return [r[0] for r in results if r[0]]
+
+
+@router.get("/quick")
+async def quick_search(
+        db: SessionDep,
+        current_user: CurrentUser,
+        q: str = Query(..., min_length=2)
+):
+    """
+    Multi-model segmented search for Navbar autocomplete.
+    Searches Series, Collections, Lists, People, and Tags.
+    """
+    limit = 5  # Tighter limit per category
+    q_str = f"%{q}%"
+
+    results = {}
+
+    # 1. Series (Scoped to User)
+    series_query = db.query(Series)
+    if not current_user.is_superuser:
+        allowed_ids = [lib.id for lib in current_user.accessible_libraries]
+        series_query = series_query.filter(Series.library_id.in_(allowed_ids))
+
+    series_objs = series_query.filter(Series.name.ilike(q_str)).limit(limit).all()
+    results["series"] = [{"id": s.id, "name": s.name, "year": s.created_at.year} for s in series_objs]
+
+    # 2. Collections
+    collections_objs = db.query(Collection).filter(Collection.name.ilike(q_str)).limit(limit).all()
+    results["collections"] = [{"id": c.id, "name": c.name} for c in collections_objs]
+
+    # 3. Reading Lists
+    lists_objs = db.query(ReadingList).filter(ReadingList.name.ilike(q_str)).limit(limit).all()
+    results["reading_lists"] = [{"id": l.id, "name": l.name} for l in lists_objs]
+
+    # 4. People (Creators)
+    people_objs = db.query(Person).filter(Person.name.ilike(q_str)).limit(limit).all()
+    results["people"] = [{"id": p.id, "name": p.name} for p in people_objs]
+
+    # 5. Tags
+    chars_objs = db.query(Character).filter(Character.name.ilike(q_str)).limit(limit).all()
+    results["characters"] = [{"id": c.id, "name": c.name} for c in chars_objs]
+
+    teams_objs = db.query(Team).filter(Team.name.ilike(q_str)).limit(limit).all()
+    results["teams"] = [{"id": t.id, "name": t.name} for t in teams_objs]
+
+    locs_objs = db.query(Location).filter(Location.name.ilike(q_str)).limit(limit).all()
+    results["locations"] = [{"id": l.id, "name": l.name} for l in locs_objs]
+
+    return results
