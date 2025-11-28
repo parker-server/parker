@@ -38,10 +38,16 @@
                     <h1 class="text-4xl font-bold text-white mb-3" x-text="`Volume ${volume?.volume_number}`"></h1>
                     
                     <div class="flex items-center space-x-4 text-sm text-gray-300">
-                        <span class="bg-blue-900/50 px-3 py-1 rounded-full border border-blue-800 text-blue-100" x-text="`${volume?.total_issues || 0} Issues`"></span>
+                        <template x-if="!isStandalone">
+                            <span class="bg-blue-900/50 px-3 py-1 rounded-full border border-blue-800 text-blue-100" x-text="`${volume?.total_issues || 0} Issues`"></span>
+                        </template>
 
                         <template x-if="volume?.annual_count > 0">
                             <span class="bg-yellow-900/50 px-3 py-1 rounded-full border border-yellow-800 text-yellow-100" x-text="`${volume?.annual_count} Annuals`"></span>
+                        </template>
+
+                        <template x-if="volume?.special_count > 0">
+                            <span class="bg-purple-900/50 px-3 py-1 rounded-full border border-purple-800 text-purple-100" x-text="`${volume?.special_count} Specials`"></span>
                         </template>
 
                         <span x-show="volume?.start_year" x-text="`${volume?.start_year} - ${volume?.end_year || 'Present'}`"></span>
@@ -52,31 +58,32 @@
 
         <div class="bg-gray-800 rounded-lg overflow-hidden min-h-[500px] border border-gray-700 shadow-lg">
             <div class="flex border-b border-gray-700">
+
                 <button
                     @click="switchTab('issues')"
                     :class="activeTab === 'issues' ? 'bg-gray-700 text-white border-b-2 border-blue-500' : 'text-gray-400 hover:text-white hover:bg-gray-750'"
                     class="px-8 py-4 font-medium transition-colors"
                 >
-                    Issues
+                    Issues <span class="text-xs ml-1 bg-gray-600 px-1.5 rounded-full text-gray-300" x-text="isStandalone ? (volume?.annual_count + volume?.special_count) : volume?.total_issues"></span>
                 </button>
 
-                <template x-if="volume?.annual_count > 0">
+                <template x-if="!isStandalone && volume?.annual_count > 0">
                     <button
                         @click="switchTab('annuals')"
                         :class="activeTab === 'annuals' ? 'bg-gray-700 text-white border-b-2 border-blue-500' : 'text-gray-400 hover:text-white hover:bg-gray-750'"
                         class="px-8 py-4 font-medium transition-colors"
                     >
-                        Annuals
+                        Annuals <span class="text-xs ml-1 bg-gray-600 px-1.5 rounded-full text-gray-300" x-text="volume?.annual_count"></span>
                     </button>
                 </template>
 
-                <template x-if="volume?.special_count > 0">
+                <template x-if="!isStandalone && volume?.special_count > 0">
                     <button
                         @click="switchTab('specials')"
                         :class="activeTab === 'specials' ? 'bg-gray-700 text-white border-b-2 border-blue-500' : 'text-gray-400 hover:text-white hover:bg-gray-750'"
                         class="px-8 py-4 font-medium transition-colors"
                     >
-                        Specials
+                        Specials <span class="text-xs ml-1 bg-gray-600 px-1.5 rounded-full text-gray-300" x-text="volume?.special_count"></span>
                     </button>
                 </template>
 
@@ -224,8 +231,14 @@ function volumeDetail() {
         totalItems: 0,
         currentType: 'plain',
 
-        init() {
-            this.loadVolumeSummary();
+        async init() {
+            await this.loadVolumeSummary();
+
+            // Now that volume is loaded, isStandalone will calculate correctly
+            if (this.activeTab === 'issues' && this.isStandalone) {
+                this.currentType = 'all';
+            }
+
             this.fetchIssues();
         },
 
@@ -241,6 +254,13 @@ function volumeDetail() {
             }
         },
 
+        // Check if this volume is a Standalone (No Plain Issues)
+        get isStandalone() {
+            if (!this.volume) return false;
+            // total_issues is specifically the count of "Plain" issues from the API
+            return this.volume.total_issues === 0 && (this.volume.annual_count > 0 || this.volume.special_count > 0);
+        },
+
         switchTab(tabName) {
             this.activeTab = tabName;
 
@@ -251,13 +271,18 @@ function volumeDetail() {
             this.currentItems = [];
 
             // Map tabs to API types
-            const typeMap = {
-                'issues': 'plain',
-                'annuals': 'annual',
-                'specials': 'special'
-            };
+            // Logic Update: If Standalone, 'issues' requests 'all'
+            let typeParam = 'plain';
 
-            this.currentType = typeMap[tabName] || 'plain';
+            if (tabName === 'issues') {
+                typeParam = this.isStandalone ? 'all' : 'plain';
+            } else if (tabName === 'annuals') {
+                typeParam = 'annual';
+            } else if (tabName === 'specials') {
+                typeParam = 'special';
+            }
+
+            this.currentType = typeParam;
             this.fetchIssues();
         },
 
