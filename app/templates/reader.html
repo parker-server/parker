@@ -91,7 +91,7 @@
 
 {% block content %}
 
-<div class="reader-container" x-data="reader()">
+<div class="reader-container" x-data="reader()" tabindex="0" x-on:keydown.window="handleKey($event)">
 
     <div class="reader-toolbar">
         <div class="flex items-center space-x-4 max-w-[50%]">
@@ -131,12 +131,12 @@
         <div class="space-y-4">
             <div class="flex items-center justify-between">
                 <label class="text-sm">Black & White</label>
-                <input type="checkbox" x-model="filters.grayscale" class="rounded bg-gray-700 border-gray-600 text-blue-500 focus:ring-0">
+                <input type="checkbox" x-model="filters.grayscale" class="rounded bg-gray-700 border-gray-600 text-blue-500 focus:ring-0" x-on:change="$el.blur()">
             </div>
 
             <div class="flex items-center justify-between">
                 <label class="text-sm">Sharpen (Scan)</label>
-                <input type="checkbox" x-model="filters.sharpen" class="rounded bg-gray-700 border-gray-600 text-blue-500 focus:ring-0">
+                <input type="checkbox" x-model="filters.sharpen" class="rounded bg-gray-700 border-gray-600 text-blue-500 focus:ring-0" x-on:change="$el.blur()">
             </div>
 
             <div>
@@ -144,7 +144,7 @@
                     <span>Brightness</span>
                     <span x-text="`${filters.brightness}%`"></span>
                 </div>
-                <input type="range" min="50" max="150" x-model="filters.brightness" class="range-slider">
+                <input type="range" min="50" max="150" x-model="filters.brightness" class="range-slider" x-on:change="$el.blur()">
             </div>
 
             <div>
@@ -152,7 +152,7 @@
                     <span>Contrast</span>
                     <span x-text="`${filters.contrast}%`"></span>
                 </div>
-                <input type="range" min="50" max="150" x-model="filters.contrast" class="range-slider">
+                <input type="range" min="50" max="150" x-model="filters.contrast" class="range-slider" x-on:change="$el.blur()">
             </div>
 
             <div class="border-t border-gray-700 pt-3">
@@ -200,7 +200,7 @@
 
             <div class="w-px h-6 bg-gray-700 mx-2"></div>
 
-             <select x-model="fitMode" class="bg-transparent text-xs text-gray-300 focus:outline-none cursor-pointer">
+             <select x-model="fitMode" class="bg-transparent text-xs text-gray-300 focus:outline-none cursor-pointer" x-on:change="$el.blur()">
                 <option value="contain">Fit Screen</option>
                 <option value="width">Fit Width</option>
                 <option value="height">Fit Height</option>
@@ -228,7 +228,7 @@ function reader() {
 
         init() {
             this.loadInitData();
-            this.setupKeyboard();
+            //this.setupKeyboard();
 
             // Restore filters from localStorage
             const savedFilters = localStorage.getItem('readerFilters');
@@ -360,7 +360,60 @@ function reader() {
             div.innerText = msg;
             document.body.appendChild(div);
             setTimeout(() => div.remove(), 2000);
-        }
+        },
+
+        // Centralized Key Handler
+        handleKey(e) {
+            // Ignore shortcuts if user is typing in a text box (future proofing)
+            if (['INPUT', 'TEXTAREA'].includes(e.target.tagName) && e.target.type === 'text') return;
+
+            // Ignore browser shortcuts (Ctrl/Cmd + R, etc)
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+            switch(e.key) {
+                case 'ArrowRight':
+                case ' ': // Spacebar
+                    e.preventDefault(); // Stop scrolling
+                    this.nextPage();
+                    break;
+
+                case 'ArrowLeft':
+                    this.prevPage();
+                    break;
+
+                case 'f':
+                case 'F':
+                    this.toggleFullscreen();
+                    break;
+
+                case ']':
+                    this.goToBook(this.meta.next_comic_id);
+                    break;
+
+                case '[':
+                    this.goToBook(this.meta.prev_comic_id);
+                    break;
+
+                case 'Escape':
+                    // Priority Logic for ESC
+
+                    // 1. If Settings panel is open, close it first
+                    if (this.showSettings) {
+                        this.showSettings = false;
+                        return;
+                    }
+
+                    // 2. If we are just exiting fullscreen (browser handled this),
+                    // we might want to stay on the page.
+                    // However, we can't easily detect "Just Exited Fullscreen" in a synchronous key event.
+                    // Usually, the browser swallows the keydown for exiting fullscreen entirely.
+
+                    // 3. Exit Reader
+                    this.exitReader();
+                    break;
+            }
+        },
+
     }
 }
 </script>
