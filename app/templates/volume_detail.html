@@ -40,7 +40,7 @@
                         <div>
                             <h1 class="text-4xl font-bold text-white mb-3" x-text="`Volume ${volume?.volume_number}`"></h1>
 
-                            <div class="flex items-center gap-3">
+                            <div class="flex items-center gap-3 mb-6">
                                 <template x-if="volume?.resume_to?.comic_id">
                                     {%  include "partials/read_volume_button.html" %}
                                 </template>
@@ -53,7 +53,7 @@
                                 {% endwith %}
                             </div>
 
-                            <div class="flex items-center space-x-4 text-sm text-gray-300">
+                            <div class="flex items-center gap-4 text-sm text-gray-300">
                                 <template x-if="!isStandalone">
                                     <span class="bg-blue-900/50 px-3 py-1 rounded-full border border-blue-800 text-blue-100" x-text="`${volume?.total_issues || 0} Issues`"></span>
                                 </template>
