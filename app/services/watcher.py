@@ -7,6 +7,7 @@ from watchdog.events import FileSystemEventHandler
 from app.database import SessionLocal
 from app.models.library import Library
 from app.services.scan_manager import scan_manager
+from app.config import settings
 
 
 class LibraryEventHandler(FileSystemEventHandler):
@@ -128,7 +129,7 @@ class LibraryWatcher:
                 if lib.id not in self.watches:
                     try:
                         print(f"Starting watch for: {lib.path}")
-                        handler = LibraryEventHandler(lib.id)
+                        handler = LibraryEventHandler(lib.id, settings.batch_window_seconds)
                         watch = self.observer.schedule(handler, lib.path, recursive=True)
 
                         # Store both so we can cancel the handler later
