@@ -81,7 +81,11 @@
                 
                 <div class="flex items-center gap-3 mt-4 text-sm text-gray-300">
                     <span x-text="comic?.year" class="bg-gray-700 px-2 py-1 rounded"></span>
-                    <a :href="`/search?field=publisher&value=${encodeURIComponent(comic?.publisher)}&operator=equal`" class="hover:text-blue-400 transition-colors" x-show="comic?.publisher" x-text="comic?.publisher"></a>
+
+                    {% with publisher_ref="comic?.publisher" %}
+                        {% include "partials/publisher_link.html" %}
+                    {% endwith %}
+
                     <template x-if="comic?.format">
                         <span class="border border-gray-600 px-2 py-1 rounded uppercase text-xs tracking-wide" x-text="comic?.format"></span>
                     </template>
