@@ -63,12 +63,14 @@ class ScanManager:
         """Create a new job record in the database"""
         db = SessionLocal()
         try:
-            # Check for existing pending/running job to avoid duplicates
+            # CHANGED: Only block if there is already a PENDING job.
+            # If a job is RUNNING, we allow adding ONE pending job to the queue
+            # so it runs immediately after the current one finishes.
             # Note: We check for SCAN jobs specifically to avoid blocking thumbnails
             existing = db.query(ScanJob).filter(
                 ScanJob.library_id == library_id,
                 ScanJob.job_type == JobType.SCAN,
-                ScanJob.status.in_([JobStatus.PENDING, JobStatus.RUNNING])
+                ScanJob.status == JobStatus.PENDING
             ).first()
 
             if existing:

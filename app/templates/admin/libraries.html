@@ -83,6 +83,19 @@
                     <input type="text" x-model="form.path" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white focus:border-blue-500 outline-none" placeholder="/comics/dc">
                     <p class="text-xs text-gray-500 mt-1">Server-side path where files are located.</p>
                 </div>
+                <div>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            x-model="form.watch_mode"
+                            class="rounded bg-gray-900 border-gray-700 text-blue-600 focus:ring-blue-500 w-5 h-5"
+                        >
+                        <div>
+                            <span class="block text-sm text-gray-300">Watch Folder</span>
+                            <span class="block text-xs text-gray-500">Automatically scan when files are added or changed.</span>
+                        </div>
+                    </label>
+                </div>
 
                 <div class="flex justify-end gap-2 mt-6">
                     <button @click="showModal = false" class="text-gray-400 hover:text-white px-4 py-2 transition-colors">Cancel</button>
@@ -102,7 +115,7 @@ function libraryManager() {
         libraries: [],
         showModal: false,
         isEditing: false,
-        form: { id: null, name: '', path: '' },
+        form: { id: null, name: '', path: '', watch_mode: false },
         pollInterval: null,
 
         init() {
@@ -133,7 +146,7 @@ function libraryManager() {
 
         openEditModal(lib) {
             this.isEditing = true;
-            this.form = { id: lib.id, name: lib.name, path: lib.path };
+            this.form = { id: lib.id, name: lib.name, path: lib.path, watch_mode: lib.watch_mode };
             this.showModal = true;
         },
 
@@ -143,7 +156,8 @@ function libraryManager() {
 
             const payload = {
                 name: this.form.name,
-                path: this.form.path
+                path: this.form.path,
+                watch_mode: this.form.watch_mode,
             };
 
             try {

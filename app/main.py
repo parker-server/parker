@@ -25,6 +25,7 @@ from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.job import ScanJob
 from app.models.user import User
 
+from app.services.watcher import library_watcher
 
 # API Routes
 from app.api import libraries, comics, reader, progress, series, volumes, search
@@ -75,6 +76,9 @@ async def lifespan(app: FastAPI):
         db.close()
     # --------------------------------------
 
+    # START WATCHER
+    library_watcher.start()
+
     logger.info("Comic Server starting up...")
     logger.info("Frontend available at http://localhost:8000")
     logger.info("API docs available at http://localhost:8000/docs")
@@ -82,6 +86,9 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown
     logger.info("Comic Server shutting down...")
+
+    # STOP WATCHER
+    library_watcher.stop()
     print("Shutting down")
 
 

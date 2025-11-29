@@ -7,6 +7,7 @@ from app.models.library import Library
 from app.models.series import Series
 from app.models.comic import Comic, Volume
 from app.services.scan_manager import scan_manager
+from app.services.watcher import library_watcher
 from app.api.deps import PaginationParams, PaginatedResponse, SessionDep, CurrentUser, AdminUser
 
 router = APIRouter()
@@ -77,6 +78,7 @@ async def get_library_series(
 class LibraryCreate(BaseModel):
     name: str
     path: str
+    watch_mode: bool = False
 
 @router.post("/")
 async def create_library(lib_in: LibraryCreate,
@@ -94,12 +96,18 @@ async def create_library(lib_in: LibraryCreate,
     db.add(library)
     db.commit()
     db.refresh(library)
+
+    # Notify Watcher
+    if library.watch_mode:
+        library_watcher.refresh_watches()
+
     return library
 
 # Schema for updates
 class LibraryUpdate(BaseModel):
     name: Optional[str] = None
     path: Optional[str] = None
+    watch_mode: Optional[bool] = None
 
 @router.patch("/{library_id}")
 async def update_library(
@@ -125,8 +133,15 @@ async def update_library(
         # Note: Changing path doesn't delete existing comics, but the next scan
         # might mark them as 'missing' if the new path is totally different.
 
+    if updates.watch_mode is not None:
+        library.watch_mode = updates.watch_mode
+
     db.commit()
     db.refresh(library)
+
+    # Notify Watcher (Always refresh, covering both Enable and Disable cases)
+    library_watcher.refresh_watches()
+
     return library
 
 @router.delete("/{library_id}")

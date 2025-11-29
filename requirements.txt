@@ -27,6 +27,6 @@ pillow>=10.2.0
 rarfile>=4.1
 lxml>=5.1.0
 #py7zr==0.20.8
-
+watchdog>=3.0.0
 
 
