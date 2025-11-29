@@ -86,6 +86,14 @@
                         {% include "partials/publisher_link.html" %}
                     {% endwith %}
 
+                    <template x-if="comic?.publisher && comic?.imprint">
+                        <span class="text-gray-600">|</span>
+                    </template>
+
+                    {% with imprint_ref="comic?.imprint" %}
+                        {% include "partials/imprint_link.html" %}
+                    {% endwith %}
+
                     <template x-if="comic?.format">
                         <span class="border border-gray-600 px-2 py-1 rounded uppercase text-xs tracking-wide" x-text="comic?.format"></span>
                     </template>

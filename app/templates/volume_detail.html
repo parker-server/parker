@@ -48,9 +48,19 @@
 
                             <div class="mb-4 text-gray-300 flex items-center gap-2">
                                 <span class="text-sm text-gray-500">Publisher:</span>
+
                                 {% with publisher_ref="volume?.publisher" %}
                                     {% include "partials/publisher_link.html" %}
                                 {% endwith %}
+
+<template x-if="volume?.publisher && volume?.imprint">
+        <span class="text-gray-600">|</span>
+    </template>
+
+{% with imprint_ref="volume?.imprint" %}
+    {% include "partials/imprint_link.html" %}
+{% endwith %}
+
                             </div>
 
                             <div class="flex items-center gap-4 text-sm text-gray-300">

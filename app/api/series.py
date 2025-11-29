@@ -71,7 +71,8 @@ async def get_series_detail(series_id: int, db: SessionDep, current_user: Curren
         func.count(case((is_annual, 1))).label('annual_count'),
         func.count(case((is_special, 1))).label('special_count'),
         func.min(Comic.year).label('start_year'),
-        func.max(Comic.publisher).label('publisher')
+        func.max(Comic.publisher).label('publisher'),
+        func.max(Comic.imprint).label('imprint')
     ).filter(Comic.volume_id.in_(volume_ids)).first()
 
     # 3. Related Content & Metadata (Collections, Reading Lists, Credits)
@@ -144,6 +145,7 @@ async def get_series_detail(series_id: int, db: SessionDep, current_user: Curren
         "name": series.name,
         "library_id": series.library_id,
         "publisher": stats.publisher,
+        "imprint": stats.imprint,
         "start_year": stats.start_year,
         "volume_count": len(volumes),
         "total_issues": stats.plain_count,

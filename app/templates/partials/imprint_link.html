@@ -1,0 +1,17 @@
+<a
+    x-show="{{ imprint_ref }}"
+    :href="`/search?field=imprint&value=${encodeURIComponent({{ imprint_ref }})}&operator=equal`"
+    class="inline-flex items-center gap-2 hover:text-blue-400 transition-colors group"
+    title="Browse Imprint"
+>
+    <template x-if="{{ imprint_ref }}">
+        <img
+            :src="`/static/img/imprints/${ {{ imprint_ref }} }.png`"
+            @error="$el.style.display = 'none'"
+            @load="$el.style.display = ''"
+            class="h-6 max-w-[100px] object-contain"
+            alt=""
+        >
+    </template>
+    <span x-text="{{ imprint_ref }}" class="font-medium text-gray-400"></span>
+</a>

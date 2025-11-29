@@ -66,8 +66,17 @@
                     <div class="space-y-2 text-lg">
                         <div class="text-gray-400 flex items-center gap-2">
                             <span class="text-gray-500">Publisher:</span>
+
                             {% with publisher_ref="series?.publisher" %}
                                 {% include "partials/publisher_link.html" %}
+                            {% endwith %}
+
+                            <template x-if="series?.publisher && series?.imprint">
+                                <span class="text-gray-600">|</span>
+                            </template>
+
+                            {% with imprint_ref="series?.imprint" %}
+                                {% include "partials/imprint_link.html" %}
                             {% endwith %}
 
                             <span x-show="!series?.publisher" class="text-gray-600 text-sm italic">...</span>
