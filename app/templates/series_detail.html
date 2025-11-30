@@ -145,6 +145,16 @@
                     </button>
                 </template>
 
+                <template x-if="series?.story_arcs?.length > 0">
+                    <button
+                        @click="switchTab('arcs')"
+                        :class="activeTab === 'arcs' ? 'bg-gray-700 text-white border-b-2 border-blue-500' : 'text-gray-400 hover:text-white hover:bg-gray-750'"
+                        class="px-6 py-4 font-medium whitespace-nowrap transition-colors"
+                    >
+                        Story Arcs <span class="text-xs ml-1 bg-gray-600 px-1.5 rounded-full text-gray-300" x-text="series?.story_arcs.length"></span>
+                    </button>
+                </template>
+
                 <template x-if="hasRelatedContent">
                     <button
                         @click="switchTab('related')"
@@ -216,6 +226,18 @@
                         <p>No comics found in this category.</p>
                     </div>
                 </div>
+
+                <div x-show="activeTab === 'arcs'">
+                    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
+                        <template x-for="arc in series?.story_arcs" :key="arc.name">
+
+                            {% include "partials/arc_card.html" %}
+
+
+                        </template>
+                    </div>
+                </div>
+
 
                 <div x-show="activeTab === 'related'">
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -388,7 +410,7 @@ function seriesDetail() {
             this.activeTab = tabName;
 
             // If details, related or volumes, we don't need to fetch issues
-            if (['volumes', 'related', 'details'].includes(tabName)) return;
+            if (['volumes', 'related', 'details', 'arcs'].includes(tabName)) return;
 
             // Reset pagination
             this.currentPage = 1;
