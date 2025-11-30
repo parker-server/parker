@@ -75,6 +75,58 @@ async def get_series_detail(series_id: int, db: SessionDep, current_user: Curren
         func.max(Comic.imprint).label('imprint')
     ).filter(Comic.volume_id.in_(volume_ids)).first()
 
+    # [NEW] Story Arc Aggregation
+    # We fetch enough data to Sort and Group
+    # Note: We use the same sorting logic as the main list to ensure "First" is actually "First"
+    arc_issues = db.query(Comic.id, Comic.story_arc, Comic.number, Volume.volume_number) \
+        .join(Volume) \
+        .filter(Comic.volume_id.in_(volume_ids)) \
+        .filter(Comic.story_arc != None, Comic.story_arc != "") \
+        .order_by(Volume.volume_number, func.cast(Comic.number, Float), Comic.number) \
+        .all()
+
+    # Process in Python
+    # Since we sorted via SQL, the first time we encounter an Arc, it is the first issue.
+    story_arcs_map = {}
+
+    for row in arc_issues:
+        name = row.story_arc
+        if name not in story_arcs_map:
+            story_arcs_map[name] = {
+                "name": name,
+                "first_issue_id": row.id,  # This is the entry point for the Reader
+                "count": 0
+            }
+        story_arcs_map[name]["count"] += 1
+
+    # Convert to list and sort alphabetically by Arc Name
+    story_arcs_data = sorted(story_arcs_map.values(), key=lambda x: x['name'])
+
+
+
+    # Aggregate Story Arcs
+    # We group by the story_arc string and grab the ID of the first issue (min number)
+    # to use as the thumbnail for the Arc Card.
+    # Note: We filter out None and empty strings
+    arcs_query = db.query(
+        Comic.story_arc,
+        func.min(Comic.id).label('first_issue_id'),
+        func.count(Comic.id).label('count')
+    ).filter(
+        Comic.volume_id.in_(volume_ids),
+        Comic.story_arc != None,
+        Comic.story_arc != ""
+    ).group_by(Comic.story_arc).all()
+
+    story_arcs_data = [
+        {
+            "name": arc[0],
+            "first_issue_id": arc[1],
+            "count": arc[2]
+        }
+        for arc in arcs_query
+    ]
+
     # 3. Related Content & Metadata (Collections, Reading Lists, Credits)
     related_collections = db.query(Collection).join(CollectionItem).join(Comic).filter(
         Comic.volume_id.in_(volume_ids)).distinct().all()
@@ -165,6 +217,7 @@ async def get_series_detail(series_id: int, db: SessionDep, current_user: Curren
         "volumes": volumes_data,
         "collections": [{"id": c.id, "name": c.name, "description": c.description} for c in related_collections],
         "reading_lists": [{"id": l.id, "name": l.name, "description": l.description} for l in related_reading_lists],
+        "story_arcs": sorted(story_arcs_data, key=lambda x: x['name']),
         "details": {
             "writers": sorted([r[0] for r in writers]),
             "pencillers": sorted([r[0] for r in pencillers]),
