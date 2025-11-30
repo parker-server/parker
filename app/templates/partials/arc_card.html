@@ -1,25 +1,24 @@
-<div class="group relative bg-gray-700/50 rounded-lg overflow-hidden border border-gray-700 hover:border-blue-500 transition-colors cursor-pointer shadow-lg">
+<div class="group relative cursor-pointer" @click="filterByArc(arc.name)">
 
-    <div class="aspect-[2/3] w-full relative overflow-hidden">
+    <div class="aspect-[2/3] bg-gray-700 rounded-lg overflow-hidden relative shadow-md transition-transform duration-200 group-hover:scale-[1.02]">
 
         <img :src="`/api/comics/${arc.first_issue_id}/thumbnail?width=300&height=450`"
-             class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105 group-hover:opacity-40">
+             class="w-full h-full object-cover transition-opacity duration-300 group-hover:opacity-40">
 
         <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
              <a :href="`/reader/${arc.first_issue_id}`"
                 @click.stop
-                class="bg-blue-600 hover:bg-blue-500 text-white rounded-full p-4 shadow-xl transform hover:scale-110 transition-transform"
+                class="bg-blue-600 hover:bg-blue-500 text-white rounded-full p-3 shadow-xl transform hover:scale-110 transition-transform"
                 title="Start Reading Arc">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" viewBox="0 0 20 20" fill="currentColor">
                     <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" />
                 </svg>
              </a>
         </div>
-
     </div>
 
-    <div class="p-4">
-        <h4 class="font-bold text-white truncate" x-text="arc.name"></h4>
-        <p class="text-xs text-gray-400 mt-1" x-text="`${arc.count} Issues`"></p>
+    <div class="mt-2">
+        <h4 class="font-bold text-white text-sm truncate leading-tight" x-text="arc.name" :title="arc.name"></h4>
+        <p class="text-xs text-gray-400 mt-0.5" x-text="`${arc.count} Issue${arc.count !== 1 ? 's' : ''}`"></p>
     </div>
 </div>
