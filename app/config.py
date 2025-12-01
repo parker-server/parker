@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     #unrar_path: str = "unrar"
 
     # Storage paths
+    log_dir: Path = Path("storage/logs")
     cache_dir: Path = Path("./storage/cache")
     cover_dir: Path = Path("./storage/cover")
     backup_dir: Path = Path("./storage/backup")
@@ -28,7 +29,7 @@ class Settings(BaseSettings):
     supported_extensions: list = [".cbz", ".cbr"]
 
     #batch_window_seconds: int = 600 # 10 mins
-    batch_window_seconds: int = 300
+    batch_window_seconds: int = 200
 
     class Config:
         env_file = ".env"
