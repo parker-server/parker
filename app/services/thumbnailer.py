@@ -1,3 +1,4 @@
+import logging
 from sqlalchemy.orm import Session
 from app.models.comic import Comic, Volume
 from app.models.library import Library
@@ -11,6 +12,7 @@ class ThumbnailService:
         self.db = db
         self.library_id = library_id
         self.image_service = ImageService()
+        self.logger = logging.getLogger(__name__)
 
     def process_missing_thumbnails(self, force: bool = False):
         """
@@ -86,6 +88,7 @@ class ThumbnailService:
 
             except Exception as e:
                 print(f"Thumbnail error {comic.id}: {e}")
+                self.logger.error(f"Thumbnail error {comic.id}: {e}")
                 stats["errors"] += 1
 
         return stats
