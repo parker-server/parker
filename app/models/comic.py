@@ -41,6 +41,10 @@ class Comic(Base):
     web = Column(String)
     notes = Column(Text)
 
+    # Total issue count for the volume (from ComicInfo.xml <Count>)
+    # Used to determine if a series is "Ended" and calculate missing issues.
+    count = Column(Integer, nullable=True)
+
     # Credits now handled via relationships (removed individual fields)
     credits = relationship("ComicCredit", back_populates="comic", cascade="all, delete-orphan")
 
