@@ -75,6 +75,10 @@ async def get_series_detail(series_id: int, db: SessionDep, current_user: Curren
         func.max(Comic.imprint).label('imprint')
     ).filter(Comic.volume_id.in_(volume_ids)).first()
 
+    # Logic: Is this a Standalone Series?
+    # No plain issues, but has Annuals or Specials.
+    is_standalone = (stats.plain_count == 0 and (stats.annual_count > 0 or stats.special_count > 0))
+
     # [NEW] Story Arc Aggregation
     # We fetch enough data to Sort and Group
     # Note: We use the same sorting logic as the main list to ensure "First" is actually "First"
@@ -187,6 +191,7 @@ async def get_series_detail(series_id: int, db: SessionDep, current_user: Curren
         "total_issues": stats.plain_count,
         "annual_count": stats.annual_count,
         "special_count": stats.special_count,
+        "is_standalone": is_standalone,
         "starred": is_starred,
         "first_issue_id": first_issue.id if first_issue else None,
         "volumes": volumes_data,

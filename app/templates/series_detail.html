@@ -407,7 +407,7 @@ function seriesDetail() {
         // Logic: No plain issues, but DOES have other content (Annuals/Specials)
         get isStandalone() {
             if (!this.series) return false;
-            return this.series.total_issues === 0 && (this.series.annual_count > 0 || this.series.special_count > 0);
+            return this.series.is_standalone;
         },
 
         switchTab(tabName) {
