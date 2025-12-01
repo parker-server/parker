@@ -171,7 +171,7 @@ function libraryManager() {
                     this.showModal = false;
                     this.loadLibraries();
                     this.form = { id: null, name: '', path: '' };
-                    // showToast("Library saved", 'success'); // If you have toast helper
+                    window.comicServer.showToast("Library saved", 'success');
                 } else {
                     const err = await res.json();
                     alert("Error: " + (err.detail || "Operation failed"));
@@ -205,7 +205,7 @@ function libraryManager() {
             const res = await fetch(`/api/libraries/${lib.id}/scan?force=${force}`, { method: 'POST' });
             if (res.ok) {
                 // We rely on the pollInterval to update the status from here
-                // showToast("Scan started", 'info');
+                window.comicServer.showToast("Scan started", 'info');
             } else {
                 alert("Failed to start scan");
                 lib.is_scanning = false;
