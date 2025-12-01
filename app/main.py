@@ -11,20 +11,21 @@ from pathlib import Path
 from app.database import engine, Base
 from app.config import settings
 from app.database import SessionLocal
+from app.logging import log_config
 from app.core.security import get_password_hash
 from app.services.settings_service import SettingsService
 from app.services.scheduler import scheduler_service
 
 # IMPORTANT: Import all models here so SQLAlchemy knows about them
-from app.models.library import Library
-from app.models.series import Series
-from app.models.comic import Volume, Comic
-from app.models.tags import Character, Team, Location
-from app.models.credits import Person, ComicCredit
-from app.models.reading_list import ReadingList, ReadingListItem
-from app.models.collection import Collection, CollectionItem
-from app.models.reading_list import ReadingList, ReadingListItem
-from app.models.job import ScanJob
+# from app.models.library import Library
+# from app.models.series import Series
+# from app.models.comic import Volume, Comic
+# from app.models.tags import Character, Team, Location
+# from app.models.credits import Person, ComicCredit
+# from app.models.reading_list import ReadingList, ReadingListItem
+# from app.models.collection import Collection, CollectionItem
+# from app.models.reading_list import ReadingList, ReadingListItem
+
 from app.models.user import User
 
 from app.services.watcher import library_watcher
@@ -40,8 +41,9 @@ from app.api import tasks, jobs, stats, settings as settings_api
 from app.routers import pages, admin
 
 # Setup logging
-logging.basicConfig(level=logging.INFO)
+#logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+logger = log_config.setup_logging("INFO")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -49,6 +51,7 @@ async def lifespan(app: FastAPI):
     print(f"Starting {settings.app_name}")
 
     # Ensure directories exist
+    settings.log_dir.mkdir(parents=True, exist_ok=True)
     Path("storage/database").mkdir(parents=True, exist_ok=True)
     settings.cache_dir.mkdir(parents=True, exist_ok=True)
     settings.cover_dir.mkdir(parents=True, exist_ok=True)
@@ -81,6 +84,11 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
     # --------------------------------------
+
+    # Setup logging
+    log_level = "info" #await get_log_level_from_db()
+    logger = log_config.setup_logging("INFO")
+    logger.info("Application starting up")
 
     # START WATCHER
     library_watcher.start()
