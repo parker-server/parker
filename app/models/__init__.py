@@ -11,6 +11,7 @@ from app.models.job import ScanJob
 from app.models.user import User
 from app.models.interactions import UserSeries
 from app.models.saved_search import SavedSearch
+from app.models.setting import SystemSetting
 
 # This ensures all models are loaded before relationships are configured
 __all__ = [
@@ -24,6 +25,8 @@ __all__ = [
     'User',
     'UserSeries',
     'SavedSearch',
+    'SystemSetting',
+
 ]
 
 
