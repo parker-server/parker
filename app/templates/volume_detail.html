@@ -53,13 +53,13 @@
                                     {% include "partials/publisher_link.html" %}
                                 {% endwith %}
 
-<template x-if="volume?.publisher && volume?.imprint">
-        <span class="text-gray-600">|</span>
-    </template>
+                                <template x-if="volume?.publisher && volume?.imprint">
+                                    <span class="text-gray-600">|</span>
+                                </template>
 
-{% with imprint_ref="volume?.imprint" %}
-    {% include "partials/imprint_link.html" %}
-{% endwith %}
+                                {% with imprint_ref="volume?.imprint" %}
+                                    {% include "partials/imprint_link.html" %}
+                                {% endwith %}
 
                             </div>
 
@@ -77,6 +77,35 @@
                                 </template>
 
                                 <span x-show="volume?.start_year" x-text="`${volume?.start_year} - ${volume?.end_year || 'Present'}`"></span>
+
+                                <span x-show="volume?.status"
+                                      class="px-2 py-0.5 rounded text-xs uppercase font-bold tracking-wide border"
+                                      :class="volume?.status === 'ongoing' ? 'bg-green-900/50 text-green-200 border-green-800' : 'bg-gray-700 text-gray-400 border-gray-600'"
+                                      x-text="volume?.status">
+                                </span>
+
+                                <div x-show="volume?.status === 'ended'" class="text-sm">
+                                    <template x-if="volume?.is_completed">
+                                        <span class="text-green-400 flex items-center gap-1 font-medium select-none bg-green-900/20 px-3 py-2 rounded border border-green-900/30 inline-block">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                                            </svg>
+                                            Library Complete
+                                        </span>
+                                    </template>
+
+                                    <template x-if="!volume?.is_completed && volume?.missing_issues?.length > 0">
+                                        <div class="text-orange-300 bg-orange-900/20 px-3 py-2 rounded border border-orange-900/50 inline-flex items-center gap-2 max-w-xl">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-orange-400 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                                                <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                                            </svg>
+                                            <div class="flex-1">
+                                                <span class="font-bold">Missing:</span>
+                                                <span class="text-orange-200" :title="volume.missing_issues.join(', ')" x-text="formatMissing(volume.missing_issues)"></span>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
 
                             </div>
 
@@ -344,7 +373,39 @@ function volumeDetail() {
             if (newPage > maxPage) return;
             this.currentPage = newPage;
             this.fetchIssues();
+        },
+
+        // Helper to group numbers into ranges (1,2,3 -> "1-3")
+        formatMissing(issues) {
+
+            if (!issues || issues.length === 0) return "";
+
+            const ranges = [];
+            let start = issues[0];
+            let prev = issues[0];
+
+            for (let i = 1; i < issues.length; i++) {
+                if (issues[i] !== prev + 1) {
+                    // Gap detected, push previous range
+                    ranges.push(start === prev ? `#${start}` : `#${start}-${prev}`);
+                    start = issues[i];
+                }
+                prev = issues[i];
+            }
+            // Push final range
+            ranges.push(start === prev ? `#${start}` : `#${start}-${prev}`);
+
+            // Truncation Logic (e.g., show max 5 ranges)
+            if (ranges.length > 5) {
+                const visible = ranges.slice(0, 5).join(", ");
+                const remaining = issues.length - (issues.indexOf(prev) + 1); // roughly calc remaining
+                // Simpler: just say "+ X more ranges"
+                return `${visible}...`;
+            }
+
+            return ranges.join(", ");
         }
+
     }
 }
 </script>
