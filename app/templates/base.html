@@ -13,10 +13,24 @@
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    
+
     <!-- Custom CSS -->
     <link rel="stylesheet" href="/static/css/style.css">
-    
+
+    <script>
+        // Global Configuration
+        window.APP_CONFIG = {
+            baseUrl: "{{ base_url }}" || ""
+        };
+
+        // JS Helper Function
+        window.url = function(path) {
+            const base = window.APP_CONFIG.baseUrl;
+            const cleanPath = path.startsWith('/') ? path.slice(1) : path;
+            return base ? `${base}/${cleanPath}` : `/${cleanPath}`;
+        };
+    </script>
+
     {% block extra_head %}{% endblock %}
 </head>
 <body class="bg-gray-900 text-gray-100 min-h-screen" x-data="{ mobileMenuOpen: false }">

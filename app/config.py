@@ -1,3 +1,4 @@
+import os
 from pydantic_settings import BaseSettings
 from pathlib import Path
 
@@ -5,6 +6,11 @@ from pathlib import Path
 class Settings(BaseSettings):
     app_name: str = "Comic Server"
     database_url: str = "sqlite:///./storage/database/comics.db"
+    #database_url: str = "sqlite:///./storage/database/temp.db"
+
+    # --- BASE URL ---
+    # Default to "/" for root, or "/comics" for subpath
+    base_url: str = os.getenv("BASE_URL", "/")
 
     # --- SECURITY SETTINGS ---
     # In production, generating a long random string is best:
@@ -29,10 +35,18 @@ class Settings(BaseSettings):
     supported_extensions: list = [".cbz", ".cbr"]
 
     #batch_window_seconds: int = 600 # 10 mins
-    batch_window_seconds: int = 200
+    batch_window_seconds: int = 300
 
     class Config:
         env_file = ".env"
+
+    # Helper to clean up the URL (ensure it starts with / and no trailing /)
+    @property
+    def clean_base_url(self):
+        url = self.base_url.strip()
+        if not url.startswith("/"):
+            url = f"/{url}"
+        return url.rstrip("/")
 
 
 settings = Settings()
