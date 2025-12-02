@@ -32,6 +32,16 @@
 
                 {% include "partials/read_comic_button.html" %}
 
+                <button
+                    x-on:click="$dispatch('open-add-to-pull-list', { id: comicId, type: 'comic' })"
+                    class="w-full bg-gray-700 hover:bg-gray-600 text-gray-200 font-bold py-2 px-4 rounded-lg transition-colors border border-gray-600 flex items-center justify-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
+                    </svg>
+                    Add to Pull List
+                </button>
+
+
                 <div class="grid grid-cols-2 gap-3">
                     <button @click="markRead()" class="bg-gray-700 hover:bg-green-700 hover:text-white text-gray-200 py-2 px-4 rounded-lg transition-colors border border-gray-600">
                         ✓ Mark Read
