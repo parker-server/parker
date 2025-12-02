@@ -4,23 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Comic Server{% endblock %}</title>
-    
-    <!-- HTMX -->
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-    
-    <!-- Alpine.js -->
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/cdn.min.js"></script>
-    
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-
-    <!-- Custom CSS -->
-    <link rel="stylesheet" href="/static/css/style.css">
 
     <script>
         // Global Configuration
         window.APP_CONFIG = {
-            baseUrl: "{{ base_url }}" || ""
+            baseUrl: "{{ base_url }}" || "",
         };
 
         // JS Helper Function
@@ -31,6 +19,18 @@
         };
     </script>
 
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    
+    <!-- Alpine.js -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/cdn.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url('static/css/style.css') }}">
+
     {% block extra_head %}{% endblock %}
 </head>
 <body class="bg-gray-900 text-gray-100 min-h-screen" x-data="{ mobileMenuOpen: false }">
@@ -39,16 +39,16 @@
         <div class="container mx-auto px-4">
             <div class="flex items-center justify-between h-16">
                 <div class="flex items-center space-x-8">
-                    <a href="/" class="text-xl font-bold text-blue-400 hover:text-blue-300">
+                    <a href="{{ url('/') }}" class="text-xl font-bold text-blue-400 hover:text-blue-300">
                         📚 Comic Server
                     </a>
                     <!-- Desktop Navigation -->
                     <div class="hidden md:flex space-x-4">
-                        <a href="/" class="nav-link">Libraries</a>
-                        <a href="/continue-reading" class="nav-link">Continue Reading</a>
-                        <a href="/collections" class="nav-link">Collections</a>
-                        <a href="/reading-lists" class="nav-link">Reading Lists</a>
-                        <a href="/search" class="nav-link">Search</a>
+                        <a href="{{ url('/') }}" class="nav-link">Libraries</a>
+                        <a href="{{ url('/continue-reading') }}" class="nav-link">Continue Reading</a>
+                        <a href="{{ url('/collections') }}" class="nav-link">Collections</a>
+                        <a href="{{ url('/reading-lists') }}" class="nav-link">Reading Lists</a>
+                        <a href="{{ url('/search') }}" class="nav-link">Search</a>
                     </div>
                 </div>
                 
@@ -113,11 +113,11 @@
                 x-transition:leave-end="opacity-0 transform -translate-y-2"
                 class="md:hidden pb-4"
             >
-                <a href="/" class="block py-2 nav-link">Libraries</a>
-                <a href="/continue-reading" class="block py-2 nav-link">Continue Reading</a>
-                <a href="/collections" class="block py-2 nav-link">Collections</a>
-                <a href="/reading-lists" class="block py-2 nav-link">Reading Lists</a>
-                <a href="/search" class="block py-2 nav-link">Search</a>
+                <a href="{{ url('/') }}" class="block py-2 nav-link">Libraries</a>
+                <a href="{{ url('/continue-reading') }}" class="block py-2 nav-link">Continue Reading</a>
+                <a href="{{ url('/collections') }}" class="block py-2 nav-link">Collections</a>
+                <a href="{{ url('/reading-lists') }}" class="block py-2 nav-link">Reading Lists</a>
+                <a href="{{ url('/search') }}" class="block py-2 nav-link">Search</a>
 
                 <div class="px-4 py-2">
                     {% include "partials/search_widget.html" %}
@@ -140,7 +140,7 @@
 
 
     <!-- Custom JS -->
-    <script src="/static/js/app.js"></script>
+    <script src="{{ url('/static/js/app.js') }}"></script>
 
     <script>
         document.addEventListener('alpine:init', () => {
@@ -158,7 +158,7 @@
 
                 async checkStatus() {
                     try {
-                        const response = await fetch('/api/jobs/active');
+                        const response = await fetch(window.url('/api/jobs/active'));
                         const data = await response.json();
 
                         if (data.active) {
