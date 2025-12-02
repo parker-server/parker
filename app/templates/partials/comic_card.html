@@ -1,6 +1,13 @@
-<div class="relative">
+<div class="relative" x-data="{
+        get readerQueryParams() {
+            if(typeof readingList !== 'undefined') { return `context_type=reading_list&context_id=${this.readingListId}`; }
+            else if(typeof collection !== 'undefined') { return `context_type=collection&context_id=${this.collection.id}`; }
+            else { return ''; }
+        }
 
-    <a :href="`/reader/${comic.id}`" class="block group relative cursor-pointer">
+}">
+
+    <a :href="`/reader/${comic.id}?${readerQueryParams}`" class="block group relative cursor-pointer">
         <div class="aspect-[2/3] bg-gray-700 rounded-lg overflow-hidden relative shadow-md transition-transform duration-200 group-hover:scale-[1.02]">
 
             <img
