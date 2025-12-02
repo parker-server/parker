@@ -72,12 +72,20 @@ async def get_comic_reader_init(comic_id: int,
         ids = [i[0] for i in items]
 
     elif context_type == "collection" and context_id:
-        # 3. Collection Strategy
-        items = db.query(CollectionItem.comic_id).filter(
-            CollectionItem.collection_id == context_id
+        # 3. Collection Strategy (Thematic)
+        # Collections usually don't have explicit order
+        # Simplified Sort: Year -> Series -> Number
+        items = db.query(CollectionItem.comic_id) \
+            .join(Comic, CollectionItem.comic_id == Comic.id) \
+            .join(Volume, Comic.volume_id == Volume.id) \
+            .join(Series, Volume.series_id == Series.id) \
+            .filter(CollectionItem.collection_id == context_id) \
+            .order_by(
+                Comic.year.asc(),  # 1. Chronological groups
+        Series.name.asc(),  # 2. Alphabetical by Title
+                func.cast(Comic.number, Float)  # 3. Numerical order (essential if multiple issues of same series exist)
         ).all()
-        # Collections usually don't have explicit order, but we can sort by Year/Name
-        # or rely on the query order if you added a sort col to CollectionItem
+
         ids = [i[0] for i in items]
 
     elif context_type == "series" and context_id:
