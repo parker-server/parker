@@ -5,6 +5,7 @@ from app.config import settings
 
 templates = Jinja2Templates(directory="app/templates")
 
+
 # URL Helper for Jinja
 def url_builder(path: str) -> str:
     """
@@ -15,34 +16,42 @@ def url_builder(path: str) -> str:
     clean_path = path.lstrip("/")
     return f"{base}/{clean_path}" if base else f"/{clean_path}"
 
+
 # Inject URL data into Templates
 templates.env.globals["url"] = url_builder
 templates.env.globals["base_url"] = settings.clean_base_url
+
 
 # --- Filters ---
 def slugify(value: str) -> str:
     """Convert text to a URL-friendly slug."""
     return re.sub(r'[^a-z0-9]+', '-', value.lower()).strip('-')
 
+
 def format_date(value: datetime, fmt: str = "%Y-%m-%d") -> str:
     """Format a datetime object with a given format string."""
     return value.strftime(fmt) if isinstance(value, datetime) else value
 
+
 def truncate(value: str, length: int = 50) -> str:
     """Truncate text to a certain length with ellipsis."""
     return value[:length] + "…" if len(value) > length else value
+
 
 def pluralize(count: int, singular: str, plural: str = None) -> str:
     if count == 1:
         return singular
     return plural if plural else singular + "s"
 
+
 def humanize_number(value: int) -> str:
     return f"{value:,}"  # adds commas
+
 
 def format_date(value, fmt="%B %d, %Y"):
     from datetime import datetime
     return value.strftime(fmt) if isinstance(value, datetime) else value
+
 
 # Register filters
 templates.env.filters["slugify"] = slugify
@@ -51,4 +60,3 @@ templates.env.filters["truncate"] = truncate
 templates.env.filters["pluralize"] = pluralize
 templates.env.filters["humanize_number"] = humanize_number
 templates.env.filters["format_date"] = format_date
-
