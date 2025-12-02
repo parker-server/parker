@@ -27,7 +27,7 @@
                         <span x-text="`${readingList?.comic_count || 0} comics`"></span>
                     </div>
                 </div>
-                <button class="bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-6 rounded-lg shadow-lg transition-colors flex items-center gap-2" @click="startReading()" x-show="readingList?.comics?.length > 0">
+                <button class="bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-6 rounded-lg shadow-lg transition-colors flex items-center gap-2" x-on:click="startReading()" x-show="readingList?.comics?.length > 0">
                     <span class="text-xl">📖</span> Start Reading
                 </button>
             </div>
@@ -63,7 +63,7 @@ function readingListDetail() {
 
         startReading() {
             if (this.readingList?.comics?.length > 0) {
-                window.location.href = `/reader/${this.readingList.comics[0].id}`;
+                window.location.href = `/reader/${this.readingList.comics[0].id}?context_type=reading_list&context_id=${this.readingList.id}`;
             }
         }
     }

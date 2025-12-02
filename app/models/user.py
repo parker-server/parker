@@ -28,9 +28,13 @@ class User(Base):
     last_login = Column(DateTime, nullable=True)
 
     # Relationships
+
     # When a user is deleted, delete their reading history too
     reading_progress = relationship("ReadingProgress", back_populates="user", cascade="all, delete-orphan")
 
     # Many-to-Many Relationship
     # We use a string "Library" to avoid circular imports if Library imports User
     accessible_libraries = relationship("Library", secondary=user_libraries, backref="allowed_users")
+
+    # Pull Lists Relationship. use the string "PullList" to avoid circular imports.
+    pull_lists = relationship("PullList", back_populates="user", cascade="all, delete-orphan")

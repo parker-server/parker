@@ -1,0 +1,284 @@
+{% extends "base.html" %}
+
+{% block title %}Pull List Details - Comic Server{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+<style>
+    .sortable-ghost { opacity: 0.4; background: #374151; }
+    .sortable-drag { cursor: grabbing; }
+    .drag-handle { cursor: grab; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div x-data="pullListDetail()" class="max-w-4xl mx-auto">
+    
+    <div class="mb-8">
+        <div class="flex items-center space-x-2 text-gray-400 mb-4 text-sm">
+            <a href="/pull-lists" class="hover:text-white">Pull Lists</a>
+            <span>/</span>
+            <span class="text-white" x-text="list?.name"></span>
+        </div>
+
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 bg-gray-800 p-6 rounded-lg border border-gray-700 shadow-lg">
+            <div>
+                <h1 class="text-4xl font-bold text-white mb-2" x-text="list?.name"></h1>
+                <p class="text-gray-400" x-text="list?.description || 'Curated reading list'"></p>
+                <div class="mt-4 text-sm text-gray-500">
+                    <span x-text="list?.items?.length || 0"></span> items
+                </div>
+            </div>
+
+            <div class="flex gap-3">
+                <template x-if="list?.items?.length > 0">
+                    <a :href="`/reader/${list.items[0].id}?context_type=pull_list&context_id=${listId}`" 
+                       class="bg-green-600 hover:bg-green-500 text-white px-6 py-3 rounded-full font-bold transition-colors flex items-center gap-2 shadow-lg hover:shadow-green-900/20">
+                        <span class="text-xl">▶</span> Start Reading
+                    </a>
+                </template>
+                
+                <button @click="openEditModal()" class="bg-gray-700 hover:bg-gray-600 text-white p-3 rounded-full transition-colors" title="Edit List Details">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div x-show="!loading" class="space-y-2" id="sortable-list">
+        <template x-for="(item, index) in list?.items" :key="item.item_id">
+
+            <div class="bg-gray-800/50 border border-gray-700 rounded p-3 flex items-center gap-4 hover:bg-gray-800 transition-colors group"
+                 :data-id="item.id">
+
+                <div class="drag-handle text-gray-500 hover:text-white cursor-grab px-2 py-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16" />
+                    </svg>
+                </div>
+
+                <div class="w-12 h-18 bg-gray-700 rounded overflow-hidden flex-shrink-0">
+                    <img :src="item.thumbnail_path" class="w-full h-full object-cover">
+                </div>
+
+                <div class="flex-1 min-w-0">
+                    <div class="text-xs text-blue-400 mb-0.5" x-text="item.series_name"></div>
+                    <div class="font-bold text-white truncate">
+                        <span x-text="`#${item.number}`"></span>
+                        <span x-show="item.title" x-text="` - ${item.title}`" class="text-gray-400 font-normal"></span>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-3">
+                    <a :href="`/reader/${item.id}?context_type=pull_list&context_id=${listId}`" class="text-gray-400 hover:text-green-400" title="Read">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </a>
+
+                    <button @click="askRemoveItem(item.id)" class="text-gray-500 hover:text-red-400 transition-colors" title="Remove">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </template>
+
+        <div x-show="list?.items?.length === 0" class="text-center py-12 text-gray-500 bg-gray-800 rounded border border-gray-700 border-dashed">
+            List is empty. Go browse and add some comics!
+        </div>
+    </div>
+
+    <div x-show="showEditModal" style="display: none;" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+         x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-100" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"
+         @click.self="showEditModal = false">
+         <div class="bg-gray-800 border border-gray-700 p-6 rounded-lg shadow-2xl w-full max-w-md">
+            <h3 class="text-white font-bold text-xl mb-6">Edit List</h3>
+            <div class="space-y-4">
+                <input x-ref="editNameInput" type="text" x-model="editName" class="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" @keydown.enter="submitEdit()">
+                <input type="text" x-model="editDesc" class="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" @keydown.enter="submitEdit()">
+                <div class="flex gap-3 mt-6">
+                    <button @click="showEditModal = false" class="flex-1 px-4 py-3 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg">Cancel</button>
+                    <button @click="submitEdit()" :disabled="!editName" class="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-4 py-3 rounded-lg font-bold">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div x-show="showDeleteModal"
+         style="display: none;"
+         class="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-100"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         @click.self="showDeleteModal = false">
+
+        <div class="bg-gray-800 border border-gray-700 p-6 rounded-lg shadow-2xl w-full max-w-sm transform transition-all"
+             x-transition:enter="scale-95"
+             x-transition:enter-end="scale-100">
+
+            <div class="text-center">
+                <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-900/30 mb-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                </div>
+
+                <h3 class="text-lg font-bold text-white mb-2">Remove Item?</h3>
+                <p class="text-sm text-gray-400 mb-6">
+                    Are you sure you want to remove this comic from the list?
+                </p>
+
+                <div class="flex gap-3">
+                    <button
+                        @click="showDeleteModal = false"
+                        class="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors">
+                        Cancel
+                    </button>
+                    <button
+                        @click="confirmRemoveItem()"
+                        class="flex-1 px-4 py-2 bg-red-600 hover:bg-red-500 text-white font-bold rounded-lg transition-colors">
+                        Remove
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+function pullListDetail() {
+    return {
+        listId: {{ list_id }},
+        list: null,
+        loading: true,
+        sortable: null,
+
+        // Edit Modal State
+        showEditModal: false,
+        editName: '',
+        editDesc: '',
+
+        // Delete Modal State
+        showDeleteModal: false,
+        itemToDelete: null,
+
+        async init() {
+            await this.loadList();
+            this.initSortable();
+        },
+
+        async loadList() {
+            try {
+                const res = await fetch(`/api/pull-lists/${this.listId}`);
+                if(res.ok) {
+                    this.list = await res.json();
+                    document.title = `${this.list.name} - Comic Server`;
+                }
+            } catch(e) { console.error(e); }
+            finally { this.loading = false; }
+        },
+
+        initSortable() {
+            const el = document.getElementById('sortable-list');
+            this.sortable = new Sortable(el, {
+                draggable: '[data-id]',
+                handle: '.drag-handle',
+                animation: 150,
+                ghostClass: 'sortable-ghost',
+                dragClass: 'sortable-drag',
+                onEnd: (evt) => { this.saveOrder(); }
+            });
+        },
+
+        async saveOrder() {
+
+            // Get the new order of IDs from the DOM (from Sortable)
+            const newOrderIds = this.sortable.toArray(); // returns data-id values
+            try {
+
+                await fetch(`/api/pull-lists/${this.listId}/reorder`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ comic_ids: newOrderIds })
+                });
+
+                // Synchronize Alpine's internal state
+                // Map the new ID list back to the original item objects.
+                // This updates 'this.list.items', which automatically fixes the
+                // "Start Reading" button (list.items[0]) to point to the new top item.
+
+                // Create a quick lookup map
+                const itemMap = new Map(this.list.items.map(i => [i.id.toString(), i]));
+
+                // Reconstruct the array in the new order
+                this.list.items = newOrderIds.map(id => itemMap.get(id)).filter(i => i);
+            } catch(e) { console.error("Reorder failed", e); this.loadList(); }
+        },
+
+        // Trigger the Modal
+        askRemoveItem(comicId) {
+            this.itemToDelete = comicId;
+            this.showDeleteModal = true;
+        },
+
+        // Actually perform delete
+        async confirmRemoveItem() {
+            if (!this.itemToDelete) return;
+
+            try {
+                const res = await fetch(`/api/pull-lists/${this.listId}/items/${this.itemToDelete}`, { method: 'DELETE' });
+                if(res.ok) {
+                    this.list.items = this.list.items.filter(i => i.id !== this.itemToDelete);
+                    this.showDeleteModal = false;
+                    this.itemToDelete = null;
+                }
+            } catch(e) { console.error(e); }
+        },
+
+        openEditModal() {
+            // Pre-fill
+            this.editName = this.list.name;
+            this.editDesc = this.list.description || '';
+            this.showEditModal = true;
+            this.$nextTick(() => { this.$refs.editNameInput.focus(); this.$refs.editNameInput.select(); });
+        },
+
+        async submitEdit() {
+            if(!this.editName) return;
+
+            try {
+                const res = await fetch(`/api/pull-lists/${this.listId}`, {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        name: this.editName,
+                        description: this.editDesc
+                    })
+                });
+
+                if(res.ok) {
+                    const updated = await res.json();
+
+                    // Update local state
+                    this.list.name = updated.name;
+                    this.list.description = updated.description;
+                    this.showEditModal = false;
+
+                    if(window.comicServer) window.comicServer.showToast("List updated", "success");
+                }
+            } catch(e) { console.error(e); }
+        }
+    }
+}
+</script>
+{% endblock %}

@@ -1,4 +1,11 @@
-<a :href="`/reader/${comic.id}`" class="flex-shrink-0 relative block w-16 h-24 rounded overflow-hidden shadow-sm group-hover:shadow-md transition-all">
+<div style="display: contents;" x-data="{
+        get readerQueryParams() {
+            if(readingList) { return `context_type=reading_list&context_id=${this.readingListId}`; }
+            else if(collection) { return `context_type=collection&context_id=${this.collection.id}`; }
+            else { return ''; }
+        }
+    }">
+<a :href="`/reader/${comic.id}?${readerQueryParams}`" class="flex-shrink-0 relative block w-16 h-24 rounded overflow-hidden shadow-sm group-hover:shadow-md transition-all">
     <img
         :src="comic.thumbnail_path"
         :alt="comic.title"
@@ -29,6 +36,7 @@
     </div>
 </div>
 
-<a :href="`/reader/${comic.id}`" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded text-sm font-bold opacity-0 group-hover:opacity-100 transition-opacity shadow-lg flex-shrink-0">
+<a :href="`/reader/${comic.id}?${readerQueryParams}`" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded text-sm font-bold opacity-0 group-hover:opacity-100 transition-opacity shadow-lg flex-shrink-0">
     Read
 </a>
+</div>

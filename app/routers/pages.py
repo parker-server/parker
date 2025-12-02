@@ -94,3 +94,15 @@ async def comic_detail(request: Request, comic_id: int):
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
+
+@router.get("/pull-lists", response_class=HTMLResponse)
+async def pull_lists_index(request: Request):
+    return templates.TemplateResponse("pull_lists/index.html", {"request": request})
+
+@router.get("/pull-lists/{list_id}", response_class=HTMLResponse)
+async def pull_list_detail(request: Request, list_id: int):
+    # We pass the ID to the template; Alpine handles the data fetching
+    return templates.TemplateResponse("pull_lists/detail.html", {
+        "request": request,
+        "list_id": list_id
+    })

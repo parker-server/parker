@@ -1,0 +1,154 @@
+<div x-data="addPullListModal()"
+     x-show="show"
+     style="display: none;"
+     @open-add-to-pull-list.window="open($event.detail)"
+     class="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+     x-transition:enter="transition ease-out duration-200"
+     x-transition:enter-start="opacity-0"
+     x-transition:enter-end="opacity-100"
+     x-transition:leave="transition ease-in duration-100"
+     x-transition:leave-start="opacity-100"
+     x-transition:leave-end="opacity-0"
+     @click.self="close()">
+
+    <div class="bg-gray-800 border border-gray-700 p-6 rounded-lg shadow-2xl w-full max-w-md transform transition-all"
+         x-transition:enter="scale-95"
+         x-transition:enter-end="scale-100">
+
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-white font-bold text-lg">Add to Pull List</h3>
+            <button x-on:click="close()" class="text-gray-400 hover:text-white">✕</button>
+        </div>
+
+        <div class="max-h-60 overflow-y-auto space-y-2 mb-4 pr-2 scrollbar-thin">
+            <template x-for="list in myLists" :key="list.id">
+                <button
+                    x-on:click="addItemToList(list.id)"
+                    class="w-full text-left px-4 py-3 rounded bg-gray-700 hover:bg-blue-600 hover:text-white transition-colors flex justify-between items-center group">
+                    <span class="font-medium" x-text="list.name"></span>
+                    <span class="text-xs text-gray-500 group-hover:text-blue-200">Select</span>
+                </button>
+            </template>
+
+            <div x-show="myLists.length === 0 && !loading" class="text-gray-500 text-center py-4 text-sm">
+                No lists found. Create one below!
+            </div>
+
+            <div x-show="loading" class="text-center py-4">
+                 <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500 mx-auto"></div>
+            </div>
+        </div>
+
+        <div class="border-t border-gray-700 pt-4">
+            <label class="block text-xs text-gray-400 uppercase font-bold mb-2">Create New List</label>
+            <div class="flex gap-2">
+                <input
+                    type="text"
+                    x-model="newListName"
+                    placeholder="e.g. Saturday Morning Reading"
+                    class="flex-1 bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+                    x-on:keydown.enter="createAndAdd()"
+                >
+                <button
+                    x-on:click="createAndAdd()"
+                    :disabled="!newListName"
+                    class="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded text-sm font-bold transition-colors">
+                    Create
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function addPullListModal() {
+    return {
+        show: false,
+        loading: false,
+        myLists: [],
+        newListName: '',
+
+        // Context of what we are adding
+        targetId: null,
+        targetType: 'comic', // 'comic', 'volume', 'series'
+
+        init() {
+            // Optional: Pre-fetch lists once on load if you want
+        },
+
+        async open(detail) {
+            this.targetId = detail.id;
+            this.targetType = detail.type || 'comic';
+            this.show = true;
+            this.newListName = '';
+
+            if (this.myLists.length === 0) {
+                await this.fetchLists();
+            }
+        },
+
+        close() {
+            this.show = false;
+        },
+
+        async fetchLists() {
+            this.loading = true;
+            try {
+                const res = await fetch('/api/pull-lists/');
+                if (res.ok) this.myLists = await res.json();
+            } catch (e) {
+                console.error(e);
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async addItemToList(listId) {
+            // FUTURE PROOFING:
+            // If targetType is 'volume' or 'series', we will need a different API call here later.
+            // For now, we assume 'comic'.
+
+            if (this.targetType !== 'comic') {
+                alert("Bulk add for Volumes/Series requires a backend update! Coming soon.");
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/pull-lists/${listId}/items`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ comic_id: this.targetId })
+                });
+
+                if (res.ok) {
+                    if (window.comicServer) window.comicServer.showToast("Added to list!", 'success');
+                    this.close();
+                } else {
+                    const err = await res.json();
+                    if (window.comicServer) window.comicServer.showToast(err.detail || "Failed to add", 'error');
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        },
+
+        async createAndAdd() {
+            if (!this.newListName) return;
+            try {
+                const createRes = await fetch('/api/pull-lists/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: this.newListName })
+                });
+                if (!createRes.ok) throw new Error("Failed to create list");
+
+                const newList = await createRes.json();
+                this.myLists.push(newList); // Add to local list to avoid re-fetch
+                await this.addItemToList(newList.id);
+            } catch (e) {
+                console.error(e);
+            }
+        }
+    }
+}
+</script>

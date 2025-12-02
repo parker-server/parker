@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+
+{% block title %}My Pull Lists - Comic Server{% endblock %}
+
+{% block content %}
+<div x-data="pullListIndex()" class="max-w-6xl mx-auto">
+    
+    <div class="flex justify-between items-end mb-6">
+        <div>
+            <h1 class="text-3xl font-bold text-white">My Pull Lists</h1>
+            <p class="text-gray-400 mt-1">Curated reading stacks.</p>
+        </div>
+        
+        <button @click="openCreateModal()" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-bold transition-colors flex items-center gap-2">
+            <span>+</span> New List
+        </button>
+    </div>
+
+    <div x-show="loading" class="py-12 text-center">
+        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
+    </div>
+
+    <div x-show="!loading" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+
+        <template x-for="list in lists" :key="list.id">
+            <div class="bg-gray-800 rounded-lg p-6 border border-gray-700 hover:border-blue-500 transition-colors shadow-lg relative group">
+
+                <div class="flex justify-between items-start mb-4">
+                    <h3 class="text-xl font-bold text-white truncate pr-8">
+                        <a :href="`/pull-lists/${list.id}`" x-text="list.name" class="hover:underline decoration-blue-500"></a>
+                    </h3>
+
+                    <div class="relative" x-data="{ open: false }">
+                        <button @click="open = !open" @click.outside="open = false" class="text-gray-500 hover:text-white p-1 rounded hover:bg-gray-700">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path d="M6 10a2 2 0 11-4 0 2 2 0 014 0zM12 10a2 2 0 11-4 0 2 2 0 014 0zM16 12a2 2 0 100-4 2 2 0 000 4z" />
+                            </svg>
+                        </button>
+                        <div x-show="open"
+                             class="absolute right-0 mt-2 w-32 bg-gray-900 border border-gray-700 rounded shadow-xl z-10 overflow-hidden"
+                             x-transition:enter="transition ease-out duration-100"
+                             x-transition:enter-start="transform opacity-0 scale-95"
+                             x-transition:enter-end="transform opacity-100 scale-100">
+                            <button @click="deleteList(list.id)" class="w-full text-left px-4 py-3 text-sm text-red-400 hover:bg-gray-800 hover:text-red-300 transition-colors">Delete</button>
+                        </div>
+                    </div>
+                </div>
+
+                <p class="text-sm text-gray-400 mb-6 h-10 overflow-hidden" x-text="list.description || 'No description'"></p>
+
+                <div class="flex items-center justify-between mt-auto">
+                    <span class="text-xs text-gray-500 uppercase tracking-wider">Pull List</span>
+                    <a :href="`/pull-lists/${list.id}`" class="text-blue-400 hover:text-white text-sm font-medium transition-colors">View Items →</a>
+                </div>
+            </div>
+        </template>
+
+        <div x-show="lists.length === 0" class="col-span-full text-center py-20 bg-gray-800/50 rounded-lg border-dashed border-2 border-gray-700">
+            <div class="text-6xl mb-4 opacity-20">📚</div>
+            <p class="text-gray-400 text-lg mb-4">You haven't created any lists yet.</p>
+            <button @click="openCreateModal()" class="text-blue-400 hover:text-white font-medium hover:underline">Create your first list</button>
+        </div>
+
+    </div>
+
+    <div x-show="showCreateModal"
+         style="display: none;"
+         class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-100"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         @click.self="showCreateModal = false">
+
+        <div class="bg-gray-800 border border-gray-700 p-6 rounded-lg shadow-2xl w-full max-w-md transform transition-all"
+             x-transition:enter="scale-95"
+             x-transition:enter-end="scale-100">
+
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-white font-bold text-xl">Create New List</h3>
+                <button @click="showCreateModal = false" class="text-gray-400 hover:text-white transition-colors">✕</button>
+            </div>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs text-gray-400 uppercase font-bold mb-2">List Name</label>
+                    <input
+                        x-ref="nameInput"
+                        type="text"
+                        x-model="newListName"
+                        placeholder="e.g. Saturday Morning Reading"
+                        class="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
+                        @keydown.enter="submitCreateList()"
+                        @keydown.escape="showCreateModal = false"
+                    >
+                </div>
+
+                <div>
+                    <label class="block text-xs text-gray-400 uppercase font-bold mb-2">Description (Optional)</label>
+                     <input
+                        type="text"
+                        x-model="newListDesc"
+                        placeholder="Brief description..."
+                        class="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
+                        @keydown.enter="submitCreateList()"
+                    >
+                </div>
+
+                <div class="flex gap-3 mt-6">
+                    <button @click="showCreateModal = false" class="flex-1 px-4 py-3 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors font-medium">
+                        Cancel
+                    </button>
+                    <button
+                        @click="submitCreateList()"
+                        :disabled="!newListName"
+                        class="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-3 rounded-lg font-bold transition-colors shadow-lg">
+                        Create List
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+function pullListIndex() {
+    return {
+        lists: [],
+        loading: true,
+        showCreateModal: false,
+        newListName: '',
+        newListDesc: '',
+
+        init() {
+            this.fetchLists();
+        },
+
+        async fetchLists() {
+            try {
+                const res = await fetch('/api/pull-lists/');
+                if(res.ok) this.lists = await res.json();
+            } catch(e) { console.error(e); }
+            finally { this.loading = false; }
+        },
+
+        openCreateModal() {
+            this.newListName = '';
+            this.newListDesc = '';
+            this.showCreateModal = true;
+
+            // Auto-focus the input
+            this.$nextTick(() => {
+                this.$refs.nameInput.focus();
+            });
+        },
+
+        async submitCreateList() {
+            if(!this.newListName) return;
+
+            try {
+                const res = await fetch('/api/pull-lists/', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        name: this.newListName,
+                        description: this.newListDesc
+                    })
+                });
+
+                if(res.ok) {
+                    this.showCreateModal = false;
+                    this.fetchLists();
+                    if(window.comicServer) window.comicServer.showToast("List created!", "success");
+                }
+            } catch(e) { console.error(e); }
+        },
+
+        async deleteList(id) {
+            if(!confirm("Are you sure you want to delete this list? This cannot be undone.")) return;
+            try {
+                const res = await fetch(`/api/pull-lists/${id}`, { method: 'DELETE' });
+                if (res.ok) {
+                    this.lists = this.lists.filter(l => l.id !== id);
+                    if(window.comicServer) window.comicServer.showToast("List deleted", "success");
+                }
+            } catch(e) { console.error(e); }
+        }
+    }
+}
+</script>
+{% endblock %}

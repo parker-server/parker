@@ -389,6 +389,8 @@ function reader() {
         isHoveringZone: false,  // If true, mouse is at the bottom
         isHoveringBar: false,  // The actual button bar
         isIncognito: false,
+        contextType: null,
+        contextId: null,
 
         // Filter State
         filters: {
@@ -403,6 +405,8 @@ function reader() {
             // Check for incognito flag immediately
             const params = new URLSearchParams(window.location.search);
             this.isIncognito = params.get('incognito') === 'true';
+            this.contextType = params.get('context_type');
+            this.contextId = params.get('context_id');
 
             if (this.isIncognito) {
                 window.comicServer.showToast("👓 Incognito Mode: Progress will not be saved.");
@@ -427,8 +431,14 @@ function reader() {
 
         async loadInitData() {
             try {
+
+                const params = new URLSearchParams();
+                if(this.contextType) params.append('context_type', this.contextType);
+                if(this.contextId) params.append('context_id', this.contextId);
+
                 // Fetch new Init endpoint from comics API
-                const res = await fetch(`/api/comics/${this.comicId}/read-init`);
+                const res = await fetch(`/api/reader/${this.comicId}/read-init?${params.toString()}`);
+
                 if (!res.ok) throw new Error("Failed to init reader");
                 this.meta = await res.json();
 
@@ -448,8 +458,8 @@ function reader() {
         get currentPageUrl() {
             if (this.meta.page_count === 0) return '';
 
-            // Points to comics.py endpoint
-            let url = `/api/comics/${this.comicId}/page/${this.currentPage}`;
+            // Points to reader.py endpoint
+            let url = `/api/reader/${this.comicId}/page/${this.currentPage}`;
 
             // Append Server-Side Filters
             const params = new URLSearchParams();
@@ -502,11 +512,52 @@ function reader() {
         },
 
         goToBook(id) {
-            if(id) window.location.href = `/reader/${id}`;
+            if(!id) return;
+
+            // 3. Persist Context when changing books
+            let url = `/reader/${id}`;
+            const params = new URLSearchParams();
+
+            // Pass the context forward
+            if(this.contextType) params.append('context_type', this.contextType);
+            if(this.contextId) params.append('context_id', this.contextId);
+
+            // Preserve Incognito if set
+            if(this.isIncognito) params.append('incognito', 'true');
+
+            const qs = params.toString();
+            if(qs) url += `?${qs}`;
+
+            window.location.href = url;
         },
 
         exitReader() {
-            window.location.href = `/comics/${this.comicId}`;
+
+            // Smart Exit Logic based on Context
+            if (this.contextType === 'reading_list' && this.contextId) {
+                // Go back to the specific reading list
+                window.location.href = `/reading-lists/${this.contextId}`;
+            }
+            else if (this.contextType === 'collection' && this.contextId) {
+                // Go back to the specific collection
+                window.location.href = `/collections/${this.contextId}`;
+            }
+            else if (this.contextType === 'pull_list' && this.contextId) {
+                // Go back to the specific pull list
+                window.location.href = `/pull-lists/${this.contextId}`;
+            }
+            else if (this.contextType === 'series' && this.contextId) {
+                window.location.href = `/series/${this.contextId}`;
+            }
+            else if (this.contextType === 'volume' && this.contextId) {
+                // Determine if we need to switch tabs?
+                // Usually just going back to the page is enough, Alpine init will handle state.
+                window.location.href = `/volumes/${this.contextId}`;
+            }
+            else {
+                // Default: Go back to the comic detail page
+                window.location.href = `/comics/${this.comicId}`;
+            }
         },
 
         resetFilters() {
