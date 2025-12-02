@@ -3,7 +3,7 @@ from sqlalchemy import func, case, Float
 from typing import List, Optional, Annotated
 from datetime import datetime
 
-from app.core.comic_helpers import NON_PLAIN_FORMATS, get_format_filters, get_smart_cover
+from app.core.comic_helpers import get_format_filters, get_smart_cover, get_reading_time
 
 from app.api.deps import SessionDep, CurrentUser, AdminUser
 from app.api.deps import PaginationParams, PaginatedResponse
@@ -72,8 +72,13 @@ async def get_series_detail(series_id: int, db: SessionDep, current_user: Curren
         func.count(case((is_special, 1))).label('special_count'),
         func.min(Comic.year).label('start_year'),
         func.max(Comic.publisher).label('publisher'),
-        func.max(Comic.imprint).label('imprint')
+        func.max(Comic.imprint).label('imprint'),
+        func.sum(Comic.page_count).label('total_pages')
     ).filter(Comic.volume_id.in_(volume_ids)).first()
+
+    # Calculate Reading Time
+    total_pages = stats.total_pages or 0
+    read_time = get_reading_time(total_pages)
 
     # Logic: Is this a Standalone Series?
     # No plain issues, but has Annuals or Specials.
@@ -192,6 +197,8 @@ async def get_series_detail(series_id: int, db: SessionDep, current_user: Curren
         "annual_count": stats.annual_count,
         "special_count": stats.special_count,
         "is_standalone": is_standalone,
+        "total_pages": total_pages,
+        "read_time": read_time,
         "starred": is_starred,
         "first_issue_id": first_issue.id if first_issue else None,
         "volumes": volumes_data,

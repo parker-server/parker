@@ -67,7 +67,10 @@
                     </div>
                     <div>
                         <div class="text-[10px] text-gray-500 uppercase tracking-wider">Pages</div>
-                        <div class="text-sm text-gray-300" x-text="comic?.page_count"></div>
+                        <div class="text-sm text-gray-300">
+                            <span x-text="comic?.page_count"></span>
+                            <span class="text-xs text-gray-500 ml-1" x-text="`(${comic?.read_time})`"></span>
+                        </div>
                     </div>
                 </div>
 

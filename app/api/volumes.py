@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, case, Float, Integer
 from typing import List, Annotated
 
-from app.core.comic_helpers import get_format_filters, get_smart_cover
+from app.core.comic_helpers import get_format_filters, get_smart_cover, get_reading_time
 
 from app.api.deps import SessionDep, CurrentUser
 from app.api.deps import PaginationParams, PaginatedResponse
@@ -49,8 +49,13 @@ async def get_volume_detail(volume_id: int, db: SessionDep, current_user: Curren
         func.max(Comic.year).label('end_year'),
         func.max(Comic.publisher).label('publisher'),
         func.max(Comic.imprint).label('imprint'),
-        func.max(Comic.count).label('max_count')  # Get the highest 'Count' value found
+        func.max(Comic.count).label('max_count'),  # Get the highest 'Count' value found
+        func.sum(Comic.page_count).label('total_pages')
     ).filter(Comic.volume_id == volume_id).first()
+
+    # Calculate Reading Time
+    total_pages = stats.total_pages or 0
+    read_time = get_reading_time(total_pages)
 
     # Story Arc Aggregation (Scoped to Volume)
     # 1. Fetch all issues in this volume that have a story_arc defined
@@ -168,6 +173,8 @@ async def get_volume_detail(volume_id: int, db: SessionDep, current_user: Curren
         "total_issues": stats.plain_count,  # Use plain count as main count
         "annual_count": stats.annual_count,
         "special_count": stats.special_count,
+        "total_pages": total_pages,
+        "read_time": read_time,
 
         # Status Fields
         "status": status,  # "Ongoing" or "Ended"

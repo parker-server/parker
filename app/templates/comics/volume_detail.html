@@ -84,6 +84,24 @@
                                       x-text="volume?.status">
                                 </span>
 
+                                <template x-if="volume?.total_pages > 0">
+                                    <div class="flex items-center gap-4 text-gray-400 border-l border-gray-700 pl-4">
+                                        <span class="flex items-center gap-1" title="Total Pages">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                                <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z" />
+                                            </svg>
+                                            <span x-text="volume.total_pages"></span>
+                                        </span>
+
+                                        <span class="flex items-center gap-1" title="Est. Time to Read">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd" />
+                                            </svg>
+                                            <span x-text="volume.read_time"></span>
+                                        </span>
+                                    </div>
+                                </template>
+
                                 <div x-show="volume?.status === 'ended'" class="text-sm">
                                     <template x-if="volume?.is_completed">
                                         <span class="text-green-400 flex items-center gap-1 font-medium select-none bg-green-900/20 px-3 py-2 rounded border border-green-900/30 inline-block">
@@ -110,10 +128,6 @@
                             </div>
 
                         </div>
-
-                        <template x-if="volume?.resume_to?.comic_id">
-                             <a :href="`/reader/${volume.resume_to.comic_id}`" ...>...</a>
-                        </template>
 
                     </div>
 

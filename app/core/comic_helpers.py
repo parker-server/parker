@@ -56,3 +56,18 @@ def get_smart_cover(base_query):
 
     # 2. Fallback: Just give me the first thing you have (Annuals, #0, etc)
     return base_query.order_by(Comic.year, Comic.number).first()
+
+def get_reading_time(total_pages):
+
+    # Calculate Reading Time
+    # Heuristic: 1.25 minutes per page
+    total_minutes = int(total_pages * 1.25)
+
+    if total_minutes >= 60:
+        hours = total_minutes // 60
+        minutes = total_minutes % 60
+        read_time = f"{hours}h {minutes}m"
+    else:
+        read_time = f"{total_minutes}m"
+
+    return read_time

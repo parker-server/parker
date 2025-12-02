@@ -4,8 +4,9 @@ from typing import List, Annotated
 from pathlib import Path
 import re
 import random
-from sqlalchemy.sql.expression import func
 
+
+from app.core.comic_helpers import get_reading_time
 from app.api.deps import SessionDep, CurrentUser
 from app.models.comic import Comic, Volume
 from app.models.series import Series
@@ -78,6 +79,10 @@ async def get_comic(comic_id: int, db: SessionDep, current_user: CurrentUser):
     if not comic:
         raise HTTPException(status_code=404, detail="Comic not found")
 
+    # Calculate Reading Time
+    total_pages = comic.page_count or 0
+    read_time = get_reading_time(total_pages)
+
     # Build credits dictionary by role
     credits = {}
     for credit in comic.credits:
@@ -138,6 +143,7 @@ async def get_comic(comic_id: int, db: SessionDep, current_user: CurrentUser):
 
         # Technical
         "page_count": comic.page_count,
+        "read_time": read_time,
         "scan_information": comic.scan_information,
 
         # Tags (now from relationships)
