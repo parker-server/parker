@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+
+{% block title %}My Dashboard - Comic Server{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto space-y-8" x-data="dashboard()">
+
+    <div class="bg-gray-800 rounded-xl p-8 border border-gray-700 shadow-xl flex flex-col md:flex-row items-center gap-8 relative overflow-hidden">
+        
+        <div class="absolute top-0 right-0 w-64 h-64 bg-blue-600 rounded-full mix-blend-multiply filter blur-3xl opacity-10 animate-blob"></div>
+        
+        <div class="relative group">
+            <div class="w-32 h-32 rounded-full overflow-hidden border-4 border-gray-700 bg-gray-900 flex items-center justify-center shadow-lg">
+                <template x-if="data?.user?.avatar_url">
+                    <img :src="data.user.avatar_url" class="w-full h-full object-cover">
+                </template>
+                <template x-if="!data?.user?.avatar_url">
+                    <span class="text-4xl font-bold text-gray-500" x-text="data?.user?.username?.charAt(0).toUpperCase()"></span>
+                </template>
+            </div>
+            
+            <label class="absolute inset-0 bg-black/60 flex items-center justify-center rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                <span class="text-xs text-white font-bold">Change</span>
+                <input type="file" class="hidden" accept="image/*" @change="uploadAvatar($event)">
+            </label>
+        </div>
+
+        <div class="text-center md:text-left flex-1 z-10">
+            <h1 class="text-4xl font-bold text-white mb-2" x-text="data?.user?.username"></h1>
+            <p class="text-gray-400">Member since <span x-text="formatDate(data?.user?.created_at)"></span></p>
+            
+            <div class="grid grid-cols-3 gap-4 mt-6 max-w-lg">
+                <div class="bg-gray-900/50 p-3 rounded-lg border border-gray-700 text-center">
+                    <div class="text-2xl font-bold text-blue-400" x-text="data?.stats?.issues_read"></div>
+                    <div class="text-xs text-gray-500 uppercase tracking-wider">Issues Read</div>
+                </div>
+                <div class="bg-gray-900/50 p-3 rounded-lg border border-gray-700 text-center">
+                    <div class="text-2xl font-bold text-green-400" x-text="data?.stats?.time_read"></div>
+                    <div class="text-xs text-gray-500 uppercase tracking-wider">Time Spent</div>
+                </div>
+                <div class="bg-gray-900/50 p-3 rounded-lg border border-gray-700 text-center">
+                    <div class="text-2xl font-bold text-purple-400" x-text="formatNumber(data?.stats?.pages_turned)"></div>
+                    <div class="text-xs text-gray-500 uppercase tracking-wider">Pages Turned</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        <div class="lg:col-span-2 space-y-4">
+            <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                <span>📖</span> Continue Reading
+            </h2>
+            
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <template x-for="item in data?.continue_reading" :key="item.comic_id">
+                    <a :href="`/reader/${item.comic_id}`" class="flex bg-gray-800 rounded-lg overflow-hidden border border-gray-700 hover:border-blue-500 transition-colors group h-32 relative">
+                        <img :src="item.thumbnail" class="w-24 h-full object-cover">
+                        
+                        <div class="p-4 flex flex-col justify-center min-w-0">
+                            <h4 class="font-bold text-white truncate" x-text="item.series_name"></h4>
+                            <p class="text-sm text-gray-400 mb-2" x-text="`Issue #${item.number}`"></p>
+                            
+                            <div class="w-full h-1.5 bg-gray-700 rounded-full mt-auto overflow-hidden">
+                                <div class="h-full bg-blue-500" :style="`width: ${item.percentage}%`"></div>
+                            </div>
+                            <div class="text-xs text-gray-500 mt-1 text-right" x-text="`${Math.round(item.percentage)}%`"></div>
+                        </div>
+                        
+                        <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <svg class="w-10 h-10 text-white" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"/></svg>
+                        </div>
+                    </a>
+                </template>
+                
+                <div x-show="data?.continue_reading?.length === 0" class="col-span-full py-10 text-center text-gray-500 bg-gray-800/50 rounded-lg border-dashed border border-gray-700">
+                    No books in progress. Start reading something!
+                </div>
+            </div>
+        </div>
+
+        <div class="space-y-4">
+            <div class="flex justify-between items-center">
+                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                    <span>📚</span> My Pull Lists
+                </h2>
+                <a href="/pull-lists" class="text-xs text-blue-400 hover:text-white">View All</a>
+            </div>
+
+            <div class="space-y-3">
+                <template x-for="list in data?.pull_lists" :key="list.id">
+                    <a :href="`/pull-lists/${list.id}`" class="block bg-gray-800 p-4 rounded-lg border border-gray-700 hover:bg-gray-750 hover:border-gray-500 transition-all">
+                        <div class="flex justify-between items-center">
+                            <span class="font-bold text-white" x-text="list.name"></span>
+                            <span class="bg-gray-700 text-gray-300 text-xs px-2 py-1 rounded-full" x-text="list.count"></span>
+                        </div>
+                    </a>
+                </template>
+                
+                <button @click="window.location.href='/pull-lists'" class="w-full py-3 border border-gray-700 border-dashed rounded-lg text-gray-500 hover:text-white hover:border-gray-500 hover:bg-gray-800/50 transition-all text-sm">
+                    + Create New List
+                </button>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+function dashboard() {
+    return {
+        data: null,
+        
+        async init() {
+            const res = await fetch(window.url('/api/users/me/dashboard'));
+            if(res.ok) this.data = await res.json();
+        },
+
+        async uploadAvatar(e) {
+            const file = e.target.files[0];
+            if(!file) return;
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            try {
+                const res = await fetch(window.url('/api/users/me/avatar'), {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if(res.ok) {
+                    const result = await res.json();
+                    // Force refresh image by appending timestamp
+                    this.data.user.avatar_url = result.url + '?t=' + Date.now();
+                    window.comicServer.showToast("Avatar updated!", "success");
+                }
+            } catch(e) {
+                console.error(e);
+            }
+        },
+        
+        formatDate(dateStr) {
+            if(!dateStr) return '';
+            return new Date(dateStr).toLocaleDateString(undefined, { year: 'numeric', month: 'long' });
+        },
+        
+        formatNumber(num) {
+            return (num || 0).toLocaleString();
+        }
+    }
+}
+</script>
+{% endblock %}
