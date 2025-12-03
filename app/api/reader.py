@@ -75,6 +75,7 @@ async def get_comic_reader_init(comic_id: int,
         items = db.query(ReadingListItem.comic_id).filter(
             ReadingListItem.reading_list_id == context_id
         ).order_by(ReadingListItem.position).all()
+
         ids = [i[0] for i in items]
 
     elif context_type == "collection" and context_id:
@@ -119,8 +120,7 @@ async def get_comic_reader_init(comic_id: int,
     else:
         # 5. Default / Volume Strategy
 
-        # We need the Series name for this as well
-        v = db.query(Volume.series_id, Volume.volume_number).filter(Volume.id == context_id).first()
+        v = db.query(Volume.series_id, Volume.volume_number).filter(Volume.id == comic.volume_id).first()
         series_name = db.query(Series.name).filter(Series.id == v.series_id).scalar()
         context_label = f"{series_name} (vol {v.volume_number})"
 
@@ -132,7 +132,7 @@ async def get_comic_reader_init(comic_id: int,
             Comic.volume_id == comic.volume_id
         ).all()
 
-        # Sort using your helper (ensures Annuals slot in correctly if numbered/dated)
+        # Sort using helper (ensures Annuals slot in correctly if numbered/dated)
         siblings.sort(key=lambda x: natural_sort_key(x.number))
         ids = [c.id for c in siblings]
 
