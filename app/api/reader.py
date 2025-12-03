@@ -157,10 +157,19 @@ async def get_comic_reader_init(comic_id: int,
         # Fallback to volume logic or return None
         pass
 
-    # Page Count
-    image_service = ImageService()
-    page_count = image_service.get_page_count(comic.file_path)
+    # Page Count Strategy
+    # Try DB first (Fast)
+    if comic.page_count and comic.page_count > 0:
+        page_count = comic.page_count
+    else:
+        # Fallback to Physical (Slow but accurate)
+        # This handles legacy scans or edge cases
+        image_service = ImageService()
+        page_count = image_service.get_page_count(comic.file_path)
 
+        # No Self-heal the DB record here
+        # GET requests shouldn't write to DB to avoid locks.
+        # The Scanner update will fix this eventually.
 
     return {
         "comic_id": comic.id,
