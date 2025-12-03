@@ -4,6 +4,7 @@ from sqlalchemy.orm import joinedload
 from app.api.deps import SessionDep, CurrentUser
 from app.core.comic_helpers import get_aggregated_metadata
 from app.models.comic import Comic, Volume
+from app.models.series import Series
 from app.models.tags import Character, Team, Location
 from app.models.credits import Person, ComicCredit
 from app.models.reading_list import ReadingList, ReadingListItem
@@ -42,12 +43,22 @@ async def get_reading_list(list_id: int, db: SessionDep, current_user: CurrentUs
     if not reading_list:
         raise HTTPException(status_code=404, detail="Reading list not found")
 
-    # 1. Get comics (Ordered by Position)
+    # Security Scope
+    allowed_ids = None
+    if not current_user.is_superuser:
+        allowed_ids = [lib.id for lib in current_user.accessible_libraries]
+
+    # 1. Get comics (Ordered by Position) (Scoped)
     # We join Comic to ensure we can access fields efficiently
-    items = db.query(ReadingListItem).options(
-        joinedload(ReadingListItem.comic).joinedload(Comic.volume).joinedload(Volume.series)) \
-        .filter(ReadingListItem.reading_list_id == list_id) \
-        .order_by(ReadingListItem.position).all()
+    # We must join Series to filter by library
+    query = db.query(ReadingListItem).join(Comic).join(Volume).join(Series) \
+        .options(joinedload(ReadingListItem.comic).joinedload(Comic.volume).joinedload(Volume.series)) \
+        .filter(ReadingListItem.reading_list_id == list_id)
+
+    if allowed_ids is not None:
+        query = query.filter(Series.library_id.in_(allowed_ids))
+
+    items = query.order_by(ReadingListItem.position).all()
 
     comics = []
     for item in items:
@@ -67,6 +78,15 @@ async def get_reading_list(list_id: int, db: SessionDep, current_user: CurrentUs
             "thumbnail_path": f"/api/comics/{comic.id}/thumbnail"
         })
 
+    # 2. Aggregated Metadata (scoped)
+    details = {
+        "writers": get_aggregated_metadata(db, Person, ReadingListItem, ReadingListItem.reading_list_id, list_id,'writer', allowed_library_ids=allowed_ids),
+        "pencillers": get_aggregated_metadata(db, Person, ReadingListItem, ReadingListItem.reading_list_id, list_id,'penciller', allowed_library_ids=allowed_ids),
+        "characters": get_aggregated_metadata(db, Character, ReadingListItem, ReadingListItem.reading_list_id, list_id, allowed_library_ids=allowed_ids),
+        "teams": get_aggregated_metadata(db, Team, ReadingListItem, ReadingListItem.reading_list_id, list_id, allowed_library_ids=allowed_ids),
+        "locations": get_aggregated_metadata(db, Location, ReadingListItem, ReadingListItem.reading_list_id, list_id, allowed_library_ids=allowed_ids)
+    }
+
     return {
         "id": reading_list.id,
         "name": reading_list.name,
@@ -76,13 +96,7 @@ async def get_reading_list(list_id: int, db: SessionDep, current_user: CurrentUs
         "comics": comics,
         "created_at": reading_list.created_at,
         "updated_at": reading_list.updated_at,
-        "details": {
-            "writers": get_aggregated_metadata(db, Person, ReadingListItem, ReadingListItem.reading_list_id, list_id,'writer'),
-            "pencillers": get_aggregated_metadata(db, Person, ReadingListItem, ReadingListItem.reading_list_id, list_id,'penciller'),
-            "characters": get_aggregated_metadata(db, Character, ReadingListItem, ReadingListItem.reading_list_id,list_id),
-            "teams": get_aggregated_metadata(db, Team, ReadingListItem, ReadingListItem.reading_list_id, list_id),
-            "locations": get_aggregated_metadata(db, Location, ReadingListItem, ReadingListItem.reading_list_id, list_id)
-        }
+        "details": details
     }
 
 @router.delete("/{list_id}")

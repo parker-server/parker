@@ -2,6 +2,7 @@ from sqlalchemy import func, or_, not_, case
 
 from app.api.deps import SessionDep
 from app.models.comic import Comic, Volume
+from app.models.series import Series
 from app.models.tags import Character, Team, Location, Genre
 from app.models.credits import Person, ComicCredit
 
@@ -120,7 +121,8 @@ def get_aggregated_metadata(
         context_join_model,
         context_filter_col,
         context_id: int,
-        role_filter: str = None
+        role_filter: str = None,
+        allowed_library_ids: list[int] = None
 ):
     """
     Generic helper to fetch distinct metadata (Writers, Characters, etc.)
@@ -133,6 +135,7 @@ def get_aggregated_metadata(
         context_filter_col: The column to filter by (ReadingListItem.reading_list_id)
         context_id: The ID of the list/collection
         role_filter: Optional role for Credits (e.g. 'writer')
+        allowed_library_ids: Optional list of library ids to include (e.g. [1, 2, 3])
     """
     query = db.query(model.name)
 
@@ -158,7 +161,15 @@ def get_aggregated_metadata(
     # We join the context model to the Comic
     query = query.join(context_join_model, context_join_model.comic_id == Comic.id)
 
-    # 3. Apply Filter
+    # 3. Security Scope (Filter by Library)
+    if allowed_library_ids is not None:
+        # We need to join up to Series to check library_id
+        # Note: Some paths (like Tags) join Comic directly, so we just need Comic -> Volume -> Series
+        query = query.join(Volume, Comic.volume_id == Volume.id) \
+            .join(Series, Volume.series_id == Series.id) \
+            .filter(Series.library_id.in_(allowed_library_ids))
+
+    # 4. Apply Filter
     query = query.filter(context_filter_col == context_id)
 
     return sorted([r[0] for r in query.distinct().all()])

@@ -48,12 +48,22 @@ async def get_collection(current_user: Annotated[User, Depends(get_current_user)
     if not collection:
         raise HTTPException(status_code=404, detail="Collection not found")
 
-    # 1. Get Comics (Sorted Chronologically)
+    # Determine Allowed Libraries
+    allowed_ids = None
+    if not current_user.is_superuser:
+        allowed_ids = [lib.id for lib in current_user.accessible_libraries]
+
+    # 1. Get Comics (Sorted Chronologically) (Scoped)
     # Sort: Year -> Series Name -> Issue Number
-    items = db.query(CollectionItem).join(Comic).join(Volume).join(Series) \
+    query = db.query(CollectionItem).join(Comic).join(Volume).join(Series) \
         .options(joinedload(CollectionItem.comic).joinedload(Comic.volume).joinedload(Volume.series)) \
-        .filter(CollectionItem.collection_id == collection_id) \
-        .order_by(
+        .filter(CollectionItem.collection_id == collection_id)
+
+    # Apply library scope Filter
+    if allowed_ids is not None:
+        query = query.filter(Series.library_id.in_(allowed_ids))
+
+    items = query.order_by(
         Comic.year.asc(),
         Series.name.asc(),
         func.cast(Comic.number, Float)
@@ -76,6 +86,16 @@ async def get_collection(current_user: Annotated[User, Depends(get_current_user)
             "thumbnail_path": f"/api/comics/{comic.id}/thumbnail"
         })
 
+    # 2. Aggregated Metadata (Scoped)
+    # Pass allowed_ids to the helper
+    details = {
+        "writers": get_aggregated_metadata(db, Person, CollectionItem, CollectionItem.collection_id, collection_id,'writer', allowed_library_ids=allowed_ids),
+        "pencillers": get_aggregated_metadata(db, Person, CollectionItem, CollectionItem.collection_id, collection_id, 'penciller', allowed_library_ids=allowed_ids),
+        "characters": get_aggregated_metadata(db, Character, CollectionItem, CollectionItem.collection_id, collection_id, allowed_library_ids=allowed_ids),
+        "teams": get_aggregated_metadata(db, Team, CollectionItem, CollectionItem.collection_id, collection_id, allowed_library_ids=allowed_ids),
+        "locations": get_aggregated_metadata(db, Location, CollectionItem, CollectionItem.collection_id, collection_id, allowed_library_ids=allowed_ids)
+    }
+
     return {
         "id": collection.id,
         "name": collection.name,
@@ -85,13 +105,7 @@ async def get_collection(current_user: Annotated[User, Depends(get_current_user)
         "comics": comics,
         "created_at": collection.created_at,
         "updated_at": collection.updated_at,
-        "details": {
-            "writers": get_aggregated_metadata(db, Person, CollectionItem, CollectionItem.collection_id, collection_id,'writer'),
-            "pencillers": get_aggregated_metadata(db, Person, CollectionItem, CollectionItem.collection_id, collection_id, 'penciller'),
-            "characters": get_aggregated_metadata(db, Character, CollectionItem, CollectionItem.collection_id, collection_id),
-            "teams": get_aggregated_metadata(db, Team, CollectionItem, CollectionItem.collection_id, collection_id),
-            "locations": get_aggregated_metadata(db, Location, CollectionItem, CollectionItem.collection_id, collection_id)
-        }
+        "details": details
     }
 
 
