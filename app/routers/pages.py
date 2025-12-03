@@ -103,3 +103,9 @@ async def pull_list_detail(request: Request, list_id: int):
         "request": request,
         "list_id": list_id
     })
+
+@router.get("/dashboard", response_class=HTMLResponse)
+async def dashboard(request: Request):
+    return templates.TemplateResponse("user/dashboard.html", {
+        "request": request,
+    })
