@@ -297,6 +297,12 @@ class LibraryScanner:
             metadata.get('series_group')
         )
 
+        # Touch Parent Series to update 'updated_at'
+        # This ensures it shows up in "Recently Updated"
+        series.updated_at = datetime.utcnow()
+        # Note: SQLAlchemy tracks dirty state, so this will trigger an UPDATE on commit
+
+
         print(f"Imported: {series_name} #{metadata.get('number', '?')} - {file_path.name}")
         self.logger.info(f"Imported: {series_name} #{metadata.get('number', '?')} - {file_path.name}")
 
@@ -374,6 +380,9 @@ class LibraryScanner:
             comic,
             metadata.get('series_group')
         )
+
+        # Touch Parent Series
+        series.updated_at = datetime.utcnow()
 
         # NO COMMIT HERE - handled by batch loop
 
