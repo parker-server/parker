@@ -3,19 +3,9 @@
 {% block title %}Comic Details - Comic Server{% endblock %}
 
 {% block content %}
-<script>
-    // Pass data to the background component
-    window.PAGE_CONTEXT = {
-        imageUrl: "/api/comics/{{ comic_id }}/thumbnail",
-        colors: {
-            primary: "{{ comic.color_primary }}",
-            secondary: "{{ comic.color_secondary }}",
-            accent1: '{{ comic.color_palette.accent1 if comic.color_palette else "#333333" }}',
-            accent2: '{{ comic.color_palette.accent2 if comic.color_palette else "#444444" }}',
-            accent3: '{{ comic.color_palette.accent3 if comic.color_palette else "#555555" }}'
-        }
-    };
-</script>
+
+{% from "partials/page_context.html" import page_context %}
+{{ page_context(comic_id, comic.color_palette) }}
 
 
 <div class="relative z-10">

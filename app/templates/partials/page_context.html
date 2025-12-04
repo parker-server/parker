@@ -1,0 +1,17 @@
+{# partials/page_context.html #}
+{# Used for including context-sensitive page data for background FX #}
+
+{% macro page_context(id, colors) %}
+<script>
+    window.PAGE_CONTEXT = {
+        imageUrl: "/api/comics/{{ id }}/thumbnail",
+        colors: {
+            primary: '{{ colors.primary if colors.primary else "#111111" }}',
+            secondary: '{{ colors.secondary if colors.secondary else "#222222" }}',
+            accent1: '{{ colors.accent1 if colors.accent1 else "#333333" }}',
+            accent2: '{{ colors.accent2 if colors.accent2 else "#444444" }}',
+            accent3: '{{ colors.accent3 if colors.accent3 else "#555555" }}'
+        }
+    };
+</script>
+{% endmacro %}
