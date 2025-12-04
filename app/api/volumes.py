@@ -6,7 +6,7 @@ from typing import List, Annotated
 
 from app.core.comic_helpers import get_format_filters, get_smart_cover, get_reading_time
 
-from app.api.deps import SessionDep, CurrentUser
+from app.api.deps import SessionDep, CurrentUser, VolumeDep
 from app.api.deps import PaginationParams, PaginatedResponse
 
 from app.models.comic import Comic, Volume
@@ -32,21 +32,10 @@ def comic_to_simple_dict(comic: Comic):
 
 
 @router.get("/{volume_id}")
-async def get_volume_detail(volume_id: int, db: SessionDep, current_user: CurrentUser):
+async def get_volume_detail(volume: VolumeDep, db: SessionDep, current_user: CurrentUser):
     """
     Get volume summary with categorized counts.
     """
-    query = db.query(Volume).join(Series).join(Library).filter(Volume.id == volume_id)
-
-    # Apply Library Filter
-    if not current_user.is_superuser:
-        allowed_ids = [lib.id for lib in current_user.accessible_libraries]
-        query = query.filter(Series.library_id.in_(allowed_ids))
-
-    volume = query.first()
-
-    if not volume:
-        raise HTTPException(status_code=404, detail="Volume not found")
 
     # Filters
     is_plain, is_annual, is_special = get_format_filters()
@@ -62,7 +51,7 @@ async def get_volume_detail(volume_id: int, db: SessionDep, current_user: Curren
         func.max(Comic.imprint).label('imprint'),
         func.max(Comic.count).label('max_count'),  # Get the highest 'Count' value found
         func.sum(Comic.page_count).label('total_pages')
-    ).filter(Comic.volume_id == volume_id).first()
+    ).filter(Comic.volume_id == volume.id).first()
 
     # Calculate Reading Time
     total_pages = stats.total_pages or 0
@@ -72,7 +61,7 @@ async def get_volume_detail(volume_id: int, db: SessionDep, current_user: Curren
     # 1. Fetch all issues in this volume that have a story_arc defined
     # 2. Sort by Number so we can identify the "First Issue" of the arc
     arc_rows = db.query(Comic.id, Comic.story_arc, Comic.number) \
-        .filter(Comic.volume_id == volume_id) \
+        .filter(Comic.volume_id == volume.id) \
         .filter(Comic.story_arc != None, Comic.story_arc != "") \
         .order_by(func.cast(Comic.number, Float), Comic.number) \
         .all()
@@ -94,7 +83,7 @@ async def get_volume_detail(volume_id: int, db: SessionDep, current_user: Curren
 
 
     # 2. Find Cover (Plain issues priority)
-    base_query = db.query(Comic).filter(Comic.volume_id == volume_id)
+    base_query = db.query(Comic).filter(Comic.volume_id == volume.id)
     first_issue = get_smart_cover(base_query)
 
     # Get colors from the cover of the 1st issue comic
@@ -108,7 +97,7 @@ async def get_volume_detail(volume_id: int, db: SessionDep, current_user: Curren
     read_status = "new"
 
     last_read = db.query(ReadingProgress).join(Comic) \
-        .filter(Comic.volume_id == volume_id) \
+        .filter(Comic.volume_id == volume.id) \
         .filter(ReadingProgress.user_id == current_user.id) \
         .order_by(ReadingProgress.last_read_at.desc()) \
         .first()
@@ -146,7 +135,7 @@ async def get_volume_detail(volume_id: int, db: SessionDep, current_user: Curren
         # Note: This ignores ".5" or "10a" variants for the completion check,
         # which is standard behavior for "Count" logic.
         existing_numbers = db.query(func.cast(Comic.number, Integer)) \
-            .filter(Comic.volume_id == volume_id) \
+            .filter(Comic.volume_id == volume.id) \
             .filter(is_plain) \
             .all()
 
@@ -166,19 +155,19 @@ async def get_volume_detail(volume_id: int, db: SessionDep, current_user: Curren
 
     # 3. Aggregated Metadata (Scoped ONLY to this volume)
     writers = db.query(Person.name).join(ComicCredit).join(Comic) \
-        .filter(Comic.volume_id == volume_id).filter(ComicCredit.role == 'writer').distinct().all()
+        .filter(Comic.volume_id == volume.id).filter(ComicCredit.role == 'writer').distinct().all()
 
     pencillers = db.query(Person.name).join(ComicCredit).join(Comic) \
-        .filter(Comic.volume_id == volume_id).filter(ComicCredit.role == 'penciller').distinct().all()
+        .filter(Comic.volume_id == volume.id).filter(ComicCredit.role == 'penciller').distinct().all()
 
     characters = db.query(Character.name).join(Comic.characters) \
-        .filter(Comic.volume_id == volume_id).distinct().all()
+        .filter(Comic.volume_id == volume.id).distinct().all()
 
     teams = db.query(Team.name).join(Comic.teams) \
-        .filter(Comic.volume_id == volume_id).distinct().all()
+        .filter(Comic.volume_id == volume.id).distinct().all()
 
     locations = db.query(Location.name).join(Comic.locations) \
-        .filter(Comic.volume_id == volume_id).distinct().all()
+        .filter(Comic.volume_id == volume.id).distinct().all()
 
     return {
         "id": volume.id,

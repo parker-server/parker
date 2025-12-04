@@ -7,7 +7,7 @@ import re
 import random
 
 from app.core.comic_helpers import get_reading_time, get_format_sort_index
-from app.api.deps import SessionDep, CurrentUser
+from app.api.deps import SessionDep, CurrentUser, ComicDep
 
 from app.models.comic import Comic, Volume
 from app.models.series import Series
@@ -66,19 +66,19 @@ async def search_comics(request: SearchRequest, db: SessionDep, current_user: Cu
     return results
 
 @router.get("/{comic_id}")
-async def get_comic(comic_id: int, db: SessionDep, current_user: CurrentUser):
+async def get_comic(comic: ComicDep, db: SessionDep, current_user: CurrentUser):
     """Get a specific comic with all metadata"""
 
     # Base Query
-    query = db.query(Comic).join(Volume).join(Series).join(Library).filter(Comic.id == comic_id)
+    #query = db.query(Comic).join(Volume).join(Series).join(Library).filter(Comic.id == comic_id)
 
     # Apply Security
-    query = filter_by_user_access(query, current_user)
+    #query = filter_by_user_access(query, current_user)
 
-    comic = query.first()
+    #comic = query.first()
 
-    if not comic:
-        raise HTTPException(status_code=404, detail="Comic not found")
+    #if not comic:
+    #    raise HTTPException(status_code=404, detail="Comic not found")
 
     # Calculate Reading Time
     total_pages = comic.page_count or 0
@@ -94,7 +94,7 @@ async def get_comic(comic_id: int, db: SessionDep, current_user: CurrentUser):
     # Check Progress
     read_status = "new"
     progress = db.query(ReadingProgress).filter(
-        ReadingProgress.comic_id == comic_id,
+        ReadingProgress.comic_id == comic.id,
         ReadingProgress.user_id == current_user.id
     ).first()
 

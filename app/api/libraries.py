@@ -9,7 +9,7 @@ from app.models.series import Series
 from app.models.comic import Comic, Volume
 from app.services.scan_manager import scan_manager
 from app.services.watcher import library_watcher
-from app.api.deps import PaginationParams, PaginatedResponse, SessionDep, CurrentUser, AdminUser
+from app.api.deps import PaginationParams, PaginatedResponse, SessionDep, CurrentUser, AdminUser, LibraryDep
 
 router = APIRouter()
 
@@ -38,38 +38,24 @@ async def list_libraries(db: SessionDep, current_user: CurrentUser):
 
 
 @router.get("/{library_id}")
-async def get_library(library_id: int,
-                      db: SessionDep,
-                      current_user: CurrentUser):
+async def get_library(library: LibraryDep):
 
-    if not _has_library_access(library_id, current_user):
-        raise HTTPException(status_code=404, detail="Library not found")
-
-    """Get a specific library"""
-    library = db.query(Library).filter(Library.id == library_id).first()
-    if not library:
-        raise HTTPException(status_code=404, detail="Library not found")
     return library
 
 
 @router.get("/{library_id}/series", response_model=PaginatedResponse)
 async def get_library_series(
-        library_id: int,
+        library: LibraryDep,
         params: Annotated[PaginationParams, Depends()],
-        db: SessionDep,
-        current_user: CurrentUser
+        db: SessionDep
 ):
     """
     Get all Series within a specific Library (Paginated).
     Sorts alphabetically ignoring 'The ' prefix.
     """
 
-    if not _has_library_access(library_id, current_user):
-        raise HTTPException(status_code=404, detail="Library not found")
-
-
     # 1. Filter by Library
-    query = db.query(Series).filter(Series.library_id == library_id)
+    query = db.query(Series).filter(Series.library_id == library.id)
 
     # 2. Pagination
     total = query.count()

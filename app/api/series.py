@@ -6,7 +6,7 @@ from datetime import datetime
 
 from app.core.comic_helpers import get_format_filters, get_smart_cover, get_reading_time
 
-from app.api.deps import SessionDep, CurrentUser, AdminUser
+from app.api.deps import SessionDep, CurrentUser, AdminUser, SeriesDep
 from app.api.deps import PaginationParams, PaginatedResponse
 
 # Import related models
@@ -39,21 +39,13 @@ def comic_to_simple_dict(comic: Comic):
 
 
 @router.get("/{series_id}")
-async def get_series_detail(series_id: int, db: SessionDep, current_user: CurrentUser):
+async def get_series_detail(series: SeriesDep, db: SessionDep, current_user: CurrentUser):
     """
     Get series summary including Related content and Metadata Details.
     """
-    series = db.query(Series).filter(Series.id == series_id).options(joinedload(Series.library)).first()
-    if not series:
-        raise HTTPException(status_code=404, detail="Series not found")
-
-    if not current_user.is_superuser:
-        allowed_ids = [lib.id for lib in current_user.accessible_libraries]
-        if series.library_id not in allowed_ids:
-            raise HTTPException(status_code=404, detail="Series not found")
 
     # 1. Get Volumes
-    volumes = db.query(Volume).filter(Volume.series_id == series_id).all()
+    volumes = db.query(Volume).filter(Volume.series_id == series.id).all()
     volume_ids = [v.id for v in volumes]
 
     if not volume_ids:
@@ -150,7 +142,7 @@ async def get_series_detail(series_id: int, db: SessionDep, current_user: Curren
 
     # Check for last read comic in this series
     last_read = db.query(ReadingProgress).join(Comic).join(Volume) \
-        .filter(Volume.series_id == series_id) \
+        .filter(Volume.series_id == series.id) \
         .filter(ReadingProgress.user_id == current_user.id) \
         .order_by(ReadingProgress.last_read_at.desc()) \
         .first()
@@ -192,7 +184,7 @@ async def get_series_detail(series_id: int, db: SessionDep, current_user: Curren
     if current_user:
         pref = db.query(UserSeries).filter(
             UserSeries.user_id == current_user.id,
-            UserSeries.series_id == series_id
+            UserSeries.series_id == series.id
         ).first()
         if pref and pref.is_starred:
             is_starred = True
