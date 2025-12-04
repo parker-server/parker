@@ -131,10 +131,9 @@ async def get_series_detail(series: SeriesDep, db: SessionDep, current_user: Cur
     first_issue = get_smart_cover(base_query)
 
     # Get colors from the cover of the 1st issue comic
-    colors = {"primary": "#000000", "secondary": "#222222"}
+    colors = {}
     if first_issue:
-        colors["primary"] = first_issue.color_primary or "#000000"
-        colors["secondary"] = first_issue.color_secondary or "#222222"
+        colors = first_issue.color_palette or {}
 
     # Resume Logic
     resume_comic_id = None

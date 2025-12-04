@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import HTMLResponse
 
+from app.core.comic_helpers import get_smart_cover
 from app.api.deps import SessionDep, ComicDep, VolumeDep, SeriesDep, LibraryDep
 from app.core.templates import templates
-from app.models.comic import Comic
+from app.models.comic import Comic, Volume
+from app.models.series import Series
 
 router = APIRouter()
 
@@ -67,11 +69,17 @@ async def library_view(request: Request, library: LibraryDep):
     })
 
 @router.get("/series/{series_id}", response_class=HTMLResponse)
-async def series_detail(request: Request, series: SeriesDep):
+async def series_detail(request: Request, series: SeriesDep, db: SessionDep):
     """Series detail page"""
+
+    # Find the "Smart Cover" to use for colors/background
+    base_query = db.query(Comic).join(Volume).filter(Volume.series_id == series.id)
+    cover_comic = get_smart_cover(base_query)
+
     return templates.TemplateResponse("comics/series_detail.html", {
         "request": request,
-        "series_id": series.id
+        "series_id": series.id,
+        "cover": cover_comic
     })
 
 
@@ -89,13 +97,6 @@ async def comic_detail(request: Request, comic: ComicDep):
     Comic detail page.
     Fetches basic metadata server-side for Open Graph tags and Hero Backgrounds.
     """
-    # Fetch just what we need for the template shell
-    # (Alpine will fetch the heavy stuff like credits/suggestions later)
-    #comic = db.query(Comic).filter(Comic.id == comic_id).first()
-
-    #if not comic:
-        # Graceful 404 page (or redirect)
-    #    return templates.TemplateResponse("404.html", {"request": request}, status_code=404)
 
     return templates.TemplateResponse("comics/comic_detail.html", {
         "request": request,
