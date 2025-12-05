@@ -2,26 +2,13 @@ import logging
 from typing import Annotated
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from sqlalchemy.orm import Session
 
-from app.database import SessionLocal
+from app.api.deps import SessionDep
 from app.models.user import User
 from app.core.security import verify_password
 from app.services.settings_service import SettingsService
 
 security = HTTPBasic()
-
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-SessionDep = Annotated[Session, Depends(get_db)]
-
 
 def get_current_user_opds(
         credentials: Annotated[HTTPBasicCredentials, Depends(security)],
@@ -51,7 +38,7 @@ def get_current_user_opds(
         )
 
     # 3. Verify Password
-    if not verify_password(credentials.password, user.hashed_password):
+    if not verify_password(credentials.password, str(user.hashed_password)):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
