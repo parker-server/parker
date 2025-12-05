@@ -7,6 +7,7 @@ from app.core.comic_helpers import get_smart_cover
 from app.models.library import Library
 from app.models.series import Series
 from app.models.comic import Comic, Volume
+from app.models.reading_progress import ReadingProgress
 from app.services.scan_manager import scan_manager
 from app.services.watcher import library_watcher
 from app.api.deps import PaginationParams, PaginatedResponse, SessionDep, CurrentUser, AdminUser, LibraryDep
@@ -47,7 +48,8 @@ async def get_library(library: LibraryDep):
 async def get_library_series(
         library: LibraryDep,
         params: Annotated[PaginationParams, Depends()],
-        db: SessionDep
+        db: SessionDep,
+        current_user: CurrentUser,
 ):
     """
     Get all Series within a specific Library (Paginated).
@@ -79,6 +81,20 @@ async def get_library_series(
         base_query = db.query(Comic).join(Volume).filter(Volume.series_id == s.id)
         first_issue = get_smart_cover(base_query)
 
+        # OPTIMIZED READ CHECK (Single Query)
+        # We count total comics AND read comics in one DB trip using conditional aggregation.
+        # This is significantly faster on low-end hardware than running two separate count() queries.
+        counts = db.query(
+            func.count(Comic.id).label('total'),
+            func.count(case((ReadingProgress.completed == True, 1))).label('read')
+        ).select_from(Comic).outerjoin(
+            ReadingProgress,
+            (ReadingProgress.comic_id == Comic.id) & (ReadingProgress.user_id == current_user.id)
+        ).join(Volume).filter(Volume.series_id == s.id).first()
+
+        # Logic: It is "Read" only if you own items AND you have read all of them.
+        is_fully_read = (counts.total > 0) and (counts.read >= counts.total)
+
         items.append({
             "id": s.id,
             "name": s.name,
@@ -86,7 +102,8 @@ async def get_library_series(
             "start_year": first_issue.year,
             # Use getattr to be safe if you haven't migrated DB for timestamps yet
             "created_at": getattr(s, 'created_at', None),
-            "thumbnail_path": f"/api/comics/{first_issue.id}/thumbnail" if first_issue else None
+            "thumbnail_path": f"/api/comics/{first_issue.id}/thumbnail" if first_issue else None,
+            "read": is_fully_read,
         })
 
     return {

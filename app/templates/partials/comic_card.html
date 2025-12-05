@@ -17,18 +17,20 @@
                 loading="lazy"
             >
 
-            <template x-if="!comic.read">
-                <div class="absolute top-0 right-0 z-0 drop-shadow-md">
-                    <div style="border-width: 0 40px 40px 0; border-color: transparent #f97316 transparent transparent;" class="border-style-solid"></div>
-                </div>
-            </template>
-
             <template x-if="comic.format && comic.format !== 'Comic'">
                 <div
-                    class="absolute top-2 right-2 text-white text-[10px] uppercase font-bold px-2 py-1 rounded shadow-md z-10"
+                    class="absolute top-2 left-2 text-white text-[10px] uppercase font-bold px-2 py-1 rounded shadow-md z-10 transition-opacity duration-300 group-hover:opacity-0"
                     :class="comic.format.toLowerCase() === 'annual' ? 'bg-yellow-600' : 'bg-purple-600'"
                     x-text="comic.format"
                 ></div>
+            </template>
+
+            <template x-if="comic.read">
+                 <div class="absolute top-2 right-2 z-10 bg-green-500 text-white rounded-full p-0.5 shadow-md border border-green-400">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                      <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                    </svg>
+                </div>
             </template>
 
             <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-60 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">

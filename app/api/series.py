@@ -37,11 +37,25 @@ def comic_to_simple_dict(comic: Comic):
     }
 
 # Helper to serialize Series
-def series_to_simple_dict(series, db):
+def series_to_simple_dict(series, db, current_user):
     """
         Helper to serialize Series for the card UI.
         Fetches the 'Smart Cover' to get the thumbnail and YEAR.
     """
+
+    is_fully_read = False
+    if current_user:
+        counts = db.query(
+            func.count(Comic.id).label('total'),
+            func.count(case((ReadingProgress.completed == True, 1))).label('read')
+        ).select_from(Comic).outerjoin(
+            ReadingProgress,
+            (ReadingProgress.comic_id == Comic.id) & (ReadingProgress.user_id == current_user.id)
+        ).join(Volume).filter(Volume.series_id == series.id).first()
+
+        is_fully_read = (counts.total > 0) and (counts.read >= counts.total)
+
+
     # This is a bit N+1, ideally we optimize or use a subquery,
     # but for 10-20 items it's acceptable for v1
 
@@ -60,7 +74,7 @@ def series_to_simple_dict(series, db):
         "name": series.name,
         "start_year": thumb_comic.year if thumb_comic else None,
         "thumbnail_path": f"/api/comics/{thumb_comic.id}/thumbnail" if thumb_comic else None, # TODO: make relative url (no leading /)
-        "read": True
+        "read": is_fully_read
     }
 
 @router.get("/{series_id}")
@@ -187,20 +201,22 @@ async def get_series_detail(series: SeriesDep, db: SessionDep, current_user: Cur
         vol_base_query = db.query(Comic).filter(Comic.volume_id == vol.id)
         vol_first = get_smart_cover(vol_base_query)
 
-        # Check if user has read ANY comic in this volume
-        # We look for at least one completed record
-        has_read_any = db.query(ReadingProgress).join(Comic).filter(
+        # Count how many issues in this volume are marked 'completed' by the user
+        read_count = db.query(ReadingProgress).join(Comic).filter(
             Comic.volume_id == vol.id,
             ReadingProgress.user_id == current_user.id,
             ReadingProgress.completed == True
-        ).first()
+        ).count()
+
+        # It is "Read" only if not empty AND read count matches total count
+        is_fully_read = (count > 0) and (read_count >= count)
 
         volumes_data.append({
             "volume_id": vol.id,
             "volume_number": vol.volume_number,
             "first_issue_id": vol_first.id if vol_first else None,
             "issue_count": count,
-            "read": bool(has_read_any)  # True if started, False if untouched
+            "read": is_fully_read,
         })
 
     # Check if starred
@@ -502,7 +518,7 @@ async def get_series_recommendations(
         if len(group_matches) >= 1:
             lanes.append({
                 "title": f"More in '{sample_comic.series_group}'",
-                "items": [series_to_simple_dict(s, db) for s in group_matches]
+                "items": [series_to_simple_dict(s, db, user) for s in group_matches]
             })
 
     # --- STRATEGY 2: TOP WRITERS (Personal Connection) (Iterative & Strict) ---
@@ -536,7 +552,7 @@ async def get_series_recommendations(
         if len(writer_matches) >= 3:
             lanes.append({
                 "title": f"More by {writer_name}",
-                "items": [series_to_simple_dict(s, db) for s in writer_matches]
+                "items": [series_to_simple_dict(s, db, user) for s in writer_matches]
             })
             break
 
@@ -574,7 +590,7 @@ async def get_series_recommendations(
         if len(penciller_matches) >= 3:
             lanes.append({
                 "title": f"More by {penciller_name} (Art)",
-                "items": [series_to_simple_dict(s, db) for s in penciller_matches]
+                "items": [series_to_simple_dict(s, db, user) for s in penciller_matches]
             })
             break
 
@@ -605,7 +621,7 @@ async def get_series_recommendations(
         if len(genre_matches) >= 5:  # Higher threshold for genres as they are broad
             lanes.append({
                 "title": f"More {genre_name} Comics",
-                "items": [series_to_simple_dict(s, db) for s in genre_matches]
+                "items": [series_to_simple_dict(s, db, user) for s in genre_matches]
             })
 
     # --- STRATEGY 4: PUBLISHER (Corporate Connection) ---
@@ -625,7 +641,7 @@ async def get_series_recommendations(
         if len(pub_matches) >= 5 and len(lanes) < 3:
             lanes.append({
                 "title": f"More from {sample_comic.publisher}",
-                "items": [series_to_simple_dict(s, db) for s in pub_matches]
+                "items": [series_to_simple_dict(s, db, user) for s in pub_matches]
             })
 
     # --- STRATEGY 5: RECENT IN LIBRARY (Fallback) ---
@@ -643,7 +659,7 @@ async def get_series_recommendations(
         if lib_matches:
             lanes.append({
                 "title": f"New in {source.library.name}",
-                "items": [series_to_simple_dict(s, db) for s in lib_matches]
+                "items": [series_to_simple_dict(s, db, user) for s in lib_matches]
             })
 
     return lanes
