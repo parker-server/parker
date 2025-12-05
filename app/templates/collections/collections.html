@@ -32,7 +32,7 @@ function collectionsList() {
 
         async init() {
             try {
-                const res = await fetch('/api/collections/');
+                const res = await fetch(window.url('/api/collections/'));
                 const data = await res.json();
                 this.collections = data.collections;
             } catch (e) {

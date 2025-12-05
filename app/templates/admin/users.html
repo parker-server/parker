@@ -161,14 +161,14 @@ function userManager() {
 
         async loadUsers() {
             try {
-                const res = await fetch('/api/users/');
+                const res = await fetch(window.url('/api/users/'));
                 if (res.ok) this.users = await res.json();
             } catch(e) { console.error(e); }
         },
 
         async loadLibraries() {
             try {
-                const res = await fetch('/api/libraries/');
+                const res = await fetch(window.url('/api/libraries/'));
                 if (res.ok) this.allLibraries = await res.json();
             } catch(e) { console.error(e); }
         },
@@ -179,7 +179,7 @@ function userManager() {
         },
 
         async createUser() {
-            const res = await fetch('/api/users/', {
+            const res = await fetch(window.url('/api/users/'), {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(this.newUser)
@@ -220,7 +220,7 @@ function userManager() {
                 payload.password = this.editingUser.password;
             }
 
-            const res = await fetch(`/api/users/${this.editingUser.id}`, {
+            const res = await fetch(window.url(`/api/users/${this.editingUser.id}`), {
                 method: 'PATCH',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(payload)
@@ -236,7 +236,7 @@ function userManager() {
 
         async deleteUser(user) {
             if (!confirm(`Delete user ${user.username}? This will remove their reading history.`)) return;
-            const res = await fetch(`/api/users/${user.id}`, { method: 'DELETE' });
+            const res = await fetch(window.url(`/api/users/${user.id}`), { method: 'DELETE' });
             if (res.ok) this.loadUsers();
             else alert("Error deleting user");
         },

@@ -139,7 +139,7 @@ function coverBrowser() {
         loading: true,
 
         async init() {
-            const url = `/api/comics/covers/manifest?context_type=${this.contextType}&context_id=${this.contextId}`;
+            const url = window.url(`/api/comics/covers/manifest?context_type=${this.contextType}&context_id=${this.contextId}`);
             const res = await fetch(url);
             if(res.ok) {
                 const data = await res.json();

@@ -551,7 +551,7 @@ function seriesDetail() {
             if(!confirm("Admin: Regenerate all thumbnails for this series? This may take a moment.")) return;
 
             try {
-                const res = await fetch(window(`/api/series/${this.seriesId}/thumbnails`), { method: 'POST' });
+                const res = await fetch(window.url(`/api/series/${this.seriesId}/thumbnails`), { method: 'POST' });
                 if (res.ok) {
                     alert("Regeneration started! Refresh the page in a minute to see changes.");
                 } else if (res.status === 403 || res.status === 401) {

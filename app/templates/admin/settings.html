@@ -72,7 +72,7 @@ function settingsManager() {
         settings: {},
         
         async init() {
-            const res = await fetch('/api/settings/');
+            const res = await fetch(window.url('/api/settings/'));
             this.settings = await res.json();
             
             // Initialize tempValue for inputs (so we don't bind directly to the committed value until save)
@@ -87,7 +87,7 @@ function settingsManager() {
             setting.value = newValue; 
 
             try {
-                const res = await fetch(`/api/settings/${setting.key}`, {
+                const res = await fetch(window.url(`/api/settings/${setting.key}`), {
                     method: 'PATCH',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ value: newValue })

@@ -90,7 +90,7 @@ function serverStats() {
         async loadStats() {
             this.loading = true;
             try {
-                const res = await fetch('/api/stats/');
+                const res = await fetch(window.url('/api/stats/'));
                 if (res.ok) {
                     this.stats = await res.json();
                 } else {

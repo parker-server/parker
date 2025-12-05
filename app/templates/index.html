@@ -124,7 +124,7 @@ function homePage() {
 
         async fetchLibraries() {
             try {
-                const res = await fetch('/api/libraries/');
+                const res = await fetch(window.url('/api/libraries/'));
                 if (res.ok) this.libraries = await res.json();
             } catch(e) { console.error(e); }
             finally { this.loading.libraries = false; }
