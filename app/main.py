@@ -162,8 +162,9 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 
     if "text/html" in request.headers.get("accept", ""):
         return templates.TemplateResponse(
-            "error.html",
-            {"request": request, "status_code": exc.status_code, "detail": exc.detail},
+            request=request,
+            name="error.html",
+            context={"status_code": exc.status_code, "detail": exc.detail},
             status_code=exc.status_code
         )
     return JSONResponse(
@@ -176,8 +177,9 @@ async def general_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unexpected error: {exc}", exc_info=True)
     if "text/html" in request.headers.get("accept", ""):
         return templates.TemplateResponse(
-            "error.html",
-            {"request": request, "status_code": 500, "detail": "Internal server error"},
+            request=request,
+            name="error.html",
+            context={"status_code": 500, "detail": "Internal server error"},
             status_code=500
         )
     return JSONResponse(

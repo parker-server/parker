@@ -16,8 +16,9 @@ router = APIRouter(prefix="/opds", tags=["opds"])
 # Helper to render XML
 def render_xml(request: Request, context: dict):
     return templates.TemplateResponse(
-        "opds/feed.xml",
-        {"request": request, **context},
+        request=request,
+        name="opds/feed.xml",
+        context=context,
         media_type="application/atom+xml;charset=utf-8"
     )
 

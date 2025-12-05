@@ -14,57 +14,52 @@ router = APIRouter()
 @router.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     """Home page - Library browser"""
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request=request, name="index.html")
 
 
 
 @router.get("/reader/{comic_id}", response_class=HTMLResponse)
 async def reader(request: Request, comic_id: int):
     """Comic reader"""
-    return templates.TemplateResponse("reader.html", {
-        "request": request,
+    return templates.TemplateResponse(request=request, name="reader.html", context={
         "comic_id": comic_id
     })
 
 @router.get("/search", response_class=HTMLResponse)
 async def search(request: Request):
     """Search page"""
-    return templates.TemplateResponse("search.html", {"request": request})
+    return templates.TemplateResponse(request=request, name="search.html")
 
 @router.get("/collections", response_class=HTMLResponse)
 async def collections_view(request: Request):
     """Collections page"""
-    return templates.TemplateResponse("collections/collections.html", {"request": request})
+    return templates.TemplateResponse(request=request, name="collections/collections.html")
 
 @router.get("/collections/{collection_id}", response_class=HTMLResponse)
 async def collection_detail(request: Request, collection_id: int):
-    return templates.TemplateResponse("collections/collection_detail.html", {
-        "request": request,
-        "collection_id": collection_id
-    })
+    return templates.TemplateResponse(request=request, name="collections/collection_detail.html",
+                                      context={"collection_id": collection_id})
 
 @router.get("/reading-lists", response_class=HTMLResponse)
 async def reading_lists_view(request: Request):
     """Reading lists page"""
-    return templates.TemplateResponse("reading_lists/reading_lists.html", {"request": request})
+    return templates.TemplateResponse(request=request, name="reading_lists/reading_lists.html")
 
 @router.get("/reading-lists/{reading_list_id}", response_class=HTMLResponse)
 async def reading_list_detail(request: Request, reading_list_id: int):
-    return templates.TemplateResponse("reading_lists/reading_list_detail.html", {
-        "request": request,
+    return templates.TemplateResponse(request=request, name="reading_lists/reading_list_detail.html", context={
         "reading_list_id": reading_list_id
     })
 
 @router.get("/continue-reading", response_class=HTMLResponse)
 async def continue_reading(request: Request):
     """Continue reading page"""
-    return templates.TemplateResponse("continue_reading.html", {"request": request})
+    return templates.TemplateResponse(request=request, name="continue_reading.html")
 
 @router.get("/library/{library_id}", response_class=HTMLResponse)
 async def library_view(request: Request, library: LibraryDep):
     """View a specific library"""
-    return templates.TemplateResponse("library.html", {
-        "request": request,
+    return templates.TemplateResponse(request=request, name="library.html", context={
         "library_id": library.id
     })
 
@@ -76,8 +71,7 @@ async def series_detail(request: Request, series: SeriesDep, db: SessionDep):
     base_query = db.query(Comic).join(Volume).filter(Volume.series_id == series.id)
     cover_comic = get_smart_cover(base_query)
 
-    return templates.TemplateResponse("comics/series_detail.html", {
-        "request": request,
+    return templates.TemplateResponse(request=request, name="comics/series_detail.html", context={
         "series_id": series.id,
         "cover": cover_comic
     })
@@ -91,8 +85,7 @@ async def volume_detail(request: Request, volume: VolumeDep, db: SessionDep):
     base_query = db.query(Comic).join(Volume).filter(Volume.id == volume.id)
     cover_comic = get_smart_cover(base_query)
 
-    return templates.TemplateResponse("comics/volume_detail.html", {
-        "request": request,
+    return templates.TemplateResponse(request=request, name="comics/volume_detail.html", context={
         "volume_id": volume.id,
         "cover": cover_comic
     })
@@ -104,42 +97,36 @@ async def comic_detail(request: Request, comic: ComicDep):
     Fetches basic metadata server-side for Open Graph tags and Hero Backgrounds.
     """
 
-    return templates.TemplateResponse("comics/comic_detail.html", {
-        "request": request,
+    return templates.TemplateResponse(request=request, name="comics/comic_detail.html", context={
         "comic_id": comic.id,
         "comic": comic
     })
 
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
-    return templates.TemplateResponse("login_full.html", {  # Point to new template
-        "request": request,
+    return templates.TemplateResponse(request=request, name="login_full.html", context={
         "active_effect": get_active_effect()
     })
 
 @router.get("/pull-lists", response_class=HTMLResponse)
 async def pull_lists_index(request: Request):
-    return templates.TemplateResponse("pull_lists/index.html", {"request": request})
+    return templates.TemplateResponse(request=request, name="pull_lists/index.html")
 
 @router.get("/pull-lists/{list_id}", response_class=HTMLResponse)
 async def pull_list_detail(request: Request, list_id: int):
     # We pass the ID to the template; Alpine handles the data fetching
-    return templates.TemplateResponse("pull_lists/detail.html", {
-        "request": request,
+    return templates.TemplateResponse(request=request, name="pull_lists/detail.html", context={
         "list_id": list_id
     })
 
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request):
-    return templates.TemplateResponse("user/dashboard.html", {
-        "request": request,
-    })
+    return templates.TemplateResponse(request=request, name="user/dashboard.html")
 
 @router.get("/browse/{context_type}/{context_id}", response_class=HTMLResponse)
 async def cover_browser_page(request: Request, context_type: str, context_id: int):
     # Pass label logic or let JS fetch it
-    return templates.TemplateResponse("comics/cover_browser.html", {
-        "request": request,
+    return templates.TemplateResponse(request=request, name="comics/cover_browser.html", context={
         "context_type": context_type,
         "context_id": context_id,
         "context_label": context_type.title() # Simple default
@@ -147,7 +134,5 @@ async def cover_browser_page(request: Request, context_type: str, context_id: in
 
 @router.get("/404", response_class=HTMLResponse)
 async def dashboard(request: Request):
-    return templates.TemplateResponse("status_codes/404.html", {
-        "request": request,
-    })
+    return templates.TemplateResponse(request=request, name="status_codes/404.html")
 
