@@ -1,5 +1,5 @@
 import os
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pathlib import Path
 
 
@@ -39,8 +39,8 @@ class Settings(BaseSettings):
     #batch_window_seconds: int = 600 # 10 mins
     batch_window_seconds: int = 300
 
-    class Config:
-        env_file = ".env"
+    # --- NEW CONFIG STYLE ---
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # Helper to clean up the URL (ensure it starts with / and no trailing /)
     @property
