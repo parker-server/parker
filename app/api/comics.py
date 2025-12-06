@@ -69,17 +69,6 @@ async def search_comics(request: SearchRequest, db: SessionDep, current_user: Cu
 async def get_comic(comic: ComicDep, db: SessionDep, current_user: CurrentUser):
     """Get a specific comic with all metadata"""
 
-    # Base Query
-    #query = db.query(Comic).join(Volume).join(Series).join(Library).filter(Comic.id == comic_id)
-
-    # Apply Security
-    #query = filter_by_user_access(query, current_user)
-
-    #comic = query.first()
-
-    #if not comic:
-    #    raise HTTPException(status_code=404, detail="Comic not found")
-
     # Calculate Reading Time
     total_pages = comic.page_count or 0
     read_time = get_reading_time(total_pages)
@@ -146,6 +135,7 @@ async def get_comic(comic: ComicDep, db: SessionDep, current_user: CurrentUser):
         "characters": [c.name for c in comic.characters],
         "teams": [t.name for t in comic.teams],
         "locations": [l.name for l in comic.locations],
+        "genres": [g.name for g in comic.genres],
 
         # Reading lists
         "alternate_series": comic.alternate_series,
