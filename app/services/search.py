@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_, func, not_
 from typing import List, Dict, Any, Union
 from app.models import (Comic, Volume, Series,
-                        Character, Team, Location,
+                        Character, Team, Location, Genre,
                         Person, ComicCredit,
                         Collection, CollectionItem,
                         ReadingList, ReadingListItem,
@@ -119,6 +119,8 @@ class SearchService:
             return self._build_tag_condition(Comic.teams, Team.name, operator, value)
         elif field == 'location':
             return self._build_tag_condition(Comic.locations, Location.name, operator, value)
+        elif field == 'genre':
+            return self._build_tag_condition(Comic.genres, Genre.name, operator, value)
 
         # 4. Collections / Reading Lists / Pull Lists
         elif field == 'collection':

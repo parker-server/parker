@@ -271,6 +271,20 @@
                             </div>
                         </div>
                     </template>
+
+                    <template x-if="comic?.genres?.length">
+                        <div class="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4">
+                            <span class="text-gray-500 text-xs uppercase tracking-wider sm:w-24 sm:flex-shrink-0 sm:pt-1.5">Genres</span>
+                            <div class="flex flex-wrap gap-2">
+                                <template x-for="g in comic.genres">
+                                    {% with type='genre', item='g' %}
+                                        {% include "partials/tag_chip.html" %}
+                                    {% endwith %}
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+
                 </div>
 
             </div>

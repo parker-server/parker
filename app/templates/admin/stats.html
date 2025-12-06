@@ -74,6 +74,62 @@
             </div>
         </div>
 
+        <div x-data="{ genreStats: [] }" x-init="genreStats = await (await fetch(window.url('/api/stats/genres'))).json()">
+            <h2 class="text-lg font-bold text-gray-400 mb-4 uppercase tracking-wider">Collection Insights</h2>
+
+            <div class="bg-gray-800 rounded-lg border border-gray-700 shadow-lg overflow-hidden">
+
+                <div x-show="genreStats.length === 0" class="p-12 text-center text-gray-500">
+                    <div class="text-4xl mb-3">📊</div>
+                    <p class="text-lg">No genre data available yet.</p>
+                    <p class="text-sm mt-2">Scan some comics with metadata to see insights here.</p>
+                </div>
+
+                <div x-show="genreStats.length > 0" class="p-6 grid grid-cols-1 lg:grid-cols-2 gap-8" style="display: none;">
+
+                    <div>
+                        <h3 class="font-bold text-white mb-4 flex items-center gap-2">
+                            <span>📚</span> Reading Habits by Genre
+                        </h3>
+                        <div class="space-y-4">
+                            <template x-for="item in genreStats" :key="item.genre">
+                                <div>
+                                    <div class="flex justify-between text-sm mb-1">
+                                        <span class="text-gray-200 font-medium" x-text="item.genre"></span>
+                                        <span class="text-gray-400 text-xs">
+                                            <span x-text="item.read_count"></span> / <span x-text="item.inventory"></span> read
+                                        </span>
+                                    </div>
+                                    <div class="w-full bg-gray-700 rounded-full h-2.5 overflow-hidden relative">
+                                        <div class="absolute inset-0 bg-gray-600/30"></div>
+                                        <div
+                                            class="h-full rounded-full transition-all duration-500"
+                                            :class="item.read_pct > 80 ? 'bg-green-500' : (item.read_pct > 30 ? 'bg-blue-500' : 'bg-orange-500')"
+                                            :style="`width: ${item.read_pct}%`"
+                                        ></div>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h3 class="font-bold text-white mb-4 flex items-center gap-2">
+                            <span>💾</span> Storage Impact
+                        </h3>
+                        <div class="space-y-3">
+                            <template x-for="item in genreStats" :key="item.genre">
+                                <div class="flex items-center justify-between p-3 bg-gray-900/50 rounded border border-gray-700/50">
+                                    <span class="text-gray-300" x-text="item.genre"></span>
+                                    <span class="font-mono text-blue-400 text-sm" x-text="window.comicServer.formatBytes(item.size_bytes)"></span>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
