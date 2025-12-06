@@ -25,10 +25,10 @@ class Settings(BaseSettings):
 
     # Storage paths
     log_dir: Path = Path("storage/logs")
-    cache_dir: Path = Path("./storage/cache")
-    cover_dir: Path = Path("./storage/cover")
-    backup_dir: Path = Path("./storage/backup")
-    avatar_dir: Path = Path("./storage/avatars")
+    cache_dir: Path = Path("storage/cache")
+    cover_dir: Path = Path("storage/cover")
+    backup_dir: Path = Path("storage/backup")
+    avatar_dir: Path = Path("storage/avatars")
     #thumbnail_size: tuple = (300, 450)
     thumbnail_size: tuple[float, float] = (320, 455)
     avatar_size: tuple[float, float] = (400, 400)  # standard avatar box
