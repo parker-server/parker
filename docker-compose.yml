@@ -7,17 +7,17 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./comics:/comics  # Mount your comics directory
+      - ./comics:/comics:ro  # Mount your comics directory
       - ./data:/app/storage
     environment:
-      - DATABASE_URL=sqlite:///./data/comics.db
+      - DATABASE_URL=sqlite:////app/storage/database/comics.db
       - COMICS_PATH=/comics
       - APP_NAME=Comic Server
       # Generate a strong key: openssl rand -hex 32
       - SECRET_KEY=CHANGE_THIS_TO_A_REAL_SECRET_KEY
       # If you need to tell the app where unrar is in the container
       # (Note: standard Linux unrar path is usually /usr/bin/unrar)
-      # - UNRAR_PATH=/usr/bin/unrar
+      - UNRAR_PATH=/usr/bin/unrar
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]

@@ -3,12 +3,17 @@ FROM python:3.11-slim
 # Set working directory
 WORKDIR /app
 
+# Enable non-free repositories to install 'unrar' (Required for CBR support)
+# Debian Bookworm (current stable) uses sources.list.d
+RUN sed -i -e's/ main/ main contrib non-free non-free-firmware/g' /etc/apt/sources.list.d/debian.sources
+
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     libpq-dev \
     gcc \
     curl \
     libmagic1 \
+    unrar \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
@@ -21,7 +26,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Create necessary directories
-RUN mkdir -p storage/database storage/cache storage/cover
+RUN mkdir -p storage/database storage/cache storage/cover storage/avatars storage/logs
 
 # Expose port
 EXPOSE 8000
