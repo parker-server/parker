@@ -69,3 +69,9 @@ async def admin_reports_duplicates_page(request: Request):
 async def admin_reports_corrupt_page(request: Request):
     """Serve the Admin Duplicates report page"""
     return templates.TemplateResponse(request=request, name="admin/reports/corrupt.html")
+
+@router.get("/migration", response_class=HTMLResponse)
+async def admin_migration_page(request: Request):
+    """Serve the Admin migration page"""
+    return templates.TemplateResponse(request=request, name="admin/migration.html")
+

@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+
+{% block title %}Kavita Migration - Comic Server{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto" x-data="migrationTool()">
+    
+    <div class="flex justify-between items-center mb-8">
+        <h1 class="text-3xl font-bold text-white">Kavita Migration Tool ➡️</h1>
+        <a href="/admin" class="text-gray-400 hover:text-white transition-colors">← Back to Admin</a>
+    </div>
+
+    <div class="bg-gray-800 rounded-lg p-8 border border-gray-700 shadow-xl space-y-6">
+        <div class="text-sm text-yellow-400 bg-yellow-900/30 p-4 rounded-lg border border-yellow-800">
+            ⚠️ **WARNING:** This process is irreversible. **BACKUP YOUR PARKER DATABASE BEFORE PROCEEDING!**  The tool handles user creation and reading progress transfer.
+        </div>
+
+        <div>
+            <label class="block text-gray-300 font-medium mb-2" for="kavita-db-file">
+                1. Upload Kavita Database File (`kavita.db`)
+            </label>
+            <input
+                type="file"
+                id="kavita-db-file"
+                @change="fileChange($event, 'kavitaDbFile')"
+                class="block w-full text-sm text-gray-500
+                    file:mr-4 file:py-2 file:px-4
+                    file:rounded-full file:border-0
+                    file:text-sm file:font-semibold
+                    file:bg-orange-500/20 file:text-orange-400
+                    hover:file:bg-orange-500/30"
+            >
+        </div>
+
+        <div class="pt-4 border-t border-gray-700">
+            <h3 class="text-gray-300 font-medium mb-2">2. User Migration Strategy</h3>
+
+            <div class="bg-gray-900 rounded-lg p-4 border border-gray-700 flex items-start gap-3">
+                <div class="text-2xl">🔑</div>
+                <div>
+                    <div class="text-white font-bold text-sm">Temporary Passwords</div>
+                    <p class="text-gray-400 text-sm mt-1">
+                        Since Parker uses different encryption than Kavita, user passwords cannot be migrated directly.
+                    </p>
+                    <p class="text-orange-400 text-sm mt-2 font-medium">
+                        • Users will be created with random temporary passwords.<br>
+                        • A CSV file containing these credentials will automatically download.<br>
+                        • You must securely distribute these passwords to your users.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <button
+            @click="runMigration"
+            :disabled="!kavitaDbFile || loading"
+            class="w-full px-6 py-3 text-lg font-bold rounded-lg transition-all"
+            :class="{
+                'bg-orange-600 hover:bg-orange-700 text-white': kavitaDbFile && !loading,
+                'bg-gray-600 text-gray-400 cursor-not-allowed': !kavitaDbFile || loading,
+            }"
+        >
+            <span x-show="!loading">🚀 Start Migration</span>
+            <span x-show="loading" class="flex items-center justify-center">
+                <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-3"></div>
+                Migrating... This may take a few minutes.
+            </span>
+        </button>
+
+        <div x-show="message" class="mt-4 p-4 rounded-lg" :class="message.startsWith('✅') ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'" style="display: none;">
+            <pre class="whitespace-pre-wrap font-mono text-sm" x-text="message"></pre>
+        </div>
+
+    </div>
+
+</div>
+
+<script>
+function migrationTool() {
+    return {
+        kavitaDbFile: null,
+        // We hardcode the strategy now since it's the only valid option
+        userStrategy: 'temp-password',
+        loading: false,
+        message: '',
+
+        fileChange(event, prop) {
+            this[prop] = event.target.files[0];
+        },
+
+        async runMigration() {
+            if(!confirm("Are you sure you want to proceed? Please ensure you have backed up your Parker database.")) return;
+
+            this.loading = true;
+            this.message = '';
+
+            const formData = new FormData();
+            formData.append('kavita_db_file', this.kavitaDbFile);
+            formData.append('user_strategy', this.userStrategy);
+
+            try {
+                const res = await fetch(window.url('/api/admin/migration/run'), {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                const contentType = res.headers.get('content-type');
+
+                if (res.ok) {
+                    if (contentType && contentType.includes('text/csv')) {
+                        // Handle CSV download
+                        const blob = await res.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = 'parker_migrated_credentials.csv';
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        this.message = '✅ Migration successful!\n\nYour CSV file has been downloaded.\nPlease distribute credentials securely and delete the file.';
+                    } else {
+                        const data = await res.json();
+                        // Pretty print the stats
+                        let msg = data.status + '\n\n';
+                        if(data.details) {
+                            msg += `Inserted: ${data.details.inserted}\nUpdated:  ${data.details.updated}\nSkipped:  ${data.details.skipped}`;
+                        }
+                        this.message = msg;
+                    }
+                } else {
+                    const error = await res.json();
+                    this.message = `❌ ERROR: ${error.detail || 'An unknown error occurred.'}`;
+                }
+
+            } catch (e) {
+                this.message = `❌ FATAL ERROR: ${e.message}`;
+            } finally {
+                this.loading = false;
+            }
+        }
+    }
+}
+</script>
+{% endblock %}
