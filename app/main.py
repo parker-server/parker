@@ -38,6 +38,7 @@ from app.api import auth, users, saved_searches
 from app.api import tasks, jobs, stats, settings as settings_api
 from app.api import pull_lists
 from app.api import reports
+from app.api import migration
 
 # Frontend Routes (HTML)
 from app.routers import pages, admin
@@ -211,6 +212,8 @@ app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
 app.include_router(saved_searches.router, prefix="/api/saved-searches", tags=["saved-searches"])
 app.include_router(pull_lists.router, prefix="/api/pull-lists", tags=["pull-lists"])
 app.include_router(reports.router, prefix="/api/reports", tags=["reports"])
+app.include_router(migration.router, prefix="/api/migration", tags=["migration"])
+
 
 # 2. Frontend Routers (HTML)
 # We don't use a prefix for 'pages' because they live at the root (/)

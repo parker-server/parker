@@ -11,6 +11,7 @@ from typing import Dict, Optional, Tuple, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
+from app.core.comic_helpers import NON_PLAIN_FORMATS
 from app.core.security import get_password_hash, verify_password
 
 from app.models.library import Library
@@ -56,14 +57,27 @@ class KavitaMigrationService:
         """
         Migrates users from Kavita to Parker.
         - Creates non-existent users.
+        - Checks AspNetUserRoles to determine Admin status (Role ID 1).
         - Returns a CSV string of credentials if strategy is 'temp-password'.
         """
         logger.info("Starting User Migration...")
 
-        # 1. Fetch Kavita Users
-        kavita_users = self.kavita_conn.execute("SELECT Id, UserName, Email, IsAdmin FROM AspNetUsers").fetchall()
+        # 1. Fetch Kavita Users (Base Table)
+        # Note: No 'IsAdmin' column here.
+        kavita_users = self.kavita_conn.execute("SELECT Id, UserName, Email FROM AspNetUsers").fetchall()
 
-        # 2. Fetch Existing Parker Users (for conflict checking)
+        # 2. Identify Admins
+        # In Kavita, Role ID 1 is the Administrator role.
+        # We fetch the set of all UserIds that have this role.
+        try:
+            admin_rows = self.kavita_conn.execute("SELECT UserId FROM AspNetUserRoles WHERE RoleId = 1").fetchall()
+            admin_ids = {row['UserId'] for row in admin_rows}
+        except sqlite3.OperationalError:
+            # Fallback if roles table is missing or different
+            logger.warning("Could not query AspNetUserRoles. Defaulting all migrated users to standard role.")
+            admin_ids = set()
+
+        # 3. Fetch Existing Parker Users (for conflict checking)
         existing_users = self.db.query(User).all()
         existing_map = {u.username.lower(): u for u in existing_users}
 
@@ -72,13 +86,19 @@ class KavitaMigrationService:
         for k_user in kavita_users:
 
             username = k_user['UserName']
+            # Skip if username is missing/null
+            if not username:
+                continue
+
             email = k_user['Email']
-            is_admin = k_user['IsAdmin'] == 1
             k_id = k_user['Id']
+
+            # Determine Admin Status based on the Role lookup
+            is_admin = k_id in admin_ids
 
             p_user = None
 
-            # Check if user already exists
+            # A. Get or Create User
             if username.lower() in existing_map:
                 p_user = existing_map[username.lower()]
                 self.user_map[k_id] = p_user.id
@@ -88,7 +108,7 @@ class KavitaMigrationService:
                 temp_password = self._generate_temp_password()
                 hashed_pw = get_password_hash(temp_password)
 
-                new_user = User(
+                p_user = User(
                     username=username,
                     email=email if email else None,
                     hashed_password=hashed_pw,
@@ -96,11 +116,11 @@ class KavitaMigrationService:
                     is_active=True
                 )
 
-                self.db.add(new_user)
+                self.db.add(p_user)
                 self.db.flush()  # Flush to get the ID
 
                 # Update Map
-                self.user_map[k_id] = new_user.id
+                self.user_map[k_id] = p_user.id
 
                 # Store credential for CSV
                 created_credentials.append({
@@ -136,13 +156,13 @@ class KavitaMigrationService:
         Looks up library access in Kavita and mirrors it to Parker.
         """
         # 1. Get Kavita Library IDs for this user
-        # Table is usually 'AppUserLibrary' with columns 'AppUserId', 'LibraryId'
+        # Table is usually 'AppUserLibrary' with columns 'AppUsersId', 'LibrariesId'
         try:
             rows = self.kavita_conn.execute(
-                "SELECT LibraryId FROM AppUserLibrary WHERE AppUserId = ?",
+                "SELECT LibrariesId FROM AppUserLibrary WHERE AppUsersId = ?",
                 (kavita_user_id,)
             ).fetchall()
-            allowed_k_libs = [r['LibraryId'] for r in rows]
+            allowed_k_libs = [r['LibrariesId'] for r in rows]
         except sqlite3.OperationalError:
             # Fallback: older Kavita versions or different schema?
             # If table doesn't exist, assume no restrictions or handle gracefully.
@@ -154,8 +174,11 @@ class KavitaMigrationService:
 
         # 2. Map Kavita Library ID -> Name
         # We fetch all libraries to build a lookup map
-        k_libs = self.kavita_conn.execute("SELECT Id, Name FROM Library").fetchall()
-        k_lib_map = {row['Id']: row['Name'] for row in k_libs}
+        try:
+            k_libs = self.kavita_conn.execute("SELECT Id, Name FROM Library").fetchall()
+            k_lib_map = {row['Id']: row['Name'] for row in k_libs}
+        except sqlite3.OperationalError:
+            return
 
         # 3. Find Matching Parker Libraries
         parker_libs = self.db.query(Library).all()
@@ -194,14 +217,27 @@ class KavitaMigrationService:
 
         # 1. Load Parker Comics (Local DB)
         # We fetch only what we need to minimize memory usage
+        # fetch 'format' to distinguish Annuals
         parker_comics = self.db.query(
-            Comic.id, Comic.file_path, Comic.number,
+            Comic.id, Comic.file_path, Comic.number, Comic.format,
             Series.name.label("series_name")
-        ).join(Volume).join(Series).all()
+        ).select_from(Comic).join(Comic.volume).join(Volume.series).all()
 
         # Index by Path and Metadata
         p_by_path = {str(c.file_path): c.id for c in parker_comics}
-        p_by_meta = {f"{c.series_name.lower()}|{c.number}": c.id for c in parker_comics}
+        p_by_meta = {}
+
+        for c in parker_comics:
+            # Determine if this is a "Special" format (Annual, Special, etc)
+            # Normalize to lowercase for safety
+            fmt = (c.format or "").lower()
+            is_special = fmt in NON_PLAIN_FORMATS
+
+            # Create a composite key: "series|number|is_special"
+            # This allows "Superman|6|False" and "Superman|6|True" to coexist.
+            key = f"{c.series_name.lower()}|{c.number}|{is_special}"
+            p_by_meta[key] = c.id
+
 
         # 2. Load Kavita Chapters (Remote DB)
         # We join to MangaFile to get the path
@@ -209,7 +245,8 @@ class KavitaMigrationService:
                 SELECT c.Id   as chapter_id, \
                        c.Number, \
                        s.Name as series_name, \
-                       mf.FilePath
+                       mf.FilePath, \
+                        v.Name as volume_name, v.Number as volume_number
                 FROM Chapter c
                          JOIN Volume v ON c.VolumeId = v.Id
                          JOIN Series s ON v.SeriesId = s.Id
@@ -220,14 +257,24 @@ class KavitaMigrationService:
 
         count = 0
         for k_chap in kavita_chapters:
-            # Strategy A: File Path Match
+            # Strategy A: File Path Match (Best)
             if k_chap['FilePath'] in p_by_path:
                 self.comic_map[k_chap['chapter_id']] = p_by_path[k_chap['FilePath']]
                 count += 1
                 continue
 
-            # Strategy B: Metadata Match
-            meta_key = f"{k_chap['series_name'].lower()}|{k_chap['Number']}"
+            # Strategy B: Metadata Match (Fallback)
+            # Detect Kavita's "Virtual Volume" logic for specials
+            vol_name = str(k_chap['volume_name'])
+            vol_num = k_chap['volume_number']
+
+            # Kavita uses Name='100000' for specials bucket
+            # We also check for volume 0 just in case
+            k_is_special = (vol_name == '100000' or vol_num == 0)
+
+            # Construct the matching key
+            meta_key = f"{k_chap['series_name'].lower()}|{k_chap['Number']}|{k_is_special}"
+
             if meta_key in p_by_meta:
                 self.comic_map[k_chap['chapter_id']] = p_by_meta[meta_key]
                 count += 1
@@ -245,14 +292,14 @@ class KavitaMigrationService:
         """
         # Ensure mapping is done
         if not self.user_map:
-            self.migrate_users()  # Run user migration if skipped (will just map existing)
+            self.migrate_users() # Run user migration if skipped (will just map existing)
         if not self.comic_map:
             self.map_comics()
 
         logger.info("Migrating progress...")
 
         # Fetch Kavita Progress
-        query = "SELECT AppUserId, ChapterId, PagesRead, LastModified FROM AppUserProgress WHERE PagesRead > 0"
+        query = "SELECT AppUserId, ChapterId, PagesRead, LastModified FROM AppUserProgresses WHERE PagesRead > 0"
         records = self.kavita_conn.execute(query).fetchall()
 
         stats = {"inserted": 0, "updated": 0, "skipped": 0}
@@ -260,6 +307,7 @@ class KavitaMigrationService:
         for rec in records:
             k_uid = rec['AppUserId']
             k_cid = rec['ChapterId']
+            pages_read = rec['PagesRead']
 
             # Skip unmapped items
             if k_uid not in self.user_map or k_cid not in self.comic_map:
@@ -270,6 +318,7 @@ class KavitaMigrationService:
             p_cid = self.comic_map[k_cid]
 
             pages_read = rec['PagesRead']
+
             # Default completion logic: Assume completed if pages_read > 0 and no total available?
             # Better: Let Parker handle completion logic or fetch totals.
             # For migration simplicity, if it's the last page, it's done.
@@ -286,35 +335,43 @@ class KavitaMigrationService:
             # Check existing Parker Progress
             existing = self.db.query(ReadingProgress).filter_by(user_id=p_uid, comic_id=p_cid).first()
 
+            # Fetch comic to get page count
+            comic = self.db.query(Comic).get(p_cid)
+
+            # Calculate Total Pages (Fallback Logic)
+            # Priority: 1. Parker Comic Page Count, 2. Kavita Pages Read, 3. Default 1
+            if comic and comic.page_count and comic.page_count > 0:
+                total_pages = comic.page_count
+            else:
+                total_pages = max(pages_read, 1)
+
+            # Calculate Completion
+            is_completed = False
+            if pages_read >= total_pages:
+                is_completed = True
+
             if existing:
                 # Update only if Kavita is newer or further along
                 if pages_read > existing.current_page:
                     existing.current_page = pages_read
+                    existing.total_pages = total_pages  # Update total pages too
                     existing.last_read_at = last_read_dt
-                    # If pages_read is high, assume complete?
-                    # Ideally we check comic.page_count here.
-                    comic = self.db.query(Comic).get(p_cid)
-                    if comic and pages_read >= comic.page_count:
-                        existing.completed = True
+                    existing.completed = is_completed  # Update completion status
 
                     stats['updated'] += 1
                 else:
                     stats['skipped'] += 1
             else:
                 # Insert New
-                # We need page count to determine completion
-                comic = self.db.query(Comic).get(p_cid)
-                is_completed = False
-                if comic and pages_read >= comic.page_count:
-                    is_completed = True
-
                 new_prog = ReadingProgress(
                     user_id=p_uid,
                     comic_id=p_cid,
                     current_page=pages_read,
+                    total_pages=total_pages,
                     completed=is_completed,
                     last_read_at=last_read_dt
                 )
+
                 self.db.add(new_prog)
                 stats['inserted'] += 1
 
