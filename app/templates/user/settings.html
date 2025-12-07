@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+
+{% block title %}Account Settings - Comic Server{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto" x-data="userSettings()">
+    
+    <div class="flex justify-between items-center mb-8">
+        <h1 class="text-3xl font-bold text-white">Account Settings</h1>
+        <a href="/user/dashboard" class="text-gray-400 hover:text-white transition-colors">← Back to Dashboard</a>
+    </div>
+
+    <div class="bg-gray-800 rounded-lg p-8 border border-gray-700 shadow-xl">
+        
+        <h2 class="text-xl font-bold text-white mb-6 border-b border-gray-700 pb-2">Change Password</h2>
+
+        <form @submit.prevent="changePassword" class="space-y-6">
+            
+            <div>
+                <label class="block text-gray-400 text-sm font-bold mb-2">Current Password</label>
+                <input 
+                    type="password" 
+                    x-model="form.current_password"
+                    required
+                    class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500 transition-colors"
+                    placeholder="••••••••"
+                >
+            </div>
+
+            <div>
+                <label class="block text-gray-400 text-sm font-bold mb-2">New Password</label>
+                <input 
+                    type="password" 
+                    x-model="form.new_password"
+                    required
+                    minlength="8"
+                    class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500 transition-colors"
+                    placeholder="••••••••"
+                >
+                <p class="text-xs text-gray-500 mt-1">Must be at least 8 characters.</p>
+            </div>
+
+            <div>
+                <label class="block text-gray-400 text-sm font-bold mb-2">Confirm New Password</label>
+                <input 
+                    type="password" 
+                    x-model="confirm_password"
+                    required
+                    class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500 transition-colors"
+                    placeholder="••••••••"
+                >
+            </div>
+
+            <div class="pt-4 flex items-center justify-between">
+                <span class="text-sm" :class="messageColor" x-text="message"></span>
+                
+                <button 
+                    type="submit" 
+                    :disabled="loading"
+                    class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-6 rounded-lg transition-colors flex items-center"
+                >
+                    <span x-show="loading" class="animate-spin mr-2">↻</span>
+                    Update Password
+                </button>
+            </div>
+        </form>
+
+    </div>
+</div>
+
+<script>
+function userSettings() {
+    return {
+        form: {
+            current_password: '',
+            new_password: ''
+        },
+        confirm_password: '',
+        loading: false,
+        message: '',
+        messageColor: 'text-green-400',
+
+        async changePassword() {
+            this.message = '';
+            
+            // 1. Client Validation
+            if (this.form.new_password !== this.confirm_password) {
+                this.message = "❌ New passwords do not match.";
+                this.messageColor = 'text-red-400';
+                return;
+            }
+
+            this.loading = true;
+
+            try {
+                const res = await fetch(window.url('/api/users/me/password'), {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(this.form)
+                });
+
+                const data = await res.json();
+
+                if (res.ok) {
+                    this.message = "✅ Password updated successfully!";
+                    this.messageColor = 'text-green-400';
+                    // Clear form
+                    this.form.current_password = '';
+                    this.form.new_password = '';
+                    this.confirm_password = '';
+                } else {
+                    this.message = `❌ ${data.detail || 'Error updating password'}`;
+                    this.messageColor = 'text-red-400';
+                }
+            } catch (e) {
+                this.message = "❌ Network error occurred.";
+                this.messageColor = 'text-red-400';
+            } finally {
+                this.loading = false;
+            }
+        }
+    }
+}
+</script>
+{% endblock %}

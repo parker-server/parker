@@ -3,21 +3,21 @@ import shutil
 from fastapi import APIRouter, status, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse
 from typing import List, Annotated, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 from pathlib import Path
 from sqlalchemy import func
 
 
-from app.core.comic_helpers import get_reading_time
 from app.api.deps import SessionDep, AdminUser, CurrentUser
+from app.config import settings
+from app.core.comic_helpers import get_reading_time
+from app.core.security import verify_password, get_password_hash
 from app.models.comic import Comic
 from app.models.user import User
 from app.models.library import Library
 from app.models.reading_progress import ReadingProgress
 from app.models.pull_list import PullList
-from app.core.security import get_password_hash
-from app.config import settings
 from app.services.images import ImageService
 from app.services.settings_service import SettingsService
 
@@ -52,6 +52,9 @@ class UserListResponse(BaseModel):
     # but we might want the IDs for the edit form.
     accessible_library_ids: List[int] = []
 
+class UserPasswordUpdateRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8)
 
 @router.get("/me/dashboard")
 async def get_user_dashboard(db: SessionDep, current_user: CurrentUser):
@@ -177,6 +180,29 @@ async def get_avatar(user_id: int, db: SessionDep):
         raise HTTPException(status_code=404, detail="Avatar file missing")
 
     return FileResponse(file_path)
+
+@router.put("/me/password")
+async def update_password(
+    payload: UserPasswordUpdateRequest,
+    db: SessionDep,
+    current_user: CurrentUser
+):
+    """
+    Allow a logged-in user to change their own password.
+    """
+    # 1. Verify the old password matches
+    if not verify_password(payload.current_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Incorrect current password")
+
+    # 2. Hash the new password
+    new_hash = get_password_hash(payload.new_password)
+
+    # 3. Save
+    current_user.hashed_password = new_hash
+    db.add(current_user)
+    db.commit()
+
+    return {"status": "success", "message": "Password updated successfully"}
 
 # 1. List Users
 @router.get("/", response_model=List[UserListResponse])

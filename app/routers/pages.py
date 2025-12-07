@@ -119,9 +119,13 @@ async def pull_list_detail(request: Request, list_id: int):
         "list_id": list_id
     })
 
-@router.get("/dashboard", response_class=HTMLResponse)
+@router.get("/user/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request):
     return templates.TemplateResponse(request=request, name="user/dashboard.html")
+
+@router.get("/user/settings", response_class=HTMLResponse)
+async def settings_page(request: Request):
+    return templates.TemplateResponse("user/settings.html", {"request": request})
 
 @router.get("/browse/{context_type}/{context_id}", response_class=HTMLResponse)
 async def cover_browser_page(request: Request, context_type: str, context_id: int):
