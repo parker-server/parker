@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+
+{% block title %}Duplicate Detector - Parker{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto" x-data="duplicatesReport()">
+    
+    <div class="flex justify-between items-center mb-8">
+        <div>
+            <h1 class="text-3xl font-bold text-white mb-2">Duplicate Detector</h1>
+            <p class="text-gray-400">Items identified as duplicates based on Series, Volume, Issue, and Format.</p>
+        </div>
+        <div class="flex items-center gap-4">
+            <span class="text-gray-400" x-show="!loading && totalItems > 0">
+                <span x-text="totalItems"></span> conflicts found
+            </span>
+            <button @click="loadReport(1)" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2">
+                <span :class="loading ? 'animate-spin' : ''">↻</span> Refresh
+            </button>
+        </div>
+    </div>
+
+    <div x-show="loading" class="flex justify-center py-20">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+    </div>
+
+    <div x-show="!loading && items.length === 0" style="display: none;" class="bg-gray-800 rounded-lg p-12 text-center border border-gray-700">
+        <div class="text-5xl mb-4">✨</div>
+        <h2 class="text-2xl font-bold text-white mb-2">Clean Library!</h2>
+        <p class="text-gray-400">No duplicate issues found.</p>
+    </div>
+
+    <div x-show="!loading && items.length > 0" style="display: none;" class="space-y-6">
+
+        <template x-for="group in items" :key="`${group.series}-${group.number}-${group.format}`">
+            <div class="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden shadow-lg">
+                <div class="bg-gray-900/50 px-6 py-3 border-b border-gray-700 flex justify-between items-center">
+                    <div>
+                        <span class="text-gray-400 text-sm mr-2" x-text="group.library"></span>
+                        <a :href="`/search?field=series&value=${encodeURIComponent(group.series)}&operator=equal`" class="text-white font-bold hover:text-blue-400 transition-colors">
+                            <span x-text="group.series"></span>
+                            <span x-show="group.volume > 1" x-text="` Vol. ${group.volume}`" class="text-gray-400 font-normal"></span>
+                            <span x-text="` #${group.number}`" class="text-yellow-400"></span>
+                            <span x-show="group.format" x-text="` (${group.format})`" class="text-gray-500 text-xs uppercase ml-1"></span>
+                        </a>
+                    </div>
+                    <span class="bg-red-900/30 text-red-300 text-xs px-2 py-1 rounded border border-red-900/50">
+                        <span x-text="group.files.length"></span> copies
+                    </span>
+                </div>
+
+                <div class="divide-y divide-gray-700/50">
+                    <template x-for="file in group.files" :key="file.id">
+                        <div class="px-6 py-4 flex items-center justify-between hover:bg-gray-700/30 transition-colors group/row">
+                            <div class="flex-1 min-w-0 pr-4">
+                                <div class="text-white font-mono text-sm truncate" x-text="file.filename"></div>
+                                <div class="text-gray-500 text-xs truncate" x-text="file.path"></div>
+                            </div>
+
+                            <div class="flex items-center gap-6 text-sm">
+                                <div class="text-right">
+                                    <div class="text-blue-400 font-mono" x-text="window.comicServer.formatBytes(file.size_bytes)"></div>
+                                    <div class="text-gray-500 text-xs">Size</div>
+                                </div>
+
+                                <a :href="`/comics/${file.id}`" target="_blank" class="px-3 py-1 bg-gray-700 hover:bg-blue-600 text-white text-xs rounded transition-colors">
+                                    View
+                                </a>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </template>
+
+        <div class="bg-gray-800 rounded-lg p-4 border border-gray-700 flex justify-between items-center">
+            <button
+                x-on:click="changePage(currentPage - 1)"
+                :disabled="currentPage === 1"
+                class="px-4 py-2 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors text-sm"
+            >
+                Previous
+            </button>
+
+            <span class="text-gray-400 text-sm">
+                Page <span class="text-white font-bold" x-text="currentPage"></span> of <span x-text="totalPages"></span>
+            </span>
+
+            <button
+                x-on:click="changePage(currentPage + 1)"
+                :disabled="currentPage >= totalPages"
+                class="px-4 py-2 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors text-sm"
+            >
+                Next
+            </button>
+        </div>
+
+    </div>
+</div>
+
+<script>
+function duplicatesReport() {
+    return {
+        items: [],
+        loading: true,
+        currentPage: 1,
+        pageSize: 20, // Keep duplicates list smaller per page as cards are tall
+        totalItems: 0,
+
+        init() {
+            this.loadReport(1);
+        },
+
+        async loadReport(page) {
+            this.loading = true;
+            try {
+                const res = await fetch(`/api/reports/duplicates?page=${page}&size=${this.pageSize}`);
+                if(res.ok) {
+                    const data = await res.json();
+                    this.items = data.items;
+                    this.totalItems = data.total;
+                    this.currentPage = data.page;
+                }
+            } catch(e) { console.error(e); }
+            finally { this.loading = false; }
+        },
+
+        get totalPages() {
+            return Math.ceil(this.totalItems / this.pageSize) || 1;
+        },
+
+        changePage(newPage) {
+            if (newPage < 1 || newPage > this.totalPages) return;
+            this.loadReport(newPage);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+    }
+}
+</script>
+{% endblock %}

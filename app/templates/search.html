@@ -75,6 +75,8 @@
                             <option value="year">Release Year</option>
                             <option value="format">Format</option>
                             <option value="imprint">Imprint</option>
+                            <option value="summary">Summary</option>
+                            <option value="web">Web/Wiki Link</option>
                         </optgroup>
                         <optgroup label="Creators">
                             <option value="writer">Writer</option>
@@ -109,11 +111,11 @@
 
                     <div class="flex-1 w-full" x-show="!['is_empty', 'is_not_empty'].includes(rule.operator)">
 
-                        <div x-show="['title', 'year'].includes(rule.field)">
+                        <div x-show="['title', 'year', 'summary', 'web'].includes(rule.field)">
                             <input type="text" x-model="rule.value" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600 outline-none focus:border-blue-500">
                         </div>
 
-                        <div x-show="!['title', 'year'].includes(rule.field)">
+                        <div x-show="!['title', 'year', 'summary', 'web'].includes(rule.field)">
                             <div
                                 x-data="tagInput(rule)"
                                 class="relative w-full"
@@ -260,7 +262,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         syncTagsFromRule() {
-                            console.log("fired watch");
+
             if (rule.value) {
                 const newTags = Array.isArray(rule.value) ? rule.value : [rule.value];
 
@@ -366,7 +368,9 @@ document.addEventListener('alpine:init', () => {
             }
 
             // 2. Handle Filters (Deep Linking)
-            if (params.has('field') && params.has('value')) {
+            // Allow search if 'field' exists AND ('value' OR 'operator' exists)
+            // This supports ?field=summary&operator=is_empty
+            if (params.has('field') && (params.has('value') || params.has('operator'))) {
                 const field = params.get('field');
                 const value = params.get('value');
                 // Default to 'contains' if not specified
@@ -377,8 +381,10 @@ document.addEventListener('alpine:init', () => {
                     id: 1,
                     field: field,
                     operator: operator,
-                    // TagInput expects an array
-                    value: [value]
+                    // Check if value exists before wrapping in array.
+                    // If null, return empty array [] which TagInput can handle.
+                    value: value ? [value] : []
+
                 }];
 
                 shouldSearch = true;

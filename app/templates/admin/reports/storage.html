@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+
+{% block title %}Storage Analysis - Parker{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto" x-data="storageReport()">
+    
+    <div class="flex justify-between items-center mb-8">
+        <h1 class="text-3xl font-bold text-white">Storage Analysis</h1>
+        <button x-on:click="loadAll()" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg transition-colors">
+                <span>↻</span> Refresh
+
+        </button>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        <div class="lg:col-span-2 bg-gray-800 rounded-lg border border-gray-700 shadow-xl overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-700 bg-gray-900/50">
+                <h2 class="text-lg font-bold text-white">Library Usage</h2>
+            </div>
+            
+            <table class="w-full text-left">
+                <thead class="text-xs text-gray-400 uppercase bg-gray-900/30">
+                    <tr>
+                        <th class="px-6 py-3">Library</th>
+                        <th class="px-6 py-3 text-right">Series</th>
+                        <th class="px-6 py-3 text-right">Issues</th>
+                        <th class="px-6 py-3 text-right">Avg Size</th>
+                        <th class="px-6 py-3 text-right">Total Size</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-700">
+                    <template x-for="lib in libraries" :key="lib.library">
+                        <tr class="hover:bg-gray-700/50">
+                            <td class="px-6 py-4 font-medium text-white" x-text="lib.library"></td>
+                            <td class="px-6 py-4 text-right text-gray-400" x-text="lib.series_count"></td>
+                            <td class="px-6 py-4 text-right text-gray-400" x-text="lib.issue_count"></td>
+                            <td class="px-6 py-4 text-right text-gray-500 text-sm" x-text="lib.avg_issue_mb + ' MB'"></td>
+                            <td class="px-6 py-4 text-right font-mono text-blue-400" x-text="window.comicServer.formatBytes(lib.size_bytes)"></td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="bg-gray-800 rounded-lg border border-gray-700 shadow-xl overflow-hidden h-fit">
+            <div class="px-6 py-4 border-b border-gray-700 bg-gray-900/50">
+                <h2 class="text-lg font-bold text-white">File Formats</h2>
+            </div>
+            <div class="p-6 space-y-4">
+                <template x-for="fmt in formats" :key="fmt.format">
+                    <div>
+                        <div class="flex justify-between text-sm mb-1">
+                            <span class="text-gray-300" x-text="fmt.format"></span>
+                            <span class="text-white font-bold" x-text="fmt.count"></span>
+                        </div>
+                        <div class="w-full bg-gray-700 rounded-full h-2">
+                            <div class="bg-purple-500 h-2 rounded-full" :style="`width: ${(fmt.count / Math.max(...formats.map(f=>f.count))) * 100}%`"></div>
+                        </div>
+                    </div>
+                </template>
+                
+                <div class="mt-6 p-4 bg-blue-900/20 rounded border border-blue-900/50 text-xs text-blue-200">
+                    <strong>Tip:</strong> CBZ (Zip) files are generally faster to process and read than CBR (Rar) files.
+                </div>
+            </div>
+        </div>
+
+        <div class="lg:col-span-3 bg-gray-800 rounded-lg border border-gray-700 shadow-xl overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-700 bg-gray-900/50">
+                <h2 class="text-lg font-bold text-white">Largest Series (Top 20)</h2>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 p-4">
+                <template x-for="(series, idx) in topSeries" :key="series.id">
+                    <div class="bg-gray-700/50 p-4 rounded border border-gray-700 flex items-center justify-between">
+                        <div class="min-w-0">
+                            <div class="text-xs text-gray-500 mb-1" x-text="`#${idx+1} · ${series.library}`"></div>
+                            <a :href="`/series/${series.id}`" class="text-white font-bold hover:text-blue-400 truncate block" x-text="series.name"></a>
+                            <div class="text-xs text-gray-400 mt-1" x-text="`${series.issues} Issues`"></div>
+                        </div>
+                        <div class="text-right pl-4">
+                            <div class="text-lg font-mono text-yellow-400" x-text="window.comicServer.formatBytes(series.size_bytes)"></div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+function storageReport() {
+    return {
+        libraries: [],
+        topSeries: [],
+        formats: [],
+
+        init() {
+            this.loadAll();
+        },
+
+        async loadAll() {
+            // Load all 3 endpoints in parallel
+            const [libRes, seriesRes, fmtRes] = await Promise.all([
+                fetch('/api/reports/storage/libraries'),
+                fetch('/api/reports/storage/series'),
+                fetch('/api/reports/storage/formats')
+            ]);
+
+            if(libRes.ok) this.libraries = await libRes.json();
+            if(seriesRes.ok) this.topSeries = await seriesRes.json();
+            if(fmtRes.ok) this.formats = await fmtRes.json();
+        }
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+
+{% block title %}Metadata Health - Parker{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto" x-data="healthReport()">
+    
+    <div class="flex justify-between items-center mb-8">
+        <h1 class="text-3xl font-bold text-white">Metadata Health</h1>
+        <button x-on:click="loadReport()" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2">
+            <span :class="loading ? 'animate-spin inline-block' : ''">↻</span> Refresh
+        </button>
+    </div>
+
+    <div x-show="loading" class="flex justify-center py-20">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+    </div>
+
+    <div x-show="!loading && report" style="display: none;" class="space-y-8">
+        
+        <div class="bg-gray-800 rounded-lg p-8 border border-gray-700 shadow-lg flex items-center justify-between">
+            <div>
+                <h2 class="text-xl font-bold text-gray-200">Library Grade</h2>
+                <p class="text-gray-400 mt-1">Based on completeness of metadata tags.</p>
+            </div>
+            
+            <div class="relative w-32 h-32 flex items-center justify-center">
+                <svg class="w-full h-full transform -rotate-90">
+                    <circle cx="64" cy="64" r="56" stroke="currentColor" stroke-width="8" fill="transparent" class="text-gray-700" />
+                    <circle cx="64" cy="64" r="56" stroke="currentColor" stroke-width="8" fill="transparent" 
+                        :class="getScoreColor()"
+                        :stroke-dasharray="351" 
+                        :stroke-dashoffset="351 - (351 * report.overall_score / 100)"
+                        class="transition-all duration-1000 ease-out"
+                    />
+                </svg>
+                <span class="absolute text-4xl font-bold text-white" x-text="report.overall_score"></span>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-4">
+            <template x-for="item in report.details" :key="item.label">
+                <div class="bg-gray-800 rounded-lg border-l-4 p-4 shadow flex flex-col md:flex-row gap-4"
+                     :class="{
+                        'border-red-500': item.severity === 'error',
+                        'border-yellow-500': item.severity === 'warning',
+                        'border-blue-500': item.severity === 'info'
+                     }">
+                    
+                    <div class="flex-1">
+                        <div class="flex items-center gap-2 mb-1">
+                            <h3 class="font-bold text-white" x-text="item.label"></h3>
+                            <span class="text-xs px-2 py-0.5 rounded bg-gray-700 text-gray-300 uppercase" x-text="item.severity"></span>
+                        </div>
+                        <p class="text-sm text-gray-400">
+                            Affects <strong class="text-white" x-text="item.count"></strong> items 
+                            (<span x-text="item.percentage + '%'"></span> of library)
+                        </p>
+                    </div>
+
+                    <div class="flex-1 md:border-l md:border-gray-700 md:pl-4">
+                        <div class="text-xs text-gray-500 uppercase mb-1">Examples</div>
+                        <ul class="text-sm text-gray-300 space-y-1">
+                            <template x-for="sample in item.sample">
+                                <li class="truncate">
+                                    <span class="text-gray-500 mr-1">•</span>
+                                    <span x-text="sample"></span>
+                                </li>
+                            </template>
+                        </ul>
+                    </div>
+
+                    <div class="flex items-center">
+                        <a 
+                            :href="`/search?field=${getSearchField(item.label)}&operator=is_empty`"
+                            class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded transition-colors whitespace-nowrap"
+                        >
+                            View All
+                        </a>
+                    </div>
+
+                </div>
+            </template>
+        </div>
+        
+        <div x-show="report.details.length === 0" class="text-center py-12 text-green-400">
+            <div class="text-4xl mb-2">✨</div>
+            <p class="font-bold">Perfection! No metadata issues found.</p>
+        </div>
+
+    </div>
+</div>
+
+<script>
+function healthReport() {
+    return {
+        loading: true,
+        report: null,
+
+        init() {
+            this.loadReport();
+        },
+
+        async loadReport() {
+            this.loading = true;
+            try {
+                const res = await fetch('/api/reports/metadata');
+                if(res.ok) this.report = await res.json();
+            } catch(e) { console.error(e); } 
+            finally { this.loading = false; }
+        },
+
+        getScoreColor() {
+            if(!this.report) return 'text-gray-500';
+            if(this.report.overall_score >= 90) return 'text-green-500';
+            if(this.report.overall_score >= 70) return 'text-yellow-500';
+            return 'text-red-500';
+        },
+
+        getSearchField(label) {
+            // Helper to map report labels to search query params
+            if(label.includes("Summary")) return "summary"; // Note: Search needs to support this field
+            if(label.includes("Year")) return "year";
+            if(label.includes("Publisher")) return "publisher";
+            if(label.includes("Web")) return "web";
+            return "title"; // Fallback
+        }
+    }
+}
+</script>
+{% endblock %}

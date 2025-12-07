@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block title %}Corrupt Files Report - Parker{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto" x-data="corruptReport()">
+    
+    <div class="flex justify-between items-center mb-8">
+        <div>
+            <h1 class="text-3xl font-bold text-white mb-2">Corrupt / Low Page Count</h1>
+            <p class="text-gray-400">Files with fewer than 3 pages. Likely corrupted downloads or promos.</p>
+        </div>
+        <div class="flex items-center gap-4">
+             <span class="text-gray-400" x-show="!loading && totalItems > 0">
+                <span x-text="totalItems"></span> files found
+             </span>
+            <button @click="loadReport(1)" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2">
+                <span :class="loading ? 'animate-spin' : ''">↻</span> Refresh
+            </button>
+        </div>
+    </div>
+
+    <div x-show="loading" class="flex justify-center py-20">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+    </div>
+
+    <div x-show="!loading && items.length === 0" style="display: none;" class="bg-gray-800 rounded-lg p-12 text-center border border-gray-700">
+        <div class="text-5xl mb-4">🧹</div>
+        <h2 class="text-2xl font-bold text-white mb-2">Clean Sweep!</h2>
+        <p class="text-gray-400">No suspicious files found.</p>
+    </div>
+
+    <div x-show="!loading && items.length > 0" style="display: none;" class="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden shadow-xl">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left">
+                <thead class="bg-gray-900/50 text-gray-400 text-xs uppercase tracking-wider">
+                    <tr>
+                        <th class="px-6 py-4 font-medium">Pages</th>
+                        <th class="px-6 py-4 font-medium">File Info</th>
+                        <th class="px-6 py-4 font-medium">Series Context</th>
+                        <th class="px-6 py-4 font-medium text-right">Size</th>
+                        <th class="px-6 py-4 font-medium text-right">Action</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-700">
+                    <template x-for="item in items" :key="item.id">
+                        <tr class="hover:bg-gray-700/50 transition-colors">
+                            <td class="px-6 py-4">
+                                <span class="text-2xl font-bold text-red-400" x-text="item.page_count"></span>
+                            </td>
+                            <td class="px-6 py-4">
+                                <div class="text-white font-medium" x-text="item.filename"></div>
+                                <div class="text-xs text-gray-500 truncate max-w-md" x-text="item.path" :title="item.path"></div>
+                            </td>
+                            <td class="px-6 py-4">
+                                <a :href="`/series/${item.series_id}`" class="text-blue-300 hover:text-white" x-text="item.series"></a>
+                                <div class="text-xs text-gray-400" x-text="`Vol ${item.volume} #${item.number}`"></div>
+                            </td>
+                            <td class="px-6 py-4 text-right font-mono text-sm text-gray-400" x-text="window.comicServer.formatBytes(item.file_size)"></td>
+                            <td class="px-6 py-4 text-right">
+                                <a :href="`/comics/${item.id}`" target="_blank" class="text-sm bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-white">Inspect</a>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
+        
+        <div class="bg-gray-900/50 px-6 py-4 border-t border-gray-700 flex justify-between items-center">
+            <button 
+                @click="changePage(currentPage - 1)" 
+                :disabled="currentPage === 1"
+                class="px-4 py-2 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors text-sm"
+            >
+                Previous
+            </button>
+
+            <span class="text-gray-400 text-sm">
+                Page <span class="text-white font-bold" x-text="currentPage"></span> of <span x-text="totalPages"></span>
+            </span>
+
+            <button 
+                @click="changePage(currentPage + 1)" 
+                :disabled="currentPage >= totalPages"
+                class="px-4 py-2 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors text-sm"
+            >
+                Next
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+function corruptReport() {
+    return {
+        items: [],
+        loading: true,
+        currentPage: 1,
+        pageSize: 50,
+        totalItems: 0,
+
+        init() {
+            this.loadReport(1);
+        },
+
+        async loadReport(page) {
+            this.loading = true;
+            try {
+                const res = await fetch(`/api/reports/corrupt?page=${page}&size=${this.pageSize}`);
+                if(res.ok) {
+                    const data = await res.json();
+                    this.items = data.items;
+                    this.totalItems = data.total;
+                    this.currentPage = data.page;
+                }
+            } catch(e) { console.error(e); } 
+            finally { this.loading = false; }
+        },
+
+        get totalPages() {
+            return Math.ceil(this.totalItems / this.pageSize) || 1;
+        },
+
+        changePage(newPage) {
+            if (newPage < 1 || newPage > this.totalPages) return;
+            this.loadReport(newPage);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+    }
+}
+</script>
+{% endblock %}
