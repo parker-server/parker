@@ -240,6 +240,7 @@ class LibraryScanner:
             notes=metadata.get('notes'),
             age_rating=metadata.get('age_rating'),
             language_iso=metadata.get('lang'),
+            community_rating=metadata.get('community_rating'),
 
             # Publishing
             publisher=metadata.get('publisher'),
@@ -349,6 +350,7 @@ class LibraryScanner:
         comic.notes = metadata.get('notes')
         comic.age_rating = metadata.get('age_rating')
         comic.language_iso = metadata.get('lang')
+        comic.community_rating = metadata.get('community_rating')
         comic.publisher = metadata.get('publisher')
         comic.imprint = metadata.get('imprint')
         comic.format = metadata.get('format')

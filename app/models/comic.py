@@ -42,6 +42,7 @@ class Comic(Base):
     notes = Column(Text)
     age_rating = Column(String, nullable=True) # e.g. "Everyone"
     language_iso = Column(String, nullable=True)  # e.g. "en", "jp"
+    community_rating = Column(Float, nullable=True, default=None)
 
     # Total issue count for the volume (derived during scan from actual page counting in archive)
     # Used to determine if a series is "Ended" and calculate missing issues.

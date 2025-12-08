@@ -123,6 +123,14 @@ async def get_search_suggestions(
         # Distinct query on Comic table
         results = build_query(Comic, Comic.imprint).distinct().limit(10).all()
 
+    elif field == 'age_rating':
+        # Suggest distinct Age Ratings present in the library
+        results = build_query(Comic, Comic.age_rating).distinct().limit(10).all()
+
+    elif field == 'language':
+        # Suggest distinct Language Codes (e.g., 'en', 'jp')
+        results = build_query(Comic, Comic.language_iso).distinct().limit(10).all()
+
     elif field == 'reading_list':
         results = build_query(ReadingList, ReadingList.name).limit(10).all()
 

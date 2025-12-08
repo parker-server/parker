@@ -77,6 +77,9 @@
                             <option value="imprint">Imprint</option>
                             <option value="summary">Summary</option>
                             <option value="web">Web/Wiki Link</option>
+                            <option value="rating">Community Rating</option>
+                            <option value="age_rating">Age Rating</option>
+                            <option value="language">Language (ISO)</option>
                         </optgroup>
                         <optgroup label="Creators">
                             <option value="writer">Writer</option>
@@ -111,11 +114,11 @@
 
                     <div class="flex-1 w-full" x-show="!['is_empty', 'is_not_empty'].includes(rule.operator)">
 
-                        <div x-show="['title', 'year', 'summary', 'web'].includes(rule.field)">
-                            <input type="text" x-model="rule.value" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600 outline-none focus:border-blue-500">
+                        <div x-show="['title', 'year', 'summary', 'web', 'rating'].includes(rule.field)">
+                            <input type="text" x-on:keydown.enter="performSearch()" x-model="rule.value" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600 outline-none focus:border-blue-500">
                         </div>
 
-                        <div x-show="!['title', 'year', 'summary', 'web'].includes(rule.field)">
+                        <div x-show="!['title', 'year', 'summary', 'web', 'rating'].includes(rule.field)">
                             <div
                                 x-data="tagInput(rule)"
                                 class="relative w-full"
@@ -131,9 +134,11 @@
                                     <input
                                         type="text"
                                         x-model="input"
+                                        x-show="!(['equal', 'not_equal'].includes(rule.operator) && tags.length > 0)"
                                         @input.debounce.300ms="fetchSuggestions()"
-                                        @keydown.enter.prevent="addTag()"
-                                        @keydown.backspace="handleBackspace()"
+                                        x-on:keydown.enter.prevent="addTag()"
+                                        x-on:keydown.backspace="handleBackspace()"
+                                        x-on:blur="addTag()"
                                         class="bg-transparent border-none focus:ring-0 text-white flex-1 min-w-[120px] outline-none h-8 px-1"
                                         placeholder="Type to find..."
                                     >
@@ -143,6 +148,7 @@
                                     <template x-for="sugg in suggestions" :key="sugg">
                                         <div
                                             x-on:click="selectSuggestion(sugg)"
+                                            x-on:mousedown.prevent
                                             class="px-3 py-2 hover:bg-blue-600 cursor-pointer text-white border-b border-gray-600 last:border-0"
                                             x-text="sugg"
                                         ></div>
@@ -179,6 +185,7 @@
                         <option value="series">Series Name</option>
                         <option value="title">Issue Title</option>
                         <option value="page_count">Page Count</option>
+                        <option value="rating">Community Rating</option>
                     </select>
                 </div>
                 <div class="flex items-center space-x-2">
@@ -283,7 +290,7 @@ document.addEventListener('alpine:init', () => {
             }
             try {
                 // Call our API
-                const res = await fetch(`/api/search/suggestions?field=${rule.field}&query=${this.input}`);
+                const res = await fetch(window.url(`/api/search/suggestions?field=${rule.field}&query=${this.input}`));
                 this.suggestions = await res.json();
             } catch(e) { console.error(e); }
         },
@@ -442,7 +449,7 @@ document.addEventListener('alpine:init', () => {
             const payload = this.buildSearchPayload();
 
             try {
-                const res = await fetch('/api/comics/search', {
+                const res = await fetch(window.url('/api/comics/search'), {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(payload)
@@ -462,7 +469,7 @@ document.addEventListener('alpine:init', () => {
 
         async loadSavedList() {
             try {
-                const res = await fetch('/api/saved-searches/');
+                const res = await fetch(window.url('/api/saved-searches/'));
                 if (res.ok) this.savedSearches = await res.json();
             } catch(e) { console.error(e); }
         },
@@ -481,7 +488,7 @@ document.addEventListener('alpine:init', () => {
             };
 
             try {
-                const res = await fetch('/api/saved-searches/', {
+                const res = await fetch(window.url('/api/saved-searches/'), {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(payload)
@@ -496,7 +503,7 @@ document.addEventListener('alpine:init', () => {
 
         async deleteSearch(id) {
             if(!confirm("Delete this saved search?")) return;
-            await fetch(`/api/saved-searches/${id}`, { method: 'DELETE' });
+            await fetch(window.url(`/api/saved-searches/${id}`), { method: 'DELETE' });
             this.loadSavedList(); // Refresh list
         },
 
@@ -537,7 +544,22 @@ document.addEventListener('alpine:init', () => {
                     // If the user typed nothing in a text box, send null to be safe,
                     // but for tags (arrays), send the array.
                     value: (Array.isArray(r.value) && r.value.length === 0) ? null : r.value
-                })).filter(r => r.operator === 'is_empty' || r.operator === 'is_not_empty' || r.value !== null), // Filter out incomplete rules
+                })).filter(r => {
+
+                    // ALWAYS KEEP: Operators that don't need values
+                    if (['is_empty', 'is_not_empty'].includes(r.operator)) return true;
+
+                    // REMOVE: Null or Undefined
+                    if (r.value === null || r.value === undefined) return false;
+
+                    // REMOVE: Empty Strings
+                    if (typeof r.value === 'string' && r.value.trim() === '') return false;
+
+                    // REMOVE: Empty Arrays (Tags)
+                    if (Array.isArray(r.value) && r.value.length === 0) return false;
+
+                    return true;
+                }),
                 sort_by: this.sortBy,
                 sort_order: this.sortOrder,
                 limit: parseInt(this.limit)

@@ -95,7 +95,9 @@ class SearchService:
             # Simplification: We filter on Library Name
             return self._build_simple_field_condition(Library.name, operator, value, needs_join=Library)
 
-        elif field in ['title', 'number', 'publisher', 'imprint', 'format', 'year', 'series_group', 'summary', 'web']:
+        elif field in ['title', 'number', 'publisher', 'imprint', 'format',
+                       'year', 'series_group', 'summary', 'web',
+                       'age_rating', 'language', 'rating']:
             # Map string field name to Column object
             col_map = {
                 'title': Comic.title,
@@ -106,7 +108,10 @@ class SearchService:
                 'year': Comic.year,
                 'series_group': Comic.series_group,
                 'summary': Comic.summary,
-                'web': Comic.web
+                'web': Comic.web,
+                'age_rating': Comic.age_rating,
+                'language': Comic.language_iso,
+                'rating': Comic.community_rating
             }
             return self._build_simple_field_condition(col_map[field], operator, value)
 
@@ -206,7 +211,7 @@ class SearchService:
             # checks = [name_column.ilike(f"%{v}%") for v in values]
             # return relationship.any(or_(*checks))
 
-        elif operator == 'does_not_contain':
+        elif operator == 'does_not_contain' or operator == 'not_equal':
             return ~relationship.any(name_column.in_(values))
 
         elif operator == 'must_contain':  # AND
@@ -262,7 +267,10 @@ class SearchService:
             'format': Comic.format,
             'series_group': Comic.series_group,
             'summary': Comic.summary,
-            'web': Comic.web
+            'web': Comic.web,
+            'rating': Comic.community_rating,
+            'age_rating': Comic.age_rating,
+            'language': Comic.language_iso,
         }
 
         # For relationship fields
@@ -327,8 +335,10 @@ class SearchService:
             col = Comic.year
         elif sort_by == 'title':
             col = Comic.title
-        elif sort_by == 'page_count':  # Added this one from schema
+        elif sort_by == 'page_count':
             col = Comic.page_count
+        elif sort_by == 'rating':
+            col = Comic.community_rating
         elif sort_by == 'updated':
             col = Comic.updated_at
         elif sort_by == 'created':  # (Explicit)
@@ -337,8 +347,18 @@ class SearchService:
             col = Comic.created_at # Default fallback
 
         if sort_order == 'desc':
-            return query.order_by(col.desc())
-        return query.order_by(col.asc())
+            # Primary Sort
+            query = query.order_by(col.desc())
+        else:
+            query = query.order_by(col.asc())
+
+        # SECONDARY SORT (Stability)
+        # If sorting by Rating, Year, or Page Count, ties are common.
+        # Always break ties with Series Name -> Number
+        if sort_by in ['rating', 'year', 'page_count']:
+            query = query.order_by(Series.name.asc(), Comic.number.asc())
+
+        return query
 
     @staticmethod
     def _format_comic(comic: Comic) -> dict:
@@ -353,5 +373,6 @@ class SearchService:
             "year": comic.year,
             "publisher": comic.publisher,
             "format": comic.format,
-            "thumbnail_path": f"/api/comics/{comic.id}/thumbnail"
+            "thumbnail_path": f"/api/comics/{comic.id}/thumbnail",
+            "community_rating": comic.community_rating
         }

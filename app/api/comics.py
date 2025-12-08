@@ -96,7 +96,7 @@ async def get_comic(comic: ComicDep, db: SessionDep, current_user: CurrentUser):
         "filename": comic.filename,
         "file_path": comic.file_path,
         "file_size": comic.file_size,
-        "thumbnail_path": comic.thumbnail_path,
+        #"thumbnail_path": comic.thumbnail_path,
 
         # Library info
         "library_id": comic.volume.series.library_id,
@@ -131,7 +131,12 @@ async def get_comic(comic: ComicDep, db: SessionDep, current_user: CurrentUser):
         "read_time": read_time,
         "scan_information": comic.scan_information,
 
-        # Tags (now from relationships)
+        # Misc
+        "age_rating": comic.age_rating,
+        "language_iso": comic.language_iso,
+        "community_rating": comic.community_rating,
+
+        # Tags (from relationships)
         "characters": [c.name for c in comic.characters],
         "teams": [t.name for t in comic.teams],
         "locations": [l.name for l in comic.locations],

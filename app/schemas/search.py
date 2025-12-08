@@ -6,11 +6,20 @@ from typing import List, Optional, Literal, Union
 class SearchFilter(BaseModel):
     """A single search filter"""
     field: Literal[
-        'library', 'series', 'volume', 'number', 'title', 'publisher', 'imprint',
-        'format', 'year', 'writer', 'penciller', 'inker', 'colorist',
-        'letterer', 'cover_artist', 'editor', 'character', 'team',
-        'location', 'collection', 'reading_list', 'series_group', 'story_arc', 'pull_list',
-        'summary', 'web'
+
+        # Metadata
+        'series', 'volume', 'number', 'title', 'publisher', 'imprint',
+        'summary', 'web', 'rating', 'age_rating', 'language', 'format', 'year',
+
+        # Creators
+        'writer', 'penciller', 'inker', 'colorist', 'letterer', 'cover_artist', 'editor',
+
+        # Tags
+        'character', 'team', 'location', 'genre',
+
+        # Organization
+        'library', 'collection', 'reading_list', 'series_group', 'story_arc', 'pull_list',
+
     ]
     operator: Literal[
         'equal', 'not_equal',
@@ -18,7 +27,7 @@ class SearchFilter(BaseModel):
         'is_empty', 'is_not_empty'
     ]
     # Value can be a single string/int or a list
-    value: Optional[Union[str, int, List[str], List[int]]] = None
+    value: Optional[Union[str, int, float, List[str], List[int]]] = None
 
 
 class SearchRequest(BaseModel):
@@ -26,7 +35,7 @@ class SearchRequest(BaseModel):
     match: Literal['any', 'all'] = 'all'
     filters: List[SearchFilter] = Field(default_factory=list)
 
-    sort_by: Literal['created', 'updated', 'year', 'series', 'title', 'page_count'] = 'created'
+    sort_by: Literal['created', 'updated', 'year', 'series', 'title', 'page_count', 'rating'] = 'created'
     sort_order: Literal['asc', 'desc'] = 'desc'
 
     limit: int = Field(default=50, ge=1, le=1000)
@@ -47,6 +56,7 @@ class ComicSearchItem(BaseModel):
     publisher: Optional[str] = None
     format: Optional[str] = None
     thumbnail_path: Optional[str] = None
+    community_rating: Optional[float] = None
 
 
 class SearchResponse(BaseModel):

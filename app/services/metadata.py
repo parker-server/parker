@@ -3,7 +3,10 @@ from typing import Optional, Dict, Any
 
 
 def parse_comicinfo(xml_content: bytes) -> Dict[str, Any]:
-    """Parse ComicInfo.xml and return structured data"""
+    """
+    Parse ComicInfo.xml and return structured data
+    XSD: https://github.com/anansi-project/comicinfo/blob/main/schema/v2.0/ComicInfo.xsd
+    """
     try:
         root = etree.fromstring(xml_content)
 
@@ -11,6 +14,21 @@ def parse_comicinfo(xml_content: bytes) -> Dict[str, Any]:
         def get_text(element_name: str) -> Optional[str]:
             elem = root.find(element_name)
             return elem.text if elem is not None and elem.text else None
+
+        # Helper to parse rating safely
+        def get_rating(element_name: str) -> Optional[float]:
+            text = get_text(element_name)
+            if not text:
+                return None
+            try:
+                # Handle comma decimals (e.g. "4,5") and clean whitespace
+                clean_val = text.replace(',', '.').strip()
+                val = float(clean_val)
+
+                # Clamp to 0-5 range per XSD
+                return max(0.0, min(5.0, val))
+            except ValueError:
+                return None
 
         return {
             # Basic info
@@ -22,6 +40,7 @@ def parse_comicinfo(xml_content: bytes) -> Dict[str, Any]:
             'count': get_text('Count'),
             'age_rating': get_text('AgeRating'),
             'lang': get_text('LanguageISO'),
+            'community_rating': get_rating('CommunityRating'),
 
             # Date
             'year': get_text('Year'),
