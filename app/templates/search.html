@@ -77,6 +77,7 @@
                             <option value="imprint">Imprint</option>
                             <option value="summary">Summary</option>
                             <option value="web">Web/Wiki Link</option>
+                            <option value="rating">Community Rating</option>
                         </optgroup>
                         <optgroup label="Creators">
                             <option value="writer">Writer</option>
@@ -111,11 +112,11 @@
 
                     <div class="flex-1 w-full" x-show="!['is_empty', 'is_not_empty'].includes(rule.operator)">
 
-                        <div x-show="['title', 'year', 'summary', 'web'].includes(rule.field)">
+                        <div x-show="['title', 'year', 'summary', 'web', 'rating'].includes(rule.field)">
                             <input type="text" x-model="rule.value" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600 outline-none focus:border-blue-500">
                         </div>
 
-                        <div x-show="!['title', 'year', 'summary', 'web'].includes(rule.field)">
+                        <div x-show="!['title', 'year', 'summary', 'web', 'rating'].includes(rule.field)">
                             <div
                                 x-data="tagInput(rule)"
                                 class="relative w-full"
@@ -179,6 +180,7 @@
                         <option value="series">Series Name</option>
                         <option value="title">Issue Title</option>
                         <option value="page_count">Page Count</option>
+                        <option value="rating">Community Rating</option>
                     </select>
                 </div>
                 <div class="flex items-center space-x-2">
@@ -283,7 +285,7 @@ document.addEventListener('alpine:init', () => {
             }
             try {
                 // Call our API
-                const res = await fetch(`/api/search/suggestions?field=${rule.field}&query=${this.input}`);
+                const res = await fetch(window.url(`/api/search/suggestions?field=${rule.field}&query=${this.input}`));
                 this.suggestions = await res.json();
             } catch(e) { console.error(e); }
         },
@@ -442,7 +444,7 @@ document.addEventListener('alpine:init', () => {
             const payload = this.buildSearchPayload();
 
             try {
-                const res = await fetch('/api/comics/search', {
+                const res = await fetch(window.url('/api/comics/search'), {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(payload)
@@ -462,7 +464,7 @@ document.addEventListener('alpine:init', () => {
 
         async loadSavedList() {
             try {
-                const res = await fetch('/api/saved-searches/');
+                const res = await fetch(window.url('/api/saved-searches/'));
                 if (res.ok) this.savedSearches = await res.json();
             } catch(e) { console.error(e); }
         },
@@ -481,7 +483,7 @@ document.addEventListener('alpine:init', () => {
             };
 
             try {
-                const res = await fetch('/api/saved-searches/', {
+                const res = await fetch(window.url('/api/saved-searches/'), {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(payload)
@@ -496,7 +498,7 @@ document.addEventListener('alpine:init', () => {
 
         async deleteSearch(id) {
             if(!confirm("Delete this saved search?")) return;
-            await fetch(`/api/saved-searches/${id}`, { method: 'DELETE' });
+            await fetch(window.url(`/api/saved-searches/${id}`), { method: 'DELETE' });
             this.loadSavedList(); // Refresh list
         },
 
