@@ -2,8 +2,13 @@ import re
 from datetime import datetime
 from fastapi.templating import Jinja2Templates
 from app.config import settings
+from app.core.utils import get_route_map
 
 templates = Jinja2Templates(directory="app/templates")
+
+def route_map_injector(request):
+    # You can decide whether to include admin routes here
+    return get_route_map(request.app, with_admin_routes=False)
 
 
 # URL Helper for Jinja
@@ -20,6 +25,7 @@ def url_builder(path: str) -> str:
 # Inject URL data into Templates
 templates.env.globals["url"] = url_builder
 templates.env.globals["base_url"] = settings.clean_base_url
+templates.env.globals["routes"] = route_map_injector
 
 
 # --- Filters ---
