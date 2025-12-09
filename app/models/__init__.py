@@ -13,6 +13,7 @@ from app.models.interactions import UserSeries
 from app.models.saved_search import SavedSearch
 from app.models.setting import SystemSetting
 from app.models.pull_list import PullList, PullListItem
+from app.models.smart_list import SmartList
 
 # This ensures all models are loaded before relationships are configured
 __all__ = [
@@ -25,7 +26,7 @@ __all__ = [
     'ScanJob',
     'User',
     'UserSeries',
-    'SavedSearch',
+    'SavedSearch', 'SmartList',
     'SystemSetting',
     'PullList', 'PullListItem',
 

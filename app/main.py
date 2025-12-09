@@ -36,7 +36,7 @@ from app.services.watcher import library_watcher
 # API Routes
 from app.api import libraries, comics, reader, progress, series, volumes, search
 from app.api import reading_lists, collections
-from app.api import auth, users, saved_searches
+from app.api import auth, users, saved_searches, smart_lists
 from app.api import tasks, jobs, stats, settings as settings_api
 from app.api import pull_lists
 from app.api import reports
@@ -216,6 +216,7 @@ app.include_router(tasks.router, prefix="/api/tasks", tags=["tasks"])
 app.include_router(settings_api.router, prefix="/api/settings", tags=["settings"])
 app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
 app.include_router(saved_searches.router, prefix="/api/saved-searches", tags=["saved-searches"])
+app.include_router(smart_lists.router, prefix="/api/smart-lists", tags=["smart-lists"])
 app.include_router(pull_lists.router, prefix="/api/pull-lists", tags=["pull-lists"])
 app.include_router(reports.router, prefix="/api/reports", tags=["reports"])
 app.include_router(migration.router, prefix="/api/migration", tags=["migration"])

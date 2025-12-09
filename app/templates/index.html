@@ -53,6 +53,31 @@
         </div>
     </div>
 
+    <template x-for="list in smartLists" :key="list.id">
+
+        <div x-data="smartRail(list)" x-show="!loading && items.length > 0" class="mb-12">
+
+            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                    <span x-text="icon"></span>
+                    <span x-text="title"></span>
+                </h2>
+                <a :href="window.url(`/search?smart_list_id=${listId}`)" class="text-xs text-blue-400 hover:text-white transition-colors">View All</a>
+            </div>
+
+            <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+
+                <template x-for="comic in items" :key="comic.id">
+                    <div class="w-36 flex-shrink-0">
+                        {% include "partials/comic_card.html" %}
+                    </div>
+                </template>
+
+            </div>
+        </div>
+
+    </template>
+
     <div x-show="!loading.random && randomComics.length > 0">
         <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
             <h2 class="text-xl font-bold text-white flex items-center gap-2">
@@ -88,7 +113,9 @@
 
     <div x-show="!loading.recent && recentSeries.length > 0">
         <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-            <h2 class="text-xl font-bold text-white">Recently Added</h2>
+            <h2 class="text-xl font-bold text-white">
+                <span>✨</span> Recently Added Series
+            </h2>
             <a href="/search?sort_by=created&sort_order=desc" class="text-sm text-blue-400 hover:text-white transition-colors">View All</a>
         </div>
 
@@ -101,7 +128,9 @@
 
     <div x-show="!loading.updated && updatedSeries.length > 0">
         <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-            <h2 class="text-xl font-bold text-white">Recently Updated</h2>
+            <h2 class="text-xl font-bold text-white">
+                <span>🔁</span> Recently Updated Series
+            </h2>
             <a href="/search?sort_by=updated&sort_order=desc" class="text-sm text-blue-400 hover:text-white transition-colors">View All</a>
         </div>
 
@@ -128,6 +157,7 @@ function homePage() {
         randomComics: [],
         topRatedComics: [],
         resumeComics: [],
+        smartLists: [],
 
         loading: {
             recent: true,
@@ -155,7 +185,7 @@ function homePage() {
             this.fetchResume();
             this.fetchRandom();
             this.fetchTopRated();
-
+            this.fetchSmartLists();
         },
 
         async fetchStarred() {
@@ -226,6 +256,17 @@ function homePage() {
                 if (res.ok) this.topRatedComics = await res.json();
             } catch(e) { console.error(e); }
             finally { this.loading.topRated = false; }
+        },
+
+        async fetchSmartLists() {
+            try {
+                const res = await fetch(window.url('/api/smart-lists/'));
+                if (res.ok) {
+                    const allLists = await res.json();
+                    // Only show the ones the user enabled for dashboard
+                    this.smartLists = allLists.filter(l => l.show_on_dashboard);
+                }
+            } catch (e) { console.error(e); }
         }
 
     }

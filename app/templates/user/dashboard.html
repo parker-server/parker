@@ -88,6 +88,70 @@
                     No books in progress. Start reading something!
                 </div>
             </div>
+
+
+            {# Smart Filters #}
+            <div class="space-y-4 mt-8">
+                <div class="flex justify-between items-center">
+                    <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                        <span>⚡</span> Smart Filters
+                    </h2>
+                    <a href="/search" class="text-xs text-blue-400 hover:text-white">Create New</a>
+                </div>
+
+                <div class="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden shadow-lg">
+                    <table class="w-full text-left border-collapse">
+                        <thead class="bg-gray-900/50 text-xs uppercase text-gray-500 font-bold border-b border-gray-700">
+                            <tr>
+                                <th class="px-6 py-3">Name</th>
+                                <th class="px-6 py-3 text-center">Dashboard</th>
+                                <th class="px-6 py-3 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-700">
+                            <template x-for="list in data?.smart_lists" :key="list.id">
+                                <tr class="hover:bg-gray-750 transition-colors group">
+                                    <td class="px-6 py-4">
+                                        <div class="flex items-center gap-3">
+                                            <span class="text-xl bg-gray-700/50 w-8 h-8 rounded flex items-center justify-center shadow-inner" x-text="list.icon || '⚡'"></span>
+                                            <div>
+                                                <div class="font-bold text-gray-200" x-text="list.name"></div>
+                                                <div class="text-[10px] text-gray-500 font-mono">Dynamic Query</div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td class="px-6 py-4 text-center">
+                                        <button
+                                            x-on:click="toggleSmartListVisibility(list)"
+                                            class="relative inline-flex items-center h-5 rounded-full w-9 transition-colors focus:outline-none"
+                                            :class="list.show_on_dashboard ? 'bg-blue-600' : 'bg-gray-600'"
+                                            title="Toggle visibility on Home Page"
+                                        >
+                                            <span
+                                                class="inline-block w-3 h-3 transform bg-white rounded-full transition-transform shadow-sm"
+                                                :class="list.show_on_dashboard ? 'translate-x-5' : 'translate-x-1'"
+                                            ></span>
+                                        </button>
+                                    </td>
+                                    <td class="px-6 py-4 text-right">
+                                        <button x-on:click="deleteSmartList(list.id)" class="text-gray-500 hover:text-red-400 p-2 rounded hover:bg-red-900/20 transition-colors" title="Delete">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                        </button>
+                                    </td>
+                                </tr>
+                            </template>
+
+                            <tr x-show="!data?.smart_lists || data?.smart_lists?.length === 0">
+                                <td colspan="3" class="px-6 py-8 text-center text-gray-500">
+                                    No smart filters yet. <a href="/search" class="text-blue-400 hover:underline">Create one</a> to track specific comics automatically.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+
         </div>
 
         <div class="space-y-4">
@@ -162,8 +226,14 @@ function dashboard() {
         data: null,
         
         async init() {
-            const res = await fetch(window.url('/api/users/me/dashboard'));
-            if(res.ok) this.data = await res.json();
+            try {
+                const res = await fetch(window.url('/api/users/me/dashboard'));
+                if(res.ok) {
+                    this.data = await res.json();
+                    await this.fetchSmartLists();
+                }
+            } catch(e) { console.error("Dashboard load failed", e); }
+
         },
 
         async uploadAvatar(e) {
@@ -202,6 +272,40 @@ function dashboard() {
                 document.execCommand('copy');
                 window.comicServer.showToast("Feed URL copied!", "success");
             }
+        },
+
+        async fetchSmartLists() {
+            try {
+                const res = await fetch(window.url('/api/smart-lists/'));
+                if (res.ok) {
+                    this.data.smart_lists = await res.json();
+                }
+            } catch(e) { console.error(e); }
+        },
+
+        async toggleSmartListVisibility(list) {
+            list.show_on_dashboard = !list.show_on_dashboard;
+            try {
+                await fetch(window.url(`/api/smart-lists/${list.id}`), {
+                    method: 'PATCH',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ show_on_dashboard: list.show_on_dashboard })
+                });
+            } catch(e) {
+                list.show_on_dashboard = !list.show_on_dashboard; // Revert
+                console.error(e);
+            }
+        },
+
+        async deleteSmartList(id) {
+            if(!confirm("Delete this filter?")) return;
+            try {
+                const res = await fetch(window.url(`/api/smart-lists/${id}`), { method: 'DELETE' });
+                if(res.ok) {
+                    this.data.smart_lists = this.data.smart_lists.filter(l => l.id !== id);
+                    if(window.comicServer) window.comicServer.showToast("Filter deleted", "success");
+                }
+            } catch(e) { console.error(e); }
         },
 
         formatDate(dateStr) {

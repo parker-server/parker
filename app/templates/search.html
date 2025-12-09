@@ -8,6 +8,16 @@
     <div class="flex justify-between items-center mb-6">
         <h1 class="text-3xl font-bold text-white">Advanced Search</h1>
 
+        <div x-show="contextLibraryId" class="mb-6 flex items-center gap-2" x-cloak>
+            <div class="bg-blue-900/50 text-blue-200 px-3 py-1 rounded-full border border-blue-800 flex items-center text-sm">
+                <span class="mr-2">📂</span>
+                <span>Searching in: <b x-text="contextLibraryName || 'Library #' + contextLibraryId"></b></span>
+
+                <button x-on:click="contextLibraryId = null; contextLibraryName = null; performSearch()" class="ml-2 hover:text-white" title="Search Everything">
+                    ✕
+                </button>
+            </div>
+        </div>
         <div class="flex space-x-3" x-data="{ showLoadMenu: false }">
             <div class="relative">
                 <button
@@ -25,21 +35,39 @@
                     style="display: none;"
                     x-transition
                 >
-                    <div x-show="savedSearches.length === 0" class="p-4 text-gray-500 text-sm text-center">No saved searches.</div>
+                    <div x-show="savedSearches.length === 0 && smartLists.length === 0" class="p-4 text-gray-500 text-sm text-center">
+                        No saved configurations.
+                    </div>
 
-                    <template x-for="search in savedSearches" :key="search.id">
-                        <div class="flex items-center justify-between p-2 hover:bg-gray-700 border-b border-gray-700/50 last:border-0 group">
-                            <button
-                                x-on:click="applySearch(search); showLoadMenu = false"
-                                class="flex-1 text-left text-sm text-blue-300 hover:text-white truncate px-2"
-                                x-text="search.name"
-                            ></button>
-                            <button
-                                x-on:click.stop="deleteSearch(search.id)"
-                                class="text-gray-600 hover:text-red-400 px-2 opacity-0 group-hover:opacity-100 transition-opacity"
-                            >✕</button>
+                    <template x-if="savedSearches.length > 0">
+                        <div>
+                            <div class="px-3 py-1 text-[10px] uppercase font-bold text-gray-500 bg-gray-900/50">Saved Searches</div>
+                            <template x-for="search in savedSearches" :key="'saved-' + search.id">
+                                <div class="flex items-center justify-between p-2 hover:bg-gray-700 border-b border-gray-700/50 group cursor-pointer" x-on:click="applySearch(search); showLoadMenu = false">
+                                    <div class="flex items-center gap-2 flex-1 min-w-0">
+                                        <span class="text-gray-400">📂</span>
+                                        <span class="text-sm text-blue-300 hover:text-white truncate" x-text="search.name"></span>
+                                    </div>
+                                    <button x-on:click.stop="deleteSearch(search.id)" class="text-gray-600 hover:text-red-400 px-2 opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
+                                </div>
+                            </template>
                         </div>
                     </template>
+
+                    <template x-if="smartLists.length > 0">
+                        <div>
+                            <div class="px-3 py-1 text-[10px] uppercase font-bold text-indigo-500 bg-gray-900/50 border-t border-gray-700">Smart Filters</div>
+                            <template x-for="list in smartLists" :key="'smart-' + list.id">
+                                <div class="flex items-center justify-between p-2 hover:bg-gray-700 border-b border-gray-700/50 group cursor-pointer" x-on:click="applySearch(list); showLoadMenu = false">
+                                    <div class="flex items-center gap-2 flex-1 min-w-0">
+                                        <span class="text-indigo-400">⚡</span>
+                                        <span class="text-sm text-indigo-200 hover:text-white truncate" x-text="list.name"></span>
+                                    </div>
+                                    </div>
+                            </template>
+                        </div>
+                    </template>
+
                 </div>
             </div>
 
@@ -220,19 +248,52 @@
     </div>
 
 
-<div x-show="saveModalOpen" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50" style="display: none;" x-transition.opacity>
-    <div class="bg-gray-800 p-6 rounded-lg w-full max-w-sm border border-gray-700 shadow-2xl" x-on:click.away="saveModalOpen = false">
-        <h3 class="text-xl font-bold mb-4 text-white">Save Search Configuration</h3>
-        <input
-            type="text"
-            x-model="newSearchName"
-            placeholder="e.g. 'Alan Moore 80s'"
-            class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white focus:border-blue-500 outline-none mb-4"
-            @keydown.enter="saveSearch()"
-        >
-        <div class="flex justify-end gap-2">
-            <button x-on:click="saveModalOpen = false" class="text-gray-400 hover:text-white px-4 py-2">Cancel</button>
-            <button x-on:click="saveSearch()" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded">Save</button>
+<div x-show="saveModalOpen"
+     class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 backdrop-blur-sm"
+     style="display: none;"
+     x-transition.opacity>
+
+    <div class="bg-gray-800 p-6 rounded-xl w-full max-w-md border border-gray-700 shadow-2xl"
+         x-on:click.away="saveModalOpen = false">
+
+        <h3 class="text-xl font-bold mb-1 text-white">Save Configuration</h3>
+        <p class="text-sm text-gray-400 mb-6">Name your search filters to save them.</p>
+
+        <div class="mb-6">
+            <label class="block text-xs uppercase font-bold text-gray-500 mb-2">Name</label>
+            <input
+                type="text"
+                x-model="newSearchName"
+                placeholder="e.g. 'Alan Moore 80s'"
+                class="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-3 text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-colors"
+                x-on:keydown.enter="saveSearch()"
+            >
+        </div>
+
+        <div class="grid grid-cols-1 gap-3">
+            <button x-on:click="saveSearch()"
+                    class="w-full bg-gray-700 hover:bg-gray-600 text-gray-200 font-medium py-3 rounded-lg flex items-center justify-center gap-3 transition-colors group">
+                <span class="text-xl group-hover:scale-110 transition-transform">📂</span>
+                <div class="text-left">
+                    <div class="text-sm font-bold">Save to Search Menu</div>
+                    <div class="text-[10px] text-gray-400">Quick access from this page</div>
+                </div>
+            </button>
+
+            <button x-on:click="saveAsSmartList()"
+                    class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-3 rounded-lg flex items-center justify-center gap-3 transition-colors group shadow-lg shadow-indigo-900/20">
+                <span class="text-xl group-hover:scale-110 transition-transform">⚡</span>
+                <div class="text-left">
+                    <div class="text-sm font-bold"><span x-text="loadedListId === null ? 'Create' : 'Update'"></span> Smart List</div>
+                    <div class="text-[10px] text-indigo-200">Auto-updating list on Dashboard</div>
+                </div>
+            </button>
+        </div>
+
+        <div class="mt-6 text-center">
+            <button x-on:click="saveModalOpen = false" class="text-sm text-gray-500 hover:text-white transition-colors">
+                Cancel
+            </button>
         </div>
     </div>
 </div>
@@ -347,18 +408,38 @@ document.addEventListener('alpine:init', () => {
         nextId: 2,
 
         savedSearches: [],
+        smartLists: [],
         saveModalOpen: false,
         newSearchName: '',
+        loadedListId: null,
 
-        init() {
+        contextLibraryId: null,
+        contextLibraryName: null, // Optional, for display (requires fetching)
+
+        async init() {
+            await this.loadSavedList();
             this.checkUrlParams();
-            this.loadSavedList();
         },
 
         checkUrlParams() {
+
             const params = new URLSearchParams(window.location.search);
             let shouldSearch = false;
 
+            // Strategy A: Load Complex Smart List by ID if present
+            if (params.has('smart_list_id')) {
+                const id = parseInt(params.get('smart_list_id'));
+
+                // Find the config in the lists we just loaded
+                const targetList = this.smartLists.find(l => l.id === id);
+                if (targetList) {
+                    // This function restores the FULL complex state (rules, sort, match mode)
+                    this.applySearch(targetList);
+                    return; // Stop here, applySearch handles the execution
+                }
+            }
+
+            // Strategy B: Standard "Unpacked" URL (Tag Chips, Authors, etc.)
             // 1. Handle Sorting overrides
             if (params.has('sort_by')) {
                 this.sortBy = params.get('sort_by');
@@ -397,6 +478,16 @@ document.addEventListener('alpine:init', () => {
                 shouldSearch = true;
             }
 
+            // Capture Library Context
+            if (params.has('library_id')) {
+
+                this.contextLibraryId = parseInt(params.get('library_id'));
+
+                // Optional: Fetch the name for the UI
+                this.fetchLibraryName(this.contextLibraryId);
+                shouldSearch = true;
+            }
+
             // 3. Trigger Search if any params were found
             // Use $nextTick to ensure the DOM/Alpine data is ready
             if (shouldSearch) {
@@ -428,25 +519,8 @@ document.addEventListener('alpine:init', () => {
             this.hasSearched = true;
             this.results = []; // Clear previous results while loading
 
-            // Prepare payload
-            /*
-            const payload = {
-                match: this.match,
-                filters: this.rules.map(r => ({
-                    field: r.field,
-                    operator: r.operator,
-                    // If the user typed nothing in a text box, send null to be safe,
-                    // but for tags (arrays), send the array.
-                    value: (Array.isArray(r.value) && r.value.length === 0) ? null : r.value
-                })).filter(r => r.operator === 'is_empty' || r.operator === 'is_not_empty' || r.value !== null), // Filter out incomplete rules
-
-                sort_by: this.sortBy,
-                sort_order: this.sortOrder,
-                limit: parseInt(this.limit)
-            };
-            */
-
             const payload = this.buildSearchPayload();
+            console.log("payload", payload);
 
             try {
                 const res = await fetch(window.url('/api/comics/search'), {
@@ -469,13 +543,30 @@ document.addEventListener('alpine:init', () => {
 
         async loadSavedList() {
             try {
-                const res = await fetch(window.url('/api/saved-searches/'));
-                if (res.ok) this.savedSearches = await res.json();
+
+                const [savedRes, smartRes] = await Promise.all([
+                    fetch(window.url('/api/saved-searches/')),
+                    fetch(window.url('/api/smart-lists/'))
+                ]);
+
+                if (savedRes.ok) this.savedSearches = await savedRes.json();
+                if (smartRes.ok) {
+                    const rawSmartLists = await smartRes.json();
+
+                    // Normalize them to match Saved Search structure for easier handling
+                    this.smartLists = rawSmartLists.map(list => ({
+                        id: list.id,
+                        name: list.name,
+                        icon: list.icon,
+                        query: list.query,
+                        isSmart: true
+                    }));
+                }
+
             } catch(e) { console.error(e); }
         },
 
         openSaveModal() {
-            this.newSearchName = '';
             this.saveModalOpen = true;
         },
 
@@ -484,7 +575,7 @@ document.addEventListener('alpine:init', () => {
 
             const payload = {
                 name: this.newSearchName,
-                query: this.buildSearchPayload() // Refactor performSearch to use this helper
+                query: this.buildSearchPayload()
             };
 
             try {
@@ -496,7 +587,10 @@ document.addEventListener('alpine:init', () => {
 
                 if (res.ok) {
                     this.saveModalOpen = false;
-                    alert("Search saved!");
+                    this.newSearchName = '';
+                    this.loadedListId = null;
+                    await this.loadSavedList();
+                    window.comicServer.showToast("Search configuration saved!", "success");
                 }
             } catch(e) { console.error(e); }
         },
@@ -504,16 +598,21 @@ document.addEventListener('alpine:init', () => {
         async deleteSearch(id) {
             if(!confirm("Delete this saved search?")) return;
             await fetch(window.url(`/api/saved-searches/${id}`), { method: 'DELETE' });
-            this.loadSavedList(); // Refresh list
+            await this.loadSavedList(); // Refresh list
+            window.comicServer.showToast("Saved Search deleted", "success");
         },
 
-        applySearch(saved) {
+        applySearch(item) {
+
+            this.loadedListId = item.id;
+
             // Restore State from JSON
-            const q = saved.query;
-            this.match = q.match;
-            this.sortBy = q.sort_by;
-            this.sortOrder = q.sort_order;
-            this.limit = q.limit;
+            const q = item.query;
+
+            this.match = q.match || 'all';
+            this.sortBy = q.sort_by || 'created';
+            this.sortOrder = q.sort_order || 'desc';
+            this.limit = q.limit || 50;
 
             // Restore Rules (Deep copy to avoid reference issues)
             // Note: q.filters might be empty, handle that
@@ -531,6 +630,9 @@ document.addEventListener('alpine:init', () => {
             // Auto Run
             this.$nextTick(() => {
                 this.performSearch();
+                // Set the name input to match what we loaded,
+                // making it easier to re-save/update
+                this.newSearchName = item.name;
             });
         },
 
@@ -562,8 +664,72 @@ document.addEventListener('alpine:init', () => {
                 }),
                 sort_by: this.sortBy,
                 sort_order: this.sortOrder,
-                limit: parseInt(this.limit)
+                limit: parseInt(this.limit),
+                context_library_id: this.contextLibraryId
             };
+        },
+
+        async saveAsSmartList() {
+
+            if (!this.newSearchName.trim()) {
+                alert("Please enter a name first.");
+                return;
+            }
+
+            // Reuse the payload builder so the logic matches exactly
+            const payload = {
+                name: this.newSearchName,
+                query: this.buildSearchPayload()
+            };
+
+            try {
+
+                if(this.loadedListId === null) {
+                    // Create
+                    const res = await fetch(window.url('/api/smart-lists/'), {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (res.ok) {
+                        this.saveModalOpen = false;
+                        window.comicServer.showToast("Smart List created!", "success");
+                        this.newSearchName = '';
+                    } else {
+                        window.comicServer.showToast("Failed to create list.", "error");
+                    }
+
+                } else {
+                    // Update
+                    const res = await fetch(window.url(`/api/smart-lists/${this.loadedListId}`), {
+                        method: 'PATCH',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (res.ok) {
+                        this.saveModalOpen = false;
+                        window.comicServer.showToast("Smart List updated!", "success");
+                    } else {
+                        window.comicServer.showToast("Failed to update list.", "error");
+                    }
+                }
+            } catch(e) {
+                console.error(e);
+                window.comicServer.showToast("Network error.", "error");
+            }
+        },
+
+        // Helper to get name (Optional polish)
+        async fetchLibraryName(id) {
+            try {
+                const res = await fetch(window.url(`/api/libraries/${id}`));
+                if(res.ok) {
+                    const lib = await res.json();
+                    this.contextLibraryName = lib.name;
+                }
+            } catch(e) {}
         },
 
 

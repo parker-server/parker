@@ -42,6 +42,37 @@
 
 document.addEventListener('alpine:init', () => {
 
+    Alpine.data('smartRail', (list) => ({
+        items: [],
+        loading: true,
+        listId: list.id,
+        title: list.name,
+        icon: list.icon || '⚡', // Default icon if missing
+
+        async init() {
+            // Intersection Observer (Optional Performance Boost):
+            // Only fetch when the user actually scrolls down to this rail.
+            // For now, we'll just fetch immediately on load.
+            this.fetchItems();
+        },
+
+        async fetchItems() {
+            try {
+                // Call the "Auto-Fire" endpoint we made earlier
+                const res = await fetch(window.url(`/api/smart-lists/${this.listId}/items?limit=15`));
+                if (res.ok) {
+                    const data = await res.json();
+                    this.items = data.items;
+                }
+            } catch (e) {
+                console.error(`Failed to load smart list ${this.listId}`, e);
+            } finally {
+                this.loading = false;
+            }
+        }
+    }));
+
+
     // Quick Search Component Logic
     Alpine.data('quickSearch', () => ({
         query: '',
