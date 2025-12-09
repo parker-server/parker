@@ -13,7 +13,7 @@ from app.models.reading_progress import ReadingProgress
 router = APIRouter()
 
 
-@router.get("/", name="get_system_stats")
+@router.get("/", name="system")
 async def get_system_stats(
         db: SessionDep,
         admin: AdminUser
@@ -53,7 +53,7 @@ async def get_system_stats(
         }
     }
 
-@router.get("/genres", name="get_genre_stats")
+@router.get("/genres", name="genre")
 async def get_genre_stats(db: SessionDep, user: AdminUser):
     """
     Returns aggregated stats per genre:

@@ -42,7 +42,7 @@ def format_home_item(comic: Comic, progress: ReadingProgress = None) -> dict:
 
     return item
 
-@router.get("/random", response_model=List[dict], name="get_random_gems")
+@router.get("/random", response_model=List[dict], name="random_gems")
 def get_random_gems(
         db: SessionDep,
         current_user: CurrentUser,
@@ -88,7 +88,7 @@ def get_random_gems(
     return results
 
 
-@router.get("/rated", response_model=List[ComicSearchItem], name="get_top_rated")
+@router.get("/rated", response_model=List[ComicSearchItem], name="top_rated")
 def get_top_rated(
         db: SessionDep,
         current_user: CurrentUser,
@@ -106,7 +106,7 @@ def get_top_rated(
     return [format_home_item(c) for c in gems]
 
 
-@router.get("/resume", response_model=List[ComicSearchItem], name="get_resume_reading")
+@router.get("/resume", response_model=List[ComicSearchItem], name="resume_reading")
 def get_resume_reading(
         db: SessionDep,
         current_user: CurrentUser,
@@ -141,7 +141,7 @@ def get_resume_reading(
     return [format_home_item(c, p) for c, p in results]
 
 
-@router.get("/up-next", response_model=List[ComicSearchItem], name="get_up_next")
+@router.get("/up-next", response_model=List[ComicSearchItem], name="up_next")
 def get_up_next(
         db: SessionDep,
         current_user: CurrentUser,

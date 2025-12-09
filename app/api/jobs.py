@@ -10,7 +10,7 @@ from app.models.library import Library
 
 router = APIRouter()
 
-@router.get("/active", name="get_active_job")
+@router.get("/active", name="active")
 async def get_active_job(db: SessionDep):
     """
     Get the currently running scan job (if any).
@@ -33,7 +33,7 @@ async def get_active_job(db: SessionDep):
     }
 
 
-@router.get("", name="list_jobs")
+@router.get("", name="list")
 async def list_jobs(
     admin_user: AdminUser,
     db: SessionDep,
@@ -70,7 +70,7 @@ async def list_jobs(
     return results
 
 
-@router.get("/{job_id}", name="get_job_details")
+@router.get("/{job_id}", name="detail")
 async def get_job_details(job_id: int, db: SessionDep, admin_user: AdminUser):
     """
     Get detailed status of a specific job.

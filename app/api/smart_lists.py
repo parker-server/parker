@@ -11,7 +11,7 @@ from app.schemas.smart_list import SmartListResponse, SmartListCreate, SmartList
 router = APIRouter()
 
 
-@router.post("/", name="create_smart_list")
+@router.post("/", name="create")
 def create_smart_list(
         data: SmartListCreate,
         db: SessionDep,
@@ -28,7 +28,7 @@ def create_smart_list(
     return smart_list
 
 
-@router.get("/{list_id}/items", name="execute_smart_list")
+@router.get("/{list_id}/items", name="execute")
 def execute_smart_list(
         list_id: int,
         db: SessionDep,
@@ -62,7 +62,7 @@ def execute_smart_list(
     }
 
 
-@router.get("/", response_model=List[SmartListResponse], name="get_my_smart_lists")
+@router.get("/", response_model=List[SmartListResponse], name="list")
 def get_my_smart_lists(db: SessionDep, current_user: CurrentUser):
     """List all smart lists for the current user."""
     smart_lists = db.query(SmartList).filter(SmartList.user_id == current_user.id).all()
@@ -81,7 +81,7 @@ def get_my_smart_lists(db: SessionDep, current_user: CurrentUser):
 
 
 
-@router.delete("/{list_id}", name="delete_smart_list")
+@router.delete("/{list_id}", name="delete")
 def delete_smart_list(list_id: int, db: SessionDep, current_user: CurrentUser):
     """Delete a smart list."""
     slist = db.query(SmartList).filter(SmartList.id == list_id, SmartList.user_id == current_user.id).first()
@@ -93,7 +93,7 @@ def delete_smart_list(list_id: int, db: SessionDep, current_user: CurrentUser):
     return {"message": "Deleted"}
 
 
-@router.patch("/{list_id}", name="update_smart_list")
+@router.patch("/{list_id}", name="update")
 def update_smart_list(
         list_id: int,
         updates: SmartListUpdate,

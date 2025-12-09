@@ -15,7 +15,7 @@ from app.models.user import User
 router = APIRouter()
 
 
-@router.get("/", name="list_collections")
+@router.get("/", name="list")
 async def list_collections(current_user: CurrentUser, db: SessionDep):
     """List collections, hiding ones that are empty due to permissions."""
 
@@ -69,7 +69,7 @@ async def list_collections(current_user: CurrentUser, db: SessionDep):
     }
 
 
-@router.get("/{collection_id}", name="get_collection")
+@router.get("/{collection_id}", name="detail")
 async def get_collection(current_user: CurrentUser,
                          collection_id: int, db: SessionDep):
     """Get a specific collection with all comics and aggregated details"""
@@ -142,7 +142,7 @@ async def get_collection(current_user: CurrentUser,
     }
 
 
-@router.delete("/{collection_id}", name="delete_collection")
+@router.delete("/{collection_id}", name="delete")
 async def delete_collection(current_user: CurrentUser,
                             collection_id: int, db: SessionDep):
     """Delete a collection"""

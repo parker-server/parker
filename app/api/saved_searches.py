@@ -25,7 +25,7 @@ class SavedSearchResponse(BaseModel):
     created_at: datetime
 
 
-@router.get("/", response_model=List[SavedSearchResponse], name="list_saved_searches")
+@router.get("/", response_model=List[SavedSearchResponse], name="list")
 async def list_saved_searches(db: SessionDep, current_user: CurrentUser):
     """Get all saved searches for the current user"""
     searches = db.query(SavedSearch).filter(SavedSearch.user_id == current_user.id).order_by(
@@ -42,7 +42,7 @@ async def list_saved_searches(db: SessionDep, current_user: CurrentUser):
     ]
 
 
-@router.post("/", response_model=SavedSearchResponse, name="save_search")
+@router.post("/", response_model=SavedSearchResponse, name="create")
 async def save_search(
         data: SavedSearchCreate,
         db: SessionDep,
@@ -68,7 +68,7 @@ async def save_search(
     }
 
 
-@router.delete("/{search_id}", name="delete_saved_search")
+@router.delete("/{search_id}", name="delete")
 async def delete_saved_search(
         search_id: int,
         db: SessionDep,

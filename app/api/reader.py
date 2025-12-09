@@ -27,7 +27,7 @@ def natural_sort_key(s):
     return [int(text) if text.isdigit() else text.lower()
             for text in re.split('([0-9]+)', str(s))]
 
-@router.get("/{comic_id}/read-init", name="get_comic_reader_init")
+@router.get("/{comic_id}/read-init", name="init")
 async def get_comic_reader_init(comic_id: int,
                                 db: SessionDep,
                                 current_user: CurrentUser,
@@ -190,7 +190,7 @@ async def get_comic_reader_init(comic_id: int,
 
     }
 
-@router.get("/{comic_id}/page/{page_index}", name="get_comic_page")
+@router.get("/{comic_id}/page/{page_index}", name="comic_page")
 def get_comic_page(
         comic_id: int,
         page_index: int,

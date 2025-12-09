@@ -41,7 +41,7 @@ def natural_sort_key(s):
     return [int(text) if text.isdigit() else text.lower()
             for text in re.split('([0-9]+)', str(s))]
 
-@router.post("/search", response_model=SearchResponse, name="search_comics")
+@router.post("/search", response_model=SearchResponse, name="search")
 async def search_comics(request: SearchRequest, db: SessionDep, current_user: CurrentUser):
     """
     Search comics with complex filters
@@ -65,7 +65,7 @@ async def search_comics(request: SearchRequest, db: SessionDep, current_user: Cu
     results = search_service.search(request)
     return results
 
-@router.get("/{comic_id}", name="get_comic")
+@router.get("/{comic_id}", name="detail")
 async def get_comic(comic: ComicDep, db: SessionDep, current_user: CurrentUser):
     """Get a specific comic with all metadata"""
 
@@ -159,7 +159,7 @@ async def get_comic(comic: ComicDep, db: SessionDep, current_user: CurrentUser):
     }
 
 
-@router.get("/{comic_id}/thumbnail", name="get_comic_thumbnail")
+@router.get("/{comic_id}/thumbnail", name="thumbnail")
 async def get_comic_thumbnail(
         comic_id: int,
         db: SessionDep
@@ -206,7 +206,7 @@ async def get_comic_thumbnail(
     return FileResponse(standard_path, media_type="image/webp")
 
 
-@router.get("/random/backgrounds", name="get_random_backgrounds")
+@router.get("/random/backgrounds", name="random_backgrounds")
 async def get_random_backgrounds(
         db: SessionDep,
         limit: int = 20
@@ -235,7 +235,7 @@ async def get_random_backgrounds(
     return [f"api/comics/{cid}/thumbnail" for cid in selected_ids]
 
 
-@router.get("/covers/manifest", name="get_cover_manifest")
+@router.get("/covers/manifest", name="cover_manifest")
 async def get_cover_manifest(
         db: SessionDep,
         current_user: CurrentUser,

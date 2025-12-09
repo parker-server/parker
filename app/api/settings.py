@@ -7,13 +7,13 @@ from app.schemas.setting import SettingUpdate, SettingResponse
 
 router = APIRouter()
 
-@router.get("/", response_model=Dict[str, List[SettingResponse]], status_code=200, name="get_settings")
+@router.get("/", response_model=Dict[str, List[SettingResponse]], status_code=200, name="list")
 def get_settings(db: SessionDep, admin: AdminUser):
     """Get all settings grouped by category"""
     svc = SettingsService(db)
     return svc.get_all_grouped()
 
-@router.patch("/{key}", tags=["admin"], name="update_setting")
+@router.patch("/{key}", tags=["admin"], name="update")
 def update_setting(key: str, payload: SettingUpdate, db: SessionDep, admin: AdminUser):
     """Update a specific setting"""
     svc = SettingsService(db)

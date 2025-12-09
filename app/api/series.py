@@ -77,7 +77,7 @@ def series_to_simple_dict(series, db, current_user):
         "read": is_fully_read
     }
 
-@router.get("/{series_id}", name="get_series_detail")
+@router.get("/{series_id}", name="detail")
 async def get_series_detail(series: SeriesDep, db: SessionDep, current_user: CurrentUser):
     """
     Get series summary including Related content and Metadata Details.
@@ -269,7 +269,7 @@ async def get_series_detail(series: SeriesDep, db: SessionDep, current_user: Cur
     }
 
 
-@router.get("/{series_id}/issues", response_model=PaginatedResponse, name="get_series_issues")
+@router.get("/{series_id}/issues", response_model=PaginatedResponse, name="issues")
 async def get_series_issues(
         current_user: CurrentUser,
         series_id: int,
@@ -325,7 +325,7 @@ async def get_series_issues(
     }
 
 
-@router.get("/", response_model=PaginatedResponse, name="list_series")
+@router.get("/", response_model=PaginatedResponse, name="list")
 async def list_series(
         db: SessionDep,
         current_user: CurrentUser,
@@ -410,7 +410,7 @@ async def list_series(
     }
 
 
-@router.post("/{series_id}/star", name="star_series")
+@router.post("/{series_id}/star", name="star")
 async def star_series(series_id: int, db: SessionDep, current_user: CurrentUser):
     # Check if series exists
     series = db.query(Series).get(series_id)
@@ -429,7 +429,7 @@ async def star_series(series_id: int, db: SessionDep, current_user: CurrentUser)
     return {"starred": True}
 
 
-@router.delete("/{series_id}/star", name="unstar_series")
+@router.delete("/{series_id}/star", name="unstar")
 async def unstar_series(series_id: int, db: SessionDep, current_user: CurrentUser):
     pref = db.query(UserSeries).filter_by(user_id=current_user.id, series_id=series_id).first()
     if pref:
@@ -470,7 +470,7 @@ async def regenerate_thumbnails(
     return {"message": "Thumbnail regeneration started"}
 
 
-@router.get("/{series_id}/recommendations", name="get_series_recommendations")
+@router.get("/{series_id}/recommendations", name="recommendations")
 async def get_series_recommendations(
         series_id: int,
         db: SessionDep,

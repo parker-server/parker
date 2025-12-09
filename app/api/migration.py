@@ -12,7 +12,7 @@ from app.services.kavita_migration import KavitaMigrationService
 
 router = APIRouter()
 
-@router.post("/run", name="run_kavita_migration")
+@router.post("/run", name="kavita_migration")
 async def run_kavita_migration(
         db: SessionDep,
         admin: AdminUser,  # Ensures only admin can run this

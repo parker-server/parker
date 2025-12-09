@@ -12,7 +12,7 @@ from app.models.reading_list import ReadingList, ReadingListItem
 router = APIRouter()
 
 
-@router.get("/", name="list_reading_lists")
+@router.get("/", name="list")
 async def list_reading_lists(db: SessionDep, current_user: CurrentUser):
     """List reading lists, hiding ones that are empty due to permissions."""
 
@@ -62,7 +62,7 @@ async def list_reading_lists(db: SessionDep, current_user: CurrentUser):
     }
 
 
-@router.get("/{list_id}", name="get_reading_list")
+@router.get("/{list_id}", name="detail")
 async def get_reading_list(list_id: int, db: SessionDep, current_user: CurrentUser):
     """Get a specific reading list with all comics in order"""
     reading_list = db.query(ReadingList).filter(ReadingList.id == list_id).first()
@@ -129,7 +129,7 @@ async def get_reading_list(list_id: int, db: SessionDep, current_user: CurrentUs
         "details": details
     }
 
-@router.delete("/{list_id}", name="delete_reading_list")
+@router.delete("/{list_id}", name="delete")
 async def delete_reading_list(list_id: int, db: SessionDep, current_user: CurrentUser):
     """Delete a reading list"""
     reading_list = db.query(ReadingList).filter(ReadingList.id == list_id).first()

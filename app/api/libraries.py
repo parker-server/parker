@@ -26,7 +26,7 @@ def _has_library_access(library_id: int, current_user: CurrentUser) -> bool:
     return True
 
 
-@router.get("/", name="list_libraries")
+@router.get("/", name="list")
 async def list_libraries(db: SessionDep, current_user: CurrentUser):
     """List libraries accessible to the current user"""
 
@@ -64,13 +64,13 @@ async def list_libraries(db: SessionDep, current_user: CurrentUser):
     return results
 
 
-@router.get("/{library_id}", name="get_library")
+@router.get("/{library_id}", name="detail")
 async def get_library(library: LibraryDep):
 
     return library
 
 
-@router.get("/{library_id}/series", response_model=PaginatedResponse, name="get_library_series")
+@router.get("/{library_id}/series", response_model=PaginatedResponse, name="series")
 async def get_library_series(
         library: LibraryDep,
         params: Annotated[PaginationParams, Depends()],
@@ -144,7 +144,7 @@ class LibraryCreate(BaseModel):
     path: str
     watch_mode: bool = False
 
-@router.post("/", tags=["admin"], name="create_library")
+@router.post("/", tags=["admin"], name="create")
 async def create_library(lib_in: LibraryCreate,
                          db: SessionDep,
                          admin_user: AdminUser):
@@ -173,7 +173,7 @@ class LibraryUpdate(BaseModel):
     path: Optional[str] = None
     watch_mode: Optional[bool] = None
 
-@router.patch("/{library_id}", tags=["admin"], name="update_library")
+@router.patch("/{library_id}", tags=["admin"], name="update")
 async def update_library(
         library_id: int,
         updates: LibraryUpdate,
@@ -208,7 +208,7 @@ async def update_library(
 
     return library
 
-@router.delete("/{library_id}", tags=["admin"], name="delete_library")
+@router.delete("/{library_id}", tags=["admin"], name="delete")
 async def delete_library(library_id: int,
                          db: SessionDep,
                          admin_user: AdminUser):
@@ -222,7 +222,7 @@ async def delete_library(library_id: int,
     return {"message": "Library deleted"}
 
 
-@router.post("/{library_id}/scan", tags=["admin"], name="scan_library")
+@router.post("/{library_id}/scan", tags=["admin"], name="scan")
 async def scan_library(
         library_id: int,
         db: SessionDep,
@@ -244,7 +244,7 @@ async def scan_library(
     # Returns: {"status": "queued", "job_id": 123, "message": "..."}
     return result
 
-@router.get("/status/scanner", name="get_scanner_status")
+@router.get("/status/scanner", name="scan_status")
 async def get_scanner_status():
     """Check if a scan is currently running"""
     return scan_manager.get_status()
