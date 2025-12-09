@@ -5,43 +5,71 @@
 {% block content %}
 <div class="space-y-12" x-data="homePage()">
 
+    <div x-show="!loading.resume && resumeComics.length > 0">
+        <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+            <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                <span>📖</span> Jump Back In
+            </h2>
+        </div>
+
+        <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+            <template x-for="comic in resumeComics" :key="comic.id">
+                <div class="w-40 flex-shrink-0">
+                    {% include "partials/comic_card.html" %}
+                </div>
+            </template>
+        </div>
+    </div>
 
     <div x-show="!loading.onDeck && onDeckSeries.length > 0">
         <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
             <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                <span>▶</span> Continue Reading
+                <span>▶</span> Up Next
+            </h2>
+        </div>
+        <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+            <template x-for="comic in onDeckSeries" :key="comic.id">
+                <div class="w-40 flex-shrink-0">
+                    {% include "partials/comic_card.html" %}
+                </div>
+            </template>
+        </div>
+    </div>
+
+
+    <div x-show="!loading.topRated && topRatedComics.length > 0">
+        <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+            <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                <span class="text-yellow-400">★</span> Critically Acclaimed
             </h2>
         </div>
 
-        <div class="flex space-x-6 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-            <template x-for="item in onDeckSeries" :key="item.comic_id">
-
-                {% include "partials/on_deck_card.html" %}
-
+        <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+            <template x-for="comic in topRatedComics" :key="comic.id">
+                <div class="w-36 flex-shrink-0">
+                    {% include "partials/comic_card.html" %}
+                </div>
             </template>
         </div>
     </div>
 
-    <div class="flex items-center justify-between">
-        <div>
-            <h1 class="text-3xl font-bold text-white">Library</h1>
-            <p class="text-gray-400 mt-1">Welcome back. Here's what's new in your collection.</p>
-        </div>
+    <div x-show="!loading.random && randomComics.length > 0">
+        <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+            <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                <span>🎲</span> Random Gems
+            </h2>
+            <button @click="fetchRandom()" class="text-xs text-blue-400 hover:text-white">Spin Again ↻</button>
         </div>
 
-    <div x-show="!loading.libraries">
-        <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">Your Libraries</h2>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            <template x-for="lib in libraries" :key="lib.id">
-                {% include "partials/library_card.html" %}
+        <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+            <template x-for="comic in randomComics" :key="comic.id">
+                <div class="w-36 flex-shrink-0">
+                    {% include "partials/comic_card.html" %}
+                </div>
             </template>
-
-            <div x-show="libraries.length === 0" class="col-span-full py-8 text-center text-gray-500 bg-gray-800/50 rounded-lg border border-dashed border-gray-700">
-                No libraries found. <span class="text-gray-400">Ask an admin to assign you access.</span>
-            </div>
         </div>
     </div>
+
 
     <div x-show="!loading.starred && starredSeries.length > 0">
         <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
@@ -93,41 +121,41 @@
 <script>
 function homePage() {
     return {
-        libraries: [],
         recentSeries: [],
         updatedSeries: [],
         starredSeries: [],
         onDeckSeries: [],
+        randomComics: [],
+        topRatedComics: [],
+        resumeComics: [],
 
         loading: {
-            libraries: true,
             recent: true,
             updated: true,
             starred: true,
-            onDeck: true
+            onDeck: true,
+            random: true,
+            topRated: true,
+            resume: true
         },
 
         get isLoading() {
-            return this.loading.libraries || this.loading.recent
+            return this.loading.recent
                 || this.loading.updated || this.loading.starred
-                || this.loading.onDeck
+                || this.loading.onDeck || this.loading.random
+                || this.loading.topRated || this.loading.resume
                 ;
         },
 
         init() {
-            this.fetchLibraries();
             this.fetchStarred();
             this.fetchRecent();
             this.fetchUpdated();
             this.fetchOnDeck();
-        },
+            this.fetchResume();
+            this.fetchRandom();
+            this.fetchTopRated();
 
-        async fetchLibraries() {
-            try {
-                const res = await fetch(window.url('/api/libraries/'));
-                if (res.ok) this.libraries = await res.json();
-            } catch(e) { console.error(e); }
-            finally { this.loading.libraries = false; }
         },
 
         async fetchStarred() {
@@ -168,14 +196,37 @@ function homePage() {
 
         async fetchOnDeck() {
             try {
-                const res = await fetch(window.url('/api/progress/on-deck'));
+                const res = await fetch(window.url('/api/home/up-next'));
                 if (res.ok) {
                     this.onDeckSeries = await res.json();
                 }
             } catch(e) { console.error(e); }
             finally { this.loading.onDeck = false; }
-        }
+        },
 
+        async fetchResume() {
+            try {
+                const res = await fetch(window.url('/api/home/resume'));
+                if (res.ok) this.resumeComics = await res.json();
+            } catch(e) { console.error(e); }
+            finally { this.loading.resume = false; }
+        },
+
+        async fetchRandom() {
+            try {
+                const res = await fetch(window.url('/api/home/random?limit=12'));
+                if (res.ok) this.randomComics = await res.json();
+            } catch(e) { console.error(e); }
+            finally { this.loading.random = false; }
+        },
+
+        async fetchTopRated() {
+            try {
+                const res = await fetch(window.url('/api/home/rated?limit=12'));
+                if (res.ok) this.topRatedComics = await res.json();
+            } catch(e) { console.error(e); }
+            finally { this.loading.topRated = false; }
+        }
 
     }
 }

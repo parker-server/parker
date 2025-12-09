@@ -52,7 +52,26 @@
 
                     <div class="hidden lg:flex items-center space-x-1">
                         <a href="{{ url('/user/dashboard') }}" class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors">Dashboard</a>
-                        <a href="{{ url('/') }}" class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors">Libraries</a>
+                        <div class="relative group" x-data="{ open: false, libs: [] }" x-init="libs = await (await fetch(window.url('/api/libraries/'))).json()">
+
+                            <button class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors flex items-center gap-1">
+                                <span>Libraries</span>
+                                <svg class="w-4 h-4 text-gray-500 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                            </button>
+
+                            <div class="absolute left-0 mt-0 w-48 bg-gray-900 border border-gray-700 rounded-lg shadow-xl py-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+
+                                <template x-for="lib in libs" :key="lib.id">
+                                    <a :href="window.url(`/libraries/${lib.id}`)" class="block px-4 py-2 text-sm text-gray-300 hover:bg-blue-600 hover:text-white" x-text="lib.name"></a>
+                                </template>
+
+                                <div x-show="libs.length > 0" class="border-t border-gray-700 my-1"></div>
+
+                                <a href="{{ url('/libraries') }}" class="block px-4 py-2 text-sm text-gray-400 hover:text-white font-bold">
+                                    View All Libraries
+                                </a>
+                            </div>
+                        </div>
                         <a href="{{ url('/collections') }}" class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors">Collections</a>
                         <a href="{{ url('/reading-lists') }}" class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors">Reading Lists</a>
                     </div>
@@ -119,7 +138,7 @@
                 class="lg:hidden border-t border-gray-800 py-4 space-y-1"
             >
                 <a href="{{ url('/user/dashboard') }}" class="block px-4 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-gray-800 rounded-md">Dashboard</a>
-                <a href="{{ url('/') }}" class="block px-4 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-gray-800 rounded-md">Libraries</a>
+                <a href="{{ url('/libraries') }}" class="block px-4 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-gray-800 rounded-md">Libraries</a>
                 <a href="{{ url('/continue-reading') }}" class="block px-4 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-gray-800 rounded-md">Continue Reading</a>
                 <a href="{{ url('/collections') }}" class="block px-4 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-gray-800 rounded-md">Collections</a>
                 <a href="{{ url('/reading-lists') }}" class="block px-4 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-gray-800 rounded-md">Reading Lists</a>

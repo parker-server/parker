@@ -57,6 +57,7 @@ class ComicSearchItem(BaseModel):
     format: Optional[str] = None
     thumbnail_path: Optional[str] = None
     community_rating: Optional[float] = None
+    progress_percentage: Optional[float] = None
 
 
 class SearchResponse(BaseModel):

@@ -55,10 +55,14 @@ async def continue_reading(request: Request, user: CurrentUser):
     """Continue reading page"""
     return templates.TemplateResponse(request=request, name="continue_reading.html")
 
-@router.get("/library/{library_id}", response_class=HTMLResponse)
+@router.get("/libraries", response_class=HTMLResponse)
+async def libraries_page(request: Request):
+    return templates.TemplateResponse("libraries/index.html", {"request": request})
+
+@router.get("/libraries/{library_id}", response_class=HTMLResponse)
 async def library_view(request: Request, library: LibraryDep, user: CurrentUser):
     """View a specific library"""
-    return templates.TemplateResponse(request=request, name="library.html", context={
+    return templates.TemplateResponse(request=request, name="libraries/library.html", context={
         "library_id": library.id
     })
 

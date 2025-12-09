@@ -69,10 +69,17 @@
                 </div>
             </template>
 
+            <template x-if="comic.progress_percentage && comic.progress_percentage > 0 && !comic.read && !isSelected">
+                <div class="absolute bottom-0 left-0 right-0 h-1 bg-gray-800/80 z-20">
+                    <div class="h-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]"
+                         :style="`width: ${comic.progress_percentage}%`"></div>
+                </div>
+            </template>
+
             <div x-show="!isSelected && !$store.batch.active"
                  class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-60 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100 pointer-events-none">
                 <span class="text-white font-bold bg-blue-600 px-4 py-2 rounded-full transform scale-90 group-hover:scale-100 transition-all shadow-lg pointer-events-auto">
-                    <span x-text="isRead ? 'Read Again' : 'Read'"></span>
+                    <span x-text="comic.progress_percentage > 0 ? 'Resume' : (isRead ? 'Read Again' : 'Read')"></span>
                 </span>
             </div>
         </div>
