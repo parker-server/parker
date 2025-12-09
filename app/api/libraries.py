@@ -144,7 +144,7 @@ class LibraryCreate(BaseModel):
     path: str
     watch_mode: bool = False
 
-@router.post("/")
+@router.post("/", tags=["admin"], name="create_library")
 async def create_library(lib_in: LibraryCreate,
                          db: SessionDep,
                          admin_user: AdminUser):
@@ -173,7 +173,7 @@ class LibraryUpdate(BaseModel):
     path: Optional[str] = None
     watch_mode: Optional[bool] = None
 
-@router.patch("/{library_id}")
+@router.patch("/{library_id}", tags=["admin"], name="update_library")
 async def update_library(
         library_id: int,
         updates: LibraryUpdate,
@@ -208,7 +208,7 @@ async def update_library(
 
     return library
 
-@router.delete("/{library_id}")
+@router.delete("/{library_id}", tags=["admin"], name="delete_library")
 async def delete_library(library_id: int,
                          db: SessionDep,
                          admin_user: AdminUser):
@@ -222,7 +222,7 @@ async def delete_library(library_id: int,
     return {"message": "Library deleted"}
 
 
-@router.post("/{library_id}/scan")
+@router.post("/{library_id}/scan", tags=["admin"], name="scan_library")
 async def scan_library(
         library_id: int,
         db: SessionDep,

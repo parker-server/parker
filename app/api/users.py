@@ -220,7 +220,7 @@ async def update_password(
     return {"status": "success", "message": "Password updated successfully"}
 
 # 1. List Users
-@router.get("/", response_model=PaginatedResponse)
+@router.get("/", response_model=PaginatedResponse, tags=["admin"], name="list_users")
 async def list_users(
         db: SessionDep,
         admin: AdminUser,
@@ -255,11 +255,8 @@ async def list_users(
     }
 
 
-
-
-
-# 2. Create User (Admin Only)
-@router.post("/", response_model=UserListResponse)
+# Create User (Admin Only)
+@router.post("/", response_model=UserListResponse, tags=["admin"], name="create_user")
 async def create_user(
         user_in: UserCreateRequest,
         db: SessionDep,
@@ -292,8 +289,8 @@ async def create_user(
     }
 
 
-# 3. Update User (e.g. Change Password)
-@router.patch("/{user_id}")
+# Update User (e.g. Change Password)
+@router.patch("/{user_id}", tags=["admin"], name="update_user")
 async def update_user(
         user_id: int,
         updates: UserUpdateRequest,
@@ -323,7 +320,7 @@ async def update_user(
 
 
 # 4. Delete User
-@router.delete("/{user_id}")
+@router.delete("/{user_id}", tags=["admin"], name="delete_user")
 async def delete_user(
         user_id: int,
         db: SessionDep,

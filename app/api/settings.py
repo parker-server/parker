@@ -13,7 +13,7 @@ def get_settings(db: SessionDep, admin: AdminUser):
     svc = SettingsService(db)
     return svc.get_all_grouped()
 
-@router.patch("/{key}")
+@router.patch("/{key}", tags=["admin"], name="update_setting")
 def update_setting(key: str, payload: SettingUpdate, db: SessionDep, admin: AdminUser):
     """Update a specific setting"""
     svc = SettingsService(db)
