@@ -265,6 +265,7 @@ async def get_series_detail(series: SeriesDep, db: SessionDep, current_user: Cur
             "status": read_status
         },
         "colors": colors,
+        "is_admin": current_user.is_superuser
     }
 
 
