@@ -92,19 +92,18 @@
         </div>
     </div>
 
-    <div x-show="!loading.random && randomComics.length > 0">
+    <div x-show="!loading.random && randomSeries.length > 0">
         <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
             <h2 class="text-xl font-bold text-white flex items-center gap-2">
                 <span>🎲</span> Random Gems
             </h2>
-            <button @click="fetchRandom()" class="text-xs text-blue-400 hover:text-white">Spin Again ↻</button>
+            <button x-on:click="fetchRandom()" class="text-xs text-blue-400 hover:text-white">Spin Again ↻</button>
         </div>
 
         <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-            <template x-for="comic in randomComics" :key="comic.id">
-                <div class="w-36 flex-shrink-0">
-                    {% include "partials/comic_card.html" %}
-                </div>
+            <template x-for="series in randomSeries" :key="series.id">
+
+                    {% include "partials/series_card.html" %}
             </template>
         </div>
     </div>
@@ -152,7 +151,7 @@ function homePage() {
         updatedSeries: [],
         starredSeries: [],
         onDeckSeries: [],
-        randomComics: [],
+        randomSeries: [],
         topRatedComics: [],
         resumeComics: [],
         smartLists: [],
@@ -243,7 +242,7 @@ function homePage() {
         async fetchRandom() {
             try {
                 const res = await fetch(window.url('/api/home/random?limit=12'));
-                if (res.ok) this.randomComics = await res.json();
+                if (res.ok) this.randomSeries = await res.json();
             } catch(e) { console.error(e); }
             finally { this.loading.random = false; }
         },

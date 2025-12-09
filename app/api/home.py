@@ -7,7 +7,9 @@ from datetime import datetime, timezone, timedelta
 
 from app.core.settings_loader import get_cached_setting
 from app.api.deps import SessionDep, CurrentUser
+from app.core.comic_helpers import get_smart_cover
 from app.models.comic import Comic, Volume
+from app.models.series import Series
 from app.models.reading_progress import ReadingProgress
 from app.schemas.search import ComicSearchItem
 
@@ -40,7 +42,7 @@ def format_home_item(comic: Comic, progress: ReadingProgress = None) -> dict:
 
     return item
 
-@router.get("/random", response_model=List[ComicSearchItem])
+@router.get("/random", response_model=List[dict])
 def get_random_gems(
         db: SessionDep,
         current_user: CurrentUser,
@@ -48,17 +50,42 @@ def get_random_gems(
 ):
 
     """
-    Get random issues. Great for 'Spin the Wheel' discovery.
+    Get random Series. Great for 'Spin the Wheel' discovery.
     """
-    # SQLite/Postgres 'ORDER BY RANDOM()'
-    # Optimization: Filter out very short things (like art books) if you have page counts?
-    # For now, just simple random.
-    gems = db.query(Comic) \
+    # 1. Query Random Series
+    # Optimization Op: Filter out empty series if necessary
+    random_series = db.query(Series) \
         .order_by(func.random()) \
         .limit(limit) \
         .all()
 
-    return [format_home_item(c) for c in gems]
+    results = []
+    for s in random_series:
+
+        # 2. Build the query for comics in this series
+        # We join Volume because Comic -> Volume -> Series
+        base_query = db.query(Comic).join(Volume).filter(Volume.series_id == s.id)
+
+        # 3. Use the helper to find the best cover (e.g. Issue #1)
+        # This matches the logic in libraries.py and series.py
+        first_issue = get_smart_cover(base_query)
+
+        # Skip if the series is somehow empty
+        if not first_issue:
+            continue
+
+        results.append({
+            "id": s.id,
+            "name": s.name,
+            "start_year": first_issue.year,
+            "thumbnail_path": f"/api/comics/{first_issue.id}/thumbnail",
+            # Add extra metadata for the Series Card if needed
+            "publisher": first_issue.publisher,
+            "volume_count": len(s.volumes) if s.volumes else 0,
+            "starred": False  # You can query UserSeries if you want this accurate
+        })
+
+    return results
 
 
 @router.get("/rated", response_model=List[ComicSearchItem])
