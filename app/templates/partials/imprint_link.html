@@ -6,7 +6,7 @@
 >
     <template x-if="{{ imprint_ref }}">
         <img
-            :src="window.url(`/static/img/imprints/${ {{ imprint_ref }} }.png`)"
+            :src="window.parker.url(`/static/img/imprints/${ {{ imprint_ref }} }.png`)"
             @error="$el.style.display = 'none'"
             @load="$el.style.display = ''"
             class="h-6 w-auto max-w-[100px] object-contain bg-gray-200 rounded-sm px-1"

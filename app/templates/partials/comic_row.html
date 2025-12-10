@@ -7,7 +7,7 @@
     }">
 <a :href="window.parker.route('pages.reader', { comic_id: comic.id }, readerQueryParams)" class="flex-shrink-0 relative block w-16 h-24 rounded overflow-hidden shadow-sm group-hover:shadow-md transition-all">
     <img
-        :src="window.url(comic.thumbnail_path)"
+        :src="window.parker.url(comic.thumbnail_path)"
         :alt="comic.title"
         class="w-full h-full object-cover"
         loading="lazy"

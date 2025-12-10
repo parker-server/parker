@@ -1,7 +1,7 @@
 <div class="w-48 flex-shrink-0 group relative">
     <a :href="window.parker.route('pages.reader', { comic_id: item.comic_id })">
         <div class="aspect-[2/3] bg-gray-800 rounded-lg overflow-hidden shadow-lg border border-gray-700 relative">
-            <img :src="window.url(item.thumbnail)" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300">
+            <img :src="window.parker.url(item.thumbnail)" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300">
 
             <div class="absolute bottom-0 left-0 right-0 h-1.5 bg-gray-700">
                 <div class="h-full bg-blue-500" :style="`width: ${item.percentage}%`"></div>

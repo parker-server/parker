@@ -4,7 +4,7 @@
 {% macro page_context(id, colors) %}
 <script>
     window.PAGE_CONTEXT = {
-        imageUrl: window.url("/api/comics/{{ id }}/thumbnail"),
+        imageUrl: window.parker.url("/api/comics/{{ id }}/thumbnail"),
         colors: {
             primary: '{{ colors.primary if colors and colors.primary else "#111111" }}',
             secondary: '{{ colors.secondary if colors and colors.secondary else "#222222" }}',
