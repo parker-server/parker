@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, and_, func, not_
+from sqlalchemy import or_, and_, func, not_, text
 from typing import List, Dict, Any, Union
 from app.models import (Comic, Volume, Series,
                         Character, Team, Location, Genre,
@@ -84,8 +84,16 @@ class SearchService:
 
         # --- ROUTING LOGIC ---
 
+        # --- 0. FTS Routing (High Priority) ---
+        # Intercept "Any" and "Summary" first
+        if field == 'any':
+            return self._build_fts_condition(value)
+        # We route 'summary' here to use the fast index
+        elif field == 'summary' and operator in ['contains', 'equal']:
+            return self._build_fts_condition(value)
+
         # 1. Simple Fields (Direct columns on Comic or Series)
-        if field == 'series':
+        elif field == 'series':
             return self._build_simple_field_condition(Series.name, operator, value)
         elif field == 'library':
             # Join is already implicit via Series -> Library, or we add explicit join if needed
@@ -96,7 +104,7 @@ class SearchService:
             return self._build_simple_field_condition(Library.name, operator, value, needs_join=Library)
 
         elif field in ['title', 'number', 'publisher', 'imprint', 'format',
-                       'year', 'series_group', 'summary', 'web',
+                       'year', 'series_group', 'web',
                        'age_rating', 'language', 'rating']:
             # Map string field name to Column object
             col_map = {
@@ -326,6 +334,43 @@ class SearchService:
             )
 
         return None
+
+    def _build_fts_condition(self, value):
+        """
+        Builds a high-performance Full Text Search condition.
+        Returns: Comic.id IN (SELECT rowid FROM comics_fts ...)
+        """
+        if not value:
+            return None
+
+        # 1. Sanitize & Syntax
+        # Wrap in quotes to handle spaces safely (e.g. "Spider Man")
+        # Add * for prefix matching (e.g. "Amaz*" finds "Amazing")
+        term = value if isinstance(value, str) else str(value)
+        fts_query = f'"{term}" *'
+
+        # 2. The Subquery
+        # "Find the IDs of all comics where our indexed text matches the term"
+        # rowid in FTS maps to Comic.id because of content_rowid='id'
+        subquery = text("SELECT rowid FROM comics_fts WHERE comics_fts MATCH :term")
+
+        # 3. Execution & ID List
+        # We execute the subquery immediately to get the IDs.
+        # (SQLAlchemy 1.4+ can usually nest this better, but for FTS/Virtual tables
+        # explicit execution is often safer/clearer).
+        try:
+            matched_ids = self.db.execute(subquery, {"term": fts_query}).scalars().all()
+        except Exception:
+            # Fallback if table doesn't exist or query fails
+            return None
+
+        if not matched_ids:
+            # Return a condition that matches nothing if FTS found nothing
+            return Comic.id == -1
+
+        # 4. Return Condition
+        return Comic.id.in_(matched_ids)
+
 
     @staticmethod
     def _apply_sorting(query, sort_by: str, sort_order: str):
