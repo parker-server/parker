@@ -152,6 +152,17 @@
                             </a>
                         </template>
 
+                        <template x-if="comic.can_edit">
+                            <button
+                                x-on:click="$dispatch('open-edit-metadata', { id: comic.id })"
+                                class="text-gray-400 hover:text-white flex items-center gap-2 px-3 py-1 rounded hover:bg-white/10"
+                                title="Edit Metadata"
+                            >
+                                <span>✏️ Edit</span>
+                            </button>
+                        </template>
+
+
                     </div>
                 </div>
 
@@ -301,7 +312,7 @@
         </div>
     </div>
 </div>
-
+{% include "partials/edit_metadata_modal.html" %}
 <script>
 function comicDetail() {
     return {

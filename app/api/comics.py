@@ -5,9 +5,10 @@ from typing import List, Annotated, Literal
 from pathlib import Path
 import re
 import random
+import os
 
 from app.core.comic_helpers import get_reading_time, get_format_sort_index
-from app.api.deps import SessionDep, CurrentUser, ComicDep
+from app.api.deps import SessionDep, CurrentUser, ComicDep, AdminUser
 
 from app.models.comic import Comic, Volume
 from app.models.series import Series
@@ -18,8 +19,12 @@ from app.models.pull_list import PullList, PullListItem
 from app.models.reading_progress import ReadingProgress
 
 from app.schemas.search import SearchRequest, SearchResponse
+from app.schemas.metadata import MetadataUpdate
+from app.services.scan_manager import scan_manager
 from app.services.search import SearchService
 from app.services.images import ImageService
+from app.services.metadata import metadata_service
+from app.services.scanner import LibraryScanner
 
 
 router = APIRouter()
@@ -97,6 +102,7 @@ async def get_comic(comic: ComicDep, db: SessionDep, current_user: CurrentUser):
         "file_path": comic.file_path,
         "file_size": comic.file_size,
         #"thumbnail_path": comic.thumbnail_path,
+        "can_edit": (current_user.is_superuser and metadata_service.can_write(comic.file_path)),
 
         # Library info
         "library_id": comic.volume.series.library_id,
@@ -300,3 +306,62 @@ async def get_cover_manifest(
             for r in items
         ]
     }
+
+
+@router.get("/{comic_id}/metadata", name="get_metadata", tags=['metadata', 'admin'])
+def get_comic_metadata(comic_id: int, db: SessionDep, current_user: AdminUser):
+
+    comic = db.query(Comic).get(comic_id)
+    if not comic: raise HTTPException(404, "Comic not found")
+
+    # Use the absolute path directly from the database
+    # This assumes 'file_path' is populated correctly during scan
+    if not comic.file_path:
+        raise HTTPException(500, "Comic record is missing file path")
+
+    return metadata_service.read_metadata(comic.file_path)
+
+@router.patch("/{comic_id}/metadata", name='update_metadata', tags=["metadata", 'admin'])
+def update_metadata(
+        comic_id: int,
+        updates: MetadataUpdate,
+        db: SessionDep,
+        current_user: AdminUser  # Strict Admin Requirement
+):
+    """
+    Update ComicInfo.xml in the file and database.
+    """
+    comic = db.query(Comic).get(comic_id)
+    if not comic:
+        raise HTTPException(404, "Comic not found")
+
+    # 1. Use direct path
+    full_path = comic.file_path
+
+    # 2. Check Capability
+    if not metadata_service.can_write(full_path):
+        raise HTTPException(400, "Cannot write metadata. File type not supported or tools missing.")
+
+    # 3. Perform Write (File System Source of Truth)
+    try:
+        # Convert Pydantic to Dict, removing None values
+        data_dict = updates.model_dump(exclude_unset=True)
+
+        # Ensure primitive types for XML (convert ints/floats to strings)
+        for k, v in data_dict.items():
+            data_dict[k] = str(v)
+
+        metadata_service.write_metadata(full_path, data_dict)
+
+        # Queue Scan
+        # We find the library ID via the relation chain
+        library_id = comic.volume.series.library_id
+
+        scan_manager.add_task(library_id, force=False)
+
+        return {"status": "queued", "message": "File updated. Scan queued."}
+
+    except Exception as e:
+        print(f"Metadata write failed: {e}")
+        raise HTTPException(500, f"Failed to write metadata: {str(e)}")
+
