@@ -26,14 +26,14 @@
             // This ensures we don't accidentally update Comic #1 when we selected Series #1
             const affectedIds = batchPayload.comic_ids;
 
-            const res = await fetch(window.comicServer.route('batch.mark_read'), {
+            const res = await fetch(window.parker.route('batch.mark_read'), {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(payload)
             });
 
             if(res.ok) {
-                window.comicServer.showToast(`Batch marked as ${action}!`);
+                window.parker.showToast(`Batch marked as ${action}!`);
 
                 // Dispatch update event
                 // This tells every card on the page to check if it needs to update

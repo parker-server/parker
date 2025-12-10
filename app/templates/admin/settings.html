@@ -98,10 +98,10 @@ function settingsManager() {
                 // Refresh local state to match server format
                 const updated = await res.json();
                 setting.value = updated.value; 
-                window.comicServer.showToast("Setting saved", "success");
+                window.parker.showToast("Setting saved", "success");
             } catch(e) {
                 setting.value = oldVal; // Revert
-                window.comicServer.showToast("Error saving setting", "error");
+                window.parker.showToast("Error saving setting", "error");
             }
         },
         

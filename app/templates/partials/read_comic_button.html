@@ -1,6 +1,6 @@
 <div class="relative flex items-center w-full" x-data="{ open: false }">
 
-    <a :href="window.comicServer.route('pages.reader', { comic_id: comicId })"
+    <a :href="window.parker.route('pages.reader', { comic_id: comicId })"
        class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded-l-lg transition-colors flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20 border-r border-black"
         :class="comic?.read_status === 'in_progress' ? 'bg-blue-600 hover:bg-blue-500' : 'bg-green-600 hover:bg-green-500'"
     >
@@ -28,7 +28,7 @@
          style="display: none;">
 
         <div class="py-1">
-            <a :href="window.comicServer.route('pages.reader', { comic_id: comicId }, 'incognito=true')"
+            <a :href="window.parker.route('pages.reader', { comic_id: comicId }, 'incognito=true')"
                class="group flex items-center px-4 py-3 text-sm text-gray-300 hover:bg-gray-700 hover:text-white transition-colors">
                 <span class="mr-3 text-lg opacity-70 group-hover:opacity-100">👓</span>
                 <div>

@@ -56,7 +56,7 @@
                                 <a :href="`/series/${item.series_id}`" class="text-blue-300 hover:text-white" x-text="item.series"></a>
                                 <div class="text-xs text-gray-400" x-text="`Vol ${item.volume} #${item.number}`"></div>
                             </td>
-                            <td class="px-6 py-4 text-right font-mono text-sm text-gray-400" x-text="window.comicServer.formatBytes(item.file_size)"></td>
+                            <td class="px-6 py-4 text-right font-mono text-sm text-gray-400" x-text="window.parker.formatBytes(item.file_size)"></td>
                             <td class="px-6 py-4 text-right">
                                 <a :href="`/comics/${item.id}`" target="_blank" class="text-sm bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-white">Inspect</a>
                             </td>

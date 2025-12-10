@@ -1,14 +1,14 @@
 <div class="bg-gray-800 rounded-lg p-4 hover:bg-gray-750 transition-colors border border-gray-700 flex flex-col sm:flex-row gap-4 group">
 
-    <a :href="window.comicServer.route('pages.reader', { comic_id: item.comic_id })" class="flex-shrink-0 relative block w-24 h-36 rounded overflow-hidden shadow-sm group-hover:shadow-md transition-all mx-auto sm:mx-0">
+    <a :href="window.parker.route('pages.reader', { comic_id: item.comic_id })" class="flex-shrink-0 relative block w-24 h-36 rounded overflow-hidden shadow-sm group-hover:shadow-md transition-all mx-auto sm:mx-0">
         <img :src="window.url(item.thumbnail_path)" :alt="item.title" class="w-full h-full object-cover" loading="lazy">
     </a>
 
     <div class="flex-1 min-w-0 flex flex-col justify-center w-full">
-        <a :href="window.comicServer.route('pages.series_detail', { series_id: item.series_id })" class="text-sm text-gray-400 hover:text-blue-400 transition-colors truncate" x-text="item.series"></a>
+        <a :href="window.parker.route('pages.series_detail', { series_id: item.series_id })" class="text-sm text-gray-400 hover:text-blue-400 transition-colors truncate" x-text="item.series"></a>
 
         <h3 class="text-white font-bold text-lg truncate mb-1">
-            <a :href="window.comicServer.route('pages.comic_detail', { comic_id: item.comic_id })" class="hover:text-blue-400 transition-colors" x-text="`#${item.number} ${item.title || ''}`"></a>
+            <a :href="window.parker.route('pages.comic_detail', { comic_id: item.comic_id })" class="hover:text-blue-400 transition-colors" x-text="`#${item.number} ${item.title || ''}`"></a>
         </h3>
 
         <div class="text-xs text-gray-500 mb-3" x-text="new Date(item.last_read_at).toLocaleDateString()"></div>
@@ -23,7 +23,7 @@
     </div>
 
     <div class="flex sm:flex-col gap-2 justify-center sm:border-l sm:border-gray-700 sm:pl-4">
-        <a :href="window.comicServer.route('pages.reader', { comic_id: item.comic_id })" class="btn-primary text-sm text-center py-2 px-4 flex-1 sm:flex-none">
+        <a :href="window.parker.route('pages.reader', { comic_id: item.comic_id })" class="btn-primary text-sm text-center py-2 px-4 flex-1 sm:flex-none">
             Continue
         </a>
 

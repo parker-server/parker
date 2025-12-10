@@ -448,7 +448,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // Export utilities
-window.comicServer = { ...(window.comicServer || {}),
+window.parker = { ...(window.parker || {}),
     showToast,
     debounce,
     formatFileSize,

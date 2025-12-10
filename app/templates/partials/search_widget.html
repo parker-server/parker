@@ -32,7 +32,7 @@
             <div>
                 <div class="px-4 py-2 bg-gray-900/50 text-xs font-bold text-gray-400 uppercase tracking-wider sticky top-0 backdrop-blur-sm">Series</div>
                 <template x-for="item in results.series" :key="item.id">
-                    <a :href="window.comicServer.route('pages.series_detail', {series_id: item.id })" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
+                    <a :href="window.parker.route('pages.series_detail', {series_id: item.id })" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
                         <span class="text-xl group-hover:scale-110 transition-transform">📚</span>
                         <div class="min-w-0">
                             <div class="font-bold text-white truncate" x-text="item.name"></div>
@@ -47,7 +47,7 @@
             <div>
                 <div class="px-4 py-2 bg-gray-900/50 text-xs font-bold text-gray-400 uppercase tracking-wider sticky top-0 backdrop-blur-sm">Collections</div>
                 <template x-for="item in results.collections" :key="item.id">
-                    <a :href="window.comicServer.route('pages.collection_detail', { collection_id: item.id })" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
+                    <a :href="window.parker.route('pages.collection_detail', { collection_id: item.id })" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
                         <span class="text-xl group-hover:scale-110 transition-transform">📦</span>
                         <div class="font-bold text-white truncate" x-text="item.name"></div>
                     </a>
@@ -59,7 +59,7 @@
             <div>
                 <div class="px-4 py-2 bg-gray-900/50 text-xs font-bold text-gray-400 uppercase tracking-wider sticky top-0 backdrop-blur-sm">Reading Lists</div>
                 <template x-for="item in results.reading_lists" :key="item.id">
-                    <a :href="window.comicServer.route('pages.reading_list_detail', {reading_list_id: item.id })" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
+                    <a :href="window.parker.route('pages.reading_list_detail', {reading_list_id: item.id })" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
                         <span class="text-xl group-hover:scale-110 transition-transform">📖</span>
                         <div class="font-bold text-white truncate" x-text="item.name"></div>
                     </a>
@@ -71,7 +71,7 @@
             <div>
                 <div class="px-4 py-2 bg-gray-900/50 text-xs font-bold text-gray-400 uppercase tracking-wider sticky top-0 backdrop-blur-sm">People</div>
                 <template x-for="item in results.people" :key="item.id">
-                    <a :href="window.comicServer.route('pages.search', {}, `field=writer&value=${encodeURIComponent(item.name)}&operator=contains`)" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
+                    <a :href="window.parker.route('pages.search', {}, `field=writer&value=${encodeURIComponent(item.name)}&operator=contains`)" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
                         <span class="text-xl group-hover:scale-110 transition-transform">👤</span>
                         <div class="font-bold text-white truncate" x-text="item.name"></div>
                     </a>
@@ -84,7 +84,7 @@
                 <div class="px-4 py-2 bg-gray-900/50 text-xs font-bold text-gray-400 uppercase tracking-wider sticky top-0 backdrop-blur-sm">Tags</div>
 
                 <template x-for="item in results.characters" :key="'char'+item.id">
-                    <a :href="window.comicServer.route('pages.search', {}, `field=character&value=${encodeURIComponent(item.name)}&operator=contains`)" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
+                    <a :href="window.parker.route('pages.search', {}, `field=character&value=${encodeURIComponent(item.name)}&operator=contains`)" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
                         <span class="text-xl group-hover:scale-110 transition-transform">🦸‍♂️</span>
                         <div class="min-w-0">
                             <div class="font-bold text-white truncate" x-text="item.name"></div>
@@ -94,7 +94,7 @@
                 </template>
 
                 <template x-for="item in results.teams" :key="'team'+item.id">
-                    <a :href="window.comicServer.route('pages.search', {}, `field=team&value=${encodeURIComponent(item.name)}&operator=contains`)" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
+                    <a :href="window.parker.route('pages.search', {}, `field=team&value=${encodeURIComponent(item.name)}&operator=contains`)" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
                         <span class="text-xl group-hover:scale-110 transition-transform">🛡️</span>
                         <div class="min-w-0">
                             <div class="font-bold text-white truncate" x-text="item.name"></div>
@@ -104,7 +104,7 @@
                 </template>
 
                 <template x-for="item in results.locations" :key="'loc'+item.id">
-                    <a :href="window.comicServer.route('pages.search', {}, `field=location&value=${encodeURIComponent(item.name)}&operator=contains`)" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
+                    <a :href="window.parker.route('pages.search', {}, `field=location&value=${encodeURIComponent(item.name)}&operator=contains`)" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
                         <span class="text-xl group-hover:scale-110 transition-transform">📍</span>
                         <div class="min-w-0">
                             <div class="font-bold text-white truncate" x-text="item.name"></div>
@@ -119,7 +119,7 @@
             <div>
                 <div class="px-4 py-2 bg-gray-900/50 text-xs font-bold text-gray-400 uppercase tracking-wider sticky top-0 backdrop-blur-sm">Pull Lists</div>
                 <template x-for="item in results.pull_lists" :key="item.id">
-                    <a :href="window.comicServer.route('pages.pull_list_detail', { list_id: item.id })" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
+                    <a :href="window.parker.route('pages.pull_list_detail', { list_id: item.id })" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
                         <span class="text-xl group-hover:scale-110 transition-transform">🗃️</span>
                         <div class="font-bold text-white truncate" x-text="item.name"></div>
                     </a>
@@ -128,7 +128,7 @@
         </template>
 
 
-        <a :href="window.comicServer.route('pages.search', {}, `field=series&value=${encodeURIComponent(query)}&operator=contains`)" class="block px-4 py-3 bg-gray-750 text-center text-blue-400 hover:text-white hover:bg-gray-700 text-sm font-medium border-t border-gray-700">
+        <a :href="window.parker.route('pages.search', {}, `field=series&value=${encodeURIComponent(query)}&operator=contains`)" class="block px-4 py-3 bg-gray-750 text-center text-blue-400 hover:text-white hover:bg-gray-700 text-sm font-medium border-t border-gray-700">
             Advanced Search for "<span x-text="query"></span>"
         </a>
     </div>

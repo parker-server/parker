@@ -37,7 +37,7 @@
                             <td class="px-6 py-4 text-right text-gray-400" x-text="lib.series_count"></td>
                             <td class="px-6 py-4 text-right text-gray-400" x-text="lib.issue_count"></td>
                             <td class="px-6 py-4 text-right text-gray-500 text-sm" x-text="lib.avg_issue_mb + ' MB'"></td>
-                            <td class="px-6 py-4 text-right font-mono text-blue-400" x-text="window.comicServer.formatBytes(lib.size_bytes)"></td>
+                            <td class="px-6 py-4 text-right font-mono text-blue-400" x-text="window.parker.formatBytes(lib.size_bytes)"></td>
                         </tr>
                     </template>
                 </tbody>
@@ -80,7 +80,7 @@
                             <div class="text-xs text-gray-400 mt-1" x-text="`${series.issues} Issues`"></div>
                         </div>
                         <div class="text-right pl-4">
-                            <div class="text-lg font-mono text-yellow-400" x-text="window.comicServer.formatBytes(series.size_bytes)"></div>
+                            <div class="text-lg font-mono text-yellow-400" x-text="window.parker.formatBytes(series.size_bytes)"></div>
                         </div>
                     </div>
                 </template>

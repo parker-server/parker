@@ -23,7 +23,7 @@
 {% endif %}
 
 <a
-    :href="window.comicServer.route('pages.search', {}, `field={{ type }}&value=${encodeURIComponent({{ item }})}&operator=contains`)"
+    :href="window.parker.route('pages.search', {}, `field={{ type }}&value=${encodeURIComponent({{ item }})}&operator=contains`)"
     class="{{ classes }} px-3 py-1.5 text-sm transition-colors cursor-pointer select-none flex-shrink-0"
     x-text="{{ item }}"
 ></a>

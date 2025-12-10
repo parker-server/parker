@@ -46,7 +46,7 @@ function dynamicBackground() {
             // 1. Fetch System Setting
             // In a real app, you might inject this via backend template to avoid a fetch
             // But fetching ensures we respect user changes immediately
-            const settingRes = await fetch(window.comicServer.route('settings.list'));
+            const settingRes = await fetch(window.parker.route('settings.list'));
             if(settingRes.ok) {
                 const settings = await settingRes.json();
                 // Find ui.background_style

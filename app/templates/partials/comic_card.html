@@ -19,7 +19,7 @@
 
      }" @comics-updated.window="updateStatus($event)">
 
-    <a :href="window.comicServer.route('pages.reader', { comic_id: comic.id }, readerQueryParams)" class="block group relative cursor-pointer">
+    <a :href="window.parker.route('pages.reader', { comic_id: comic.id }, readerQueryParams)" class="block group relative cursor-pointer">
 
         <div class="aspect-[2/3] bg-gray-700 rounded-lg overflow-hidden relative shadow-md transition-all duration-200 group-hover:scale-[1.02]"
              :class="isSelected ? 'ring-4 ring-blue-500/80 scale-[0.98]' : ''">
@@ -85,7 +85,7 @@
     </a>
 
     <div class="mt-2">
-        <a :href="window.comicServer.route('pages.comic_detail', { comic_id: comic.id })" class="block group/text cursor-pointer">
+        <a :href="window.parker.route('pages.comic_detail', { comic_id: comic.id })" class="block group/text cursor-pointer">
             <div class="flex justify-between items-baseline">
                 <p class="font-bold text-gray-200 truncate group-hover/text:text-blue-400 transition-colors" x-text="`#${comic.number}`"></p>
                 <p class="text-xs text-gray-500" x-text="comic.year"></p>

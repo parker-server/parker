@@ -27,7 +27,7 @@
 
                 <div class="flex justify-between items-start mb-4">
                     <h3 class="text-xl font-bold text-white truncate pr-8">
-                        <a :href="window.comicServer.route('pages.pull_list_detail', {list_id: list.id})" x-text="list.name" class="hover:underline decoration-blue-500"></a>
+                        <a :href="window.parker.route('pages.pull_list_detail', {list_id: list.id})" x-text="list.name" class="hover:underline decoration-blue-500"></a>
                     </h3>
 
                     <div class="relative" x-data="{ open: false }">
@@ -50,7 +50,7 @@
 
                 <div class="flex items-center justify-between mt-auto">
                     <span class="text-xs text-gray-500 uppercase tracking-wider">Pull List</span>
-                    <a :href="window.comicServer.route('pages.pull_list_detail', { list_id: list.id })" class="text-blue-400 hover:text-white text-sm font-medium transition-colors">View Items →</a>
+                    <a :href="window.parker.route('pages.pull_list_detail', { list_id: list.id })" class="text-blue-400 hover:text-white text-sm font-medium transition-colors">View Items →</a>
                 </div>
             </div>
         </template>
@@ -140,7 +140,7 @@ function pullListIndex() {
 
         async fetchLists() {
             try {
-                const res = await fetch(window.comicServer.route('pull_lists.list'));
+                const res = await fetch(window.parker.route('pull_lists.list'));
                 if(res.ok) this.lists = await res.json();
             } catch(e) { console.error(e); }
             finally { this.loading = false; }
@@ -161,7 +161,7 @@ function pullListIndex() {
             if(!this.newListName) return;
 
             try {
-                const res = await fetch(window.comicServer.route('pull_lists.create'), {
+                const res = await fetch(window.parker.route('pull_lists.create'), {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
@@ -173,7 +173,7 @@ function pullListIndex() {
                 if(res.ok) {
                     this.showCreateModal = false;
                     this.fetchLists();
-                    if(window.comicServer) window.comicServer.showToast("List created!", "success");
+                    if(window.parker) window.parker.showToast("List created!", "success");
                 }
             } catch(e) { console.error(e); }
         },
@@ -181,10 +181,10 @@ function pullListIndex() {
         async deleteList(id) {
             if(!confirm("Are you sure you want to delete this list? This cannot be undone.")) return;
             try {
-                const res = await fetch(window.comicServer.route('pull_lists.delete', { list_id: id }), { method: 'DELETE' });
+                const res = await fetch(window.parker.route('pull_lists.delete', { list_id: id }), { method: 'DELETE' });
                 if (res.ok) {
                     this.lists = this.lists.filter(l => l.id !== id);
-                    if(window.comicServer) window.comicServer.showToast("List deleted", "success");
+                    if(window.parker) window.parker.showToast("List deleted", "success");
                 }
             } catch(e) { console.error(e); }
         }

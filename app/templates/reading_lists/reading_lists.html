@@ -31,7 +31,7 @@ function readingListsList() {
 
         async init() {
             try {
-                const res = await fetch(window.comicServer.route('reading_lists.list'));
+                const res = await fetch(window.parker.route('reading_lists.list'));
                 const data = await res.json();
                 this.lists = data.reading_lists;
             } catch (e) {

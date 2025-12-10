@@ -11,7 +11,7 @@
     <div class="space-y-6" x-data="seriesDetail()" x-on:set-read-filter="handleReadFilter($event.detail)" x-on:toggle-sort="handleToggleSort()">
 
         <div class="flex items-center space-x-2 text-gray-400 mb-6 text-sm" x-show="!error && !notFound" x-cloak>
-            <a :href="window.comicServer.route('pages.library_detail', { library_id: series?.library_id })" class="hover:text-white" x-text="series?.library_name"></a>
+            <a :href="window.parker.route('pages.library_detail', { library_id: series?.library_id })" class="hover:text-white" x-text="series?.library_name"></a>
             <span>/</span>
             <span class="text-white" x-text="`${series?.name}`"></span>
         </div>
@@ -30,7 +30,7 @@
                     <button x-on:click="window.history.back()" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors">
                         Go Back
                     </button>
-                    <a :href="window.comicServer.route('pages.home')" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors">
+                    <a :href="window.parker.route('pages.home')" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors">
                         Home
                     </a>
                 </div>
@@ -46,7 +46,7 @@
                     <div class="flex-shrink-0">
                         <div x-show="series?.first_issue_id" class="w-40 h-60 md:w-48 md:h-72 bg-gray-700 rounded-lg overflow-hidden shadow-lg mx-auto md:mx-0">
                             <img
-                                :src="series?.first_issue_id ? window.comicServer.route('comics.thumbnail', { comic_id: series.first_issue_id }, 'width=300&height=450') : ''"
+                                :src="series?.first_issue_id ? window.parker.route('comics.thumbnail', { comic_id: series.first_issue_id }, 'width=300&height=450') : ''"
                                 :alt="series?.name"
                                 class="w-full h-full object-cover"
                             >
@@ -153,7 +153,7 @@
                                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-600" viewBox="0 0 20 20" fill="currentColor">
                                         <path d="M2 11a1 1 0 011-1h16a1 1 0 011 1v6a1 1 0 01-1 1H3a1 1 0 01-1-1v-6zM2 7a1 1 0 011-1h16a1 1 0 011 1v3a1 1 0 01-1 1H3a1 1 0 01-1-1V7zM2 3a1 1 0 011-1h16a1 1 0 011 1v3a1 1 0 01-1 1H3a1 1 0 01-1-1V3z" />
                                     </svg>
-                                    <span x-text="window.comicServer.formatBytes(series?.file_size)"></span>
+                                    <span x-text="window.parker.formatBytes(series?.file_size)"></span>
                                 </span>
                             </div>
 
@@ -434,7 +434,7 @@
 
             async init() {
                 try {
-                    const res = await fetch(window.comicServer.route('series.recommendations', { series_id: seriesId }));
+                    const res = await fetch(window.parker.route('series.recommendations', { series_id: seriesId }));
                     if(res.ok) {
                         this.lanes = await res.json();
                     }
@@ -479,7 +479,7 @@ function seriesDetail() {
 
         async loadSeriesSummary() {
             try {
-                const res = await fetch(window.comicServer.route('series.detail', { series_id: this.seriesId }));
+                const res = await fetch(window.parker.route('series.detail', { series_id: this.seriesId }));
 
                 if (res.status === 404) {
                    this.notFound = {
@@ -555,7 +555,7 @@ function seriesDetail() {
             this.gridLoading = true;
             try {
                 // Construct URL with pagination and filters
-                const url = window.comicServer.route('series.issues', { series_id: this.seriesId }, `type=${this.currentType}&page=${this.currentPage}&size=${this.pageSize}&read_filter=${this.readFilter}&sort_order=${this.sortOrder}`);
+                const url = window.parker.route('series.issues', { series_id: this.seriesId }, `type=${this.currentType}&page=${this.currentPage}&size=${this.pageSize}&read_filter=${this.readFilter}&sort_order=${this.sortOrder}`);
 
                 const res = await fetch(url);
                 const data = await res.json();
@@ -597,14 +597,14 @@ function seriesDetail() {
         async toggleStar() {
             const method = this.series.starred ? 'DELETE' : 'POST';
             try {
-                const res = await fetch(window.comicServer.route('series.star', { series_id: this.seriesId }), { method: method });
+                const res = await fetch(window.parker.route('series.star', { series_id: this.seriesId }), { method: method });
                 if (res.ok) {
                     // Optimistic update
                     this.series.starred = !this.series.starred;
 
                     // Optional Toast
                     const msg = this.series.starred ? "Added to Want to Read" : "Removed from Want to Read";
-                    if(window.comicServer) window.comicServer.showToast(msg, 'success');
+                    if(window.parker) window.parker.showToast(msg, 'success');
                 }
             } catch (e) {
                 console.error(e);
@@ -615,7 +615,7 @@ function seriesDetail() {
             if(!confirm("Admin: Regenerate all thumbnails for this series? This may take a moment.")) return;
 
             try {
-                const res = await fetch(window.comicServer.route('series.regenerate_thumbnails', { series_id: this.seriesId }), { method: 'POST' });
+                const res = await fetch(window.parker.route('series.regenerate_thumbnails', { series_id: this.seriesId }), { method: 'POST' });
                 if (res.ok) {
                     alert("Regeneration started! Refresh the page in a minute to see changes.");
                 } else if (res.status === 403 || res.status === 401) {

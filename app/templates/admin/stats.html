@@ -38,7 +38,7 @@
                 </div>
 
                 <div class="bg-gray-800 rounded-lg p-6 border border-gray-700 shadow-lg">
-                    <div class="text-3xl font-bold text-purple-400 mb-1" x-text="window.comicServer.formatBytes(stats?.storage?.total_bytes)"></div>
+                    <div class="text-3xl font-bold text-purple-400 mb-1" x-text="window.parker.formatBytes(stats?.storage?.total_bytes)"></div>
                     <div class="text-sm text-gray-400">Disk Usage</div>
                 </div>
             </div>
@@ -121,7 +121,7 @@
                             <template x-for="item in genreStats" :key="item.genre">
                                 <div class="flex items-center justify-between p-3 bg-gray-900/50 rounded border border-gray-700/50">
                                     <span class="text-gray-300" x-text="item.genre"></span>
-                                    <span class="font-mono text-blue-400 text-sm" x-text="window.comicServer.formatBytes(item.size_bytes)"></span>
+                                    <span class="font-mono text-blue-400 text-sm" x-text="window.parker.formatBytes(item.size_bytes)"></span>
                                 </div>
                             </template>
                         </div>

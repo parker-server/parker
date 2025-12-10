@@ -12,9 +12,9 @@
     <div class="space-y-6" x-data="volumeDetail()" x-on:set-read-filter="handleReadFilter($event.detail)" x-on:toggle-sort="handleToggleSort()">
 
         <div class="flex flex-wrap items-center gap-2 text-gray-400 mb-6 text-sm" x-show="!error" x-cloak>
-            <a :href="window.comicServer.route('pages.library_detail', { library_id: volume?.library_id })" class="hover:text-white" x-text="volume?.library_name"></a>
+            <a :href="window.parker.route('pages.library_detail', { library_id: volume?.library_id })" class="hover:text-white" x-text="volume?.library_name"></a>
             <span>/</span>
-            <a :href="window.comicServer.route('pages.series_detail', { series_id: volume?.series_id    })" class="hover:text-blue-400" x-text="volume?.series_name || 'Series'"></a>
+            <a :href="window.parker.route('pages.series_detail', { series_id: volume?.series_id    })" class="hover:text-blue-400" x-text="volume?.series_name || 'Series'"></a>
             <span>/</span>
             <span class="text-white" x-text="`Vol ${volume?.volume_number}`"></span>
         </div>
@@ -33,7 +33,7 @@
                     <button x-on:click="window.history.back()" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors">
                         Go Back
                     </button>
-                    <a :href="window.comicServer.route('pages.home')" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors">
+                    <a :href="window.parker.route('pages.home')" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors">
                         Home
                     </a>
                 </div>
@@ -49,7 +49,7 @@
                     <div class="flex-shrink-0">
                         <div x-show="volume?.first_issue_id" class="w-40 h-60 md:w-48 md:h-72 bg-gray-700 rounded-lg overflow-hidden shadow-lg border border-gray-600 mx-auto md:mx-0">
                             <img
-                                :src="volume?.first_issue_id ? window.comicServer.route('comics.thumbnail', { comic_id: volume.first_issue_id }, 'width=300&height=450') : ''"
+                                :src="volume?.first_issue_id ? window.parker.route('comics.thumbnail', { comic_id: volume.first_issue_id }, 'width=300&height=450') : ''"
                                 class="w-full h-full object-cover"
                             >
                         </div>
@@ -385,7 +385,7 @@ function volumeDetail() {
 
         async loadVolumeSummary() {
             try {
-                const res = await fetch(window.comicServer.route('volumes.detail', { volume_id: this.volumeId } ));
+                const res = await fetch(window.parker.route('volumes.detail', { volume_id: this.volumeId } ));
                 if (res.status === 404) {
                    this.error = {
                         title: "Volume Not Found",
@@ -439,7 +439,7 @@ function volumeDetail() {
         async fetchIssues() {
             this.gridLoading = true;
             try {
-                const url = window.comicServer.route('volumes.issues', { volume_id: this.volumeId }, `type=${this.currentType}&page=${this.currentPage}&size=${this.pageSize}&read_filter=${this.readFilter}&sort_order=${this.sortOrder}`);
+                const url = window.parker.route('volumes.issues', { volume_id: this.volumeId }, `type=${this.currentType}&page=${this.currentPage}&size=${this.pageSize}&read_filter=${this.readFilter}&sort_order=${this.sortOrder}`);
                 const res = await fetch(url);
                 const data = await res.json();
                 this.currentItems = data.items;

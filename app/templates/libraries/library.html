@@ -7,7 +7,7 @@
 
     <div class="flex items-center justify-between">
         <div class="flex items-center space-x-4" x-show="!error" x-cloak>
-            <a :href="window.comicServer.route('pages.libraries')" class="text-blue-400 hover:text-blue-300">← Back</a>
+            <a :href="window.parker.route('pages.libraries')" class="text-blue-400 hover:text-blue-300">← Back</a>
 
             <div x-show="loading.meta" class="h-8 w-48 bg-gray-700 rounded animate-pulse"></div>
 
@@ -29,7 +29,7 @@
                 <button x-on:click="window.history.back()" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors">
                     Go Back
                 </button>
-                <a :href="window.comicServer.route('pages.home')" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors">
+                <a :href="window.parker.route('pages.home')" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors">
                     Home
                 </a>
             </div>
@@ -112,7 +112,7 @@ function libraryView() {
 
         async loadLibraryMeta() {
             try {
-                const res = await fetch(window.comicServer.route('libraries.detail', { library_id: this.libraryId}));
+                const res = await fetch(window.parker.route('libraries.detail', { library_id: this.libraryId}));
                 if (!res.ok) {
                     if (res.status === 404) {
                        this.error = {

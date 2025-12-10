@@ -112,7 +112,7 @@ function addPullListModal() {
         async fetchLists() {
             this.loading = true;
             try {
-                const res = await fetch(window.comicServer.route('pull_lists.list'));
+                const res = await fetch(window.parker.route('pull_lists.list'));
                 if (res.ok) this.myLists = await res.json();
             } catch (e) {
                 console.error(e);
@@ -126,7 +126,7 @@ function addPullListModal() {
             // BATCH MODE
             if (this.isBatch) {
                 try {
-                    const res = await fetch(window.comicServer.route('pull_lists.batch_add_items', { list_id: listId }), {
+                    const res = await fetch(window.parker.route('pull_lists.batch_add_items', { list_id: listId }), {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ comic_ids: this.batchIds })
@@ -134,7 +134,7 @@ function addPullListModal() {
 
                     if (res.ok) {
                         const data = await res.json();
-                        window.comicServer.showToast(data.message, 'success');
+                        window.parker.showToast(data.message, 'success');
                         this.close();
 
                         // Clear the selection since we are done
@@ -153,18 +153,18 @@ function addPullListModal() {
             }
 
             try {
-                const res = await fetch(window.comicServer.route('pull_lists.add_item', { list_id: listId }), {
+                const res = await fetch(window.parker.route('pull_lists.add_item', { list_id: listId }), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ comic_id: this.targetId })
                 });
 
                 if (res.ok) {
-                    window.comicServer.showToast("Added to list!", 'success');
+                    window.parker.showToast("Added to list!", 'success');
                     this.close();
                 } else {
                     const err = await res.json();
-                    window.comicServer.showToast(err.detail || "Failed to add", 'error');
+                    window.parker.showToast(err.detail || "Failed to add", 'error');
                 }
             } catch (e) { console.error(e); }
 
@@ -174,7 +174,7 @@ function addPullListModal() {
             if (!this.newListName) return;
 
             try {
-                const createRes = await fetch(window.comicServer.route('pull_lists.create'), {
+                const createRes = await fetch(window.parker.route('pull_lists.create'), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ name: this.newListName })

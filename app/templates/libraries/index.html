@@ -40,7 +40,7 @@ function librariesPage() {
         async init() {
             try {
                 // Re-use the existing API
-                const res = await fetch(window.comicServer.route('libraries.list'));
+                const res = await fetch(window.parker.route('libraries.list'));
                 if (res.ok) this.libraries = await res.json();
             } catch(e) { 
                 console.error(e); 

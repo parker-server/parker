@@ -572,7 +572,7 @@ function reader() {
             this.contextId = params.get('context_id');
 
             if (this.isIncognito) {
-                window.comicServer.showToast("👓 Incognito Mode: Progress will not be saved.");
+                window.parker.showToast("👓 Incognito Mode: Progress will not be saved.");
             }
 
             this.loadInitData();
@@ -774,7 +774,7 @@ function reader() {
                 this.currentPage += step;
                 this.updateProgress();
             } else if (this.meta.next_comic_id) {
-                window.comicServer.showToast("End of Book. Press ] for next issue.");
+                window.parker.showToast("End of Book. Press ] for next issue.");
             }
         },
 
@@ -838,7 +838,7 @@ function reader() {
             if(!id) return;
 
             // 3. Persist Context when changing books
-            let url = window.comicServer.route('pages.reader', { comic_id: id });
+            let url = window.parker.route('pages.reader', { comic_id: id });
             const params = new URLSearchParams();
 
             // Pass the context forward
@@ -859,27 +859,27 @@ function reader() {
             // Smart Exit Logic based on Context
             if (this.contextType === 'reading_list' && this.contextId) {
                 // Go back to the specific reading list
-                window.location.href = window.comicServer.route('pages.reading_list_detail', { reading_list_id: this.contextId });
+                window.location.href = window.parker.route('pages.reading_list_detail', { reading_list_id: this.contextId });
             }
             else if (this.contextType === 'collection' && this.contextId) {
                 // Go back to the specific collection
-                window.location.href = window.comicServer.route('pages.collection_detail', { collection_id: this.contextId });
+                window.location.href = window.parker.route('pages.collection_detail', { collection_id: this.contextId });
             }
             else if (this.contextType === 'pull_list' && this.contextId) {
                 // Go back to the specific pull list
-                window.location.href = window.comicServer.route('pages.pull_list_detail', { list_id: this.contextId });
+                window.location.href = window.parker.route('pages.pull_list_detail', { list_id: this.contextId });
             }
             else if (this.contextType === 'series' && this.contextId) {
-                window.location.href = window.comicServer.route('pages.series_detail', { series_id: this.contextId });
+                window.location.href = window.parker.route('pages.series_detail', { series_id: this.contextId });
             }
             else if (this.contextType === 'volume' && this.contextId) {
                 // Determine if we need to switch tabs?
                 // Usually just going back to the page is enough, Alpine init will handle state.
-                window.location.href = window.comicServer.route('pages.volume_detail', { volume_id: this.contextId });
+                window.location.href = window.parker.route('pages.volume_detail', { volume_id: this.contextId });
             }
             else {
                 // Default: Go back to the comic detail page
-                window.location.href = window.comicServer.route('pages.comic_detail', { comic_id: this.comicId });
+                window.location.href = window.parker.route('pages.comic_detail', { comic_id: this.comicId });
             }
         },
 
@@ -956,7 +956,7 @@ function reader() {
                 case 'd': // Toggle Double
                 case 'D':
                     this.viewMode = this.viewMode === 'single' ? 'double' : 'single';
-                    window.comicServer.showToast(this.viewMode === 'double' ? "Double Page Mode" : "Single Page Mode");
+                    window.parker.showToast(this.viewMode === 'double' ? "Double Page Mode" : "Single Page Mode");
                     break;
 
                 case 'g':
@@ -1065,7 +1065,7 @@ function reader() {
 
         toggleUiLock() {
             this.uiLocked = !this.uiLocked;
-            window.comicServer.showToast(this.uiLocked ? "UI Pinned" : "UI Auto-Hide");
+            window.parker.showToast(this.uiLocked ? "UI Pinned" : "UI Auto-Hide");
         },
 
         getContextLabel(context_type) {
@@ -1117,7 +1117,7 @@ function reader() {
                 // If the UI is already pinned (Locked), tapping center does nothing
                 // (or you could make it unpin, but standard behavior is "Pin overrides all")
                 if (this.uiLocked) {
-                     window.comicServer.showToast("UI is Pinned. Use Eye icon to unlock.");
+                     window.parker.showToast("UI is Pinned. Use Eye icon to unlock.");
                      return;
                 }
 
@@ -1142,7 +1142,7 @@ function reader() {
 
         toggleMangaMode() {
             this.readDirection = this.readDirection === 'ltr' ? 'rtl' : 'ltr';
-            window.comicServer.showToast(this.readDirection === 'rtl' ? "Manga Mode (RTL)" : "Western Mode (LTR)");
+            window.parker.showToast(this.readDirection === 'rtl' ? "Manga Mode (RTL)" : "Western Mode (LTR)");
         },
 
         // --- Touch handling --

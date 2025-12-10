@@ -1,6 +1,6 @@
 <a
     x-show="{{ imprint_ref }}"
-    :href="window.comicServer.route('pages.search', {}, `field=imprint&value=${encodeURIComponent({{ imprint_ref }})}&operator=equal`)"
+    :href="window.parker.route('pages.search', {}, `field=imprint&value=${encodeURIComponent({{ imprint_ref }})}&operator=equal`)"
     class="inline-flex items-center gap-2 hover:text-blue-400 transition-colors group"
     title="Browse Imprint"
 >

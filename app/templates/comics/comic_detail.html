@@ -13,9 +13,9 @@
     <div class="max-w-6xl mx-auto" x-data="comicDetail()">
 
         <div class="flex items-center space-x-2 text-gray-400 mb-6 text-sm" x-show="!error" x-cloak>
-            <a :href="window.comicServer.route('pages.library_detail', { library_id: comic?.library_id })" class="hover:text-white" x-text="comic?.library_name"></a>
+            <a :href="window.parker.route('pages.library_detail', { library_id: comic?.library_id })" class="hover:text-white" x-text="comic?.library_name"></a>
             <span>/</span>
-            <a :href="window.comicServer.route('pages.series_detail', { series_id: comic?.series_id})" class="hover:text-blue-400" x-text="comic?.series || 'Series'"></a>
+            <a :href="window.parker.route('pages.series_detail', { series_id: comic?.series_id})" class="hover:text-blue-400" x-text="comic?.series || 'Series'"></a>
             <span>/</span>
             <span class="text-white" x-text="`#${comic?.number}`"></span>
         </div>
@@ -34,7 +34,7 @@
                     <button x-on:click="window.history.back()" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors">
                         Go Back
                     </button>
-                    <a :href="window.comicServer.route('pages.home')" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors">
+                    <a :href="window.parker.route('pages.home')" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors">
                         Home
                     </a>
                 </div>
@@ -46,7 +46,7 @@
             <div class="md:col-span-1 space-y-6">
                 <div class="w-64 mx-auto md:w-full aspect-[2/3] bg-gray-800 rounded-lg overflow-hidden shadow-2xl relative group border border-gray-700">
                     <img
-                        :src="window.comicServer.route('comics.thumbnail', { comic_id: comicId }, 'width=400&height=600')"
+                        :src="window.parker.route('comics.thumbnail', { comic_id: comicId }, 'width=400&height=600')"
                         :alt="comic?.title"
                         class="w-full h-full object-cover"
                     >
@@ -87,7 +87,7 @@
                     <div class="grid grid-cols-2 gap-4">
                         <div>
                             <div class="text-[10px] text-gray-500 uppercase tracking-wider">Size</div>
-                            <div class="text-sm text-gray-300" x-text="window.comicServer.formatBytes(comic?.file_size)"></div>
+                            <div class="text-sm text-gray-300" x-text="window.parker.formatBytes(comic?.file_size)"></div>
                         </div>
                         <div>
                             <div class="text-[10px] text-gray-500 uppercase tracking-wider">Pages</div>
@@ -316,7 +316,7 @@ function comicDetail() {
 
         async loadComic() {
             try {
-                const res = await fetch(window.comicServer.route('comics.detail', { comic_id: this.comicId }));
+                const res = await fetch(window.parker.route('comics.detail', { comic_id: this.comicId }));
                 if (res.status === 404) {
                    this.error = {
                         title: "Comic Not Found",
@@ -336,12 +336,12 @@ function comicDetail() {
         },
 
         async markRead() {
-            await fetch(window.comicServer.route('progress.mark_comic_as_read',{ comic_id: this.comicId }), { method: 'POST' });
+            await fetch(window.parker.route('progress.mark_comic_as_read',{ comic_id: this.comicId }), { method: 'POST' });
             // You could show a toast here
         },
 
         async markUnread() {
-            await fetch(window.comicServer.route('progress.mark_comic_as_unread', { comic_id: this.comicId }), { method: 'DELETE' });
+            await fetch(window.parker.route('progress.mark_comic_as_unread', { comic_id: this.comicId }), { method: 'DELETE' });
         },
 
     }

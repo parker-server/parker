@@ -5,7 +5,7 @@
 {% block content %}
 <div class="space-y-6" x-data="readingListDetail()">
     <div x-show="!error" class="flex items-center space-x-4" x-cloak>
-        <a :href="window.comicServer.route('pages.reading_lists')" class="text-blue-400 hover:text-blue-300">
+        <a :href="window.parker.route('pages.reading_lists')" class="text-blue-400 hover:text-blue-300">
             ← Back to Reading Lists
         </a>
     </div>
@@ -24,7 +24,7 @@
                 <button x-on:click="window.history.back()" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors">
                     Go Back
                 </button>
-                <a :href="window.comicServer.route('pages.home')" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors">
+                <a :href="window.parker.route('pages.home')" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors">
                     Home
                 </a>
             </div>
@@ -164,7 +164,7 @@ function readingListDetail() {
 
         async init() {
             try {
-                const res = await fetch(window.comicServer.route('reading_lists.detail', { list_id: this.readingListId }));
+                const res = await fetch(window.parker.route('reading_lists.detail', { list_id: this.readingListId }));
 
                 if (res.status === 404) {
                     this.error = {
@@ -187,7 +187,7 @@ function readingListDetail() {
 
         startReading() {
             if (this.readingList?.comics?.length > 0) {
-                window.location.href = window.comicServer.route('pages.reader', { comic_id: this.readingList.comics[0].id }, `context_type=reading_list&context_id=${this.readingList.id}`);
+                window.location.href = window.parker.route('pages.reader', { comic_id: this.readingList.comics[0].id }, `context_type=reading_list&context_id=${this.readingList.id}`);
             }
         }
     }

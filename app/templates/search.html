@@ -523,7 +523,7 @@ document.addEventListener('alpine:init', () => {
             console.log("payload", payload);
 
             try {
-                const res = await fetch(window.comicServer.route('comics.search'), {
+                const res = await fetch(window.parker.route('comics.search'), {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(payload)
@@ -590,7 +590,7 @@ document.addEventListener('alpine:init', () => {
                     this.newSearchName = '';
                     this.loadedListId = null;
                     await this.loadSavedList();
-                    window.comicServer.showToast("Search configuration saved!", "success");
+                    window.parker.showToast("Search configuration saved!", "success");
                 }
             } catch(e) { console.error(e); }
         },
@@ -599,7 +599,7 @@ document.addEventListener('alpine:init', () => {
             if(!confirm("Delete this saved search?")) return;
             await fetch(window.url(`/api/saved-searches/${id}`), { method: 'DELETE' });
             await this.loadSavedList(); // Refresh list
-            window.comicServer.showToast("Saved Search deleted", "success");
+            window.parker.showToast("Saved Search deleted", "success");
         },
 
         applySearch(item) {
@@ -694,10 +694,10 @@ document.addEventListener('alpine:init', () => {
 
                     if (res.ok) {
                         this.saveModalOpen = false;
-                        window.comicServer.showToast("Smart List created!", "success");
+                        window.parker.showToast("Smart List created!", "success");
                         this.newSearchName = '';
                     } else {
-                        window.comicServer.showToast("Failed to create list.", "error");
+                        window.parker.showToast("Failed to create list.", "error");
                     }
 
                 } else {
@@ -710,14 +710,14 @@ document.addEventListener('alpine:init', () => {
 
                     if (res.ok) {
                         this.saveModalOpen = false;
-                        window.comicServer.showToast("Smart List updated!", "success");
+                        window.parker.showToast("Smart List updated!", "success");
                     } else {
-                        window.comicServer.showToast("Failed to update list.", "error");
+                        window.parker.showToast("Failed to update list.", "error");
                     }
                 }
             } catch(e) {
                 console.error(e);
-                window.comicServer.showToast("Network error.", "error");
+                window.parker.showToast("Network error.", "error");
             }
         },
 

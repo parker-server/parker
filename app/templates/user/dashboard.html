@@ -30,7 +30,7 @@
             <p class="text-gray-400">Member since <span x-text="formatDate(data?.user?.created_at)"></span></p>
 
             <div class="mt-3">
-                <a :href="window.comicServer.route('pages.user_settings')" class="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors border border-gray-600 hover:border-gray-400 rounded-full px-3 py-1">
+                <a :href="window.parker.route('pages.user_settings')" class="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors border border-gray-600 hover:border-gray-400 rounded-full px-3 py-1">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                     Account Settings
                 </a>
@@ -60,12 +60,12 @@
                 <h2 class="text-xl font-bold text-white flex items-center gap-2">
                     <span>📖</span> Continue Reading
                 </h2>
-                <a :href="window.comicServer.route('pages.continue_reading')" class="text-xs text-blue-400 hover:text-white">View All</a>
+                <a :href="window.parker.route('pages.continue_reading')" class="text-xs text-blue-400 hover:text-white">View All</a>
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <template x-for="item in data?.continue_reading" :key="item.comic_id">
-                    <a :href="window.comicServer.route('pages.reader', { comic_id: item.comic_id})" class="flex bg-gray-800 rounded-lg overflow-hidden border border-gray-700 hover:border-blue-500 transition-colors group h-32 relative">
+                    <a :href="window.parker.route('pages.reader', { comic_id: item.comic_id})" class="flex bg-gray-800 rounded-lg overflow-hidden border border-gray-700 hover:border-blue-500 transition-colors group h-32 relative">
                         <img :src="item.thumbnail" class="w-24 h-full object-cover">
                         
                         <div class="p-4 flex flex-col justify-center min-w-0">
@@ -96,7 +96,7 @@
                     <h2 class="text-xl font-bold text-white flex items-center gap-2">
                         <span>⚡</span> Smart Filters
                     </h2>
-                    <a :href="window.comicServer.route('pages.search')" class="text-xs text-blue-400 hover:text-white">Create New</a>
+                    <a :href="window.parker.route('pages.search')" class="text-xs text-blue-400 hover:text-white">Create New</a>
                 </div>
 
                 <div class="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden shadow-lg">
@@ -143,7 +143,7 @@
 
                             <tr x-show="!data?.smart_lists || data?.smart_lists?.length === 0">
                                 <td colspan="3" class="px-6 py-8 text-center text-gray-500">
-                                    No smart filters yet. <a :href="window.comicServer.route('pages.search')" class="text-blue-400 hover:underline">Create one</a> to track specific comics automatically.
+                                    No smart filters yet. <a :href="window.parker.route('pages.search')" class="text-blue-400 hover:underline">Create one</a> to track specific comics automatically.
                                 </td>
                             </tr>
                         </tbody>
@@ -198,12 +198,12 @@
                 <h2 class="text-xl font-bold text-white flex items-center gap-2">
                     <span>🗃️</span> My Pull Lists
                 </h2>
-                <a :href="window.comicServer.route('pages.pull_lists')" class="text-xs text-blue-400 hover:text-white">View All</a>
+                <a :href="window.parker.route('pages.pull_lists')" class="text-xs text-blue-400 hover:text-white">View All</a>
             </div>
 
             <div class="space-y-3">
                 <template x-for="list in data?.pull_lists" :key="list.id">
-                    <a :href="window.comicServer.route('pages.pull_list_detail', {list_id: list.id})" class="block bg-gray-800 p-4 rounded-lg border border-gray-700 hover:bg-gray-750 hover:border-gray-500 transition-all">
+                    <a :href="window.parker.route('pages.pull_list_detail', {list_id: list.id})" class="block bg-gray-800 p-4 rounded-lg border border-gray-700 hover:bg-gray-750 hover:border-gray-500 transition-all">
                         <div class="flex justify-between items-center">
                             <span class="font-bold text-white" x-text="list.name"></span>
                             <span class="bg-gray-700 text-gray-300 text-xs px-2 py-1 rounded-full" x-text="list.count"></span>
@@ -211,7 +211,7 @@
                     </a>
                 </template>
                 
-                <button x-on:click="window.location.href=window.comicServer.route('pages.pull_lists')" class="w-full py-3 border border-gray-700 border-dashed rounded-lg text-gray-500 hover:text-white hover:border-gray-500 hover:bg-gray-800/50 transition-all text-sm">
+                <button x-on:click="window.location.href=window.parker.route('pages.pull_lists')" class="w-full py-3 border border-gray-700 border-dashed rounded-lg text-gray-500 hover:text-white hover:border-gray-500 hover:bg-gray-800/50 transition-all text-sm">
                     + Create New List
                 </button>
             </div>
@@ -227,7 +227,7 @@ function dashboard() {
         
         async init() {
             try {
-                const res = await fetch(window.comicServer.route('users.dashboard'));
+                const res = await fetch(window.parker.route('users.dashboard'));
                 if(res.ok) {
                     this.data = await res.json();
                     await this.fetchSmartLists();
@@ -244,7 +244,7 @@ function dashboard() {
             formData.append('file', file);
             
             try {
-                const res = await fetch(window.comicServer.route('users.upload_avatar'), {
+                const res = await fetch(window.parker.route('users.upload_avatar'), {
                     method: 'POST',
                     body: formData
                 });
@@ -253,7 +253,7 @@ function dashboard() {
                     const result = await res.json();
                     // Force refresh image by appending timestamp
                     this.data.user.avatar_url = result.url + '?t=' + Date.now();
-                    window.comicServer.showToast("Avatar updated!", "success");
+                    window.parker.showToast("Avatar updated!", "success");
                 }
             } catch(e) {
                 console.error(e);
@@ -263,20 +263,20 @@ function dashboard() {
         async copyToClipboard(text) {
             try {
                 await navigator.clipboard.writeText(text);
-                window.comicServer.showToast("Feed URL copied!", "success");
+                window.parker.showToast("Feed URL copied!", "success");
             } catch (err) {
                 console.error('Failed to copy!', err);
                 // Fallback for non-secure contexts if needed, though simpler is better
                 const input = document.getElementById('opds-input');
                 input.select();
                 document.execCommand('copy');
-                window.comicServer.showToast("Feed URL copied!", "success");
+                window.parker.showToast("Feed URL copied!", "success");
             }
         },
 
         async fetchSmartLists() {
             try {
-                const res = await fetch(window.comicServer.route('smart_lists.list'));
+                const res = await fetch(window.parker.route('smart_lists.list'));
                 if (res.ok) {
                     this.data.smart_lists = await res.json();
                 }
@@ -286,7 +286,7 @@ function dashboard() {
         async toggleSmartListVisibility(list) {
             list.show_on_dashboard = !list.show_on_dashboard;
             try {
-                await fetch(window.comicServer.route('smart_lists.update', { list_id: list.id }), {
+                await fetch(window.parker.route('smart_lists.update', { list_id: list.id }), {
                     method: 'PATCH',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ show_on_dashboard: list.show_on_dashboard })
@@ -300,10 +300,10 @@ function dashboard() {
         async deleteSmartList(id) {
             if(!confirm("Delete this filter?")) return;
             try {
-                const res = await fetch(window.comicServer.route('smart_lists.delete', { list_id: id }), { method: 'DELETE' });
+                const res = await fetch(window.parker.route('smart_lists.delete', { list_id: id }), { method: 'DELETE' });
                 if(res.ok) {
                     this.data.smart_lists = this.data.smart_lists.filter(l => l.id !== id);
-                    if(window.comicServer) window.comicServer.showToast("Filter deleted", "success");
+                    if(window.parker) window.parker.showToast("Filter deleted", "success");
                 }
             } catch(e) { console.error(e); }
         },

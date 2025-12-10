@@ -45,7 +45,7 @@
 
     <div x-show="!loading && items.length === 0" class="text-center py-20 text-gray-400">
         <p class="text-lg" x-text="getEmptyMessage()"></p>
-        <a :href="window.comicServer.route('pages.home')" class="text-blue-400 hover:underline mt-2 inline-block">Browse Library</a>
+        <a :href="window.parker.route('pages.home')" class="text-blue-400 hover:underline mt-2 inline-block">Browse Library</a>
     </div>
 
 </div>
@@ -71,7 +71,7 @@ function continueReading() {
             this.items = []; // Clear to prevent flash
             try {
                 // Fetch JSON from existing API
-                const res = await fetch(window.comicServer.route('progress.recent_progress', {}, `filter=${this.filter}&limit=50`));
+                const res = await fetch(window.parker.route('progress.recent_progress', {}, `filter=${this.filter}&limit=50`));
                 if (res.ok) {
                     const data = await res.json();
                     this.items = data.results;
@@ -91,7 +91,7 @@ function continueReading() {
 
         async markRead(comicId) {
             try {
-                await fetch(window.comicServer.route('progress.mark_comic_as_read', { comic_id: comicId }), { method: 'POST' });
+                await fetch(window.parker.route('progress.mark_comic_as_read', { comic_id: comicId }), { method: 'POST' });
                 // Refresh list to remove item or update status
                 this.loadItems();
             } catch (e) { console.error(e); }
@@ -100,7 +100,7 @@ function continueReading() {
         async markUnread(comicId) {
             if(!confirm("Clear reading progress for this comic?")) return;
             try {
-                await fetch(window.comicServer.route('progress.mark_comic_as_unread', { comic_id: comicId} ), { method: 'DELETE' });
+                await fetch(window.parker.route('progress.mark_comic_as_unread', { comic_id: comicId} ), { method: 'DELETE' });
                 this.loadItems();
             } catch (e) { console.error(e); }
         }

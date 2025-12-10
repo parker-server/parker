@@ -1,6 +1,6 @@
 {# partials/cover_browser_link.html #}
 {% macro cover_browser_link(context, contextId) %}
-<a :href="window.comicServer.route('pages.cover_browser', { context_type: '{{context}}', context_id: {{contextId}} })"
+<a :href="window.parker.route('pages.cover_browser', { context_type: '{{context}}', context_id: {{contextId}} })"
    class="p-2 rounded-full text-gray-400 hover:text-white hover:bg-gray-700 transition-colors"
    title="Cover Browser">
     <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">

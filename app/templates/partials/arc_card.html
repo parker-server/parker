@@ -2,11 +2,11 @@
 
     <div class="aspect-[2/3] bg-gray-700 rounded-lg overflow-hidden relative shadow-md transition-transform duration-200 group-hover:scale-[1.02]">
 
-        <img :src="window.comicServer.route('comics.thumbnail', { comic_id: arc.first_issue_id}, 'width=300&height=450')"
+        <img :src="window.parker.route('comics.thumbnail', { comic_id: arc.first_issue_id}, 'width=300&height=450')"
              class="w-full h-full object-cover transition-opacity duration-300 group-hover:opacity-40">
 
         <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-             <a :href="window.comicServer.route('pages.reader', {comic_id: arc.first_issue_id})"
+             <a :href="window.parker.route('pages.reader', {comic_id: arc.first_issue_id})"
                 x-on:click.stop
                 class="bg-blue-600 hover:bg-blue-500 text-white rounded-full p-3 shadow-xl transform hover:scale-110 transition-transform"
                 title="Start Reading Arc">

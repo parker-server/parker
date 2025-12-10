@@ -98,7 +98,7 @@
                     <img :src="window.url(img.thumbnail_url)"
                          class="absolute inset-0 w-full h-full object-contain blur-sm brightness-50 z-0">
 
-                    <img :src="window.comicServer.route('reader.comic_page', { comic_id: img.comic_id, page_index: 0 })"
+                    <img :src="window.parker.route('reader.comic_page', { comic_id: img.comic_id, page_index: 0 })"
                          class="relative z-10 max-h-[85vh] object-contain"
                          onload="this.previousElementSibling.style.display='none'"
                     >
@@ -114,7 +114,7 @@
 
     <div x-show="zoomMode" class="zoom-container" @click.self="zoomMode = false" x-transition.opacity>
         <template x-for="img in currentImages" :key="img.comic_id">
-            <img :src="window.comicServer.route('reader.comic_page', { comic_id: img.comic_id, page_index: 0 })" class="zoom-image shadow-2xl">
+            <img :src="window.parker.route('reader.comic_page', { comic_id: img.comic_id, page_index: 0 })" class="zoom-image shadow-2xl">
         </template>
 
         <button @click="zoomMode = false" class="fixed top-4 right-4 bg-black/50 text-white p-2 rounded-full hover:bg-black/80">
@@ -139,7 +139,7 @@ function coverBrowser() {
         loading: true,
 
         async init() {
-            const url = window.comicServer.route('comics.cover_manifest', {}, `context_type=${this.contextType}&context_id=${this.contextId}`);
+            const url = window.parker.route('comics.cover_manifest', {}, `context_type=${this.contextType}&context_id=${this.contextId}`);
             const res = await fetch(url);
             if(res.ok) {
                 const data = await res.json();
@@ -209,12 +209,12 @@ function coverBrowser() {
         },
 
         exit() {
-            if(this.contextType === 'series') window.location.href = window.comicServer.route('pages.series_detail', { series_id: this.contextId });
-            else if(this.contextType === 'volume') window.location.href = window.comicServer.route('pages.volume_detail', { volume_id: this.contextId });
-            else if(this.contextType === 'reading_list') window.location.href = window.comicServer.route('pages.reading_list_detail', { reading_list_id: this.contextId });
-            else if(this.contextType === 'collection') window.location.href = window.comicServer.route('pages.collection_detail', { collection_id: this.contextId });
-            else if(this.contextType === 'pull_list') window.location.href = window.comicServer.route('pages.pull_list_detail', { list_id: this.contextId });
-            else window.location.href = window.comicServer.route('pages.home');
+            if(this.contextType === 'series') window.location.href = window.parker.route('pages.series_detail', { series_id: this.contextId });
+            else if(this.contextType === 'volume') window.location.href = window.parker.route('pages.volume_detail', { volume_id: this.contextId });
+            else if(this.contextType === 'reading_list') window.location.href = window.parker.route('pages.reading_list_detail', { reading_list_id: this.contextId });
+            else if(this.contextType === 'collection') window.location.href = window.parker.route('pages.collection_detail', { collection_id: this.contextId });
+            else if(this.contextType === 'pull_list') window.location.href = window.parker.route('pages.pull_list_detail', { list_id: this.contextId });
+            else window.location.href = window.parker.route('pages.home');
         }
     }
 }

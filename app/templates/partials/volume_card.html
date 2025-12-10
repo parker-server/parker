@@ -1,9 +1,9 @@
-<a :href="window.comicServer.route('pages.volume_detail', {volume_id: volume.volume_id })" class="block group">
+<a :href="window.parker.route('pages.volume_detail', {volume_id: volume.volume_id })" class="block group">
     <div class="aspect-[2/3] bg-gray-700 rounded-lg overflow-hidden relative shadow-md transition-transform duration-200 group-hover:scale-[1.02]">
 
         <template x-if="volume.first_issue_id">
             <img
-                :src="window.comicServer.route('comics.thumbnail', {comic_id: volume.first_issue_id })"
+                :src="window.parker.route('comics.thumbnail', {comic_id: volume.first_issue_id })"
                 :alt="`Volume ${volume.volume_number}`"
                 class="w-full h-full object-cover transition-opacity duration-300"
                 loading="lazy"
