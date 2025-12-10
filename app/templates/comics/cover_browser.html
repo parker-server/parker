@@ -28,13 +28,26 @@
         position: fixed; inset: 0; z-index: 200;
         background: rgba(0,0,0,0.95);
         overflow: auto; /* Allow native scrolling */
-        display: flex; justify-content: center; align-items: flex-start;
-        cursor: zoom-out;
+        display: flex;
+        cursor: grab;
+        user-select: none; /* Prevents text selection while dragging */
     }
+
+    /* When actively dragging */
+    .zoom-container.is-panning {
+        cursor: grabbing;
+    }
+
     .zoom-image {
         margin: auto;
         max-width: none; /* Allow overflowing */
         box-shadow: 0 0 50px rgba(0,0,0,0.5);
+
+        /* Prevent browser native image dragging */
+        -webkit-user-drag: none;
+        user-select: none;
+        pointer-events: auto; /* Ensure clicks register */
+        flex-shrink: 0; /* Prevent image from trying to fit */
     }
 </style>
 {% endblock %}
@@ -55,7 +68,7 @@
         </div>
 
         <div class="flex items-center gap-3">
-            <button x-show="mode === 'theater'" @click="zoomMode = true" class="text-gray-400 hover:text-white transition-colors" title="Zoom / Inspect (z)">
+            <button x-show="mode === 'theater'" x-on:click="zoomMode = true" class="text-gray-400 hover:text-white transition-colors" title="Zoom / Inspect (z)">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
                 </svg>
@@ -84,7 +97,7 @@
         </template>
     </div>
 
-    <div x-show="mode === 'theater'" class="theater-view" @click="handleZoneClick($event)">
+    <div x-show="mode === 'theater'" class="theater-view" x-on:click="handleZoneClick($event)">
 
         <div class="absolute inset-y-0 left-0 w-1/4 cursor-pointer z-10 hover:bg-white/5 transition-colors"></div>
         <div class="absolute inset-y-0 right-0 w-1/4 cursor-pointer z-10 hover:bg-white/5 transition-colors"></div>
@@ -112,12 +125,18 @@
         </div>
     </div>
 
-    <div x-show="zoomMode" class="zoom-container" @click.self="zoomMode = false" x-transition.opacity>
+    <div x-show="zoomMode" class="zoom-container" x-ref="zoomContainer"
+         :class="{ 'is-panning': isPanning }"
+         x-on:mousedown="startPan($event)"
+         x-on:mousemove="pan($event)"
+         x-on:mouseup="endPan()"
+         x-on:mouseleave="endPan()"
+         x-on:click.self="zoomMode = false" x-transition.opacity>
         <template x-for="img in currentImages" :key="img.comic_id">
             <img :src="window.parker.route('reader.comic_page', { comic_id: img.comic_id, page_index: 0 })" class="zoom-image shadow-2xl">
         </template>
 
-        <button @click="zoomMode = false" class="fixed top-4 right-4 bg-black/50 text-white p-2 rounded-full hover:bg-black/80">
+        <button x-on:click="zoomMode = false" class="fixed top-4 right-4 bg-black/50 text-white p-2 rounded-full hover:bg-black/80">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
         </button>
     </div>
@@ -138,6 +157,11 @@ function coverBrowser() {
         doublePage: false,
         loading: true,
 
+        isPanning: false,
+        wasPanning: false, // Used to distinguish between a "Click to Close" and a "Drag Release"
+        panStart: { x: 0, y: 0 },
+        scrollStart: { x: 0, y: 0 },
+
         async init() {
             const url = window.parker.route('comics.cover_manifest', {}, `context_type=${this.contextType}&context_id=${this.contextId}`);
             const res = await fetch(url);
@@ -146,6 +170,22 @@ function coverBrowser() {
                 this.items = data.items;
             }
             this.loading = false;
+
+            // Watch for zoom mode to center the scroll
+            this.$watch('zoomMode', value => {
+                if (value) {
+                    this.$nextTick(() => {
+                        const el = this.$refs.zoomContainer;
+                        if (el) {
+                            // Calculate center position
+                            el.scrollLeft = (el.scrollWidth - el.clientWidth) / 2;
+                            el.scrollTop = (el.scrollHeight - el.clientHeight) / 2;
+                        }
+                    });
+                }
+            });
+
+
         },
 
         get currentImages() {
@@ -215,7 +255,48 @@ function coverBrowser() {
             else if(this.contextType === 'collection') window.location.href = window.parker.route('pages.collection_detail', { collection_id: this.contextId });
             else if(this.contextType === 'pull_list') window.location.href = window.parker.route('pages.pull_list_detail', { list_id: this.contextId });
             else window.location.href = window.parker.route('pages.home');
-        }
+        },
+
+        // Panning Functions
+        startPan(e) {
+            // Only allow left mouse button
+            if (e.button !== 0) return;
+
+            this.isPanning = true;
+            this.wasPanning = false;
+
+            this.panStart = { x: e.clientX, y: e.clientY };
+            this.scrollStart = {
+                x: this.$refs.zoomContainer.scrollLeft,
+                y: this.$refs.zoomContainer.scrollTop
+            };
+        },
+
+        pan(e) {
+            if (!this.isPanning) return;
+            e.preventDefault(); // Stop chrome from selecting things
+
+            const dx = e.clientX - this.panStart.x;
+            const dy = e.clientY - this.panStart.y;
+
+            // If we moved more than a few pixels, mark it as a pan operation
+            // (So we don't accidentally close the modal when releasing the mouse)
+            if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+                this.wasPanning = true;
+            }
+
+            // Scroll = Initial - Delta
+            this.$refs.zoomContainer.scrollLeft = this.scrollStart.x - dx;
+            this.$refs.zoomContainer.scrollTop = this.scrollStart.y - dy;
+        },
+
+        endPan() {
+            this.isPanning = false;
+            // Reset wasPanning after a short delay so the @click handler
+            // has time to see that we just finished dragging.
+            setTimeout(() => { this.wasPanning = false; }, 50);
+        },
+
     }
 }
 </script>
