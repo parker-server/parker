@@ -4,7 +4,9 @@ from pathlib import Path
 
 
 class Settings(BaseSettings):
-    app_name: str = "Comic Server"
+    app_name: str = "Parker"
+    version: str = "0.1.0"
+    
     database_url: str = "sqlite:///./storage/database/comics.db"
     #database_url: str = "sqlite:///./storage/database/temp.db"
 
