@@ -71,7 +71,7 @@ Parker is a self‑hosted media server for comic books (CBZ/CBR). It follows a *
 - **Frontend:** Jinja2, Alpine.js, TailwindCSS (CDN)
 - **Image Processing:** Pillow, Color Thief
 - **Deployment:** Docker / Docker Compose
-- **Database:** SQLite (WAL mode)
+- **Database:** SQLite (WAL mode) with FTS5
 
 ---
 
