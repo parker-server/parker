@@ -27,14 +27,21 @@ def _has_library_access(library_id: int, current_user: CurrentUser) -> bool:
 
 
 @router.get("/", name="list")
-async def list_libraries(db: SessionDep, current_user: CurrentUser):
+async def list_libraries(db: SessionDep,
+                         current_user: CurrentUser,
+                         limit: Optional[int] = Query(None, gt=0, description="Limit the number of results")):
     """List libraries accessible to the current user"""
 
     # Fetch the libraries based on permissions
     if current_user.is_superuser:
-        libs = db.query(Library).order_by(Library.name).all()
+        query = db.query(Library).order_by(Library.name)
+        if limit:
+            query = query.limit(limit)
+        libs = query.all()
     else:
         libs = sorted(current_user.accessible_libraries, key=lambda lib: lib.name)
+        if limit:
+            libs = libs[:limit]
 
     # Iterate and Count
     results = []

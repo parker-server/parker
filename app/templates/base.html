@@ -42,7 +42,7 @@
 
                     <div class="hidden lg:flex items-center space-x-1">
                         <a href="{{ url('/user/dashboard') }}" class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors">Dashboard</a>
-                        <div class="relative group" x-data="{ open: false, libs: [] }" x-init="libs = await (await fetch(window.parker.route('libraries.list'))).json()">
+                        <div class="relative group" x-data="{ open: false, libs: [] }" x-init="libs = await (await fetch(window.parker.route('libraries.list', {}, 'limit=5'))).json()">
 
                             <button class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors flex items-center gap-1">
                                 <span>Libraries</span>
