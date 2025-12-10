@@ -133,7 +133,7 @@ function libraryManager() {
 
         async loadLibraries() {
             try {
-                const res = await fetch(window.url('/api/libraries/'));
+                const res = await fetch(window.parker.url('/api/libraries/'));
                 if (res.ok) this.libraries = await res.json();
             } catch(e) { console.error(e); }
         },
@@ -161,7 +161,7 @@ function libraryManager() {
             };
 
             try {
-                const res = await fetch(window.url(url), {
+                const res = await fetch(window.parker.url(url), {
                     method: method,
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
@@ -185,7 +185,7 @@ function libraryManager() {
         async deleteLibrary(lib) {
             if (!confirm(`Delete library "${lib.name}"? This removes all comics from the database (files remain intact).`)) return;
 
-            const res = await fetch(window.url(`/api/libraries/${lib.id}`), { method: 'DELETE' });
+            const res = await fetch(window.parker.url(`/api/libraries/${lib.id}`), { method: 'DELETE' });
             if (res.ok) {
                 this.loadLibraries();
             } else {
@@ -202,7 +202,7 @@ function libraryManager() {
 
             lib.is_scanning = true; // Optimistic update
 
-            const res = await fetch(window.url(`/api/libraries/${lib.id}/scan?force=${force}`), { method: 'POST' });
+            const res = await fetch(window.parker.url(`/api/libraries/${lib.id}/scan?force=${force}`), { method: 'POST' });
             if (res.ok) {
                 // We rely on the pollInterval to update the status from here
                 window.parker.showToast("Scan started", 'info');

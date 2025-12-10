@@ -188,7 +188,7 @@ function taskManager() {
             this.activeTask = taskName; // Set active task context
 
             try {
-                const res = await fetch(window.url(`/api/tasks/${taskName}`), { method: 'POST' });
+                const res = await fetch(window.parker.url(`/api/tasks/${taskName}`), { method: 'POST' });
                 if (res.ok) {
                     this.lastResult = await res.json();
                 } else {

@@ -193,7 +193,7 @@ function userManager() {
 
         async loadUsers() {
             try {
-                const res = await fetch(window.url(`/api/users?page=${this.currentPage}&size=${this.pageSize}`));
+                const res = await fetch(window.parker.url(`/api/users?page=${this.currentPage}&size=${this.pageSize}`));
                 if (res.ok) {
                     const data = await res.json();
                     this.users = data.items;
@@ -204,7 +204,7 @@ function userManager() {
 
         async loadLibraries() {
             try {
-                const res = await fetch(window.url('/api/libraries/'));
+                const res = await fetch(window.parker.url('/api/libraries/'));
                 if (res.ok) this.allLibraries = await res.json();
             } catch(e) { console.error(e); }
         },
@@ -215,7 +215,7 @@ function userManager() {
         },
 
         async createUser() {
-            const res = await fetch(window.url('/api/users'), {
+            const res = await fetch(window.parker.url('/api/users'), {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(this.newUser)
@@ -259,7 +259,7 @@ function userManager() {
                 payload.password = this.editingUser.password;
             }
 
-            const res = await fetch(window.url(`/api/users/${this.editingUser.id}`), {
+            const res = await fetch(window.parker.url(`/api/users/${this.editingUser.id}`), {
                 method: 'PATCH',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(payload)
@@ -278,7 +278,7 @@ function userManager() {
 
         async deleteUser(user) {
             if (!confirm(`Delete user ${user.username}? This will remove their reading history.`)) return;
-            const res = await fetch(window.url(`/api/users/${user.id}`), { method: 'DELETE' });
+            const res = await fetch(window.parker.url(`/api/users/${user.id}`), { method: 'DELETE' });
             if (res.ok) {
                 window.showToast('User deleted successfully.', 'success');
                 await this.loadUsers();

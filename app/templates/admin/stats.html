@@ -74,7 +74,7 @@
             </div>
         </div>
 
-        <div x-data="{ genreStats: [] }" x-init="genreStats = await (await fetch(window.url('/api/stats/genres'))).json()">
+        <div x-data="{ genreStats: [] }" x-init="genreStats = await (await fetch(window.parker.url('/api/stats/genres'))).json()">
             <h2 class="text-lg font-bold text-gray-400 mb-4 uppercase tracking-wider">Collection Insights</h2>
 
             <div class="bg-gray-800 rounded-lg border border-gray-700 shadow-lg overflow-hidden">
@@ -146,7 +146,7 @@ function serverStats() {
         async loadStats() {
             this.loading = true;
             try {
-                const res = await fetch(window.url('/api/stats/'));
+                const res = await fetch(window.parker.url('/api/stats/'));
                 if (res.ok) {
                     this.stats = await res.json();
                 } else {

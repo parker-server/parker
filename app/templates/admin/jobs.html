@@ -169,7 +169,7 @@
             async loadJobs() {
                 this.loading = true;
                 try {
-                    const response = await fetch(window.url('/api/jobs?limit=50'));
+                    const response = await fetch(window.parker.url('/api/jobs?limit=50'));
                     if(response.ok) this.jobs = await response.json();
                 } catch (e) { console.error(e); }
                 finally { this.loading = false; }

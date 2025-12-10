@@ -99,7 +99,7 @@ function migrationTool() {
             formData.append('user_strategy', this.userStrategy);
 
             try {
-                const res = await fetch(window.url('/api/migration/run'), {
+                const res = await fetch(window.parker.url('/api/migration/run'), {
                     method: 'POST',
                     body: formData,
                 });
