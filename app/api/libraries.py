@@ -32,9 +32,9 @@ async def list_libraries(db: SessionDep, current_user: CurrentUser):
 
     # Fetch the libraries based on permissions
     if current_user.is_superuser:
-        libs = db.query(Library).all()
+        libs = db.query(Library).order_by(Library.name).all()
     else:
-        libs = current_user.accessible_libraries
+        libs = sorted(current_user.accessible_libraries, key=lambda lib: lib.name)
 
     # Iterate and Count
     results = []
