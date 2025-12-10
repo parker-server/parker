@@ -6,9 +6,9 @@
             x-model="query"
             @input.debounce.300ms="fetchResults()"
             @keydown.escape="close()"
-            @click.away="close()"
-            @focus="isOpen = query.length > 1"
-            placeholder="Search library..."
+            x-on:click.away="close()"
+            x-on:focus="isOpen = query.length > 1"
+            placeholder="Search library... (Ctrl+K)"
             class="w-full px-4 py-2 bg-gray-700 text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 pl-10 transition-shadow"
             autocomplete="off"
         >
