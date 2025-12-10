@@ -22,6 +22,9 @@ def url_builder(path: str) -> str:
     return f"{base}/{clean_path}" if base else f"/{clean_path}"
 
 
+templates.env.globals["app_version"] = settings.version
+templates.env.globals["app_name"] = settings.app_name
+
 # Inject URL data into Templates
 templates.env.globals["url"] = url_builder
 templates.env.globals["base_url"] = settings.clean_base_url
