@@ -1,42 +1,124 @@
-# Comic Server
+# Parker Comic Server
 
-## 🌟 Core Features
+Parker is a self‑hosted media server for comic books (CBZ/CBR). It follows a **“Filesystem is Truth”** philosophy, parsing metadata directly from `ComicInfo.xml` inside archives. Parker is currently at **Version 1.1 (Stable)**.
 
-### 1. High-Performance Library Management
-* **Batch Scanner:** Processes massive libraries (25k+ files) in minutes using batched DB commits and SQLite WAL mode.
-* **Smart Hierarchy:** Organizes files into Libraries -> Series -> Volumes -> Issues.
-* **Metadata Extraction:** Automatically parses `ComicInfo.xml` from `.cbz` and `.cbr` archives.
+---
 
-### 2. Modern User Experience
-* **Reactive UI:** Built with **FastAPI (Jinja2) + Alpine.js**, providing a SPA-like feel without the build complexity.
-* **Component Architecture:** Reusable cards and list items ensure UI consistency across Search, Collections, and Detail views.
-* **Web Reader:** A responsive reader with metadata inspection, page caching, and progress tracking.
+## ✨ Features
 
-### 3. Discovery & Curation
-* **Advanced Search:** Rule-based search engine supporting complex logic (e.g., "Writer = Moore AND Character = Swamp Thing").
-* **Auto-Suggestions:** "Find-as-you-type" autocomplete for all metadata fields.
-* **Collections & Reading Lists:** Automatic and manual grouping of content.
+- **Library Management**
+  - Hierarchy: `Library → Series → Volume → Comic`
+  - Rich metadata (credits, tags, page counts, colors)
+  - Reading Lists, Collections, Story Arcs, Pull Lists, Smart Lists
 
-### 4. Security & Multi-User
-* **Role-Based Access:** Standard Users can browse/read; only Admins can Scan/Delete.
-* **Secure Auth:** OAuth2 with JWT tokens and SHA-256/Bcrypt password hashing.
-* **Personalized Progress:** Reading history is tracked per-user.
+- **User System**
+  - Multi‑library access with row‑level security
+  - Avatar uploads
+  - Hybrid authentication (JWT + secure cookies)
 
-## 🏗 Architecture & Tech Stack
-* **Backend:** Python 3.10+, FastAPI, SQLAlchemy, Pydantic v2.
-* **Database:** SQLite (WAL Mode enabled).
-* **Frontend:** TailwindCSS, Alpine.js v3, HTMX.
-* **Deployment:** Docker & Docker Compose support.
+- **Reader**
+  - Context‑aware navigation (series, volume, lists)
+  - Manga mode (RTL), double‑page spreads
+  - Zero‑latency engine with preloading and swipe navigation
+  - Image inspection tools
 
-## 📂 Key File Structure
-* `app/api/`: REST endpoints (Secured with Dependency Injection).
-* `app/services/`: Business logic (Scanner, Search Engine, Image Processing).
-* `app/models/`: SQLAlchemy database definitions.
-* `templates/`: Jinja2 HTML templates using partials for modularity.
-* `storage/`: Persistent volume for Database and Thumbnails.
+- **Discovery**
+  - Netflix‑style home page with content rails
+  - Recommendations by creator or metadata
+  - Random gems, recently updated series
 
-## ✅ Final Validation
-1.  **Deployment:** `docker-compose up -d --build` successfully starts the container.
-2.  **Security:** `/api/auth/register` creates the initial Superuser.
-3.  **Ingestion:** Scanner successfully imports a sample library and generates thumbnails.
-4.  **Usage:** Reading progress is saved and persists across reloads.
+- **Reports Dashboard**
+  - Missing Issues
+  - Storage Analysis
+  - Duplicate Detector
+  - Metadata Health
+  - Corrupt / Low Page Count
+
+- **Scanning**
+  - Background ScanManager with priority queues
+  - Timestamp bubbling for updated series
+  - Physical page count validation
+
+- **Visuals**
+  - Dynamic backgrounds from cover colors
+  - Cover Browser gallery mode
+
+- **Enrichment**
+  - Auto‑populated event descriptions
+  - Reading time estimates
+
+- **Search**
+  - Advanced rule‑based search builder
+  - Saved searches → Smart Lists
+  - Secure autocomplete
+
+- **OPDS Support**
+  - OPDS 1.2 compliant feeds
+  - Dublin Core metadata
+  - Legacy client authentication
+  - User dashboard integration
+
+- **WebP Transcoding**
+  - On‑the‑fly conversion for bandwidth savings
+  - Smart resizing and thresholds
+  - Per‑device opt‑in
+
+---
+
+## 🛠 Tech Stack
+
+- **Backend:** Python 3.10+, FastAPI, SQLAlchemy, Alembic, APScheduler
+- **Frontend:** Jinja2, Alpine.js, TailwindCSS (CDN)
+- **Image Processing:** Pillow, Color Thief
+- **Deployment:** Docker / Docker Compose
+- **Database:** SQLite (WAL mode)
+
+---
+
+## 🔒 Architecture Highlights
+
+- **Row‑Level Security:** Users restricted to accessible libraries
+- **Dependency Injection:** Security enforced via `ComicDep`, `SeriesDep`, `VolumeDep`
+- **Context‑Aware Reader:** Strategy pattern for next/prev navigation
+- **Soft Landing Errors:** Inline UI errors instead of hard redirects
+- **Hybrid Settings:** Environment variables + DB runtime preferences
+
+---
+
+## 📊 Data Model
+
+- Libraries, Series, Volumes, Comics
+- Collections, Reading Lists, Pull Lists, Smart Lists
+- User access control
+- Batch operations (mark read/unread, add to lists)
+
+---
+
+## 🚀 Getting Started
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/parker.git
+   cd parker
+   
+2. ```docker-compose up -d```
+3. Access Parker at http://localhost:8000.
+
+
+## 📌 Roadmap
+- Expanded OPDS support
+- Enhanced WebP transcoding pipeline
+- Additional unit test coverage
+- Migration tooling improvements
+- Add support to leverage the Age restriction attribute against a user
+- Pin libraries to front page
+- Implement SQLite FTS5 (Full Text Search) for faster searching
+- Improve admin Add Library dialog to be able to browse to a folder rather than type it in
+- Support multiple folder locations per library
+
+## 🤝 Contributing
+Parker is early‑stage but stable. Contributions are welcome!
+Please check the issues list for open tasks, or propose new features via pull requests.
+
+## 📜 License
+MIT License
