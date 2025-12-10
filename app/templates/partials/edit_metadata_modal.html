@@ -1,0 +1,205 @@
+<div x-data="editMetadataModal()"
+     x-show="isOpen"
+     style="display: none;"
+     @open-edit-metadata.window="open($event.detail.id)"
+     class="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+     x-transition.opacity>
+
+    <div class="bg-gray-800 border border-gray-700 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col"
+         x-on:click.away="close()">
+
+        <div class="px-6 py-4 border-b border-gray-700 flex justify-between items-center bg-gray-900/50 rounded-t-xl">
+            <div>
+                <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                    <span>📝</span> Edit Metadata
+                </h3>
+                <p class="text-xs text-gray-400 mt-0.5">Updates ComicInfo.xml inside the file.</p>
+            </div>
+            <button x-on:click="close()" class="text-gray-400 hover:text-white transition-colors">✕</button>
+        </div>
+
+        <div class="p-6 overflow-y-auto custom-scrollbar flex-1">
+
+            <div x-show="loading" class="py-20 text-center">
+                <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                <p class="text-gray-400">Reading ComicInfo.xml...</p>
+            </div>
+
+            <div x-show="!loading && error" class="bg-red-900/20 border border-red-800 text-red-300 p-4 rounded mb-4">
+                <p class="font-bold">Error</p>
+                <p x-text="error" class="text-sm"></p>
+                <p x-show="isCbr" class="text-xs mt-2 text-red-200">
+                    Note: Editing .cbr/.rar files requires the 'rar' tool installed on the server.
+                </p>
+            </div>
+
+            <form x-show="!loading && !error" class="space-y-6" x-on:submit.prevent="save()">
+
+                <div class="grid grid-cols-12 gap-4">
+                    <div class="col-span-8">
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Series Name</label>
+                        <input type="text" x-model="form.Series" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:border-blue-500 outline-none">
+                    </div>
+                    <div class="col-span-2">
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Vol</label>
+                        <input type="text" x-model="form.Volume" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:border-blue-500 outline-none">
+                    </div>
+                    <div class="col-span-2">
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">#</label>
+                        <input type="text" x-model="form.Number" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:border-blue-500 outline-none">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-12 gap-4">
+                    <div class="col-span-10">
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Issue Title</label>
+                        <input type="text" x-model="form.Title" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:border-blue-500 outline-none">
+                    </div>
+                    <div class="col-span-2">
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Year</label>
+                        <input type="number" x-model="form.Year" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:border-blue-500 outline-none">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Writer</label>
+                        <input type="text" x-model="form.Writer" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:border-blue-500 outline-none" placeholder="Comma separated">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Penciller</label>
+                        <input type="text" x-model="form.Penciller" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:border-blue-500 outline-none" placeholder="Comma separated">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Publisher</label>
+                        <input type="text" x-model="form.Publisher" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:border-blue-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Imprint</label>
+                        <input type="text" x-model="form.Imprint" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:border-blue-500 outline-none">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Summary</label>
+                    <textarea x-model="form.Summary" rows="4" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:border-blue-500 outline-none text-sm leading-relaxed"></textarea>
+                </div>
+            </form>
+        </div>
+
+        <div class="p-6 border-t border-gray-700 bg-gray-900/50 rounded-b-xl flex justify-between items-center">
+            <span class="text-xs text-gray-500 italic">
+                Changes will trigger a library scan.
+            </span>
+            <div class="flex gap-3">
+                <button x-on:click="close()" class="px-4 py-2 text-gray-400 hover:text-white text-sm">Cancel</button>
+                <button
+                    x-on:click="save()"
+                    :disabled="saving || error"
+                    class="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-2 rounded-lg font-bold flex items-center gap-2 transition-all">
+                    <span x-show="saving" class="animate-spin h-4 w-4 border-b-2 border-white rounded-full"></span>
+                    <span x-text="saving ? 'Writing...' : 'Save to File'"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function editMetadataModal() {
+    return {
+        isOpen: false,
+        loading: false,
+        saving: false,
+        error: null,
+        comicId: null,
+        isCbr: false,
+
+        // This mirrors the ComicInfo XML tags
+        form: {
+            Series: '', Number: '', Volume: '', Title: '', Summary: '',
+            Year: '', Writer: '', Penciller: '', Publisher: '', Imprint: ''
+        },
+
+        async open(id) {
+            this.comicId = id;
+            this.isOpen = true;
+            this.error = null;
+            this.loading = true;
+
+            try {
+                // 1. Fetch current file info (Check extension)
+                const checkRes = await fetch(window.url(`/api/comics/${id}`));
+                const comicData = await checkRes.json();
+
+                if (comicData.file_path.toLowerCase().endsWith('.cbr') || comicData.file_path.toLowerCase().endsWith('.rar')) {
+                    this.isCbr = true;
+                }
+
+                // 2. Fetch current XML data
+                // We reuse the existing endpoint or creating a dedicated GET metadata endpoint
+                // For now, let's assume we can fetch the parsed metadata
+                const res = await fetch(window.url(`/api/comics/${id}/metadata`));
+                if (!res.ok) throw new Error("Could not read metadata");
+
+                const data = await res.json();
+                console.log(data);
+                // Populate form
+                this.form = {
+                    Series: data.series || '',
+                    Number: data.number || '',
+                    Volume: data.volume || '',
+                    Title: data.title || '',
+                    Summary: data.summary || '',
+                    Year: data.year || '',
+                    Writer: data.writer || '',
+                    Penciller: data.penciller || '',
+                    Publisher: data.publisher || '',
+                    Imprint: data.imprint || ''
+                };
+
+            } catch(e) {
+                console.error(e);
+                this.error = e.message || "Failed to load metadata. File might be locked or unsupported.";
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        close() {
+            this.isOpen = false;
+        },
+
+        async save() {
+            this.saving = true;
+            try {
+                const res = await fetch(window.url(`/api/comics/${this.comicId}/metadata`), {
+                    method: 'PATCH',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(this.form)
+                });
+
+                if (!res.ok) {
+                    const errData = await res.json();
+                    throw new Error(errData.detail || "Save failed");
+                }
+
+                window.comicServer.showToast("File updated. Scan queued.", "success");
+                this.close();
+
+                // Optional: Reload the page to show new data
+                //setTimeout(() => window.location.reload(), 1000);
+
+            } catch(e) {
+                console.error(e);
+                this.error = e.message;
+            } finally {
+                this.saving = false;
+            }
+        }
+    }
+}
+</script>
