@@ -108,7 +108,7 @@ Parker is a self‑hosted media server for comic books (CBZ/CBR). It follows a *
    cd parker
    
 2. ```docker-compose up -d --build```
-3. Access Parker at http://localhost:8000.
+3. Access Parker at http://localhost:8000. Default user: admin/admin
 
 
 ## 📌 Roadmap
