@@ -7,8 +7,13 @@ from app.core.utils import get_route_map
 templates = Jinja2Templates(directory="app/templates")
 
 def route_map_injector(request):
-    # You can decide whether to include admin routes here
-    return get_route_map(request.app, with_admin_routes=False)
+
+    # Get tags for current route
+    route = request.scope.get("route")
+    tags = getattr(route, "tags", [])
+    include_admin = "admin" in tags
+
+    return get_route_map(request.app, with_admin_routes=include_admin)
 
 
 # URL Helper for Jinja
