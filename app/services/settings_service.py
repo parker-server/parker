@@ -36,6 +36,18 @@ class SettingsService:
             ]
         },
         {
+            "key": "ui.pagination_mode",
+            "value": "infinite",
+            "category": "appearance",
+            "data_type": "select",
+            "label": "Pagination Style",
+            "description": "How lists of issues are loaded.",
+            "options": [
+                {"label": "Infinite Scroll (Load on scroll)", "value": "infinite"},
+                {"label": "Classic (Page numbers)", "value": "classic"}
+            ]
+        },
+        {
             "key": "ui.on_deck.staleness_weeks", "value": "4",
             "category": "appearance", "data_type": "int",
             "label": "On Deck Staleness (Weeks)",

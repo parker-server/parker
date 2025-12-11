@@ -239,25 +239,43 @@
                                 </template>
                             </div>
 
-                            <div class="mt-8 flex justify-center items-center space-x-4 border-t border-gray-700 pt-6">
-                                <button
-                                    x-on:click="changePage(currentPage - 1)"
-                                    :disabled="currentPage === 1"
-                                    class="px-4 py-2 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors"
-                                >
-                                    Previous
-                                </button>
-                                <span class="text-gray-400">
-                                    Page <span class="text-white font-bold" x-text="currentPage"></span> of <span x-text="Math.ceil(totalItems / pageSize)"></span>
-                                </span>
-                                <button
-                                    x-on:click="changePage(currentPage + 1)"
-                                    :disabled="currentPage >= Math.ceil(totalItems / pageSize)"
-                                    class="px-4 py-2 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors"
-                                >
-                                    Next
-                                </button>
+                            {# Pagination controls #}
+                            <div class="mt-8 pt-6 border-t border-gray-700">
+
+                                <template x-if="paginationMode === 'infinite'">
+                                    <div x-ref="loadSentinel" class="py-8 text-center">
+                                        <span x-show="gridLoading" class="text-blue-400 animate-pulse">Loading more issues...</span>
+                                        <span x-show="!gridLoading && currentPage >= Math.ceil(totalItems / pageSize) && totalItems > 0" class="text-gray-600 text-sm">
+                                            End of list
+                                        </span>
+                                    </div>
+                                </template>
+
+                                <template x-if="paginationMode === 'classic'">
+                                    <div class="flex justify-center items-center space-x-4">
+                                        <button
+                                            x-on:click="changePage(currentPage - 1)"
+                                            :disabled="currentPage === 1"
+                                            class="px-4 py-2 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-white"
+                                        >
+                                            Previous
+                                        </button>
+
+                                        <span class="text-gray-400">
+                                            Page <span class="text-white font-bold" x-text="currentPage"></span> of <span x-text="Math.ceil(totalItems / pageSize)"></span>
+                                        </span>
+
+                                        <button
+                                            x-on:click="changePage(currentPage + 1)"
+                                            :disabled="currentPage >= Math.ceil(totalItems / pageSize)"
+                                            class="px-4 py-2 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-white"
+                                        >
+                                            Next
+                                        </button>
+                                    </div>
+                                </template>
                             </div>
+
                         </div>
 
                         <div x-show="!gridLoading && currentItems.length === 0" class="text-center py-20 text-gray-500">
@@ -372,6 +390,8 @@ function volumeDetail() {
         readFilter: 'all', // 'all', 'read', 'unread'
         sortOrder: 'asc',  // 'asc', 'desc'
 
+        paginationMode: '{{ get_system_setting("ui.pagination_mode", "infinite") }}',
+
         error: null,
 
         async init() {
@@ -399,7 +419,7 @@ function volumeDetail() {
 
                 if (!res.ok) throw new Error("Failed to load volume");
                 this.volume = await res.json();
-                document.title = `${this.volume.series_name} Vol ${this.volume.volume_number} - Comic Server`;
+                document.title = `${this.volume.series_name} Vol ${this.volume.volume_number} - Parker`;
                 this.loading = false;
             } catch (e) {
                 console.error(e);
@@ -435,22 +455,42 @@ function volumeDetail() {
             }
 
             this.currentType = typeParam;
-            this.fetchIssues();
+            this.fetchIssues(false);
         },
 
-        async fetchIssues() {
+        async fetchIssues(append = false) {
             this.gridLoading = true;
             try {
                 const url = window.parker.route('volumes.issues', { volume_id: this.volumeId }, `type=${this.currentType}&page=${this.currentPage}&size=${this.pageSize}&read_filter=${this.readFilter}&sort_order=${this.sortOrder}`);
+
                 const res = await fetch(url);
                 const data = await res.json();
-                this.currentItems = data.items;
+
+                if (append) {
+                    // INFINITE MODE: Append new items to existing list
+                    this.currentItems = [...this.currentItems, ...data.items];
+                } else {
+                    // CLASSIC MODE (or Page 1): Replace list
+                    this.currentItems = data.items;
+
+                    // Always scroll to top if we are replacing the list (Classic Mode or Tab Switch)
+                    // We check if we actually have items to avoid jumping on empty results
+                    if (this.currentPage > 0) {
+                         window.scrollTo({ top: 300, behavior: 'smooth' });
+                    }
+                }
+
                 this.totalItems = data.total;
-                //window.scrollTo({ top: 0, behavior: 'smooth' });
+
             } catch (e) {
                 console.error("Failed to load issues", e);
             } finally {
                 this.gridLoading = false;
+
+                // Re-arm the infinite scroll observer if we have more pages
+                if (this.paginationMode === 'infinite') {
+                    this.$nextTick(() => this.setupInfiniteScroll());
+                }
             }
         },
 
@@ -497,6 +537,27 @@ function volumeDetail() {
             return ranges.join(", ");
         },
 
+        // Observer Logic for infinite scroll mode
+        setupInfiniteScroll() {
+
+            if (this.$refs.loadSentinel) {
+                const observer = new IntersectionObserver((entries) => {
+                    if (entries[0].isIntersecting && !this.gridLoading) {
+                        this.loadMore();
+                    }
+                }, { rootMargin: '200px' }); // Load when 200px away from bottom
+
+                observer.observe(this.$refs.loadSentinel);
+            }
+        },
+
+        loadMore() {
+            const maxPage = Math.ceil(this.totalItems / this.pageSize);
+            if (this.currentPage < maxPage) {
+                this.currentPage++;
+                this.fetchIssues(true); // true = append
+            }
+        },
 
 
     }
