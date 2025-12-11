@@ -75,12 +75,6 @@
         <div x-show="!loading.series && seriesList.length === 0" class="text-center py-20 text-gray-500 bg-gray-800/50 rounded-xl border border-dashed border-gray-700">
             <p class="text-xl">This library is empty.</p>
             <p class="text-sm mt-2 text-gray-400">Scan this library to populate it with series.</p>
-
-            <div class="mt-6">
-                <button x-on:click="triggerScan()" class="btn-primary">
-                    Scan Library Now
-                </button>
-            </div>
         </div>
     </div>
 
@@ -112,7 +106,7 @@ function libraryView() {
 
         async loadLibraryMeta() {
             try {
-                const res = await fetch(window.parker.route('libraries.detail', { library_id: this.libraryId}));
+                const res = await fetch(window.parker.route('libraries.detail', { library_id: this.libraryId }));
                 if (!res.ok) {
                     if (res.status === 404) {
                        this.error = {
@@ -137,7 +131,7 @@ function libraryView() {
             this.loading.series = true;
             try {
                 // Fetch paginated series
-                const url = window.parker.url(`/api/libraries/${this.libraryId}/series?page=${this.currentPage}&size=${this.pageSize}`);
+                const url = window.parker.route('libraries.series', { library_id: this.libraryId }, `page=${this.currentPage}&size=${this.pageSize}`);
                 const res = await fetch(url);
                 const data = await res.json();
 
@@ -162,23 +156,6 @@ function libraryView() {
             this.loadSeries();
         },
 
-        async triggerScan() {
-            if (!confirm("Start scanning this library?")) return;
-            try {
-                const res = await fetch(window.parker.url(`/api/libraries/${this.libraryId}/scan`), { method: 'POST' });
-                const data = await res.json();
-
-                // Show Global Spinner (from base.html polling)
-                // We don't need to do anything else here, the global poller will pick it up
-                if (res.ok) {
-                    alert("Scan started! The global indicator will appear shortly.");
-                } else {
-                    alert("Error: " + data.detail);
-                }
-            } catch(e) {
-                console.error(e);
-            }
-        }
     }
 }
 </script>
