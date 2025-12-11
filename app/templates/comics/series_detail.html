@@ -246,12 +246,12 @@
 
                         {% include "partials/issues_toolbar.html" %}
 
-                        <div x-show="gridLoading" class="py-20 text-center">
+                        <div x-show="gridLoading && currentItems.length === 0" class="py-20 text-center">
                             <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
                             <p class="text-gray-400">Loading comics...</p>
                         </div>
 
-                        <div x-show="!gridLoading && currentItems.length > 0">
+                        <div x-show="currentItems.length > 0">
 
                             <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
                                 <template x-for="comic in currentItems" :key="comic.id">
