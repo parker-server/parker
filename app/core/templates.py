@@ -2,6 +2,7 @@ import re
 from datetime import datetime
 from fastapi.templating import Jinja2Templates
 from app.config import settings
+from app.core.settings_loader import get_cached_setting
 from app.core.utils import get_route_map
 
 templates = Jinja2Templates(directory="app/templates")
@@ -34,7 +35,7 @@ templates.env.globals["app_name"] = settings.app_name
 templates.env.globals["url"] = url_builder
 templates.env.globals["base_url"] = settings.clean_base_url
 templates.env.globals["routes"] = route_map_injector
-
+templates.env.globals["get_system_setting"] = get_cached_setting
 
 # --- Filters ---
 def slugify(value: str) -> str:

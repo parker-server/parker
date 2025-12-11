@@ -7,7 +7,7 @@ from app.schemas.setting import SettingUpdate, SettingResponse
 
 router = APIRouter()
 
-PUBLIC_KEYS = [ "ui.background_style" ]
+PUBLIC_KEYS = [ "ui.background_style", "ui.pagination_mode" ]
 
 @router.get("/", response_model=Dict[str, List[SettingResponse]], status_code=200, name="list")
 def get_settings(db: SessionDep):

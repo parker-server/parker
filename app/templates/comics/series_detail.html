@@ -252,33 +252,51 @@
                         </div>
 
                         <div x-show="!gridLoading && currentItems.length > 0">
+
                             <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
                                 <template x-for="comic in currentItems" :key="comic.id">
                                     {% include "partials/comic_card.html" %}
                                 </template>
                             </div>
 
-                            <div class="mt-8 flex justify-center items-center space-x-4 border-t border-gray-700 pt-6">
-                                <button
-                                    x-on:click="changePage(currentPage - 1)"
-                                    :disabled="currentPage === 1"
-                                    class="px-4 py-2 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-white"
-                                >
-                                    Previous
-                                </button>
+                            {# Pagination controls #}
+                            <div class="mt-8 pt-6 border-t border-gray-700">
 
-                                <span class="text-gray-400">
-                                    Page <span class="text-white font-bold" x-text="currentPage"></span> of <span x-text="Math.ceil(totalItems / pageSize)"></span>
-                                </span>
+                                <template x-if="paginationMode === 'infinite'">
+                                    <div x-ref="loadSentinel" class="py-8 text-center">
+                                        <span x-show="gridLoading" class="text-blue-400 animate-pulse">Loading more issues...</span>
+                                        <span x-show="!gridLoading && currentPage >= Math.ceil(totalItems / pageSize) && totalItems > 0" class="text-gray-600 text-sm">
+                                            End of list
+                                        </span>
+                                    </div>
+                                </template>
 
-                                <button
-                                    x-on:click="changePage(currentPage + 1)"
-                                    :disabled="currentPage >= Math.ceil(totalItems / pageSize)"
-                                    class="px-4 py-2 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-white"
-                                >
-                                    Next
-                                </button>
+                                <template x-if="paginationMode === 'classic'">
+                                    <div class="flex justify-center items-center space-x-4">
+                                        <button
+                                            x-on:click="changePage(currentPage - 1)"
+                                            :disabled="currentPage === 1"
+                                            class="px-4 py-2 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-white"
+                                        >
+                                            Previous
+                                        </button>
+
+                                        <span class="text-gray-400">
+                                            Page <span class="text-white font-bold" x-text="currentPage"></span> of <span x-text="Math.ceil(totalItems / pageSize)"></span>
+                                        </span>
+
+                                        <button
+                                            x-on:click="changePage(currentPage + 1)"
+                                            :disabled="currentPage >= Math.ceil(totalItems / pageSize)"
+                                            class="px-4 py-2 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-white"
+                                        >
+                                            Next
+                                        </button>
+                                    </div>
+                                </template>
                             </div>
+
+
                         </div>
 
                         <div x-show="!gridLoading && currentItems.length === 0" class="text-center py-20 text-gray-500">
@@ -475,6 +493,8 @@ function seriesDetail() {
         readFilter: 'all', // 'all', 'read', 'unread'
         sortOrder: 'asc',  // 'asc', 'desc'
 
+        paginationMode: '{{ get_system_setting("ui.pagination_mode", "infinite") }}',
+
         init() {
             this.loadSeriesSummary();
         },
@@ -499,7 +519,7 @@ function seriesDetail() {
                 this.loading = false;
 
                 // Set tab title
-                document.title = `${this.series.name} - Comic Server`;
+                document.title = `${this.series.name} - Parker`;
 
                 // Auto-select 'issues' if there is only 1 volume
                 if (this.series.volume_count === 1) {
@@ -550,10 +570,10 @@ function seriesDetail() {
             }
 
             this.currentType = typeParam;
-            this.fetchIssues();
+            this.fetchIssues(false);
         },
 
-        async fetchIssues() {
+        async fetchIssues(append = false) {
             this.gridLoading = true;
             try {
                 // Construct URL with pagination and filters
@@ -562,15 +582,31 @@ function seriesDetail() {
                 const res = await fetch(url);
                 const data = await res.json();
 
-                this.currentItems = data.items;
+                if (append) {
+                    // INFINITE MODE: Append new items to existing list
+                    this.currentItems = [...this.currentItems, ...data.items];
+                } else {
+                    // CLASSIC MODE (or Page 1): Replace list
+                    this.currentItems = data.items;
+
+                    // Always scroll to top if we are replacing the list (Classic Mode or Tab Switch)
+                    // We check if we actually have items to avoid jumping on empty results
+                    if (this.currentPage > 0) {
+                         window.scrollTo({ top: 300, behavior: 'smooth' });
+                    }
+                }
+
                 this.totalItems = data.total;
 
-                // Scroll to top of grid slightly
-                window.scrollTo({ top: 300, behavior: 'smooth' });
             } catch (e) {
                 console.error("Failed to load comics", e);
             } finally {
                 this.gridLoading = false;
+
+                // Re-arm the infinite scroll observer if we have more pages
+                if (this.paginationMode === 'infinite') {
+                    this.$nextTick(() => this.setupInfiniteScroll());
+                }
             }
         },
 
@@ -634,6 +670,27 @@ function seriesDetail() {
             this.sortOrder = this.sortOrder === 'asc' ? 'desc' : 'asc';
             this.currentPage = 1; // Reset to page 1 on sort change
             this.fetchIssues();
+        },
+
+        // Observer Logic for infinite scroll mode
+        setupInfiniteScroll() {
+            if (this.$refs.loadSentinel) {
+                const observer = new IntersectionObserver((entries) => {
+                    if (entries[0].isIntersecting && !this.gridLoading) {
+                        this.loadMore();
+                    }
+                }, { rootMargin: '200px' }); // Load when 200px away from bottom
+
+                observer.observe(this.$refs.loadSentinel);
+            }
+        },
+
+        loadMore() {
+            const maxPage = Math.ceil(this.totalItems / this.pageSize);
+            if (this.currentPage < maxPage) {
+                this.currentPage++;
+                this.fetchIssues(true); // true = append
+            }
         },
 
     }
