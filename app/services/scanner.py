@@ -159,7 +159,7 @@ class LibraryScanner:
         # Orphan Cleanup (Series/Volumes) ---
         self.logger.info("Cleaning up orphaned series and volumes, tags...")
         maintenance = MaintenanceService(self.db)
-        cleanup_stats = maintenance.cleanup_orphans()
+        cleanup_stats = maintenance.cleanup_orphans(library_id=self.library.id)
         self.logger.info(f"Cleanup Stats: {cleanup_stats}")
         # --------------------------------------------
 

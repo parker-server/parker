@@ -15,9 +15,10 @@ class MaintenanceService:
         self.db = db
         self.enrichment = EnrichmentService()
 
-    def cleanup_orphans(self) -> dict:
+    def cleanup_orphans(self, library_id: int = None) -> dict:
         """
         Delete metadata entities that are no longer associated with any comics.
+        If library_id is provided, scopes Series/Volume cleanup to that library.
         """
         stats = {
             "series": 0,
@@ -32,12 +33,21 @@ class MaintenanceService:
 
         # 1. Clean Empty Volumes (No comics linked)
         # We use synchronize_session=False for speed since we are in a batch operation
-        deleted = self.db.query(Volume).filter(~Volume.comics.any()).delete(synchronize_session=False)
+        vol_query = self.db.query(Volume).filter(~Volume.comics.any())
+        if library_id:
+            # Join Series to check library_id
+            vol_query = vol_query.join(Series).filter(Series.library_id == library_id)
+        deleted = vol_query.delete(synchronize_session=False)
+
         stats["volumes"] = deleted
 
         # 2. Clean Empty Series (No volumes linked)
         # Note: We do this AFTER cleaning volumes so we catch series that just became empty
-        deleted = self.db.query(Series).filter(~Series.volumes.any()).delete(synchronize_session=False)
+        series_query = self.db.query(Series).filter(~Series.volumes.any())
+        if library_id:
+            series_query = series_query.filter(Series.library_id == library_id)
+        deleted = series_query.delete(synchronize_session=False)
+
         stats["series"] = deleted
 
         # 3. Clean Tags (Characters)
