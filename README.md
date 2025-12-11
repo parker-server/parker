@@ -75,7 +75,7 @@ Parker is a self‑hosted media server for comic books (CBZ/CBR). It follows a *
 
 ## 🛠 Tech Stack
 
-- **Backend:** Python 3.10+, FastAPI, SQLAlchemy, Alembic, APScheduler
+- **Backend:** Python 3.10+, FastAPI, SQLAlchemy, Alembic, APScheduler, Watchdog
 - **Frontend:** Jinja2, Alpine.js, TailwindCSS (CDN)
 - **Image Processing:** Pillow, Color Thief
 - **Deployment:** Docker / Docker Compose
