@@ -115,12 +115,12 @@ Parker is a self‑hosted media server for comic books (CBZ/CBR). It follows a *
 
 ## 📌 Roadmap
 - Expanded OPDS support
+- Localization
 - Enhanced WebP transcoding pipeline
 - Additional unit test coverage
 - Migration tooling improvements
 - Add support to leverage the Age restriction attribute against a user
 - Pin libraries to front page
-- Implement SQLite FTS5 (Full Text Search) for faster searching
 - Improve admin Add Library dialog to be able to browse to a folder rather than type it in
 - Support multiple folder locations per library
 
