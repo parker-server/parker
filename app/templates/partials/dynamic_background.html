@@ -46,14 +46,13 @@ function dynamicBackground() {
             // 1. Fetch System Setting
             // In a real app, you might inject this via backend template to avoid a fetch
             // But fetching ensures we respect user changes immediately
-            const settingRes = await fetch(window.parker.route('settings.list'));
+            const settingRes = await fetch(window.parker.route('settings.value', { key: encodeURIComponent('ui.background_style')}));
             if(settingRes.ok) {
-                const settings = await settingRes.json();
-                // Find ui.background_style
-                const styleSetting = settings.appearance.find(s => s.key === 'ui.background_style');
-                console.log(styleSetting);
+                const styleSetting = await settingRes.json();
+                //console.log(styleSetting);
                 this.style = styleSetting ? styleSetting.value : 'NONE';
             }
+
 
             // 2. Read Context from the Page
             // The parent page (comic_detail, series_detail) must expose these variables globally
