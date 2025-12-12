@@ -13,6 +13,7 @@ from app.models import ScanJob, Library
 from app.models.job import JobType, JobStatus
 
 from app.services.scanner import LibraryScanner
+from app.services.maintenance import MaintenanceService
 from app.services.thumbnailer import ThumbnailService
 
 
@@ -124,24 +125,33 @@ class ScanManager:
 
     def _process_queue(self):
         """Poller loop: Check DB for pending jobs"""
-        print("Database Job Worker Started")
+
         self.logger.info("Database Job Worker Started")
 
         while not self._stop_event.is_set():
             db = SessionLocal()
 
             try:
-                # PRIORITIZE SCANS over THUMBNAILS
+                # 1. High Priority: SCANS
                 job = db.query(ScanJob).filter(
                     ScanJob.status == JobStatus.PENDING,
                     ScanJob.job_type == JobType.SCAN
                 ).order_by(asc(ScanJob.created_at)).first()
 
+                # 2. Medium Priority: THUMBNAILS
                 if not job:
                     job = db.query(ScanJob).filter(
                         ScanJob.status == JobStatus.PENDING,
                         ScanJob.job_type == JobType.THUMBNAIL
                     ).order_by(asc(ScanJob.created_at)).first()
+
+                # 3. Low Priority: CLEANUP
+                if not job:
+                    job = db.query(ScanJob).filter(
+                        ScanJob.status == JobStatus.PENDING,
+                        ScanJob.job_type == JobType.CLEANUP
+                    ).order_by(asc(ScanJob.created_at)).first()
+
 
                 if job:
                     # Lock the job: Mark as RUNNING immediately
@@ -169,16 +179,19 @@ class ScanManager:
                         self._run_scan_job(job_id, library_id, force_scan)
                     elif job_type == JobType.THUMBNAIL:
                         self._run_thumbnail_job(job_id, library_id, force_scan)
+                    elif job_type == JobType.CLEANUP:
+                        self._run_cleanup_job(job_id, library_id)
 
                     # Don't sleep if we just did work, check for next immediately
                     continue
+
                 else:
                     # No jobs? Sleep a bit to save CPU
                     db.close()
                     time.sleep(2)
 
             except Exception as e:
-                print(f"Worker polling error: {e}")
+
                 self.logger.error(f"Worker polling error: {e}")
 
                 if db:
@@ -193,12 +206,13 @@ class ScanManager:
             library = db.query(Library).get(library_id)
 
             if not library or not job:
-                print(f"Critical: Job {job_id} or Library missing.")
                 self.logger.error(f"Critical: Job {job_id} or Library missing.")
                 return
 
-            print(f"Starting SCAN job {job_id} for {library.name} (Forced: {force})")
-            self.logger.info(f"Starting SCAN job {job_id} for {library.name} (Forced: {force})")
+            # Capture "First Scan" state BEFORE running the scanner (which updates last_scanned)
+            is_first_scan = library.last_scanned is None
+
+            self.logger.info(f"Starting SCAN job {job_id} for {library.name} (Forced: {force}) (First scan: {is_first_scan})")
 
             # --- RUN SCANNER ---
             scanner = LibraryScanner(library, db)
@@ -219,11 +233,12 @@ class ScanManager:
             }
             job.result_summary = json.dumps(summary)
 
-            # Reset library scanning flag (since scan part is done)
+            # Reset flag momentarily (next jobs will set it back to True if they run immediately)
             library.is_scanning = False
 
+            # --- QUEUE NEXT JOBS ---
+
             # Create Thumbnail Job
-            print(f"Scan complete. Queuing thumbnail generation for Library {library_id}")
             self.logger.info(f"Scan complete. Queuing thumbnail generation for Library {library_id}")
 
             thumb_job = ScanJob(
@@ -233,9 +248,23 @@ class ScanManager:
                 status=JobStatus.PENDING
             )
             db.add(thumb_job)
+
+            # Cleanup Job (Only if NOT first scan)
+            if not is_first_scan:
+                self.logger.info(f"Queuing cleanup job for Library {library_id} (Not initial scan)")
+                cleanup_job = ScanJob(
+                    library_id=library_id,
+                    job_type=JobType.CLEANUP,
+                    status=JobStatus.PENDING
+                )
+                db.add(cleanup_job)
+            else:
+                self.logger.info(f"Skipping cleanup job for Library {library_id} (First Scan)")
+
             db.commit()
 
         except Exception as e:
+
             print(f"Scan Job {job_id} Failed: {e}")
             self.logger.error(f"Scan Job {job_id} Failed: {e}")
 
@@ -268,7 +297,6 @@ class ScanManager:
             if not job:
                 return
 
-            print(f"Starting THUMBNAIL job {job_id} for Library {library_id}")
             self.logger.info(f"Starting THUMBNAIL job {job_id} for Library {library_id}")
 
             # --- RUN THUMBNAILER ---
@@ -309,6 +337,83 @@ class ScanManager:
                 job.error_message = str(e)
                 job.completed_at = datetime.now(timezone.utc)
             db.commit()
+        finally:
+            db.close()
+
+    def _run_cleanup_job(self, job_id: int, library_id: int = None):
+        """Execute the orphan cleanup logic"""
+        db = SessionLocal()
+        try:
+            job = db.query(ScanJob).get(job_id)
+            if not job: return
+
+            # Logging context
+            context_str = f"Library {library_id}" if library_id else "GLOBAL"
+            self.logger.info(f"Starting CLEANUP job {job_id} ({context_str})")
+
+            # --- RUN MAINTENANCE ---
+            maintenance = MaintenanceService(db)
+
+            # Pass library_id directly.
+            # If None, MaintenanceService cleans EVERYTHING.
+            # If Int, MaintenanceService cleans ONLY that library.
+            stats = maintenance.cleanup_orphans(library_id=library_id)
+            # -----------------------
+
+            job.status = JobStatus.COMPLETED
+            job.result_summary = json.dumps(stats)
+            job.completed_at = datetime.now(timezone.utc)
+
+            # Reset Library Flag (Only if it was a scoped job)
+            if library_id:
+                library = db.query(Library).get(library_id)
+                if library:
+                    library.is_scanning = False
+
+            db.commit()
+
+        except Exception as e:
+            self.logger.error(f"Cleanup Job {job_id} Failed: {e}")
+            traceback.print_exc()
+            db.rollback()
+
+            # Error State
+            if library_id:
+                library = db.query(Library).get(library_id)
+                if library: library.is_scanning = False
+
+            job = db.query(ScanJob).get(job_id)
+            if job:
+                job.status = JobStatus.FAILED
+                job.error_message = str(e)
+                job.completed_at = datetime.now(timezone.utc)
+            db.commit()
+        finally:
+            db.close()
+
+    def add_cleanup_task(self) -> dict:
+        """Queue a global cleanup task"""
+        db = SessionLocal()
+        try:
+            # Check for existing pending cleanup to avoid stacking
+            existing = db.query(ScanJob).filter(
+                ScanJob.job_type == JobType.CLEANUP,
+                ScanJob.status == JobStatus.PENDING
+            ).first()
+
+            if existing:
+                return {"status": "ignored", "job_id": existing.id, "message": "Cleanup already queued"}
+
+            job = ScanJob(
+                library_id=None,
+                job_type=JobType.CLEANUP,
+                status=JobStatus.PENDING
+            )
+            db.add(job)
+            db.commit()
+            db.refresh(job)
+
+            return {"status": "queued", "job_id": job.id, "message": "Global cleanup job queued"}
         finally:
             db.close()
 

@@ -36,7 +36,11 @@
                             <td class="px-6 py-4">
                                 <span
                                     class="px-2 py-1 text-xs font-bold rounded border uppercase"
-                                    :class="job.job_type === 'scan' ? 'bg-blue-900/30 text-blue-200 border-blue-800' : 'bg-purple-900/30 text-purple-200 border-purple-800'"
+                                    :class="{
+                                        'bg-blue-900/30 text-blue-200 border-blue-800': job.job_type === 'scan',
+                                        'bg-purple-900/30 text-purple-200 border-purple-800': job.job_type === 'thumbnail',
+                                        'bg-orange-900/30 text-orange-200 border-orange-800': job.job_type === 'cleanup'
+                                    }"
                                     x-text="job.job_type || 'scan'"
                                 ></span>
                             </td>
@@ -75,6 +79,12 @@
                                             </span>
                                         </template>
 
+                                        <template x-if="job.job_type === 'cleanup'">
+                                            <span class="text-orange-300">
+                                                <span x-text="getTotalCleaned(job.summary)"></span> cleaned
+                                            </span>
+                                        </template>
+
                                         <span x-show="job.summary.errors > 0" class="text-red-400 ml-1" x-text="`(${job.summary.errors} err)`"></span>
                                     </span>
                                 </template>
@@ -92,6 +102,7 @@
             </table>
         </div>
     </div>
+
 
     <div x-show="selectedJob" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm" x-transition.opacity style="display: none;">
         <div class="bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full mx-4 border border-gray-700" @click.away="selectedJob = null">
@@ -143,6 +154,31 @@
                             </div>
                         </template>
 
+                        <template x-if="selectedJob.job_type === 'cleanup'">
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
+                                <div class="bg-orange-900/20 p-3 rounded border border-orange-900/40">
+                                    <div class="text-xl font-bold text-orange-300" x-text="selectedJob.summary.series || 0"></div>
+                                    <div class="text-[10px] text-gray-400 uppercase">Series</div>
+                                </div>
+                                <div class="bg-orange-900/20 p-3 rounded border border-orange-900/40">
+                                    <div class="text-xl font-bold text-orange-300" x-text="selectedJob.summary.volumes || 0"></div>
+                                    <div class="text-[10px] text-gray-400 uppercase">Volumes</div>
+                                </div>
+                                <div class="bg-gray-700/30 p-3 rounded border border-gray-700">
+                                    <div class="text-xl font-bold text-gray-300"
+                                         x-text="(selectedJob.summary.characters || 0) + (selectedJob.summary.teams || 0) + (selectedJob.summary.locations || 0) + (selectedJob.summary.people || 0)">
+                                    </div>
+                                    <div class="text-[10px] text-gray-500 uppercase">Unused Tags</div>
+                                </div>
+                                <div class="bg-gray-700/30 p-3 rounded border border-gray-700">
+                                    <div class="text-xl font-bold text-gray-300"
+                                         x-text="(selectedJob.summary.empty_lists || 0) + (selectedJob.summary.empty_collections || 0)">
+                                    </div>
+                                    <div class="text-[10px] text-gray-500 uppercase">Empty Lists</div>
+                                </div>
+                            </div>
+                        </template>
+
                     </div>
                 </template>
 
@@ -155,6 +191,9 @@
             </div>
         </div>
     </div>
+
+
+
 </div>
 
 <script>
@@ -176,6 +215,12 @@
             },
 
             viewDetails(job) { this.selectedJob = job; },
+
+            // Helper to sum all deleted items for the table view
+            getTotalCleaned(summary) {
+                if (!summary) return 0;
+                return Object.values(summary).reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0);
+            },
 
             formatDuration(seconds) {
                 if (!seconds && seconds !== 0) return '--';

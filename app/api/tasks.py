@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends
 from app.api.deps import SessionDep, AdminUser
 from app.services.maintenance import MaintenanceService
 from app.services.backup import BackupService
+from app.services.scan_manager import scan_manager
 
 router = APIRouter()
 
@@ -16,13 +17,10 @@ async def run_cleanup_task(
     Trigger database garbage collection.
     Removes tags, people, and collections that have no associated comics.
     """
-    service = MaintenanceService(db)
-    stats = service.cleanup_orphans()
+    # Offload to Job Queue
+    result = scan_manager.add_cleanup_task()
 
-    return {
-        "message": "Cleanup complete",
-        "stats": stats
-    }
+    return result
 
 
 @router.post("/backup", name="backup")

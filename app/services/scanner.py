@@ -60,7 +60,7 @@ class LibraryScanner:
         BATCH_SIZE = 50
         pending_changes = 0
 
-        self.logger.info(f"Scanning {library_path}... (force={force})")
+        self.logger.info(f"Scanning {library_path} (force={force})")
 
         # Start timing
         start_time = time.time()
@@ -167,16 +167,6 @@ class LibraryScanner:
         self.reading_list_service.cleanup_empty_lists()
         self.collection_service.cleanup_empty_collections()
 
-        # Orphan Cleanup (Series/Volumes) ---
-        # OPTIMIZATION: Skip cleanup on the very first scan.
-        # Orphans are residues of deletion/moving. On a fresh import, everything is new,
-        # so checking for empty series is a waste of resources.
-        if self.library.last_scanned:
-            self.logger.info(f"Cleaning up orphaned series and volumes, tags, etc for library id {self.library.id}")
-            maintenance = MaintenanceService(self.db)
-            cleanup_stats = maintenance.cleanup_orphans(library_id=self.library.id)
-            self.logger.info(f"Cleanup Stats: {cleanup_stats}")
-        # --------------------------------------------
 
         # Update library scan time
         self.library.last_scanned = datetime.now(timezone.utc)

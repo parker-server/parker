@@ -29,7 +29,7 @@
                     :class="loading ? 'opacity-50 cursor-not-allowed' : ''"
                 >
                     <span x-show="loading && activeTask === 'cleanup'" class="animate-spin">↻</span>
-                    <span x-show="!(loading && activeTask === 'cleanup')">Run Task</span>
+                    <span x-text="!loading ? 'Run Task' : 'Cleaning...'"></span>
                 </button>
             </div>
 
@@ -135,7 +135,7 @@
             </div>
         </div>
 
-<div class="bg-gray-800 rounded-lg p-6 border border-gray-700 shadow-lg">
+        <div class="bg-gray-800 rounded-lg p-6 border border-gray-700 shadow-lg">
             <div class="flex justify-between items-start">
                 <div>
                     <h3 class="text-xl font-bold text-white flex items-center gap-2">
@@ -188,20 +188,81 @@ function taskManager() {
             this.activeTask = taskName; // Set active task context
 
             try {
+                // 1. Trigger the Job
                 const res = await fetch(window.parker.route(`tasks.${taskName}`), { method: 'POST' });
                 if (res.ok) {
-                    this.lastResult = await res.json();
+
+                    this.startResult = await res.json();
+                    if(taskName === 'cleanup')
+                    {
+                        // Async job, handle polling
+                        await this.handlePollingJob(this.startResult);
+                    }
+                    else
+                    {
+                        // Sync job, save results immediately
+                        this.lastResult = this.startResult;
+                        this.loading = false;
+                    }
                 } else {
                     const err = await res.json();
-                    alert("Task Failed: " + err.detail);
+                    this.loading = false;
+                    window.parker.showToast(`Task Failed ${err.detail}`, "error");
                 }
             } catch (e) {
                 console.error(e);
-                alert("Network error occurred");
-            } finally {
                 this.loading = false;
+                window.parker.showToast('Network error occurred', 'error');
             }
+        },
+        async handlePollingJob(jobStartData)
+        {
+            if (jobStartData.status === 'ignored') {
+                window.parker.showToast('A cleanup job is already running.', 'error');
+                this.loading = false;
+                this.lastResult = null;
+                return;
+            }
+
+            // Poll for Completion
+            this.pollJob(jobStartData.job_id);
+        },
+
+        pollJob(jobId) {
+
+            const interval = setInterval(async () => {
+                try {
+
+                    const res = await fetch(window.parker.route('jobs.detail', { job_id: jobId }));
+                    const job = await res.json();
+
+                    //console.log(job);
+                    if (job.status === 'completed') {
+
+                        clearInterval(interval);
+                        this.loading = false;
+
+                        // Show Results
+                        this.lastResult = { stats: job.summary };
+
+                        window.parker.showToast('Cleanup finished successfully', "success");
+                    }
+                    else if (job.status === 'failed') {
+
+                        clearInterval(interval);
+                        this.loading = false;
+                        window.parker.showToast(`Cleanup Job Failed: ${job.error_message}`, 'error');
+                    }
+                    // If 'pending' or 'running', do nothing and wait for next tick
+
+                } catch (e) {
+                    console.error("Polling error", e);
+                    clearInterval(interval);
+                    this.loading = false;
+                }
+            }, 2000); // Check every 2 seconds
         }
+
     }
 }
 </script>
