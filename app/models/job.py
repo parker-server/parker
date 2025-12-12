@@ -7,6 +7,7 @@ from app.database import Base
 class JobType(str, enum.Enum):
     SCAN = "scan"
     THUMBNAIL = "thumbnail"
+    CLEANUP = "cleanup"
 
 class JobStatus(str, enum.Enum):
     PENDING = "pending"
@@ -19,7 +20,7 @@ class ScanJob(Base):
     __tablename__ = "scan_jobs"
 
     id = Column(Integer, primary_key=True, index=True)
-    library_id = Column(Integer, ForeignKey("libraries.id"), nullable=False)
+    library_id = Column(Integer, ForeignKey("libraries.id"), nullable=True)
 
     job_type = Column(String, default=JobType.SCAN, index=True)
 
