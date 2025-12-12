@@ -1,5 +1,5 @@
 import logging
-from typing import Generator, Annotated
+from typing import Generator, Annotated, Optional
 from fastapi import Depends, HTTPException, status, Path, Request
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
@@ -61,7 +61,7 @@ async def get_token_hybrid(
     # 1. Try Header (FastAPI extracts this automatically via oauth2_scheme)
     if token_auth:
         return token_auth
-    logger.info("No token found");
+    logger.info("No token found")
     # 2. Try Cookie (Fallback for HTML pages)
     cookie_token = request.cookies.get("access_token")
     if cookie_token:
@@ -73,6 +73,28 @@ async def get_token_hybrid(
         detail="Not authenticated",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+
+async def get_token_optional(
+        request: Request,
+        token_auth: str = Depends(oauth2_scheme)
+) -> Optional[str]:
+    """
+    Extract token but return None if missing (for Public/Optional endpoints).
+    """
+    if token_auth:
+        return token_auth
+
+    logger.info("get_token_optional: No token found")
+
+    cookie_token = request.cookies.get("access_token")
+    if cookie_token:
+        return cookie_token
+
+    logger.info("get_token_optional: No cookie found")
+
+    return None
+
 
 async def get_current_user(
         db: Annotated[Session, Depends(get_db)],
@@ -98,6 +120,29 @@ async def get_current_user(
         raise credentials_exception
 
     return user
+
+async def get_current_user_optional(
+        db: Annotated[Session, Depends(get_db)],
+        token: Annotated[Optional[str], Depends(get_token_optional)]
+) -> Optional[User]:
+    """
+    Lazy Auth: Returns User if valid, None if missing/invalid.
+    Does NOT raise 401.
+    """
+    if not token:
+        return None
+
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        username: str = payload.get("sub")
+        if username is None:
+            return None
+    except (JWTError, ValidationError):
+        return None
+
+    user = db.query(User).filter(User.username == username).first()
+    return user
+
 
 async def get_current_active_superuser(
     current_user: Annotated[User, Depends(get_current_user)],
