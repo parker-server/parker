@@ -78,6 +78,14 @@ async def lifespan(app: FastAPI):
     settings.avatar_dir.mkdir(parents=True, exist_ok=True)
 
 
+    # -- Init setting defaults when necessary
+    db = SessionLocal()
+    try:
+        SettingsService(db).initialize_defaults()
+    finally:
+        db.close()
+    # --------------------------------------
+
     # --- SETUP LOGGING (Dynamic) ---
     # Fetch from DB (defaults to "INFO" if the setting is missing)
     # We use the loader because it is safe to call before the app is fully running.
@@ -96,6 +104,7 @@ async def lifespan(app: FastAPI):
     logger.info("Frontend available at http://localhost:8000")
     logger.info("Administration available at http://localhost:8000/admin")
     logger.info("API docs available at http://localhost:8000/docs")
+    print(get_password_hash("admin"))
 
     yield
 
