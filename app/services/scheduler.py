@@ -129,16 +129,23 @@ class SchedulerService:
 
     @staticmethod
     def run_cleanup_job():
+        """
+        OPTIMIZED: Delegates to ScanManager to ensure thread safety.
+        Does not run directly, queues a job.
+        """
         logger.info("Running Scheduled Cleanup...")
-        session = SessionLocal()
         try:
-            service = MaintenanceService(session)
-            stats = service.cleanup_orphans()
-            logger.info(f"Cleanup Complete: {stats}")
+            # We call the manager, which handles DB locking, queuing, and daisy-chaining.
+            result = scan_manager.add_cleanup_task()
+
+            if result['status'] == 'queued':
+                logger.info(f"Cleanup Job Queued: ID {result['job_id']}")
+            else:
+                logger.info(f"Cleanup Skipped: {result['message']}")
+
         except Exception as e:
-            logger.error(f"Cleanup Failed: {e}")
-        finally:
-            session.close()
+            logger.error(f"Failed to queue cleanup: {e}")
+
 
     @staticmethod
     def run_scan_job():
