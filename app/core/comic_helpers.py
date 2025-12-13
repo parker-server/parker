@@ -1,3 +1,5 @@
+from typing import Any
+
 from sqlalchemy import func, or_, not_, case
 
 from app.api.deps import SessionDep
@@ -39,6 +41,91 @@ AGE_RATING_HIERARCHY = [
     "R18+",
     "X18+"
 ]
+
+
+def get_age_rating_config(user) -> tuple[None, None] | tuple[list[str | Any], list[str | Any]]:
+    """
+    Calculates the 'safe' and 'unsafe' lists based on user config.
+    Returns:
+        allowed_ratings (list): Strings that are explicitly safe.
+        banned_ratings (list): Strings that are explicitly unsafe.
+        :param user: 
+        :return: 
+    """
+    if not user or not user.max_age_rating:
+        return None, None  # No restrictions
+
+    try:
+        max_index = AGE_RATING_HIERARCHY.index(user.max_age_rating)
+    except ValueError:
+        # If the user's rating string isn't in our list, assume strict safety (index 0)
+        max_index = -1
+
+    # Allowed: Everything up to and including the max index
+    allowed_ratings = AGE_RATING_HIERARCHY[:max_index + 1]
+
+    # Banned: Everything strictly after
+    banned_ratings = AGE_RATING_HIERARCHY[max_index + 1:]
+
+    return allowed_ratings, banned_ratings
+
+
+def get_comic_age_restriction(user, comic_model=Comic):
+    """
+    Returns a SQLAlchemy BinaryExpression to filter COMIC rows directly.
+    Used for: Search, Issue Lists, Cover Manifests.
+    """
+    if not user or not user.max_age_rating:
+        return None
+
+    allowed_ratings, banned_ratings = get_age_rating_config(user)
+
+    # Logic:
+    # 1. Matches an allowed rating
+    # 2. OR (Matches Unknown AND user allows unknown)
+
+    conditions = [comic_model.age_rating.in_(allowed_ratings)]
+
+    if user.allow_unknown_age_ratings:
+        # Allow NULL, Empty String, "Unknown" (case insensitive), or ratings NOT in our official hierarchy
+        # Note: We assume anything NOT in the banned list is okay if unknowns are allowed?
+        # Safer: Explicitly check for null/empty/"Unknown"
+        conditions.append(or_(
+            comic_model.age_rating == None,
+            comic_model.age_rating == "",
+            func.lower(comic_model.age_rating) == "unknown"
+        ))
+
+    return or_(*conditions)
+
+
+def get_series_age_restriction(user, series_model=Series):
+    """
+    Returns a SQLAlchemy BinaryExpression to filter SERIES rows.
+    Implements 'Poison Pill' logic: Exclude series where ANY nested comic is banned.
+    """
+    if not user or not user.max_age_rating:
+        return None
+
+    allowed_ratings, banned_ratings = get_age_rating_config(user)
+
+    # 1. Define what constitutes a "Banned Comic"
+    # It has a banned rating
+    banned_condition = Comic.age_rating.in_(banned_ratings)
+
+    # If user does NOT allow unknowns, then Unknowns are also "Banned"
+    if not user.allow_unknown_age_ratings:
+        banned_condition = or_(
+            banned_condition,
+            Comic.age_rating == None,
+            Comic.age_rating == "",
+            func.lower(Comic.age_rating) == "unknown"
+        )
+
+    # 2. Filter Series that have ANY volume with ANY comic matching the banned condition
+    # We use ~ (NOT) and .any()
+    # "Show me Series where NOT(Has Any Banned Comic)"
+    return ~series_model.volumes.any(Volume.comics.any(banned_condition))
 
 
 def get_format_filters():
