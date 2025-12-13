@@ -288,7 +288,7 @@ class ScanManager:
         try:
             self.logger.info(f"Starting THUMBNAIL job {job_id}")
 
-            service = ThumbnailService(db, library_id)
+            service = ThumbnailService(db_thumb, library_id)
             use_parallel = get_cached_setting('system.parallel_image_processing', False)
 
             if use_parallel:
