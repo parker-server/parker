@@ -125,7 +125,8 @@ async def get_library_series(
             Comic.number,
             Comic.year,
             Comic.format,
-            Volume.series_id
+            Volume.series_id,
+            Volume.volume_number
         )
         .join(Volume)
         .filter(Volume.series_id.in_(series_ids))
@@ -199,6 +200,7 @@ async def get_library_series(
             issue_ones = [c for c in pool if c.number == '1']
 
             if issue_ones:
+                issue_ones.sort(key=lambda c: c.volume_number)
                 cover_comic = issue_ones[0]
             else:
                 # Fallback: Sort by number
