@@ -87,10 +87,10 @@
     <div class="mt-2">
         <a :href="window.parker.route('pages.comic_detail', { comic_id: comic.id })" class="block group/text cursor-pointer">
             <div class="flex justify-between items-baseline">
-                <p class="font-bold text-gray-200 truncate group-hover/text:text-blue-400 transition-colors" x-text="`#${comic.number}`"></p>
+                <p class="font-bold text-gray-200 truncate group-hover/text:text-blue-400 transition-colors" x-text="comic.number ? `#${comic.number}` : '--'"></p>
                 <p class="text-xs text-gray-500" x-text="comic.year"></p>
             </div>
-            <p class="text-sm text-gray-400 truncate group-hover/text:text-gray-300 transition-colors" x-text="comic.title || `Issue ${comic.number}`"></p>
+            <p class="text-sm text-gray-400 truncate group-hover/text:text-gray-300 transition-colors" x-text="comic.title || (comic.number ? `Issue ${comic.number}` : 'Unnumbered')"></p>
         </a>
     </div>
 </div>
