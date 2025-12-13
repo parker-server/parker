@@ -3,7 +3,7 @@ from typing import List, Annotated, Optional
 from pydantic import BaseModel
 from sqlalchemy import func, case
 
-from app.core.comic_helpers import get_smart_cover
+from app.core.comic_helpers import get_smart_cover, NON_PLAIN_FORMATS
 from app.models.library import Library
 from app.models.series import Series
 from app.models.comic import Comic, Volume
@@ -124,6 +124,7 @@ async def get_library_series(
             Comic.id,
             Comic.number,
             Comic.year,
+            Comic.format,
             Volume.series_id
         )
         .join(Volume)
@@ -155,7 +156,18 @@ async def get_library_series(
 
     # --- BATCH OPTIMIZATION END ---
 
+    # Helper: Check if format is "Standard" (Not Annual/Special)
+    def is_standard_format(fmt: str) -> bool:
+        if not fmt: return True
+        f = fmt.lower()
+        return f not in NON_PLAIN_FORMATS
 
+    # Helper: Safe Sort Key for issues
+    def issue_sort_key(c):
+        try:
+            return float(c.number)
+        except:
+            return 999999
 
     # 3. Serialization & Thumbnails
     items = []
@@ -173,22 +185,25 @@ async def get_library_series(
         # 1. Look for Issue "1"
         # 2. Else look for lowest number
         # 3. Else first found
+
         cover_comic = None
         if s_comics:
-            # Try finding issue #1 exactly
-            issue_ones = [c for c in s_comics if c.number == '1']
+
+            # Filter for standards
+            standards = [c for c in s_comics if is_standard_format(c.format)]
+
+            # Decide which pool to search (Prefer standards, fallback to all)
+            pool = standards if standards else s_comics
+
+            # Try finding issue #1 exactly in the pool
+            issue_ones = [c for c in pool if c.number == '1']
+
             if issue_ones:
                 cover_comic = issue_ones[0]
             else:
-                # Fallback: Sort by number (safely converting to float)
-                def safe_sort(c):
-                    try:
-                        return float(c.number)
-                    except:
-                        return 999999
-
-                s_comics.sort(key=safe_sort)
-                cover_comic = s_comics[0]
+                # Fallback: Sort by number
+                pool.sort(key=issue_sort_key)
+                cover_comic = pool[0]
 
         items.append({
             "id": s.id,
