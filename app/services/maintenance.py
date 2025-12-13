@@ -22,6 +22,7 @@ class MaintenanceService:
         """
         Delete metadata entities that are no longer associated with any comics.
         OPTIMIZED: Commits after each step to yield the DB write lock.
+        OPTIMIZED: Only runs heavy 'Global Tag' cleanup if library_id is None.
         """
         stats = {
             "series": 0,
@@ -35,6 +36,7 @@ class MaintenanceService:
         }
 
         # 1. Clean Empty Volumes (No comics linked)
+        # This is fast and scoped to the library if provided
         # We use synchronize_session=False for speed since we are in a batch operation
         vol_query = self.db.query(Volume).filter(~Volume.comics.any())
         if library_id:
@@ -55,30 +57,41 @@ class MaintenanceService:
         stats["series"] = series_query.delete(synchronize_session=False)
         self.db.commit()  # Yield Lock
 
-        # 3. Clean Tags (Characters)
-        stats["characters"] = self.db.query(Character).filter(~Character.comics.any()).delete(synchronize_session=False)
-        self.db.commit()  # Yield Lock
+        # --- HEAVY OPERATIONS BELOW ---
+        # We ONLY run these if this is a Global Cleanup (library_id is None).
+        # It is inefficient to check global tags after every single library scan.
 
-        # 4. Clean Teams
-        stats["teams"] = self.db.query(Team).filter(~Team.comics.any()).delete(synchronize_session=False)
-        self.db.commit()  # Yield Lock
+        if library_id is None:
 
-        # 5. Clean Locations
-        stats["locations"] = self.db.query(Location).filter(~Location.comics.any()).delete(synchronize_session=False)
-        self.db.commit()  # Yield Lock
+            self.logger.info("Performing deep global cleanup (Tags, People, Collections)...")
 
-        # 6. Clean People
-        stats["people"] = self.db.query(Person).filter(~Person.credits.any()).delete(synchronize_session=False)
-        self.db.commit()  # Yield Lock
+            # 3. Clean Tags (Characters)
+            stats["characters"] = self.db.query(Character).filter(~Character.comics.any()).delete(synchronize_session=False)
+            self.db.commit()  # Yield Lock
 
-        # 7. Clean Empty Containers
-        stats["empty_lists"] = self.db.query(ReadingList).filter(~ReadingList.items.any()).filter(
-            ReadingList.auto_generated == True).delete(synchronize_session=False)
-        self.db.commit()  # Yield Lock
+            # 4. Clean Teams
+            stats["teams"] = self.db.query(Team).filter(~Team.comics.any()).delete(synchronize_session=False)
+            self.db.commit()  # Yield Lock
 
-        stats["empty_collections"] = self.db.query(Collection).filter(~Collection.items.any()).filter(
-            Collection.auto_generated == True).delete(synchronize_session=False)
-        self.db.commit()  # Yield Lock
+            # 5. Clean Locations
+            stats["locations"] = self.db.query(Location).filter(~Location.comics.any()).delete(synchronize_session=False)
+            self.db.commit()  # Yield Lock
+
+            # 6. Clean People
+            stats["people"] = self.db.query(Person).filter(~Person.credits.any()).delete(synchronize_session=False)
+            self.db.commit()  # Yield Lock
+
+            # 7. Clean Empty Containers
+            stats["empty_lists"] = self.db.query(ReadingList).filter(~ReadingList.items.any()).filter(
+                ReadingList.auto_generated == True).delete(synchronize_session=False)
+            self.db.commit()  # Yield Lock
+
+            stats["empty_collections"] = self.db.query(Collection).filter(~Collection.items.any()).filter(
+                Collection.auto_generated == True).delete(synchronize_session=False)
+            self.db.commit()  # Yield Lock
+
+        else:
+            self.logger.info(f"Skipping deep tag cleanup for scoped scan (Library {library_id})")
 
         return stats
 
