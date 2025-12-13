@@ -3,7 +3,7 @@ from typing import List, Annotated, Optional
 from pydantic import BaseModel
 from sqlalchemy import func, case
 
-from app.core.comic_helpers import get_smart_cover, NON_PLAIN_FORMATS
+from app.core.comic_helpers import get_smart_cover, NON_PLAIN_FORMATS, get_series_age_restriction
 from app.models.library import Library
 from app.models.series import Series
 from app.models.comic import Comic, Volume
@@ -95,6 +95,13 @@ async def get_library_series(
 
     # 1. Filter by Library
     query = db.query(Series).filter(Series.library_id == library.id)
+
+    # --- AGE RATING FILTER ---
+    age_filter = get_series_age_restriction(current_user)
+    if age_filter is not None:
+        query = query.filter(age_filter)
+    # -------------------------
+
 
     # 2. Pagination
     total = query.count()

@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, case, Float, Integer, literal
+from sqlalchemy import func, case, Float, Integer, literal, or_
 from sqlalchemy.orm import joinedload
 
 from typing import List, Annotated
 
-from app.core.comic_helpers import get_format_filters, get_smart_cover, get_reading_time
+from app.core.comic_helpers import (get_format_filters, get_smart_cover, get_reading_time,
+                                    get_comic_age_restriction, get_age_rating_config)
 
 from app.api.deps import SessionDep, CurrentUser, VolumeDep
 from app.api.deps import PaginationParams, PaginatedResponse
@@ -37,6 +38,37 @@ async def get_volume_detail(volume: VolumeDep, db: SessionDep, current_user: Cur
     Get volume summary with categorized counts.
     OPTIMIZED: Uses UNION ALL to fetch all metadata lists (writers, characters, etc) in 1 query.
     """
+
+    # Note: VolumeDep handles 404, but we need to check restrictions.
+
+    # 0. Check Age Restriction: Poison Pill check
+    # If the user has restrictions, we check if this volume contains ANY banned content.
+    if current_user.max_age_rating:
+
+        allowed_ratings, banned_ratings = get_age_rating_config(current_user)
+
+        # Build the "Banned" filter
+        ban_conditions = [Comic.age_rating.in_(banned_ratings)]
+
+        # If user explicitly disallows Unknowns, treat them as banned
+        if not current_user.allow_unknown_age_ratings:
+            ban_conditions.append(or_(
+                Comic.age_rating == None,
+                Comic.age_rating == "",
+                func.lower(Comic.age_rating) == "unknown"
+            ))
+
+        # Run the check: Does a banned comic exist in this volume?
+        has_banned_content = db.query(Comic.id).filter(
+            Comic.volume_id == volume.id,
+            or_(*ban_conditions)
+        ).first()
+
+        if has_banned_content:
+            raise HTTPException(status_code=403, detail="Volume contains age-restricted content")
+    # --------------------------------------
+
+
 
     # Filters
     is_plain, is_annual, is_special = get_format_filters()
@@ -294,6 +326,11 @@ async def get_volume_issues(
     ).options(joinedload(Comic.volume)) \
         .filter(Comic.volume_id == volume_id)
 
+    # --- AGE RATING FILTER ---
+    age_filter = get_comic_age_restriction(current_user)
+    if age_filter is not None:
+        query = query.filter(age_filter)
+    # -------------------------
 
     is_plain, is_annual, is_special = get_format_filters()
 

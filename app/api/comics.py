@@ -7,7 +7,7 @@ from pathlib import Path
 import re
 import random
 
-from app.core.comic_helpers import get_reading_time, get_format_sort_index
+from app.core.comic_helpers import get_reading_time, get_format_sort_index, get_age_rating_config, get_comic_age_restriction
 from app.api.deps import SessionDep, CurrentUser, ComicDep
 
 from app.models.comic import Comic, Volume
@@ -98,6 +98,29 @@ async def get_comic(comic_id: int, db: SessionDep, current_user: CurrentUser):
         allowed_libs = {l.id for l in current_user.accessible_libraries}
         if comic.volume.series.library_id not in allowed_libs:
             raise HTTPException(status_code=404, detail="Comic not found")
+
+    # --- AGE RATING CHECK ---
+    # We have the comic loaded. We can check python side to save a query.
+    if current_user.max_age_rating:
+        # Import the helper to get lists
+
+        allowed, banned = get_age_rating_config(current_user)
+
+        is_banned = False
+
+        # Check explicit ban
+        if comic.age_rating in banned:
+            is_banned = True
+
+        # Check Unknowns
+        if not current_user.allow_unknown_age_ratings:
+            if not comic.age_rating or comic.age_rating == "" or comic.age_rating.lower() == "unknown":
+                is_banned = True
+
+        if is_banned:
+            raise HTTPException(status_code=403, detail="Content restricted by age rating")
+    # ------------------------
+
 
     # Calculate Reading Time
     total_pages = comic.page_count or 0
@@ -291,6 +314,12 @@ async def get_cover_manifest(
 
     # Apply Security
     query = filter_by_user_access(query, current_user)
+
+    # --- AGE RATING FILTER ---
+    age_filter = get_comic_age_restriction(current_user)
+    if age_filter is not None:
+        query = query.filter(age_filter)
+    # -------------------------
 
     # 3. Context Filtering & Sorting
     if context_type == "volume":
