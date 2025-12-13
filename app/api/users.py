@@ -2,7 +2,7 @@ import os
 import shutil
 from fastapi import APIRouter, status, HTTPException, UploadFile, File, Depends
 from fastapi.responses import FileResponse
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 from typing import List, Annotated, Optional
 from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
@@ -14,7 +14,8 @@ from app.api.deps import SessionDep, AdminUser, CurrentUser, PaginatedResponse, 
 from app.config import settings
 from app.core.comic_helpers import get_reading_time
 from app.core.security import verify_password, get_password_hash
-from app.models.comic import Comic
+from app.models.comic import Comic, Volume
+from app.models.series import Series
 from app.models.user import User
 from app.models.library import Library
 from app.models.reading_progress import ReadingProgress
@@ -82,6 +83,7 @@ class UserPreferencesUpdateRequest(BaseModel):
 async def get_user_dashboard(db: SessionDep, current_user: CurrentUser):
     """
     Aggregate stats and lists for the User Dashboard.
+    OPTIMIZED: Eager loads relationships to prevent N+1 queries on the Dashboard.
     """
 
     # --- Check OPDS Status ---
@@ -106,12 +108,16 @@ async def get_user_dashboard(db: SessionDep, current_user: CurrentUser):
     time_read_str = get_reading_time(total_pages)
 
     # 2. Get Pull Lists (Limit 5 for dashboard overview)
-    pull_lists = db.query(PullList).filter(PullList.user_id == current_user.id) \
+    # OPTIMIZATION: selectinload(PullList.items) prevents N+1 when calling len(pl.items) later
+    pull_lists = db.query(PullList).options(selectinload(PullList.items)) \
+        .filter(PullList.user_id == current_user.id) \
         .order_by(PullList.updated_at.desc()).limit(5).all()
 
     # 3. Get "Continue Reading" (Limit 6)
-    # We fetch the progress rows, then format them
-    recent_progress = db.query(ReadingProgress).filter(
+    # OPTIMIZATION: joinedload Comic->Volume->Series to prevent N+1 loop during formatting
+    recent_progress = db.query(ReadingProgress).options(
+        joinedload(ReadingProgress.comic).joinedload(Comic.volume).joinedload(Volume.series)
+    ).filter(
         ReadingProgress.user_id == current_user.id,
         ReadingProgress.completed == False,
         ReadingProgress.current_page > 0
@@ -119,6 +125,7 @@ async def get_user_dashboard(db: SessionDep, current_user: CurrentUser):
 
     continue_reading = []
     for p in recent_progress:
+        # Accessing these properties is instant (in-memory)
         continue_reading.append({
             "comic_id": p.comic.id,
             "series_name": p.comic.volume.series.name,
@@ -266,7 +273,10 @@ async def list_users(
     query = db.query(User)
     total = query.count()
 
-    users = query.order_by(func.lower(User.username)).options(joinedload(User.accessible_libraries)).offset(params.skip).limit(params.size).all()
+    # OPTIMIZATION: selectinload is usually cleaner for Many-to-Many collections than joinedload
+    users = query.order_by(func.lower(User.username)) \
+        .options(selectinload(User.accessible_libraries)) \
+        .offset(params.skip).limit(params.size).all()
 
     # Helper to format response with IDs
     results = []
