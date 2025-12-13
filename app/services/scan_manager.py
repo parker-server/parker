@@ -34,7 +34,7 @@ class ScanManager:
 
         self._stop_event = threading.Event()
 
-        # 1. RECOVERY: Check for jobs interrupted by a crash
+        # 1. RECOVERY
         self._recover_interrupted_jobs()
 
         # 2. Start the DB polling worker
@@ -65,7 +65,7 @@ class ScanManager:
             db.close()
 
     def _set_library_scanning_status(self, library_id: int, is_scanning: bool):
-        """Helper: Update library status with retry logic"""
+        """Helper: Update library status with retry logic (Isolated Transaction)"""
         if not library_id: return
 
         for attempt in range(5):
@@ -85,10 +85,7 @@ class ScanManager:
                 db.close()
 
     def _safe_job_update(self, job_id: int, status: JobStatus, summary: dict = None, error: str = None):
-        """
-        Critical Helper: Updates job status with RETRY logic.
-        This handles the case where a job finishes exactly when SQLite is checkpointing.
-        """
+        """Updates job status with RETRY logic."""
         for attempt in range(5):
             db = SessionLocal()
             try:
@@ -105,7 +102,7 @@ class ScanManager:
 
                 db.commit()
                 self.logger.info(f"Job {job_id} updated successfully")
-                return  # Success!
+                return
             except OperationalError as e:
                 if "locked" in str(e).lower() and attempt < 4:
                     self.logger.warning(f"DB Locked during job #{job_id} update (attempt {attempt + 1}/5). Retrying...")
@@ -147,6 +144,7 @@ class ScanManager:
     def _process_queue(self):
         """Poller loop"""
         self.logger.info("Database Job Worker Started")
+        loops = 0
 
         while not self._stop_event.is_set():
             db = SessionLocal()
@@ -205,6 +203,11 @@ class ScanManager:
 
                 else:
                     db.close()
+                    # Periodic integrity check
+                    loops += 1
+                    if loops >= 15:
+                        self._fix_stuck_libraries()
+                        loops = 0
                     time.sleep(2)
 
             except Exception as e:
@@ -212,12 +215,30 @@ class ScanManager:
                 if db: db.close()
                 time.sleep(5)
 
+    def _fix_stuck_libraries(self):
+        """Reset stuck 'is_scanning' flags"""
+        db = SessionLocal()
+        try:
+            scanning_libs = db.query(Library).filter(Library.is_scanning == True).all()
+            for lib in scanning_libs:
+                active_job = db.query(ScanJob).filter(
+                    ScanJob.library_id == lib.id,
+                    ScanJob.status == JobStatus.RUNNING
+                ).first()
+                if not active_job:
+                    self.logger.warning(f"Integrity Check: Resetting stuck library '{lib.name}'")
+                    lib.is_scanning = False
+            db.commit()
+        except Exception:
+            pass
+        finally:
+            db.close()
+
     def _run_scan_job(self, job_data):
         job_id = job_data['id']
         library_id = job_data['library_id']
         force = job_data['force']
 
-        is_first_scan = False
         results = {}
         error = None
 
@@ -226,7 +247,6 @@ class ScanManager:
         try:
             library = db_scan.query(Library).get(library_id)
             if library:
-                is_first_scan = library.last_scanned is None
                 self.logger.info(f"Starting SCAN job {job_id}")
                 scanner = LibraryScanner(library, db_scan)
                 results = scanner.scan(force=force)
@@ -242,6 +262,7 @@ class ScanManager:
         # 2. Update Status (With Retry)
         if error:
             self._safe_job_update(job_id, JobStatus.FAILED, error=error)
+            self._set_library_scanning_status(library_id, False)
         else:
             summary = {
                 "imported": results.get("imported", 0),
@@ -252,7 +273,7 @@ class ScanManager:
             }
             self._safe_job_update(job_id, JobStatus.COMPLETED, summary=summary)
 
-            # 3. Queue Next Jobs (Requires separate short transaction)
+            # 3. Queue Next Job: THUMBNAIL (Cleanup queued AFTER Thumbnail now)
             db_queue = SessionLocal()
             try:
                 db_queue.add(ScanJob(
@@ -261,20 +282,13 @@ class ScanManager:
                     force_scan=force,
                     status=JobStatus.PENDING
                 ))
-                if not is_first_scan:
-                    db_queue.add(ScanJob(
-                        library_id=library_id,
-                        job_type=JobType.CLEANUP,
-                        status=JobStatus.PENDING
-                    ))
                 db_queue.commit()
             except Exception as e:
-                self.logger.error(f"Failed to queue follow-up jobs: {e}")
+                self.logger.error(f"Failed to queue thumbnail job: {e}")
             finally:
                 db_queue.close()
 
-        # 4. Reset Flag
-        self._set_library_scanning_status(library_id, False)
+            # NOTE: We do NOT reset the library flag here because the Thumbnail job starts immediately.
 
     def _run_thumbnail_job(self, job_data):
         job_id = job_data['id']
@@ -306,11 +320,26 @@ class ScanManager:
         # 2. Update Status (With Retry)
         if error:
             self._safe_job_update(job_id, JobStatus.FAILED, error=error)
+            self._set_library_scanning_status(library_id, False)
         else:
             self._safe_job_update(job_id, JobStatus.COMPLETED, summary=stats)
 
-        # 3. Reset Flag
-        self._set_library_scanning_status(library_id, False)
+            # 3. Queue CLEANUP Job (Only if successful)
+            # This ensures Strict Order: Scan -> Thumb -> Cleanup
+            db_queue = SessionLocal()
+            try:
+                db_queue.add(ScanJob(
+                    library_id=library_id,
+                    job_type=JobType.CLEANUP,
+                    status=JobStatus.PENDING
+                ))
+                db_queue.commit()
+            except Exception as e:
+                # If queuing cleanup fails, we must reset the flag here to avoid sticking
+                self.logger.error(f"Failed to queue cleanup job: {e}")
+                self._set_library_scanning_status(library_id, False)
+            finally:
+                db_queue.close()
 
     def _run_cleanup_job(self, job_data):
         job_id = job_data['id']
@@ -331,13 +360,13 @@ class ScanManager:
         finally:
             db_clean.close()
 
-        # 2. Update Status (With Retry)
+        # 2. Update Status
         if error:
             self._safe_job_update(job_id, JobStatus.FAILED, error=error)
         else:
             self._safe_job_update(job_id, JobStatus.COMPLETED, summary=stats)
 
-        # 3. Reset Flag
+        # 3. Reset Flag (Final Step)
         if library_id:
             self._set_library_scanning_status(library_id, False)
 
