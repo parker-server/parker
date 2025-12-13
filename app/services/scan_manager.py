@@ -4,7 +4,7 @@ import json
 import traceback
 import logging
 from datetime import datetime, timezone
-from sqlalchemy import asc
+from sqlalchemy import asc, or_
 
 from app.core.settings_loader import get_system_setting, get_cached_setting
 from app.database import SessionLocal
@@ -19,7 +19,6 @@ from app.services.thumbnailer import ThumbnailService
 
 class ScanManager:
     _instance = None
-
 
     def __new__(cls):
         if cls._instance is None:
@@ -71,14 +70,13 @@ class ScanManager:
         """Create a new job record in the database"""
         db = SessionLocal()
         try:
-            # CHANGED: Only block if there is already a PENDING job.
-            # If a job is RUNNING, we allow adding ONE pending job to the queue
-            # so it runs immediately after the current one finishes.
-            # Note: We check for SCAN jobs specifically to avoid blocking thumbnails
+            # OStrict Blocking.
+            # With multiple workers, we cannot allow a PENDING job if one is already RUNNING.
+            # Another worker would pick it up immediately, causing a DB Lock collision.
             existing = db.query(ScanJob).filter(
                 ScanJob.library_id == library_id,
                 ScanJob.job_type == JobType.SCAN,
-                ScanJob.status == JobStatus.PENDING
+                ScanJob.status.in_([JobStatus.PENDING, JobStatus.RUNNING])  # Check BOTH states
             ).first()
 
             if existing:
@@ -132,33 +130,45 @@ class ScanManager:
             db = SessionLocal()
 
             try:
-                # 1. High Priority: SCANS
+                # 1. Fetch Candidate Job (Read Only)
+                # We prioritize SCANS -> THUMBNAILS -> CLEANUP
                 job = db.query(ScanJob).filter(
                     ScanJob.status == JobStatus.PENDING,
                     ScanJob.job_type == JobType.SCAN
                 ).order_by(asc(ScanJob.created_at)).first()
 
-                # 2. Medium Priority: THUMBNAILS
                 if not job:
                     job = db.query(ScanJob).filter(
                         ScanJob.status == JobStatus.PENDING,
                         ScanJob.job_type == JobType.THUMBNAIL
                     ).order_by(asc(ScanJob.created_at)).first()
 
-                # 3. Low Priority: CLEANUP
                 if not job:
                     job = db.query(ScanJob).filter(
                         ScanJob.status == JobStatus.PENDING,
                         ScanJob.job_type == JobType.CLEANUP
                     ).order_by(asc(ScanJob.created_at)).first()
 
-
                 if job:
-                    # Lock the job: Mark as RUNNING immediately
-                    job.status = JobStatus.RUNNING
-                    job.started_at = datetime.now(timezone.utc)
+                    # OPTIMIZATION: Atomic Claim
+                    # To prevent race conditions between workers, we try to UPDATE the row.
+                    # If the row was claimed by another worker in the split second between
+                    # the query above and now, this UPDATE will return 0 rows affected.
+                    rows_affected = db.query(ScanJob).filter(
+                        ScanJob.id == job.id,
+                        ScanJob.status == JobStatus.PENDING
+                    ).update({"status": JobStatus.RUNNING, "started_at": datetime.now(timezone.utc)})
 
-                    # Also set the library flag for UI
+                    db.commit()
+
+                    if rows_affected == 0:
+                        # Someone else stole the job, Loop again.
+                        db.close()
+                        continue
+
+                    # We successfully claimed the job. Set the library flag.
+                    # Re-fetch the job to get the fresh object
+                    job = db.query(ScanJob).get(job.id)
                     if job.library:
                         job.library.is_scanning = True
 
@@ -182,7 +192,7 @@ class ScanManager:
                     elif job_type == JobType.CLEANUP:
                         self._run_cleanup_job(job_id, library_id)
 
-                    # Don't sleep if we just did work, check for next immediately
+                    # Don't sleep if we just did work
                     continue
 
                 else:
@@ -209,7 +219,7 @@ class ScanManager:
                 self.logger.error(f"Critical: Job {job_id} or Library missing.")
                 return
 
-            # Capture "First Scan" state BEFORE running the scanner (which updates last_scanned)
+            # Capture "First Scan" state
             is_first_scan = library.last_scanned is None
 
             self.logger.info(f"Starting SCAN job {job_id} for {library.name} (Forced: {force}) (First scan: {is_first_scan})")
@@ -223,7 +233,7 @@ class ScanManager:
             job.status = JobStatus.COMPLETED
             job.completed_at = datetime.now(timezone.utc)
 
-            # Store summary (exclude the full 'comics' list if it's huge)
+            # Store summary
             summary = {
                 "imported": results.get("imported", 0),
                 "updated": results.get("updated", 0),
@@ -233,7 +243,7 @@ class ScanManager:
             }
             job.result_summary = json.dumps(summary)
 
-            # Reset flag momentarily (next jobs will set it back to True if they run immediately)
+            # Reset flag
             library.is_scanning = False
 
             # --- QUEUE NEXT JOBS ---
@@ -292,20 +302,16 @@ class ScanManager:
         db = SessionLocal()
         try:
             job = db.query(ScanJob).get(job_id)
-            # We don't necessarily need the library object for logic, just ID
-
-            if not job:
-                return
+            if not job: return
 
             self.logger.info(f"Starting THUMBNAIL job {job_id} for Library {library_id}")
 
             # --- RUN THUMBNAILER ---
             service = ThumbnailService(db, library_id)
             use_parallel = get_cached_setting('system.parallel_image_processing', False)
+
             if use_parallel:
-                self.logger.info(f"Using parallel mode for THUMBNAIL job {job_id}")
                 stats = service.process_missing_thumbnails_parallel(force=force)
-                pass
             else:
                 stats = service.process_missing_thumbnails(force=force)
             # -----------------------
@@ -328,8 +334,7 @@ class ScanManager:
 
             # Re-fetch and Reset Library Flag on Failure ---
             library = db.query(Library).get(library_id)
-            if library:
-                library.is_scanning = False
+            if library: library.is_scanning = False
 
             job = db.query(ScanJob).get(job_id)
             if job:
@@ -367,8 +372,7 @@ class ScanManager:
             # Reset Library Flag (Only if it was a scoped job)
             if library_id:
                 library = db.query(Library).get(library_id)
-                if library:
-                    library.is_scanning = False
+                if library: library.is_scanning = False
 
             db.commit()
 
@@ -398,7 +402,7 @@ class ScanManager:
             # Check for existing pending cleanup to avoid stacking
             existing = db.query(ScanJob).filter(
                 ScanJob.job_type == JobType.CLEANUP,
-                ScanJob.status == JobStatus.PENDING
+                ScanJob.status.in_([JobStatus.PENDING, JobStatus.RUNNING])
             ).first()
 
             if existing:

@@ -20,6 +20,7 @@ from app.services.collection import CollectionService
 from app.services.images import ImageService
 from app.services.maintenance import MaintenanceService
 
+
 class LibraryScanner:
     """Scans library directories and imports comics with batch processing"""
 
@@ -42,7 +43,7 @@ class LibraryScanner:
     def scan(self, force: bool = False) -> dict:
         """
         Scan the library path and import comics using intelligent batch commits.
-        Uses Nested Transactions (Savepoints) to ensure one bad egg doesn't spoil the batch.
+        OPTIMIZED: Separates File I/O from DB Transactions to prevent SQLite Locking.
         """
         library_path = Path(self.library.path)
 
@@ -91,52 +92,71 @@ class LibraryScanner:
                     # Check against our pre-fetched map
                     existing = existing_map.get(file_path_str)
 
-                    # --- INTELLIGENT BATCHING START ---
-                    # We create a SAVEPOINT for this specific file.
-                    # If an error happens inside this 'with' block, it rolls back ONLY this file.
-                    # The rest of the session (previous successful files) remains valid.
+                    # --- PHASE 1: FILE I/O (No DB Lock) ---
+                    # We determine if work is needed and extract metadata BEFORE opening the DB transaction.
+                    # This prevents holding the write lock while unzipping large files.
+
+                    action = "skip"
+                    metadata = None
+
+                    if existing:
+                        # Check modification time
+                        if not force and existing.file_modified_at and existing.file_modified_at >= file_mtime:
+                            action = "skip"
+                        else:
+                            action = "update"
+                            # Heavy I/O happens here, completely safe
+                            metadata = self._extract_metadata(file_path)
+                    else:
+                        action = "import"
+                        # Heavy I/O happens here, completely safe
+                        metadata = self._extract_metadata(file_path)
+
+                    if action == "skip":
+                        skipped += 1
+                        continue
+
+                    if not metadata:
+                        # Failed to extract, log and continue
+                        errors.append({"file": str(file_path), "error": "Failed to extract metadata"})
+                        continue
+
+                    # --- PHASE 2: DB WRITE (Short Transaction) ---
+                    # Now we open the transaction. Operations here must be fast.
                     with self.db.begin_nested():
 
                         comic = None
 
-                        if existing:
-                            # Check modification time
-                            if not force and existing.file_modified_at and existing.file_modified_at >= file_mtime:
-                                skipped += 1
-                                continue # Skip logic doesn't need DB interaction
-                            else:
-                                # Update existing
-                                if force:
-                                    self.logger.info(f"Force scanning: {file_path.name}")
-                                else:
-                                    self.logger.info(f"Updating modified: {file_path.name}")
+                        if action == "update":
 
-                                comic = self._update_comic(existing, file_path, file_mtime, file_size_bytes)
-                                if comic:
-                                    updated += 1
-                                    pending_changes += 1
-                        else:
-                            # Import new
-                            comic = self._import_comic(file_path, file_mtime, file_size_bytes)
+                            if force:
+                                self.logger.info(f"Force scanning: {file_path.name}")
+                            else:
+                                self.logger.info(f"Updating modified: {file_path.name}")
+
+                            # Pass pre-extracted metadata
+                            comic = self._update_comic(existing, file_path, file_mtime, file_size_bytes, metadata)
+                            if comic:
+                                updated += 1
+                                pending_changes += 1
+
+                        elif action == "import":
+                            # Pass pre-extracted metadata
+                            comic = self._import_comic(file_path, file_mtime, file_size_bytes, metadata)
                             if comic:
                                 imported += 1
                                 pending_changes += 1
-                                # Update our local map so duplicates in same run are caught (unlikely but safe)
                                 existing_map[file_path_str] = comic
 
-                        # FORCE FLUSH: Validate constraints (like NOT NULL) *inside* the savepoint.
-                        # If this fails, the exception is raised here, caught by 'with', and rolled back cleanly.
+                        # FORCE FLUSH: Validate constraints immediately
                         if comic:
                             self.db.flush()
 
-                    # --- INTELLIGENT BATCHING END ---
-                    # If we reached here, the individual item is safely staged.
-
+                    # --- BATCH COMMIT ---
                     if comic:
                         found_comics.append({
                             "id": comic.id,
                             "filename": comic.filename,
-                            # Use safe navigation in case relationship isn't refreshed yet
                             "series": comic.volume.series.name if comic.volume and comic.volume.series else "Unknown",
                             "pages": comic.page_count
                         })
@@ -154,7 +174,7 @@ class LibraryScanner:
                     errors.append({"file": str(file_path), "error": str(e)})
                     self.logger.error(f"Error processing {file_path}: {e}")
 
-        # Commit any remaining items
+        # Commit remaining
         if pending_changes > 0:
             self.logger.debug(f"Committing final batch of {pending_changes} items...")
             self.db.commit()
@@ -206,12 +226,13 @@ class LibraryScanner:
 
         return deleted
 
-    def _import_comic(self, file_path: Path, file_mtime: float, file_size_bytes: int) -> Optional[Comic]:
-        """Process and import a new comic file"""
-        metadata = self._extract_metadata(file_path)
-
-        if not metadata:
-            return None
+    def _import_comic(self, file_path: Path, file_mtime: float, file_size_bytes: int, metadata: Dict) -> Optional[
+        Comic]:
+        """
+        Process and import a new comic file.
+        Now accepts 'metadata' as an argument to avoid doing I/O inside the DB transaction.
+        """
+        # Metadata extraction moved to caller (scan loop)
 
         # Get or create series (Uses Cache)
         # Robust 'Unknown' handling for Series Name to prevent NOT NULL errors
@@ -270,14 +291,6 @@ class LibraryScanner:
             metadata_json=json.dumps(metadata.get('raw_metadata', {}))
         )
 
-        # Extract Colors
-        #palette_dict = self.image_service.extract_palette(comic.file_path)
-        #primary, secondary = self.image_service.extract_dominant_colors(comic.file_path)
-        #comic.color_primary = palette_dict['primary']
-        #comic.color_secondary = palette_dict['secondary']
-        #comic.color_palette = palette_dict
-
-
         self.db.add(comic)
         # CRITICAL: Use flush() instead of commit().
         # This assigns the PK (id) so we can use it for the thumbnail,
@@ -323,12 +336,13 @@ class LibraryScanner:
 
         return comic
 
-    def _update_comic(self, comic: Comic, file_path: Path, file_mtime: float, file_size_bytes: int) -> Optional[Comic]:
-        """Update an existing comic with new metadata"""
-        metadata = self._extract_metadata(file_path)
-
-        if not metadata:
-            return None
+    def _update_comic(self, comic: Comic, file_path: Path, file_mtime: float, file_size_bytes: int, metadata: Dict) -> \
+    Optional[Comic]:
+        """
+        Update an existing comic with new metadata.
+        Now accepts 'metadata' as an argument to avoid doing I/O inside the DB transaction.
+        """
+        # Metadata extraction moved to caller (scan loop)
 
         # Check if series/volume changed
         # Robust 'Unknown' handling
@@ -401,15 +415,6 @@ class LibraryScanner:
 
         # Touch Parent Series
         series.updated_at = datetime.now(timezone.utc)
-
-        # Extract colors only if missing or if force update
-        #if not comic.color_primary:
-        #    palette_dict = self.image_service.extract_palette(comic.file_path)
-            # primary, secondary = self.image_service.extract_dominant_colors(comic.file_path)
-        #    comic.color_primary = palette_dict['primary']
-        #    comic.color_secondary = palette_dict['secondary']
-        #    comic.color_palette = palette_dict
-
 
         # NO COMMIT HERE - handled by batch loop
 
@@ -510,9 +515,7 @@ class LibraryScanner:
             print(f"Failed to generate thumbnail for {comic.filename}: {e}")
 
     def _normalize_number(self, number: str) -> str:
-        """
-        Normalize weird comic numbers for better sorting.
-        """
+        """Normalize weird comic numbers"""
         if not number:
             return number
 
