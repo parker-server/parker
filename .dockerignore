@@ -1,9 +1,21 @@
-storage/cover
-storage/cache
-storage/database
-storage/logs
-storage/avatars
+# Parker runtime data (always mounted as volumes)
+storage/
+
+# Environment & secrets
 .env
-.git
-__pycache__
+.env.*
+
+# Python cache
+__pycache__/
 *.pyc
+*.pyo
+
+# Git & CI
+.git/
+.github/
+
+# Editor/OS junk
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
