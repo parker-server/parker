@@ -108,7 +108,7 @@ class ScanManager:
                 return  # Success!
             except OperationalError as e:
                 if "locked" in str(e).lower() and attempt < 4:
-                    self.logger.warning(f"DB Locked during job update (attempt {attempt + 1}/5). Retrying...")
+                    self.logger.warning(f"DB Locked during job #{job_id} update (attempt {attempt + 1}/5). Retrying...")
                     time.sleep(1.0)  # Wait a full second for WAL checkpoint to finish
                     continue
                 self.logger.error(f"Failed to update job {job_id}: {e}")
