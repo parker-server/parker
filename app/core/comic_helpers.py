@@ -87,7 +87,7 @@ def get_comic_age_restriction(user, comic_model=Comic):
     conditions = [comic_model.age_rating.in_(allowed_ratings)]
 
     if user.allow_unknown_age_ratings:
-        # Allow NULL, Empty String, "Unknown" (case insensitive), or ratings NOT in our official hierarchy
+        # Allow NULL, Empty String, "Unknown" (case-insensitive), or ratings NOT in our official hierarchy
         # Note: We assume anything NOT in the banned list is okay if unknowns are allowed?
         # Safer: Explicitly check for null/empty/"Unknown"
         conditions.append(or_(
