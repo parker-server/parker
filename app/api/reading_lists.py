@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import joinedload, aliased
-from sqlalchemy import func, select, and_
+from sqlalchemy import func, select, and_, or_
 
 from app.api.deps import SessionDep, CurrentUser
-from app.core.comic_helpers import get_aggregated_metadata
+from app.core.comic_helpers import get_aggregated_metadata, get_age_rating_config, get_banned_comic_condition, check_container_restriction
 from app.models.comic import Comic, Volume
 from app.models.series import Series
 from app.models.tags import Character, Team, Location
@@ -47,10 +47,21 @@ async def list_reading_lists(db: SessionDep, current_user: CurrentUser):
 
     # 3. Main Query: Fetch List + Calculated Count
     # Filter where visible_count > 0 (Hide empty lists)
-    results = db.query(ReadingList, visible_count_col.label("v_count")) \
+    query = db.query(ReadingList, visible_count_col.label("v_count")) \
         .filter(visible_count_col > 0) \
         .order_by(ReadingList.name) \
         .all()
+
+    # --- AGE RATING POISON PILL ---
+    if current_user.max_age_rating:
+        banned_condition = get_banned_comic_condition(current_user)
+        # Filter out Reading Lists that contain ANY banned comic
+        query = query.filter(
+            ~ReadingList.items.any(ReadingListItem.comic.has(banned_condition))
+        )
+    # ------------------------------
+
+    results = query.order_by(ReadingList.name).all()
 
     # 4. Format Results
     response = []
@@ -74,6 +85,17 @@ async def list_reading_lists(db: SessionDep, current_user: CurrentUser):
 @router.get("/{list_id}", name="detail")
 async def get_reading_list(list_id: int, db: SessionDep, current_user: CurrentUser):
     """Get a specific reading list with all comics in order"""
+
+    # --- 1. SECURITY: POISON PILL CHECK (FAIL FASt) ---
+    check_container_restriction(
+        db, current_user,
+        ReadingListItem,
+        ReadingListItem.reading_list_id,
+        list_id,
+        "Reading list"
+    )
+    # --------------------------------------
+
     reading_list = db.query(ReadingList).filter(ReadingList.id == list_id).first()
 
     if not reading_list:

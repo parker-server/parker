@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload, aliased
-from sqlalchemy import Float, func, select, and_
+from sqlalchemy import Float, func, select, and_, or_
 from typing import List, Annotated
 
-from app.core.comic_helpers import get_aggregated_metadata
+from app.core.comic_helpers import get_aggregated_metadata, get_banned_comic_condition, check_container_restriction
 from app.api.deps import SessionDep, CurrentUser
 from app.models.collection import Collection, CollectionItem
 from app.models.comic import Comic, Volume
@@ -42,13 +42,22 @@ async def list_collections(current_user: CurrentUser, db: SessionDep):
 
     visible_count_col = count_stmt.scalar_subquery()
 
-    # 3. Execute
-    results = db.query(Collection, visible_count_col.label("v_count")) \
-        .filter(visible_count_col > 0) \
-        .order_by(Collection.name) \
-        .all()
+    # 3. Main Query
+    query = db.query(Collection, visible_count_col.label("v_count")).filter(visible_count_col > 0)
 
-    # 4. Format
+    # --- AGE RATING POISON PILL ---
+    if current_user.max_age_rating:
+        banned_condition = get_banned_comic_condition(current_user)
+        # Filter out Collections that contain ANY banned comic
+        query = query.filter(
+            ~Collection.items.any(CollectionItem.comic.has(banned_condition))
+        )
+    # ------------------------------
+
+    # 4. Execute
+    results = query.order_by(Collection.name).all()
+
+    # 5. Format
     response = []
     for col, v_count in results:
         response.append({
@@ -71,6 +80,18 @@ async def list_collections(current_user: CurrentUser, db: SessionDep):
 async def get_collection(current_user: CurrentUser,
                          collection_id: int, db: SessionDep):
     """Get a specific collection with all comics"""
+
+    # --- 1. SECURITY: POISON PILL CHECK ---
+    # Fail fast if this collection contains banned content
+    check_container_restriction(
+        db, current_user,
+        CollectionItem,
+        CollectionItem.collection_id,
+        collection_id,
+        "Collection"
+    )
+    # --------------------------------------
+
     collection = db.query(Collection).filter(Collection.id == collection_id).first()
 
     if not collection:
