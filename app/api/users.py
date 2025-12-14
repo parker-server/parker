@@ -7,19 +7,19 @@ from typing import List, Annotated, Optional
 from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
 from pathlib import Path
-from sqlalchemy import func
+from sqlalchemy import func, not_
 
 
 from app.api.deps import SessionDep, AdminUser, CurrentUser, PaginatedResponse, PaginationParams
 from app.config import settings
-from app.core.comic_helpers import get_reading_time
+from app.core.comic_helpers import get_reading_time, get_banned_comic_condition
 from app.core.security import verify_password, get_password_hash
 from app.models.comic import Comic, Volume
 from app.models.series import Series
 from app.models.user import User
 from app.models.library import Library
 from app.models.reading_progress import ReadingProgress
-from app.models.pull_list import PullList
+from app.models.pull_list import PullList, PullListItem
 from app.services.images import ImageService
 from app.services.settings_service import SettingsService
 
@@ -95,11 +95,17 @@ async def get_user_dashboard(db: SessionDep, current_user: CurrentUser):
     """
     Aggregate stats and lists for the User Dashboard.
     OPTIMIZED: Eager loads relationships to prevent N+1 queries on the Dashboard.
+    Filters out age-restricted content from Stats, Pull Lists, and Continue Reading.
     """
 
     # --- Check OPDS Status ---
     settings_svc = SettingsService(db)
     opds_enabled = settings_svc.get("server.opds_enabled")
+
+    # --- PREPARE SECURITY FILTER ---
+    banned_condition = None
+    if current_user.max_age_rating:
+        banned_condition = get_banned_comic_condition(current_user)
 
     # 1. Calculate Stats
     # Join Progress -> Comic to get page counts
@@ -110,7 +116,12 @@ async def get_user_dashboard(db: SessionDep, current_user: CurrentUser):
         .filter(
         ReadingProgress.user_id == current_user.id,
         ReadingProgress.completed == True
-    ).first()
+    )
+
+    if banned_condition is not None:
+        stats_query = stats_query.filter(not_(banned_condition))
+
+    stats_result = stats_query.first()
 
     issues_read = stats_query.issues_read or 0
     total_pages = stats_query.total_pages or 0
@@ -120,19 +131,31 @@ async def get_user_dashboard(db: SessionDep, current_user: CurrentUser):
 
     # 2. Get Pull Lists (Limit 5 for dashboard overview)
     # OPTIMIZATION: selectinload(PullList.items) prevents N+1 when calling len(pl.items) later
-    pull_lists = db.query(PullList).options(selectinload(PullList.items)) \
+    pull_lists_query = db.query(PullList).options(selectinload(PullList.items)) \
         .filter(PullList.user_id == current_user.id) \
-        .order_by(PullList.updated_at.desc()).limit(5).all()
+        .order_by(PullList.updated_at.desc())
+
+    if banned_condition is not None:
+        pull_lists_query = pull_lists_query.filter(
+            ~PullList.items.any(PullListItem.comic.has(banned_condition))
+        )
+
+    pull_lists = pull_lists_query.limit(5).all()
 
     # 3. Get "Continue Reading" (Limit 6)
     # OPTIMIZATION: joinedload Comic->Volume->Series to prevent N+1 loop during formatting
-    recent_progress = db.query(ReadingProgress).options(
+    recent_progress_query = db.query(ReadingProgress).options(
         joinedload(ReadingProgress.comic).joinedload(Comic.volume).joinedload(Volume.series)
     ).filter(
         ReadingProgress.user_id == current_user.id,
         ReadingProgress.completed == False,
         ReadingProgress.current_page > 0
-    ).order_by(ReadingProgress.last_read_at.desc()).limit(6).all()
+    )
+
+    if banned_condition is not None:
+        recent_progress_query = recent_progress_query.filter(not_(banned_condition))
+
+    recent_progress = recent_progress_query.order_by(ReadingProgress.last_read_at.desc()).limit(6).all()
 
     continue_reading = []
     for p in recent_progress:
