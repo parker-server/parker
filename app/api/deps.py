@@ -3,7 +3,7 @@ from typing import Generator, Annotated, Optional
 from fastapi import Depends, HTTPException, status, Path, Request
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 from pydantic import ValidationError, BaseModel
 from fastapi import Query
 from typing import TypeVar, Generic, Sequence
@@ -61,12 +61,12 @@ async def get_token_hybrid(
     # 1. Try Header (FastAPI extracts this automatically via oauth2_scheme)
     if token_auth:
         return token_auth
-    logger.info("No token found")
+    logger.debug("No token found")
     # 2. Try Cookie (Fallback for HTML pages)
     cookie_token = request.cookies.get("access_token")
     if cookie_token:
         return cookie_token
-    logger.info("No cookie found")
+    logger.debug("No cookie found")
     # 3. Fail
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -85,13 +85,13 @@ async def get_token_optional(
     if token_auth:
         return token_auth
 
-    logger.info("get_token_optional: No token found")
+    logger.debug("get_token_optional: No token found")
 
     cookie_token = request.cookies.get("access_token")
     if cookie_token:
         return cookie_token
 
-    logger.info("get_token_optional: No cookie found")
+    logger.debug("get_token_optional: No cookie found")
 
     return None
 
@@ -115,7 +115,11 @@ async def get_current_user(
     except (JWTError, ValidationError):
         raise credentials_exception
 
-    user = db.query(User).filter(User.username == username).first()
+    # Eager load accessible libraries relation
+    user = db.query(User).options(
+                selectinload(User.accessible_libraries)
+            ).filter(User.username == username).first()
+
     if user is None:
         raise credentials_exception
 
@@ -214,7 +218,9 @@ async def get_secure_volume(
     """
     Fetches a Volume and enforces Library access (via parent Series).
     """
-    query = db.query(Volume).join(Series).filter(Volume.id == volume_id)
+    # Eager load Series
+    query = (db.query(Volume).options(joinedload(Volume.series))
+             .join(Series).filter(Volume.id == volume_id))
 
     if not user.is_superuser:
         allowed_ids = [lib.id for lib in user.accessible_libraries]
@@ -237,7 +243,11 @@ async def get_secure_comic(
     Fetches a comic AND verifies the user has access to its library.
     Raises 404 if not found or restricted.
     """
-    query = db.query(Comic).join(Volume).join(Series).filter(Comic.id == comic_id)
+    # Eager load Volume -> Series -> Library hierarchy
+    query = (db.query(Comic).options(
+                    joinedload(Comic.volume).joinedload(Volume.series).joinedload(Series.library)
+                )
+                .join(Volume).join(Series).filter(Comic.id == comic_id))
 
     if not user.is_superuser:
         allowed_ids = [lib.id for lib in user.accessible_libraries]

@@ -18,6 +18,8 @@ pydantic>=2.6.0
 pydantic-settings>=2.1.0
 python-dotenv>=1.0.0
 aiofiles>=23.2.1
+portalocker>=3.0.0
+concurrent-log-handler>=0.9.27
 
 # Templating
 jinja2>=3.1.3

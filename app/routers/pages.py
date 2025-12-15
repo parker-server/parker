@@ -72,7 +72,7 @@ async def series_detail(request: Request, series: SeriesDep, db: SessionDep, use
 
     # Find the "Smart Cover" to use for colors/background
     base_query = db.query(Comic).join(Volume).filter(Volume.series_id == series.id)
-    cover_comic = get_smart_cover(base_query)
+    cover_comic = get_smart_cover(base_query, series.name)
 
     return templates.TemplateResponse(request=request, name="comics/series_detail.html", context={
         "series_id": series.id,
@@ -86,7 +86,7 @@ async def volume_detail(request: Request, volume: VolumeDep, db: SessionDep, use
 
     # Find the "Smart Cover" to use for colors/background
     base_query = db.query(Comic).join(Volume).filter(Volume.id == volume.id)
-    cover_comic = get_smart_cover(base_query)
+    cover_comic = get_smart_cover(base_query, volume.series.name)
 
     return templates.TemplateResponse(request=request, name="comics/volume_detail.html", context={
         "volume_id": volume.id,

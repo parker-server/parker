@@ -13,6 +13,7 @@ from app.models.series import Series
 from app.models.user import User
 from app.models.reading_progress import ReadingProgress
 from app.schemas.search import ComicSearchItem
+from app.core.comic_helpers import REVERSE_NUMBERING_SERIES
 
 router = APIRouter()
 
@@ -199,7 +200,7 @@ def get_up_next(
         current_user: CurrentUser,
         limit: int = 10
 ):
-    """Get the NEXT issue for series recently read. Secured for age rating"""
+    """Get the NEXT issue for series recently read. Secured for age rating Handles Reverse Numbering"""
 
     # 1. Calculate Cutoff (Reuse the same setting for consistency)
     staleness_weeks = get_cached_setting("ui.on_deck.staleness_weeks", default=4)
@@ -245,27 +246,49 @@ def get_up_next(
 
     for progress in recent_history:
         # Access via eager loaded relationship (no query)
-        series_id = progress.comic.volume.series_id
 
-        if series_id in seen_series:
+        series_id = progress.comic.volume.series.name  # Access name for check
+        series_obj = progress.comic.volume.series  # Keep object reference
+
+        if series_obj.id in seen_series:
             continue
 
-        seen_series.add(series_id)
+        seen_series.add(series_obj.id)
 
         try:
             current_number = float(progress.comic.number)
         except (ValueError, TypeError):
             continue
 
-        # Find the next comic
-        # We're still going to run 1 query here per series, but it's very fast on SQLite
-        # because it's a simple indexed lookup on (volume_id, number).
-        next_query = db.query(Comic) \
-            .options(joinedload(Comic.volume).joinedload(Volume.series)) \
-            .filter(
-            Comic.volume_id == progress.comic.volume_id,
-            cast(Comic.number, Float) > current_number
-        )
+        # GIMMICK LOGIC
+        # If Reverse (Countdown): Next issue is Current - 1
+        # If Standard: Next issue is Current + 1
+        is_reverse = series_obj.name.lower() in REVERSE_NUMBERING_SERIES
+
+        if is_reverse:
+            # Find next issue (LOWER number)
+            # We want the largest number that is SMALLER than current
+            # e.g. Current=51, we want 50.
+            next_query = db.query(Comic) \
+                .options(joinedload(Comic.volume).joinedload(Volume.series)) \
+                .filter(
+                Comic.volume_id == progress.comic.volume_id,
+                cast(Comic.number, Float) < current_number
+            ).order_by(cast(Comic.number, Float).desc())
+
+        else:
+            # Standard Logic (Higher number)
+            # Find the next comic
+            # We're still going to run 1 query here per series, but it's very fast on SQLite
+            # because it's a simple indexed lookup on (volume_id, number).
+            next_query = db.query(Comic) \
+                .options(joinedload(Comic.volume).joinedload(Volume.series)) \
+                .filter(
+                Comic.volume_id == progress.comic.volume_id,
+                cast(Comic.number, Float) > current_number
+            ).order_by(cast(Comic.number, Float).asc())
+
+            pass
 
         # --- APPLY AGE FILTER TO SUGGESTION ---
         if age_filter is not None:

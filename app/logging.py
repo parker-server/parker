@@ -1,5 +1,5 @@
 import logging
-from logging.handlers import TimedRotatingFileHandler
+from concurrent_log_handler import ConcurrentRotatingFileHandler
 from pathlib import Path
 
 from app.config import settings
@@ -26,14 +26,18 @@ class LogConfig:
         self.logger.handlers.clear()
 
         # File handler with daily rotation
-        file_handler = TimedRotatingFileHandler(
+
+        # Use ConcurrentRotatingFileHandler
+        # - Rotates when file hits 10MB
+        # - Keeps 10 backups
+        # - Uses file locking so 4 workers don't crash each other
+        file_handler = ConcurrentRotatingFileHandler(
             filename=self.log_dir / self.log_file,
-            when="midnight",  # Rotate at midnight
-            interval=1,  # Every 1 day
-            backupCount=30,  # Keep 30 days of logs
-            encoding="utf-8"
+            maxBytes=10 * 1024 * 1024,  # 10MB
+            backupCount=10,
+            encoding="utf-8",
+            use_gzip=True  # Optional: compress backups
         )
-        file_handler.suffix = "%Y-%m-%d"  # Add date suffix to rotated files
 
         # Console handler for development
         console_handler = logging.StreamHandler()

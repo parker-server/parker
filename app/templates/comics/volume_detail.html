@@ -389,6 +389,7 @@ function volumeDetail() {
 
         readFilter: 'all', // 'all', 'read', 'unread'
         sortOrder: 'asc',  // 'asc', 'desc'
+        isReverseNumbering: false,
 
         paginationMode: '{{ get_system_setting("ui.pagination_mode", "infinite") }}',
 
@@ -421,6 +422,13 @@ function volumeDetail() {
                 this.volume = await res.json();
                 document.title = `${this.volume.series_name} Vol ${this.volume.volume_number} - Parker`;
                 this.loading = false;
+
+                this.isReverseNumbering = this.volume.is_reverse_numbering;
+
+                if (this.isReverseNumbering) {
+                    this.sortOrder = 'desc';
+                }
+
             } catch (e) {
                 console.error(e);
             }
@@ -557,6 +565,19 @@ function volumeDetail() {
                 this.currentPage++;
                 this.fetchIssues(true); // true = append
             }
+        },
+
+        getSortLabel() {
+            if (this.isReverseNumbering) {
+                // For Countdown:
+                // DESC = 51 (Oldest/Start)
+                // ASC = 1 (Newest/End)
+                return this.sortOrder === 'desc' ? 'Oldest First' : 'Newest First';
+            }
+            // Standard Series:
+            // ASC = 1 (Oldest/Start)
+            // DESC = 500 (Newest/End)
+            return this.sortOrder === 'asc' ? 'Oldest First' : 'Newest First';
         },
 
 

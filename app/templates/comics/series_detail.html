@@ -492,6 +492,7 @@ function seriesDetail() {
 
         readFilter: 'all', // 'all', 'read', 'unread'
         sortOrder: 'asc',  // 'asc', 'desc'
+        isReverseNumbering: false,
 
         paginationMode: '{{ get_system_setting("ui.pagination_mode", "infinite") }}',
 
@@ -517,6 +518,11 @@ function seriesDetail() {
                 }
                 this.series = await res.json();
                 this.loading = false;
+                this.isReverseNumbering = this.series.is_reverse_numbering;
+
+                if (this.isReverseNumbering) {
+                    this.sortOrder = 'desc';
+                }
 
                 // Set tab title
                 document.title = `${this.series.name} - Parker`;
@@ -666,12 +672,6 @@ function seriesDetail() {
             }
         },
 
-        toggleSort() {
-            this.sortOrder = this.sortOrder === 'asc' ? 'desc' : 'asc';
-            this.currentPage = 1; // Reset to page 1 on sort change
-            this.fetchIssues();
-        },
-
         // Observer Logic for infinite scroll mode
         setupInfiniteScroll() {
             if (this.$refs.loadSentinel) {
@@ -691,6 +691,19 @@ function seriesDetail() {
                 this.currentPage++;
                 this.fetchIssues(true); // true = append
             }
+        },
+
+        getSortLabel() {
+            if (this.isReverseNumbering) {
+                // For Countdown:
+                // DESC = 51 (Oldest/Start)
+                // ASC = 1 (Newest/End)
+                return this.sortOrder === 'desc' ? 'Oldest First' : 'Newest First';
+            }
+            // Standard Series:
+            // ASC = 1 (Oldest/Start)
+            // DESC = 500 (Newest/End)
+            return this.sortOrder === 'asc' ? 'Oldest First' : 'Newest First';
         },
 
     }

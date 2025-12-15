@@ -6,6 +6,7 @@ from typing import List, Annotated
 
 from app.core.comic_helpers import (get_format_filters, get_smart_cover, get_reading_time,
                                     get_comic_age_restriction, get_age_rating_config)
+from app.core.comic_helpers import get_format_filters, get_smart_cover, get_reading_time, REVERSE_NUMBERING_SERIES
 
 from app.api.deps import SessionDep, CurrentUser, VolumeDep
 from app.api.deps import PaginationParams, PaginatedResponse
@@ -122,7 +123,7 @@ async def get_volume_detail(volume: VolumeDep, db: SessionDep, current_user: Cur
 
     # 2. Find Cover (Plain issues priority)
     base_query = db.query(Comic).filter(Comic.volume_id == volume.id)
-    first_issue = get_smart_cover(base_query)
+    first_issue = get_smart_cover(base_query, series_name=volume.series.name)
 
     # Get colors from the cover of the 1st issue comic
     colors = {"primary": "#000000", "secondary": "#222222"}
@@ -254,6 +255,11 @@ async def get_volume_detail(volume: VolumeDep, db: SessionDep, current_user: Cur
     for k in details:
         details[k].sort()
 
+    # Calculate Gimmick Flag
+    is_reverse_series = False
+    if volume.series:
+        is_reverse_series = volume.series.name.lower() in REVERSE_NUMBERING_SERIES
+
     return {
         "id": volume.id,
         "volume_number": volume.volume_number,
@@ -289,6 +295,7 @@ async def get_volume_detail(volume: VolumeDep, db: SessionDep, current_user: Cur
             "status": read_status
         },
         "colors": colors,
+        "is_reverse_numbering": is_reverse_series,
     }
 
 

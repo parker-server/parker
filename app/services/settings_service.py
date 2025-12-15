@@ -121,6 +121,7 @@ class SettingsService:
             "category": "general",
             "data_type": "select",
             "label": "Logging Level",
+            "description": "Server restart required for this change to take effect.",
             "options": [
                 {"label": "Debug", "value": "DEBUG"},
                 {"label": "Info", "value": "INFO"},

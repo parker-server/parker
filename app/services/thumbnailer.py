@@ -150,114 +150,21 @@ class ThumbnailService:
         self.image_service = ImageService()
         self.logger = logging.getLogger(__name__)
 
-    def process_missing_thumbnails(self, force: bool = False):
-        """
-        Serial Mode: Find comics in this library without thumbnails and generate them.
-        OPTIMIZED: Uses batch committing (every 10 items) to prevent DB lock spam.
-        """
-
-        # GUARD: Ensure we actually have a library ID before running a library-wide scan
-        if not self.library_id:
-            raise ValueError("Library ID required for library-wide processing")
-
-        comics = self._get_target_comics(force)
-
-        stats = {"processed": 0, "errors": 0, "skipped": 0}
-
-        # Batch config
-        pending_changes = 0
-        BATCH_SIZE = 10
-
-        for comic in comics:
-            # Check existence
-            has_thumb = comic.thumbnail_path and Path(str(comic.thumbnail_path)).exists()
-            has_colors = comic.color_primary is not None
-
-            if not force and has_thumb and has_colors:
-                stats["skipped"] += 1
-                continue
-
-            try:
-                # Define path
-                target_path = Path(f"./storage/cover/comic_{comic.id}.webp")
-
-                # Generates WebP AND returns Color Palette
-                result = self.image_service.process_cover(str(comic.file_path), target_path)
-
-                if result['success']:
-                    comic.thumbnail_path = str(target_path)
-
-                    # Update Colors from result
-                    if result.get('palette'):
-                        palette = result['palette']
-                        comic.color_primary = palette.get('primary')
-                        comic.color_secondary = palette.get('secondary')
-                        comic.color_palette = palette
-
-                    stats["processed"] += 1
-                    pending_changes += 1
-                else:
-                    stats["errors"] += 1
-
-            except Exception as e:
-                self.logger.error(f"Thumbnail error {comic.id}: {e}")
-                stats["errors"] += 1
-
-            # Commit batch
-            if pending_changes >= BATCH_SIZE:
-                self.db.commit()
-                pending_changes = 0
-
-        # Final commit
-        if pending_changes > 0:
-            self.db.commit()
-
-        return stats
-
     def process_series_thumbnails(self, series_id: int):
-        """Force regenerate thumbnails for ALL comics in a series."""
-        comics = self.db.query(Comic).join(Volume).filter(Volume.series_id == series_id).all()
-        return self._generate_batch(comics)
+        """
+        Force regenerate thumbnails for ALL comics in a series.
+        Refactored: Delegates to the parallel engine for safety.
+        Forces 1 worker to keep it 'serial-like' if you prefer, or
+        let it use multiple cores to finish the series instantly.
+        """
 
-    def _generate_batch(self, comics: list) -> dict:
-        """Helper to process a list of comics with batch commits"""
-        stats = {"processed": 0, "errors": 0, "skipped": 0}
-        pending_changes = 0
+        # Using 2 workers is usually safe and twice as fast for a series or 1 for serial behavior
+        return self.process_missing_thumbnails_parallel(
+            force=True,
+            series_id=series_id,
+            worker_limit=1
+        )
 
-        for comic in comics:
-            try:
-                target_path = Path(f"./storage/cover/comic_{comic.id}.webp")
-
-                # Force regeneration
-                result = self.image_service.process_cover(comic.file_path, target_path)
-
-
-                if result['success']:
-                    comic.thumbnail_path = str(target_path)
-
-                    if result.get('palette'):
-                        palette = result['palette']
-                        comic.color_primary = palette.get('primary')
-                        comic.color_secondary = palette.get('secondary')
-                        comic.color_palette = palette
-
-                    stats["processed"] += 1
-                    pending_changes += 1
-                else:
-                    stats["errors"] += 1
-
-            except Exception as e:
-                self.logger.error(f"Thumbnail error {comic.id}: {e}")
-                stats["errors"] += 1
-
-            if pending_changes >= 10:
-                self.db.commit()
-                pending_changes = 0
-
-        if pending_changes > 0:
-            self.db.commit()
-
-        return stats
 
     def _get_target_comics(self, force: bool = False) -> List[Comic]:
 
@@ -281,15 +188,29 @@ class ThumbnailService:
 
         return query.all()
 
-    def process_missing_thumbnails_parallel(self, force: bool = False) -> Dict[str, int]:
+    def process_missing_thumbnails_parallel(self, force: bool = False, series_id: int = None, worker_limit: int = 0) -> Dict[str, int]:
         """
         Parallel thumbnail generation.
         The writer process handles batching automatically.
         """
-        if not self.library_id:
-            raise ValueError("Library ID required for library-wide processing")
 
-        comics = self._get_target_comics(force=force)
+        # 1. BUILD QUERY based on inputs
+        if series_id:
+            # Targeted Series Scan (Does not require self.library_id)
+            self.logger.info(f"Processing Series {series_id}")
+            comics = (self.db.query(Comic)
+                      .join(Volume)
+                      .filter(Volume.series_id == series_id)
+                      .all())
+        elif self.library_id:
+            # Library-Wide Scan (Uses existing helper)
+            self.logger.info(f"Processing Library {self.library_id}")
+            comics = self._get_target_comics(force=force)
+        else:
+            # Error: Neither target provided
+            raise ValueError("Either series_id OR initialized library_id is required")
+
+
         stats = {"processed": 0, "errors": 0, "skipped": 0}
 
         if not comics:
@@ -323,16 +244,25 @@ class ThumbnailService:
         writer_proc.start()
 
         # Determine Worker Count
-        requested_workers = get_cached_setting("system.parallel_image_workers", 0)
-        self.logger.info(f"Requested {'(Auto)' if requested_workers <= 0 else requested_workers} worker(s) for parallel thumbnail generation")
+        if worker_limit > 0:
+            workers = worker_limit  # Respect the override (e.g., 1)
 
-        if requested_workers <= 0:
-            workers = multiprocessing.cpu_count() or 1
+            if worker_limit == 1:
+                self.logger.info(f"Using exactly 1 worker for thumbnail generation (SERIAL MODE)")
+            else:
+                self.logger.info(f"Using exactly {worker_limit} worker(s) for thumbnail generation")
+
         else:
-            max_cores = multiprocessing.cpu_count() or 1
-            workers = min(requested_workers, max_cores)
+            requested_workers = get_cached_setting("system.parallel_image_workers", 0)
+            self.logger.info(f"Requested {'(Auto)' if requested_workers <= 0 else requested_workers} worker(s) for parallel thumbnail generation")
 
-        self.logger.info(f"Using {workers} workers for parallel thumbnail generation")
+            if requested_workers <= 0:
+                workers = multiprocessing.cpu_count() or 1
+            else:
+                max_cores = multiprocessing.cpu_count() or 1
+                workers = min(requested_workers, max_cores)
+
+            self.logger.info(f"Using {workers} worker(s) for parallel thumbnail generation")
 
         # Start Workers (CPU bound)
         with multiprocessing.Pool(processes=workers) as pool:

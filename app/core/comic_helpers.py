@@ -1,3 +1,4 @@
+from sqlalchemy import func, or_, not_, case, cast, Float
 from typing import Any
 from fastapi import HTTPException
 from sqlalchemy import func, or_, not_, case
@@ -7,6 +8,15 @@ from app.models.comic import Comic, Volume
 from app.models.series import Series
 from app.models.tags import Character, Team, Location, Genre
 from app.models.credits import Person, ComicCredit
+
+# Titles that number backwards (Countdown) or count down to 0 (Zero Hour)
+# where the Highest Number is actually the Debut/Cover.
+REVERSE_NUMBERING_SERIES = {
+    "countdown",
+    "countdown to final crisis",
+    "zero hour",
+    "zero hour: crisis in time"
+}
 
 # Centralized list of non-standard formats
 NON_PLAIN_FORMATS = [
@@ -49,8 +59,8 @@ def get_age_rating_config(user) -> tuple[None, None] | tuple[list[str | Any], li
     Returns:
         allowed_ratings (list): Strings that are explicitly safe.
         banned_ratings (list): Strings that are explicitly unsafe.
-        :param user: 
-        :return: 
+        :param user:
+        :return:
     """
     if not user or not user.max_age_rating:
         return None, None  # No restrictions
@@ -196,27 +206,56 @@ def get_format_filters():
     return is_plain, is_annual, is_special
 
 
-def get_smart_cover(base_query):
+def get_smart_cover(base_query, series_name: str = None):
     """
     Given a base query (filtered by series or volume), find the best cover.
     Priority:
     1. Plain Issue (not Annual/Special) AND Not Issue #0
     2. Fallback: First issue by Year/Number
+
+    Args:
+        base_query: The SQLAlchemy query object
+        series_name: Optional name to trigger "Gimmick Detection" for reverse numbering.
     """
     is_plain, _, _ = get_format_filters()
 
-    # 1. Try to find a *positive* standard issue (No #-1, #0, No Annuals)
-    cover = base_query.filter(is_plain) \
+    # Define Sort Logic
+    sort_year = case((or_(Comic.year == None, Comic.year == -1), 9999), else_=Comic.year)
+    sort_month = case((or_(Comic.month == None, Comic.month == -1), 99), else_=Comic.month)
+    sort_day = case((or_(Comic.day == None, Comic.day == -1), 99), else_=Comic.day)
+    sort_number = cast(Comic.number, Float)
+
+    # GIMMICK DETECTION
+    # If this is a known reverse-numbering series, we want the HIGHEST number
+    # (e.g., #51 or #4) to be the cover, not the lowest (#1 or #0).
+    number_direction = sort_number.asc()
+    if series_name and series_name.lower() in REVERSE_NUMBERING_SERIES:
+        number_direction = sort_number.desc()
+
+    # PHASE 1: Strict "Best Cover" Search
+    query = base_query.filter(is_plain) \
         .filter(Comic.number != '0') \
         .filter(not_(Comic.number.like('-%'))) \
-        .order_by(Comic.year, Comic.number) \
-        .first()
+        .filter(not_(Comic.number.like('%.5'))) \
+        .order_by(
+        sort_year.asc(),
+        sort_month.asc(),
+        sort_day.asc(),
+        number_direction  # Dynamic Sort Direction
+    )
 
+    cover = query.first()
     if cover:
         return cover
 
-    # 2. Fallback: Just give me the first thing you have (Annuals, #0, etc)
-    return base_query.order_by(Comic.year, Comic.number).first()
+    # PHASE 2: Fallback
+    return base_query.order_by(
+        sort_year.asc(),
+        sort_month.asc(),
+        sort_day.asc(),
+        number_direction
+    ).first()
+
 
 def get_reading_time(total_pages):
 

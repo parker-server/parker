@@ -8,6 +8,7 @@ from collections import defaultdict
 from app.core.comic_helpers import (get_format_filters, get_smart_cover,
                                     get_reading_time, NON_PLAIN_FORMATS,
                                     get_series_age_restriction, get_comic_age_restriction)
+from app.core.comic_helpers import get_format_filters, get_smart_cover, get_reading_time, NON_PLAIN_FORMATS, REVERSE_NUMBERING_SERIES
 from app.api.deps import SessionDep, CurrentUser, AdminUser, SeriesDep
 from app.api.deps import PaginationParams, PaginatedResponse
 
@@ -199,7 +200,7 @@ async def get_series_detail(series: SeriesDep, db: SessionDep, current_user: Cur
 
     # 6. Series Cover & Resume
     base_query = db.query(Comic).filter(Comic.volume_id.in_(volume_ids))
-    first_issue = get_smart_cover(base_query)
+    first_issue = get_smart_cover(base_query, series_name=series.name)
     colors = first_issue.color_palette or {} if first_issue else {}
 
     resume_comic_id = None
@@ -249,6 +250,9 @@ async def get_series_detail(series: SeriesDep, db: SessionDep, current_user: Cur
         except:
             return 999999
 
+    # Check for Gimmick Series Name once
+    is_reverse_series = series.name.lower() in REVERSE_NUMBERING_SERIES
+
     volumes_data = []
     for vol in volumes:
         stat = vol_stats_map.get(vol.id)
@@ -265,13 +269,27 @@ async def get_series_detail(series: SeriesDep, db: SessionDep, current_user: Cur
             pool = standards if standards else v_comics
 
             # 2. Try Issue #1
-            issue_ones = [c for c in pool if c.number == '1']
+            # We ONLY look for #1 if this is a standard series.
+            # If it's a Reverse Series (Countdown), #1 is the END, not the cover.
+            issue_ones = []
+            if not is_reverse_series:
+                issue_ones = [c for c in pool if c.number == '1']
+
             if issue_ones:
                 cover_id = issue_ones[0].id
             else:
-                # 3. Lowest Number
+                # 3. Sort by Lowest Number
                 pool.sort(key=issue_sort_key)
-                cover_id = pool[0].id
+
+                # 4. Gimmick Selector
+                if is_reverse_series:
+                    # Take the HIGHEST number (Last item)
+                    # e.g. Countdown #51
+                    cover_id = pool[-1].id
+                else:
+                    # Take the LOWEST number (First item)
+                    # e.g. Amazing Spider-Man #10
+                    cover_id = pool[0].id
 
         volumes_data.append({
             "volume_id": vol.id, "volume_number": vol.volume_number,
@@ -298,7 +316,8 @@ async def get_series_detail(series: SeriesDep, db: SessionDep, current_user: Cur
         "reading_lists": [{"id": l.id, "name": l.name, "description": l.description} for l in related_reading_lists],
         "story_arcs": story_arcs_data, "details": details,
         "resume_to": {"comic_id": resume_comic_id, "status": read_status},
-        "colors": colors, "is_admin": current_user.is_superuser
+        "colors": colors, "is_admin": current_user.is_superuser,
+        "is_reverse_numbering": is_reverse_series,
     }
 
 
@@ -315,7 +334,21 @@ async def get_series_issues(
 ):
     """
     Get paginated issues for a series, filtered by type, read status with sort option
+    Defaults to ASC, unless series is a known 'Reverse Numbering' title.
     """
+
+    # Fetch Series Name for Gimmick Detection
+    # We need the name to check the list.
+    # Optimization: We can just fetch the name column.
+    series_name = db.query(Series.name).filter(Series.id == series_id).scalar()
+
+    # Determine Sort Order
+    if sort_order is None:
+        if series_name and series_name.lower() in REVERSE_NUMBERING_SERIES:
+            sort_order = "desc"
+        else:
+            sort_order = "asc"
+
     # Select Comic AND the completed status
     query = db.query(Comic, ReadingProgress.completed).outerjoin(
         ReadingProgress,
@@ -483,9 +516,15 @@ async def regenerate_thumbnails(series_id: int, background_tasks: BackgroundTask
         # about Session threading.
         # Better pattern for simple tasks:
         from app.database import SessionLocal
-        with SessionLocal() as session:
-            service = ThumbnailService(session)
-            service.process_series_thumbnails(series_id)
+        import logging
+        logger = logging.getLogger(__name__)
+
+        try:
+            with SessionLocal() as session:
+                service = ThumbnailService(session)
+                service.process_series_thumbnails(series_id)
+        except Exception as e:
+            logger.exception(f"Background thumbnail generation failed for series {series_id}: {e}")
 
     background_tasks.add_task(_task)
 

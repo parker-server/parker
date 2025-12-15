@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, case
 
 from app.core.comic_helpers import get_smart_cover, NON_PLAIN_FORMATS, get_series_age_restriction
+from app.core.comic_helpers import get_smart_cover, NON_PLAIN_FORMATS, REVERSE_NUMBERING_SERIES
 from app.models.library import Library
 from app.models.series import Series
 from app.models.comic import Comic, Volume
@@ -215,14 +216,20 @@ async def get_library_series(
         cover_comic = None
         if s_comics:
 
+            # GIMMICK DETECTION
+            is_reverse = s.name.lower() in REVERSE_NUMBERING_SERIES
+
             # Filter for standards
             standards = [c for c in s_comics if is_standard_format(c.format)]
 
             # Decide which pool to search (Prefer standards, fallback to all)
             pool = standards if standards else s_comics
 
-            # Try finding issue #1 exactly in the pool
-            issue_ones = [c for c in pool if c.number == '1']
+            # Try finding issue #1 exactly in the pool (Only if NOT reverse)
+            # (Because for Countdown, #1 is the END, not the cover)
+            issue_ones = []
+            if not is_reverse:
+                issue_ones = [c for c in pool if c.number == '1']
 
             if issue_ones:
                 issue_ones.sort(key=lambda c: c.volume_number)
@@ -230,7 +237,13 @@ async def get_library_series(
             else:
                 # Fallback: Sort by number
                 pool.sort(key=issue_sort_key)
-                cover_comic = pool[0]
+
+                # If Reverse Series (Zero Hour), take the LAST item (Highest Number)
+                # If Standard Series, take the FIRST item (Lowest Number)
+                if is_reverse:
+                    cover_comic = pool[-1]
+                else:
+                    cover_comic = pool[0]
 
         items.append({
             "id": s.id,
