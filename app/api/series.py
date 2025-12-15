@@ -473,9 +473,15 @@ async def regenerate_thumbnails(series_id: int, background_tasks: BackgroundTask
         # about Session threading.
         # Better pattern for simple tasks:
         from app.database import SessionLocal
-        with SessionLocal() as session:
-            service = ThumbnailService(session)
-            service.process_series_thumbnails(series_id)
+        import logging
+        logger = logging.getLogger(__name__)
+
+        try:
+            with SessionLocal() as session:
+                service = ThumbnailService(session)
+                service.process_series_thumbnails(series_id)
+        except Exception as e:
+            logger.exception(f"Background thumbnail generation failed for series {series_id}: {e}")
 
     background_tasks.add_task(_task)
 
