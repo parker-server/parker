@@ -10,6 +10,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import portalocker
 
 from app.core.settings_loader import get_system_setting
 from app.core.security import get_redirect_url
@@ -52,33 +53,21 @@ logger = log_config.setup_logging("INFO")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
 
-    # Only run startup logic when running under Uvicorn
-    is_uvicorn = os.getenv("SERVER_SOFTWARE") == "uvicorn"
-    is_main = multiprocessing.current_process().name == "MainProcess"
+    # --- 1. GLOBAL SETUP (Run on ALL Uvicorn Workers) ---
+    # Keep this OUTSIDE the guard so every worker process gets configured logging.
+    # If we don't do this, workers will fall back to default console logging.
 
-    if not (is_uvicorn and is_main):
-        # Skip startup in workers
-        yield
-        return
-
-
-
-    # --- MAIN SERVER STARTUP ---
-    print(f"Starting {settings.app_name}")
-
-    # Silence the Uvicorn access logger (GET /api/...)
-    # Only show warnings or errors from the server itself
+    # Silence Uvicorn's default access logger to reduce noise
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
-    # Ensure directories exist
+    # Ensure directories exist (Safe to run multiple times)
     settings.log_dir.mkdir(parents=True, exist_ok=True)
     Path("storage/database").mkdir(parents=True, exist_ok=True)
     settings.cache_dir.mkdir(parents=True, exist_ok=True)
     settings.cover_dir.mkdir(parents=True, exist_ok=True)
     settings.avatar_dir.mkdir(parents=True, exist_ok=True)
 
-
-    # -- Init setting defaults when necessary
+    # -- Init DB defaults when necessary (Safe, idempotent)
     db = SessionLocal()
     try:
         SettingsService(db).initialize_defaults()
@@ -86,39 +75,63 @@ async def lifespan(app: FastAPI):
         db.close()
     # --------------------------------------
 
-    # --- SETUP LOGGING (Dynamic) ---
-    # Fetch from DB (defaults to "INFO" if the setting is missing)
-    # We use the loader because it is safe to call before the app is fully running.
+    # SETUP LOGGING
+    # Each worker configures its own logger instance pointing to the same file.
     log_level = get_system_setting("general.log_level", "INFO")
     logger = log_config.setup_logging(log_level)
 
-    logger.info(f"Application starting up (Log Level: {log_level})")
+    worker_pid = os.getpid()
+    logger.info(f"Worker process PID:{worker_pid} startup (Log Level: {log_level})")
 
-    # START WATCHER
-    library_watcher.start()
+    # --- 2. SINGLETON SETUP (Run ONLY on Main Process, cross plat.) ---
+    # This protection is strictly for the Watcher and Scheduler.
+    # We don't want 4 workers all trying to scan the library at once.
 
-    # START SCHEDULER
-    scheduler_service.start()
+    lock_file_path = settings.cache_dir / "scheduler.lock"
+    lock_file_path.parent.mkdir(parents=True, exist_ok=True)
 
-    logger.info("Parker starting up...")
-    logger.info("Frontend available at http://localhost:8000")
-    logger.info("Administration available at http://localhost:8000/admin")
-    logger.info("API docs available at http://localhost:8000/docs")
-    print(get_password_hash("admin"))
+    # We open the file, but we don't close it until shutdown
+    lock_file = open(lock_file_path, "w")
+    is_manager = False
+
+    try:
+        # Portalocker handles the OS differences automatically.
+        # LOCK_EX = Exclusive, LOCK_NB = Non-Blocking
+        portalocker.lock(lock_file, portalocker.LOCK_EX | portalocker.LOCK_NB)
+        is_manager = True
+
+        logger.info(f"Worker {worker_pid} acquired Manager Lock. Starting Watcher & Scheduler...")
+
+        # START WATCHER
+        library_watcher.start()
+
+        # START SCHEDULER
+        scheduler_service.start()
+    except:
+        # Lock is held by another worker.
+        logger.info(f"Worker {worker_pid} could not acquire lock. Skipping singletons.")
 
     yield
 
-    # Shutdown
+    # --- SHUTDOWN ---
+    logger.info(f"Worker {worker_pid} shutting down...")
 
-    # STOP WATCHER
-    library_watcher.stop()
+    if is_manager:
+        logger.info(f"Worker {worker_pid} is Manager, also stopping services...")
+        library_watcher.stop()
+        scheduler_service.stop()
 
-    # STOP SCHEDULER
-    scheduler_service.stop()
+        # Release lock
+        try:
+            portalocker.unlock(lock_file)
+            lock_file.close()
+            # Optional: Remove file (safeish, but not strictly required)
+            if lock_file_path.exists():
+                os.remove(lock_file_path)
+                logger.debug("Manager lock file deleted")
+        except Exception as e:
+            logger.error(f"Error releasing lock: {e}")
 
-    logger.info("Parker shutting down...")
-
-    print("Parker shutting down")
 
 app = FastAPI(
     title=settings.app_name,
