@@ -314,8 +314,7 @@ async def get_series_issues(
         db: SessionDep,
         type: Annotated[str, Query(pattern="^(plain|annual|special|all)$")] = "plain",
         read_filter: Annotated[str, Query(pattern="^(all|read|unread)$")] = "all",
-        # Default to None so we can detect if the user didn't specify
-        sort_order: Annotated[str, Query(pattern="^(asc|desc)$")] = None
+        sort_order: Annotated[str, Query(pattern="^(asc|desc)$")] = "asc"
 ):
     """
     Get paginated issues for a series, filtered by type, read status with sort option
