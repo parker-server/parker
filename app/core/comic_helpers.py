@@ -86,6 +86,10 @@ def get_comic_age_restriction(user, comic_model=Comic):
     if not user or not user.max_age_rating:
         return None
 
+    # Super users exempt
+    if user.is_superuser:
+        return None
+
     allowed_ratings, banned_ratings = get_age_rating_config(user)
 
     # Logic:
@@ -113,6 +117,10 @@ def get_series_age_restriction(user, series_model=Series):
     Implements 'Poison Pill' logic: Exclude series where ANY nested comic is banned.
     """
     if not user or not user.max_age_rating:
+        return None
+
+    # Super users exempt
+    if user.is_superuser:
         return None
 
     allowed_ratings, banned_ratings = get_age_rating_config(user)
