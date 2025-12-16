@@ -44,6 +44,7 @@ def bulk_serialize_series(series_list: List[Series], db, current_user) -> List[d
     if not series_list: return []
     series_ids = [s.id for s in series_list]
 
+    # --- MATH-BASED SORTING ---
     # OPTIMIZATION: Identify Reverse Series IDs in Python
     # This avoids joining the Series table in the heavy window function query.
     reverse_names = [n.lower() for n in REVERSE_NUMBERING_SERIES]
@@ -59,7 +60,6 @@ def bulk_serialize_series(series_list: List[Series], db, current_user) -> List[d
         (Volume.series_id.in_(reverse_series_ids), -1),
         else_=1
     )
-
 
     subquery = (
         db.query(
@@ -580,8 +580,8 @@ async def get_series_recommendations(series_id: int, db: SessionDep, user: Curre
                                                   "items": bulk_serialize_series(group_matches, db, user)})
 
     top_writers = db.query(Person.name).join(ComicCredit).join(Comic).join(Volume).filter(Volume.series_id == series_id,
-                                                                                          ComicCredit.role == 'writer').group_by(
-        Person.name).order_by(func.count(Person.id).desc()).limit(3).all()
+                    ComicCredit.role == 'writer').group_by(Person.name).order_by(func.count(Person.id).desc()).limit(3).all()
+
     for row in top_writers:
         writer_name = row[0]
         writer_matches = db.query(Series).join(Volume).join(Comic).join(ComicCredit).join(Person).filter(
