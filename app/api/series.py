@@ -6,9 +6,8 @@ from datetime import datetime, timezone
 from collections import defaultdict
 
 from app.core.comic_helpers import (get_format_filters, get_smart_cover,
-                                    get_reading_time, NON_PLAIN_FORMATS,
+                                    get_reading_time, NON_PLAIN_FORMATS, REVERSE_NUMBERING_SERIES,
                                     get_series_age_restriction, get_comic_age_restriction)
-from app.core.comic_helpers import get_format_filters, get_smart_cover, get_reading_time, NON_PLAIN_FORMATS, REVERSE_NUMBERING_SERIES
 from app.api.deps import SessionDep, CurrentUser, AdminUser, SeriesDep
 from app.api.deps import PaginationParams, PaginatedResponse
 
@@ -45,12 +44,34 @@ def bulk_serialize_series(series_list: List[Series], db, current_user) -> List[d
     if not series_list: return []
     series_ids = [s.id for s in series_list]
 
+    # OPTIMIZATION: Identify Reverse Series IDs in Python
+    # This avoids joining the Series table in the heavy window function query.
+    reverse_names = [n.lower() for n in REVERSE_NUMBERING_SERIES]
+
+    # Check which of the current batch are reverse series
+    reverse_series_ids = [
+        s.id for s in series_list
+        if s.name.lower() in reverse_names
+    ]
+
+    # Logic: If series_id is in our list, sort by (Number * -1). Else (Number * 1).
+    sort_expression = case(
+        (Volume.series_id.in_(reverse_series_ids), -1),
+        else_=1
+    )
+
+
     subquery = (
         db.query(
             Comic.id, Comic.year, Volume.series_id,
-            func.row_number().over(partition_by=Volume.series_id, order_by=func.cast(Comic.number, Float).asc()).label(
-                "rn")
-        ).join(Volume).filter(Volume.series_id.in_(series_ids)).subquery()
+            func.row_number().over(
+                partition_by=Volume.series_id,
+                order_by=(func.cast(Comic.number, Float) * sort_expression)
+            ).label("rn")
+        )
+        .join(Volume)
+        .filter(Volume.series_id.in_(series_ids))
+        .subquery()
     )
 
     covers = db.query(subquery).filter(subquery.c.rn == 1).all()
@@ -105,7 +126,6 @@ async def get_series_detail(series: SeriesDep, db: SessionDep, current_user: Cur
         is_allowed = db.query(Series.id).filter(Series.id == series.id, age_filter).first()
         if not is_allowed:
             raise HTTPException(status_code=403, detail="Content restricted by age rating")
-
 
 
     # 1. Get Volumes (sorted by volume_number)
@@ -417,7 +437,7 @@ async def list_series(
 ):
     query = db.query(Series)
 
-    # 0. Apply Security Filter (unless Superuser)
+    # 1. Apply Security Filter (unless Superuser)
     if not current_user.is_superuser:
         allowed_ids = [lib.id for lib in current_user.accessible_libraries]
         query = query.filter(Series.library_id.in_(allowed_ids))
@@ -432,14 +452,6 @@ async def list_series(
         if age_filter is not None:
             query = query.filter(age_filter)
         # -------------------------
-
-
-    # 1. Apply Security Filter (unless Superuser)
-    if not current_user.is_superuser:
-        # Join Library to check permissions
-        # Filter where Series.library_id is in user.accessible_libraries
-        allowed_ids = [lib.id for lib in current_user.accessible_libraries]
-        query = query.filter(Series.library_id.in_(allowed_ids))
 
     # Filter Starred
     if only_starred:
