@@ -7,7 +7,7 @@ from datetime import datetime, timezone, timedelta
 
 from app.core.settings_loader import get_cached_setting
 from app.api.deps import SessionDep, CurrentUser
-from app.core.comic_helpers import get_smart_cover
+from app.core.comic_helpers import get_smart_cover, get_comic_age_restriction, get_series_age_restriction
 from app.models.comic import Comic, Volume
 from app.models.series import Series
 from app.models.user import User
@@ -53,12 +53,18 @@ def get_random_gems(
 
     """
     Get random Series. Great for 'Spin the Wheel' discovery.
+    Secured with Age Restrictions.
     """
     # 1. Query Random Series
-    random_series = db.query(Series) \
-        .order_by(func.random()) \
-        .limit(limit) \
-        .all()
+    query = db.query(Series)
+
+    # --- AGE RESTRICTION ---
+    age_filter = get_series_age_restriction(current_user)
+    if age_filter is not None:
+        query = query.filter(age_filter)
+    # -----------------------
+
+    random_series = query.order_by(func.random()).limit(limit).all()
 
     if not random_series:
         return []
@@ -130,13 +136,19 @@ def get_top_rated(
     """
     Get issues with High Community Rating (4.0+).
     Eager loads relationships to avoid N+1.
+    Secured with age restriction
     """
-    gems = db.query(Comic) \
+    query = db.query(Comic) \
         .options(joinedload(Comic.volume).joinedload(Volume.series)) \
-        .filter(Comic.community_rating >= 4.0) \
-        .order_by(desc(Comic.community_rating)) \
-        .limit(limit) \
-        .all()
+        .filter(Comic.community_rating >= 4.0)
+
+    # --- AGE RESTRICTION ---
+    age_filter = get_comic_age_restriction(current_user)
+    if age_filter is not None:
+        query = query.filter(age_filter)
+    # -----------------------
+
+    gems = query.order_by(desc(Comic.community_rating)).limit(limit).all()
 
     return [format_home_item(c) for c in gems]
 
@@ -165,6 +177,12 @@ def get_resume_reading(
         ReadingProgress.current_page > 0
     )
 
+    # --- AGE RESTRICTION ---
+    age_filter = get_comic_age_restriction(current_user)
+    if age_filter is not None:
+        query = query.filter(age_filter)
+    # -----------------------
+
     # 3. Apply Staleness Filter
     if cutoff_date:
         query = query.filter(ReadingProgress.last_read_at >= cutoff_date)
@@ -182,7 +200,10 @@ def get_up_next(
         current_user: CurrentUser,
         limit: int = 10
 ):
-    """Get the NEXT issue for series recently read. Handles Reverse Numbering"""
+    """
+    Get the NEXT issue for series recently read. Handles Reverse Numbering
+    Secured for age rating
+    """
 
     # 1. Calculate Cutoff (Reuse the same setting for consistency)
     staleness_weeks = get_cached_setting("ui.on_deck.staleness_weeks", default=4)
@@ -192,6 +213,8 @@ def get_up_next(
 
     # 2. Get recently completed comics
     # Eager load Series/Volume here so we don't query them later in the loop
+    # Note: We don't filter HISTORY by age, because you already read it.
+    # We WILL filter the suggestion (the next book).
     history_query = db.query(ReadingProgress) \
         .join(Comic).join(Volume).join(Series) \
         .options(joinedload(ReadingProgress.comic).joinedload(Comic.volume).joinedload(Volume.series)) \
@@ -221,6 +244,9 @@ def get_up_next(
     seen_series = set()
     results = []
 
+    # Prepare Age Filter for the loop
+    age_filter = get_comic_age_restriction(current_user)
+
     for progress in recent_history:
         # Access via eager loaded relationship (no query)
 
@@ -246,26 +272,34 @@ def get_up_next(
             # Find next issue (LOWER number)
             # We want the largest number that is SMALLER than current
             # e.g. Current=51, we want 50.
-            next_comic = db.query(Comic) \
+            next_query = db.query(Comic) \
                 .options(joinedload(Comic.volume).joinedload(Volume.series)) \
                 .filter(
                 Comic.volume_id == progress.comic.volume_id,
                 cast(Comic.number, Float) < current_number
-            ).order_by(cast(Comic.number, Float).desc()).first()
+            )
 
         else:
             # Standard Logic (Higher number)
             # Find the next comic
             # We're still going to run 1 query here per series, but it's very fast on SQLite
             # because it's a simple indexed lookup on (volume_id, number).
-            next_comic = db.query(Comic) \
+            next_query = db.query(Comic) \
                 .options(joinedload(Comic.volume).joinedload(Volume.series)) \
                 .filter(
                 Comic.volume_id == progress.comic.volume_id,
                 cast(Comic.number, Float) > current_number
-            ).order_by(cast(Comic.number, Float).asc()).first()
+            )
 
-            pass
+        # --- APPLY AGE FILTER TO SUGGESTION ---
+        if age_filter is not None:
+            next_query = next_query.filter(age_filter)
+        # --------------------------------------
+
+        if is_reverse:
+            next_comic = next_query.order_by(cast(Comic.number, Float).desc()).first()
+        else:
+            next_comic = next_query.order_by(cast(Comic.number, Float).asc()).first()
 
         if next_comic:
             # Check memory set instead of DB
@@ -286,17 +320,28 @@ def get_popular(
     """
     Get 'Trending' Series based on other users' reading activity.
     Respects the 'share_progress_enabled' privacy setting.
+    Secured for age rating
     """
 
     # 1. Aggregation Query
     # Find Series with the most DISTINCT users reading them (excluding me)
-    popular_series = (
+    popular_series_query = (
         db.query(Series)
         .join(Volume).join(Comic).join(ReadingProgress)
         .join(User)
         .filter(User.share_progress_enabled == True)
-        .filter(ReadingProgress.user_id != current_user.id)
-        .group_by(Series.id)
+        .filter(ReadingProgress.user_id != current_user.id) # Dont include ourselves
+    )
+
+    # --- AGE RESTRICTION ---
+    # Apply Series Level Poison Pill
+    age_filter = get_series_age_restriction(current_user)
+    if age_filter is not None:
+        popular_series_query = popular_series_query.filter(age_filter)
+    # -----------------------
+
+    popular_series = (
+        popular_series_query.group_by(Series.id)
         .order_by(func.count(ReadingProgress.user_id.distinct()).desc())
         .limit(limit)
         .all()
