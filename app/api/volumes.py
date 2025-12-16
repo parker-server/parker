@@ -5,7 +5,7 @@ from sqlalchemy.orm import joinedload
 from typing import List, Annotated
 
 from app.core.comic_helpers import (get_format_filters, get_smart_cover, get_reading_time,
-                                    REVERSE_NUMBERING_SERIES, get_comic_age_restriction, get_age_rating_config)
+                                    REVERSE_NUMBERING_SERIES, get_age_rating_config)
 
 from app.api.deps import SessionDep, CurrentUser, VolumeDep
 from app.api.deps import PaginationParams, PaginatedResponse
