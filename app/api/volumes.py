@@ -4,10 +4,9 @@ from sqlalchemy.orm import joinedload
 
 from typing import List, Annotated
 
-from app.core.comic_helpers import (get_format_filters, get_smart_cover, get_reading_time,
-                                    get_comic_age_restriction, get_age_rating_config)
-from app.core.comic_helpers import get_format_filters, get_smart_cover, get_reading_time, REVERSE_NUMBERING_SERIES
-
+from app.core.comic_helpers import (get_comic_age_restriction, get_age_rating_config, REVERSE_NUMBERING_SERIES,
+                                    get_format_filters, get_smart_cover, get_reading_time
+                                    )
 from app.api.deps import SessionDep, CurrentUser, VolumeDep
 from app.api.deps import PaginationParams, PaginatedResponse
 
@@ -68,8 +67,6 @@ async def get_volume_detail(volume: VolumeDep, db: SessionDep, current_user: Cur
         if has_banned_content:
             raise HTTPException(status_code=403, detail="Volume contains age-restricted content")
     # --------------------------------------
-
-
 
     # Filters
     is_plain, is_annual, is_special = get_format_filters()
