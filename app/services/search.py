@@ -9,6 +9,7 @@ from app.models import (Comic, Volume, Series,
                         PullList, PullListItem,
                         Library, User)
 
+from app.core.comic_helpers import get_comic_age_restriction
 from app.schemas.search import SearchRequest, SearchFilter
 
 
@@ -27,6 +28,15 @@ class SearchService:
         # 1. Apply Library Context Scope
         if hasattr(request, 'context_library_id') and request.context_library_id:
             query = query.filter(Series.library_id == request.context_library_id)
+
+        # --- AGE RATING SECURITY ---
+        # Ensure every search respects the user's age restrictions. (non admins)
+        # This covers Advanced Search AND Smart Lists.
+        age_filter = get_comic_age_restriction(self.user)
+        if age_filter is not None:
+            query = query.filter(age_filter)
+        # ---------------------------
+
 
         # Build filter conditions
         if request.filters:
