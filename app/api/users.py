@@ -7,19 +7,19 @@ from typing import List, Annotated, Optional
 from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
 from pathlib import Path
-from sqlalchemy import func
+from sqlalchemy import func, not_
 
 
 from app.api.deps import SessionDep, AdminUser, CurrentUser, PaginatedResponse, PaginationParams
 from app.config import settings
-from app.core.comic_helpers import get_reading_time
+from app.core.comic_helpers import get_reading_time, get_banned_comic_condition
 from app.core.security import verify_password, get_password_hash
 from app.models.comic import Comic, Volume
 from app.models.series import Series
 from app.models.user import User
 from app.models.library import Library
 from app.models.reading_progress import ReadingProgress
-from app.models.pull_list import PullList
+from app.models.pull_list import PullList, PullListItem
 from app.services.images import ImageService
 from app.services.settings_service import SettingsService
 
@@ -28,7 +28,6 @@ router = APIRouter()
 MAX_AVATAR_SIZE_BYTES = 5 * 1024 * 1024 # 5 MB
 
 # Schemas
-
 class UserBase(BaseModel):
     email: str | None = None
     username: str | None = None
@@ -47,6 +46,8 @@ class UserCreateRequest(UserBase):
     password: str
     is_superuser: bool = False
     library_ids: List[int] = Field(default_factory=list)
+    max_age_rating: Optional[str] = None
+    allow_unknown_age_ratings: bool = False
 
 class UserUpdateRequest(UserBase):
     password: str | None = None
@@ -54,7 +55,8 @@ class UserUpdateRequest(UserBase):
     is_superuser: bool | None = None
     is_active: bool | None = None
     library_ids: List[int] | None = None
-
+    max_age_rating: Optional[str] = None
+    allow_unknown_age_ratings: Optional[bool] = None
 
 class UserListResponse(BaseModel):
     id: int
@@ -67,6 +69,8 @@ class UserListResponse(BaseModel):
     # We don't necessarily need to return the full library objects in the list view,
     # but we might want the IDs for the edit form.
     accessible_library_ids: List[int] = []
+    max_age_rating: Optional[str]
+    allow_unknown_age_ratings: bool
 
 class UserPasswordUpdateRequest(BaseModel):
     current_password: str
@@ -84,11 +88,17 @@ async def get_user_dashboard(db: SessionDep, current_user: CurrentUser):
     """
     Aggregate stats and lists for the User Dashboard.
     OPTIMIZED: Eager loads relationships to prevent N+1 queries on the Dashboard.
+    Filters out age-restricted content from Stats, Pull Lists, and Continue Reading.
     """
 
     # --- Check OPDS Status ---
     settings_svc = SettingsService(db)
     opds_enabled = settings_svc.get("server.opds_enabled")
+
+    # --- PREPARE SECURITY FILTER ---
+    banned_condition = None
+    if current_user.max_age_rating:
+        banned_condition = get_banned_comic_condition(current_user)
 
     # 1. Calculate Stats
     # Join Progress -> Comic to get page counts
@@ -99,29 +109,46 @@ async def get_user_dashboard(db: SessionDep, current_user: CurrentUser):
         .filter(
         ReadingProgress.user_id == current_user.id,
         ReadingProgress.completed == True
-    ).first()
+    )
 
-    issues_read = stats_query.issues_read or 0
-    total_pages = stats_query.total_pages or 0
+    if banned_condition is not None:
+        stats_query = stats_query.filter(not_(banned_condition))
+
+    stats_result = stats_query.first()
+
+    issues_read = stats_result.issues_read or 0
+    total_pages = stats_result.total_pages or 0
 
     # Calculate Time (1.25 mins per page)
     time_read_str = get_reading_time(total_pages)
 
     # 2. Get Pull Lists (Limit 5 for dashboard overview)
     # OPTIMIZATION: selectinload(PullList.items) prevents N+1 when calling len(pl.items) later
-    pull_lists = db.query(PullList).options(selectinload(PullList.items)) \
+    pull_lists_query = db.query(PullList).options(selectinload(PullList.items)) \
         .filter(PullList.user_id == current_user.id) \
-        .order_by(PullList.updated_at.desc()).limit(5).all()
+        .order_by(PullList.updated_at.desc())
+
+    if banned_condition is not None:
+        pull_lists_query = pull_lists_query.filter(
+            ~PullList.items.any(PullListItem.comic.has(banned_condition))
+        )
+
+    pull_lists = pull_lists_query.limit(5).all()
 
     # 3. Get "Continue Reading" (Limit 6)
     # OPTIMIZATION: joinedload Comic->Volume->Series to prevent N+1 loop during formatting
-    recent_progress = db.query(ReadingProgress).options(
+    recent_progress_query = db.query(ReadingProgress).options(
         joinedload(ReadingProgress.comic).joinedload(Comic.volume).joinedload(Volume.series)
     ).filter(
         ReadingProgress.user_id == current_user.id,
         ReadingProgress.completed == False,
         ReadingProgress.current_page > 0
-    ).order_by(ReadingProgress.last_read_at.desc()).limit(6).all()
+    )
+
+    if banned_condition is not None:
+        recent_progress_query = recent_progress_query.filter(not_(banned_condition))
+
+    recent_progress = recent_progress_query.order_by(ReadingProgress.last_read_at.desc()).limit(6).all()
 
     continue_reading = []
     for p in recent_progress:
@@ -289,7 +316,9 @@ async def list_users(
             "email": u.email,
             "created_at": u.created_at,
             "last_login": u.last_login,
-            "accessible_library_ids": [lib.id for lib in u.accessible_libraries]
+            "accessible_library_ids": [lib.id for lib in u.accessible_libraries],
+            "max_age_rating": u.max_age_rating,
+            "allow_unknown_age_ratings": u.allow_unknown_age_ratings
         })
 
 
@@ -323,7 +352,9 @@ async def create_user(
         hashed_password=get_password_hash(user_in.password),
         is_superuser=user_in.is_superuser,
         is_active=True,
-        accessible_libraries = libraries
+        accessible_libraries = libraries,
+        max_age_rating=user_in.max_age_rating,
+        allow_unknown_age_ratings=user_in.allow_unknown_age_ratings
     )
     db.add(user)
     db.commit()
@@ -360,6 +391,13 @@ async def update_user(
     if updates.library_ids is not None:
         libraries = db.query(Library).filter(Library.id.in_(updates.library_ids)).all()
         user.accessible_libraries = libraries
+
+    if updates.max_age_rating is not None:
+        # Allow clearing the rating by sending empty string, or setting it
+        user.max_age_rating = updates.max_age_rating if updates.max_age_rating else None
+
+    if updates.allow_unknown_age_ratings is not None:
+        user.allow_unknown_age_ratings = updates.allow_unknown_age_ratings
 
     db.commit()
     return {"message": "User updated"}

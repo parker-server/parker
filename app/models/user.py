@@ -22,6 +22,9 @@ class User(Base):
     avatar_path = Column(String, nullable=True)
     share_progress_enabled = Column(Boolean, default=False)
 
+    max_age_rating = Column(String, nullable=True, default=None)
+    allow_unknown_age_ratings = Column(Boolean, default=False)
+
     # Permissions
     is_active = Column(Boolean, default=True)
     is_superuser = Column(Boolean, default=False)

@@ -53,114 +53,155 @@
     </div>
 
     <div class="mt-12 flex justify-center items-center space-x-4 border-t border-gray-700 pt-6">
-        <button
-            x-on:click="changePage(currentPage - 1)"
-            x-bind:disabled="currentPage === 1"
-            class="px-4 py-2 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors border border-gray-600"
-        >
-            Previous
-        </button>
-
-        <span class="text-gray-400">
-            Page <span class="text-white font-bold" x-text="currentPage"></span> of <span x-text="Math.ceil(totalItems / pageSize)"></span>
-        </span>
-
-        <button
-            x-on:click="changePage(currentPage + 1)"
-            x-bind:disabled="currentPage >= Math.ceil(totalItems / pageSize)"
-            class="px-4 py-2 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors border border-gray-600"
-        >
-            Next
-        </button>
+        <button x-on:click="changePage(currentPage - 1)" x-bind:disabled="currentPage === 1" class="px-4 py-2 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors border border-gray-600">Previous</button>
+        <span class="text-gray-400">Page <span class="text-white font-bold" x-text="currentPage"></span> of <span x-text="Math.ceil(totalItems / pageSize)"></span></span>
+        <button x-on:click="changePage(currentPage + 1)" x-bind:disabled="currentPage >= Math.ceil(totalItems / pageSize)" class="px-4 py-2 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors border border-gray-600">Next</button>
     </div>
 
-    <div x-show="showAddModal" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50" style="display: none;" x-transition.opacity>
-        <div class="bg-gray-800 p-6 rounded-lg w-full max-w-md border border-gray-700 shadow-2xl" @click.away="showAddModal = false">
-            <h2 class="text-xl font-bold mb-4">Create New User</h2>
-            <div class="space-y-4">
-                <input type="text" x-model="newUser.username" placeholder="Username" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white focus:border-blue-500 outline-none">
-                <input type="email" x-model="newUser.email" placeholder="Email" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white focus:border-blue-500 outline-none">
-                <input type="password" x-model="newUser.password" placeholder="Password" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white focus:border-blue-500 outline-none">
+    <div x-show="showAddModal" class="fixed inset-0 bg-black/80 flex items-center justify-center z-[200] p-4" style="display: none;" x-transition.opacity>
+        <div class="bg-gray-800 rounded-lg w-full max-w-2xl max-h-[90vh] border border-gray-700 shadow-2xl flex flex-col" @click.away="showAddModal = false">
 
-                <div class="flex items-center gap-2">
-                    <input type="checkbox" x-model="newUser.is_superuser" id="new_is_admin" class="rounded bg-gray-700 border-gray-600 text-blue-600 focus:ring-blue-500">
-                    <label for="new_is_admin" class="text-gray-300 select-none">Is Admin? (Full Access)</label>
-                </div>
+            <div class="px-6 py-4 border-b border-gray-700 bg-gray-850 rounded-t-lg shrink-0">
+                <h2 class="text-xl font-bold">Create New User</h2>
+            </div>
 
-                <div class="space-y-2 transition-opacity duration-200" :class="newUser.is_superuser ? 'opacity-50 pointer-events-none' : ''">
-                    <label class="block text-sm text-gray-400">Allowed Libraries</label>
-                    <div class="bg-gray-900 border border-gray-700 rounded p-3 max-h-40 overflow-y-auto">
-                        <template x-for="lib in allLibraries" :key="lib.id">
-                            <div class="flex items-center gap-2 mb-2 last:mb-0">
-                                <input
-                                    type="checkbox"
-                                    :value="lib.id"
-                                    x-model="newUser.library_ids"
-                                    class="rounded bg-gray-700 border-gray-600 text-blue-600 focus:ring-blue-500"
-                                >
-                                <span class="text-gray-300 text-sm" x-text="lib.name"></span>
+            <div class="p-6 overflow-y-auto">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+                    <div class="space-y-4">
+                        <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-700 pb-2">Account Details</h3>
+
+                        <input type="text" x-model="newUser.username" placeholder="Username" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white focus:border-blue-500 outline-none">
+                        <input type="email" x-model="newUser.email" placeholder="Email" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white focus:border-blue-500 outline-none">
+                        <input type="password" x-model="newUser.password" placeholder="Password" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white focus:border-blue-500 outline-none">
+
+                        <div class="bg-gray-900/50 p-3 rounded border border-gray-700/50">
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" x-model="newUser.is_superuser" id="new_is_admin" class="rounded bg-gray-700 border-gray-600 text-blue-600 focus:ring-blue-500 h-4 w-4">
+                                <label for="new_is_admin" class="text-gray-300 select-none font-medium">Administrator</label>
                             </div>
-                        </template>
-                        <div x-show="allLibraries.length === 0" class="text-gray-500 text-xs italic">No libraries found.</div>
+                            <p class="text-xs text-gray-500 mt-1 ml-6">Grants full access to all libraries and settings.</p>
+                        </div>
+                    </div>
+
+                    <div class="space-y-4">
+                        <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-700 pb-2">Access Control</h3>
+
+                        <div class="space-y-2 transition-opacity duration-200" :class="newUser.is_superuser ? 'opacity-50 pointer-events-none' : ''">
+                            <label class="block text-sm text-gray-400">Allowed Libraries</label>
+                            <div class="bg-gray-900 border border-gray-700 rounded p-3 h-32 overflow-y-auto">
+                                <template x-for="lib in allLibraries" :key="lib.id">
+                                    <div class="flex items-center gap-2 mb-2 last:mb-0">
+                                        <input type="checkbox" :value="lib.id" x-model="newUser.library_ids" class="rounded bg-gray-700 border-gray-600 text-blue-600 focus:ring-blue-500">
+                                        <span class="text-gray-300 text-sm" x-text="lib.name"></span>
+                                    </div>
+                                </template>
+                                <div x-show="allLibraries.length === 0" class="text-gray-500 text-xs italic">No libraries found.</div>
+                            </div>
+                        </div>
+
+                        <div class="space-y-3">
+                            <div>
+                                <label class="block text-sm text-gray-400 mb-1">Max Age Rating</label>
+                                <select x-model="newUser.max_age_rating" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-white focus:border-blue-500 outline-none">
+                                    <option value="">No Restriction (Allow All)</option>
+                                    <template x-for="rating in ageRatings" :key="rating">
+                                        <option :value="rating" x-text="rating"></option>
+                                    </template>
+                                </select>
+                            </div>
+
+                            <div class="flex items-start gap-2">
+                                <input type="checkbox" x-model="newUser.allow_unknown_age_ratings" id="new_allow_unknown" class="mt-1 rounded bg-gray-700 border-gray-600 text-blue-600 focus:ring-blue-500">
+                                <label for="new_allow_unknown" class="text-gray-300 text-sm leading-tight select-none">Include content with missing/unknown age ratings</label>
+                            </div>
+                        </div>
                     </div>
                 </div>
+            </div>
 
-                <div class="flex justify-end gap-2 mt-6">
-                    <button @click="showAddModal = false" class="text-gray-400 hover:text-white px-4 py-2 transition-colors">Cancel</button>
-                    <button @click="createUser()" class="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded transition-colors shadow-lg">Create User</button>
-                </div>
+            <div class="px-6 py-4 border-t border-gray-700 bg-gray-850 rounded-b-lg flex justify-end gap-3 shrink-0">
+                <button @click="showAddModal = false" class="text-gray-400 hover:text-white px-4 py-2 transition-colors text-sm font-medium">Cancel</button>
+                <button @click="createUser()" class="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded transition-colors shadow-lg text-sm font-bold">Create User</button>
             </div>
         </div>
     </div>
 
-    <div x-show="showEditModal" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50" style="display: none;" x-transition.opacity>
-        <div class="bg-gray-800 p-6 rounded-lg w-full max-w-md border border-gray-700 shadow-2xl" @click.away="showEditModal = false">
-            <h2 class="text-xl font-bold mb-4">Edit User: <span x-text="editingUser.username" class="text-blue-400"></span></h2>
-            <div class="space-y-4">
+    <div x-show="showEditModal" class="fixed inset-0 bg-black/80 flex items-center justify-center z-[200] p-4" style="display: none;" x-transition.opacity>
+        <div class="bg-gray-800 rounded-lg w-full max-w-2xl max-h-[90vh] border border-gray-700 shadow-2xl flex flex-col" @click.away="showEditModal = false">
 
-                <div>
-                    <label class="block text-xs text-gray-500 uppercase mb-1">Change Password (Optional)</label>
-                    <input type="password" x-model="editingUser.password" placeholder="Leave blank to keep current" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white focus:border-blue-500 outline-none">
-                </div>
+            <div class="px-6 py-4 border-b border-gray-700 bg-gray-850 rounded-t-lg shrink-0">
+                <h2 class="text-xl font-bold">Edit User: <span x-text="editingUser.username" class="text-blue-400"></span></h2>
+            </div>
 
-                <div>
-                    <label class="block text-xs text-gray-500 uppercase mb-1">Email</label>
-                    <input type="email" x-model="editingUser.email" placeholder="Email" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white focus:border-blue-500 outline-none" required="required">
-                </div>
+            <div class="p-6 overflow-y-auto">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
 
-                <div class="space-y-2 pt-2">
-                    <div class="flex items-center gap-2">
-                        <input type="checkbox" x-model="editingUser.is_active" id="edit_is_active" class="rounded bg-gray-700 border-gray-600 text-blue-600 focus:ring-blue-500" x-bind:class="editingUser.id === 1 ? 'opacity-50 pointer-events-none' : ''">
-                        <label for="edit_is_active" class="text-gray-300 select-none" x-bind:class="editingUser.id === 1 ? 'opacity-50 pointer-events-none' : ''">Account Active</label>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <input type="checkbox" x-model="editingUser.is_superuser" id="edit_is_admin" class="rounded bg-gray-700 border-gray-600 text-blue-600 focus:ring-blue-500" x-bind:class="editingUser.id === 1 ? 'opacity-50 pointer-events-none' : ''">
-                        <label for="edit_is_admin" class="text-gray-300 select-none" x-bind:class="editingUser.id === 1 ? 'opacity-50 pointer-events-none' : ''">Is Admin? (Full Access)</label>
-                    </div>
-                </div>
+                    <div class="space-y-4">
+                        <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-700 pb-2">Account Settings</h3>
 
-                <div class="space-y-2 pt-2 transition-opacity duration-200" :class="editingUser.is_superuser ? 'opacity-50 pointer-events-none' : ''">
-                    <label class="block text-sm text-gray-400">Allowed Libraries</label>
-                    <div class="bg-gray-900 border border-gray-700 rounded p-3 max-h-40 overflow-y-auto">
-                        <template x-for="lib in allLibraries" :key="lib.id">
-                            <div class="flex items-center gap-2 mb-2 last:mb-0">
-                                <input
-                                    type="checkbox"
-                                    :value="lib.id"
-                                    x-model="editingUser.library_ids"
-                                    class="rounded bg-gray-700 border-gray-600 text-blue-600 focus:ring-blue-500"
-                                >
-                                <span class="text-gray-300 text-sm" x-text="lib.name"></span>
+                        <div>
+                            <label class="block text-xs text-gray-500 uppercase mb-1">Email Address</label>
+                            <input type="email" x-model="editingUser.email" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white focus:border-blue-500 outline-none" required>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs text-gray-500 uppercase mb-1">New Password (Optional)</label>
+                            <input type="password" x-model="editingUser.password" placeholder="Leave blank to keep current" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white focus:border-blue-500 outline-none">
+                        </div>
+
+                        <div class="bg-gray-900/50 p-3 rounded border border-gray-700/50 space-y-2">
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" x-model="editingUser.is_active" id="edit_is_active" class="rounded bg-gray-700 border-gray-600 text-blue-600 focus:ring-blue-500" :disabled="editingUser.id === 1" :class="editingUser.id === 1 ? 'opacity-50' : ''">
+                                <label for="edit_is_active" class="text-gray-300 select-none">Account Active</label>
                             </div>
-                        </template>
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" x-model="editingUser.is_superuser" id="edit_is_admin" class="rounded bg-gray-700 border-gray-600 text-blue-600 focus:ring-blue-500" :disabled="editingUser.id === 1" :class="editingUser.id === 1 ? 'opacity-50' : ''">
+                                <label for="edit_is_admin" class="text-gray-300 select-none">Administrator</label>
+                            </div>
+                        </div>
                     </div>
-                    <p x-show="editingUser.is_superuser" class="text-xs text-blue-400 mt-1">Admins have access to all libraries.</p>
-                </div>
 
-                <div class="flex justify-end gap-2 mt-6">
-                    <button x-on:click="showEditModal = false" class="text-gray-400 hover:text-white px-4 py-2 transition-colors">Cancel</button>
-                    <button x-on:click="saveUser()" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded transition-colors shadow-lg">Save Changes</button>
+                    <div class="space-y-4">
+                        <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-700 pb-2">Access Control</h3>
+
+                        <div class="space-y-2 transition-opacity duration-200" :class="editingUser.is_superuser ? 'opacity-50 pointer-events-none' : ''">
+                            <label class="block text-sm text-gray-400">Allowed Libraries</label>
+                            <div class="bg-gray-900 border border-gray-700 rounded p-3 h-32 overflow-y-auto">
+                                <template x-for="lib in allLibraries" :key="lib.id">
+                                    <div class="flex items-center gap-2 mb-2 last:mb-0">
+                                        <input type="checkbox" :value="lib.id" x-model="editingUser.library_ids" class="rounded bg-gray-700 border-gray-600 text-blue-600 focus:ring-blue-500">
+                                        <span class="text-gray-300 text-sm" x-text="lib.name"></span>
+                                    </div>
+                                </template>
+                            </div>
+                            <p x-show="editingUser.is_superuser" class="text-xs text-blue-400 mt-1">Admins have access to all libraries.</p>
+                        </div>
+
+                        <div class="space-y-3 pt-2 border-t border-gray-700/50">
+                            <div>
+                                <label class="block text-sm text-gray-400 mb-1">Max Age Rating</label>
+                                <select x-model="editingUser.max_age_rating" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-white focus:border-blue-500 outline-none">
+                                    <option value="">No Restriction (Allow All)</option>
+                                    <template x-for="rating in ageRatings" :key="rating">
+                                        <option :value="rating" x-text="rating"></option>
+                                    </template>
+                                </select>
+                            </div>
+
+                            <div class="flex items-start gap-2">
+                                <input type="checkbox" x-model="editingUser.allow_unknown_age_ratings" id="edit_allow_unknown" class="mt-1 rounded bg-gray-700 border-gray-600 text-blue-600 focus:ring-blue-500">
+                                <label for="edit_allow_unknown" class="text-gray-300 text-sm leading-tight select-none">Include content with missing/unknown age ratings</label>
+                            </div>
+                        </div>
+                    </div>
+
                 </div>
+            </div>
+
+            <div class="px-6 py-4 border-t border-gray-700 bg-gray-850 rounded-b-lg flex justify-end gap-3 shrink-0">
+                <button x-on:click="showEditModal = false" class="text-gray-400 hover:text-white px-4 py-2 transition-colors text-sm font-medium">Cancel</button>
+                <button x-on:click="saveUser()" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded transition-colors shadow-lg text-sm font-bold">Save Changes</button>
             </div>
         </div>
     </div>
@@ -168,18 +209,32 @@
 </div>
 
 <script>
+// Hierarchy Constant
+const AGE_RATINGS = [
+    "Early Childhood", "Everyone", "G", "Kids to Adults",
+    "Everyone 10+", "PG", "Teen", "Rating Pending",
+    "M", "MA15+", "Mature 17+", "Adults Only 18+", "R18+", "X18+"
+];
+
 function userManager() {
     return {
         users: [],
         allLibraries: [],
+        ageRatings: AGE_RATINGS,
 
         // Modal States
         showAddModal: false,
         showEditModal: false,
 
         // Data Models
-        newUser: { username: '', email: '', password: '', is_superuser: false, library_ids: [] },
-        editingUser: { id: null, username: '', password: '', email: '', is_superuser: false, is_active: true, library_ids: [] },
+        newUser: {
+            username: '', email: '', password: '', is_superuser: false, library_ids: [],
+            max_age_rating: '', allow_unknown_age_ratings: false
+        },
+        editingUser: {
+            id: null, username: '', password: '', email: '', is_superuser: false, is_active: true, library_ids: [],
+            max_age_rating: '', allow_unknown_age_ratings: false
+        },
 
         // Pagination State
         currentPage: 1,
@@ -193,7 +248,7 @@ function userManager() {
 
         async loadUsers() {
             try {
-                const res = await fetch(window.parker.route('users.list', {}, `page=${this.currentPage}&size=${this.pageSize}`)    );
+                const res = await fetch(window.parker.route('users.list', {}, `page=${this.currentPage}&size=${this.pageSize}`));
                 if (res.ok) {
                     const data = await res.json();
                     this.users = data.items;
@@ -210,7 +265,10 @@ function userManager() {
         },
 
         openAddModal() {
-            this.newUser = { username: '', email: '', password: '', is_superuser: false, library_ids: [] };
+            this.newUser = {
+                username: '', email: '', password: '', is_superuser: false, library_ids: [],
+                max_age_rating: '', allow_unknown_age_ratings: false
+            };
             this.showAddModal = true;
         },
 
@@ -223,10 +281,11 @@ function userManager() {
             if (res.ok) {
                 this.showAddModal = false;
                 await this.loadUsers();
+                window.showToast('User created successfully.', 'success');
             } else {
                 const err = await res.json();
-                const message = err.detail?.[0]?.msg;
-                window.showToast(`Failed to create user: ${message || 'Unknown error'}`, 'error');
+                const message = err.detail?.[0]?.msg || err.detail;
+                window.showToast(`Failed to create user: ${message}`, 'error');
             }
         },
 
@@ -241,7 +300,9 @@ function userManager() {
                 is_superuser: user.is_superuser,
                 is_active: user.is_active,
                 // Ensure we handle the list of IDs from the API response
-                library_ids: user.accessible_library_ids ? [...user.accessible_library_ids] : []
+                library_ids: user.accessible_library_ids ? [...user.accessible_library_ids] : [],
+                max_age_rating: user.max_age_rating || '',
+                allow_unknown_age_ratings: user.allow_unknown_age_ratings || false
             };
             this.showEditModal = true;
         },
@@ -252,14 +313,16 @@ function userManager() {
                 email: this.editingUser.email,
                 is_superuser: this.editingUser.is_superuser,
                 is_active: this.editingUser.is_active,
-                library_ids: this.editingUser.library_ids
+                library_ids: this.editingUser.library_ids,
+                max_age_rating: this.editingUser.max_age_rating,
+                allow_unknown_age_ratings: this.editingUser.allow_unknown_age_ratings
             };
 
             if (this.editingUser.password) {
                 payload.password = this.editingUser.password;
             }
 
-            const res = await fetch(window.parker.parker('users.update', {user_id: this.editingUser.id }), {
+            const res = await fetch(window.parker.route('users.update', {user_id: this.editingUser.id }), {
                 method: 'PATCH',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(payload)
@@ -271,14 +334,14 @@ function userManager() {
                 await this.loadUsers();
             } else {
                 const err = await res.json();
-                const message = err.detail?.[0]?.msg;
-                window.showToast(`Failed to update user: ${message || 'Unknown error'}`, 'error');
+                const message = err.detail?.[0]?.msg || err.detail;
+                window.showToast(`Failed to update user: ${message}`, 'error');
             }
         },
 
         async deleteUser(user) {
             if (!confirm(`Delete user ${user.username}? This will remove their reading history.`)) return;
-            const res = await fetch(window.parker.parker('users.delete', {user_id: user.id }), { method: 'DELETE' });
+            const res = await fetch(window.parker.route('users.delete', {user_id: user.id }), { method: 'DELETE' });
             if (res.ok) {
                 window.showToast('User deleted successfully.', 'success');
                 await this.loadUsers();
