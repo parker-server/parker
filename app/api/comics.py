@@ -8,7 +8,7 @@ import re
 import random
 
 from app.core.comic_helpers import (get_reading_time, get_format_sort_index, REVERSE_NUMBERING_SERIES,
-                                    get_age_rating_config, get_comic_age_restriction)
+                                    get_age_rating_config, get_series_age_restriction)
 from app.api.deps import SessionDep, CurrentUser, ComicDep
 
 from app.models.comic import Comic, Volume
@@ -318,7 +318,9 @@ async def get_cover_manifest(
     query = filter_by_user_access(query, current_user)
 
     # --- AGE RATING FILTER ---
-    age_filter = get_comic_age_restriction(current_user)
+    # Switch to Series Level check.
+    # Prevents leaking covers of "Safe" issues that belong to "Banned" series.
+    age_filter = get_series_age_restriction(current_user)
     if age_filter is not None:
         query = query.filter(age_filter)
     # -------------------------
