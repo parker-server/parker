@@ -33,14 +33,19 @@
   {# --- ACQUISITION ENTRIES (The Comics) --- #}
   {% for book in books %}
   <entry>
-    <title>{{ book.series.name }} #{{ book.number }} - {{ book.title }}</title>
+    {# FIX: Access Series via Volume #}
+    <title>{{ book.volume.series.name }} #{{ book.number }} - {{ book.title }}</title>
+
     <id>urn:parker:comic:{{ book.id }}</id>
     <updated>{{ book.updated_at.isoformat() }}Z</updated>
 
     {# 1. Authors / Credits #}
-    {% if book.writers %}
-        {% for writer in book.writers %}
-        <author><name>{{ writer }}</name></author>
+    {# FIX: Iterate through credits instead of 'writers' property (unless you defined that property on the model) #}
+    {% if book.credits %}
+        {% for credit in book.credits %}
+            {% if credit.role == 'writer' %}
+            <author><name>{{ credit.person.name }}</name></author>
+            {% endif %}
         {% endfor %}
     {% else %}
         <author><name>Unknown</name></author>
