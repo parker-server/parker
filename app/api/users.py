@@ -142,7 +142,7 @@ async def get_user_dashboard(db: SessionDep, current_user: CurrentUser):
     # This prevents double-joining and ensures filtering applies to the loaded objects.
 
     recent_progress_query = db.query(ReadingProgress) \
-        .join(Comic).join(Volume).join(Series) \
+        .join(ReadingProgress.comic).join(Comic.volume).join(Volume.series) \
         .options(
             contains_eager(ReadingProgress.comic).contains_eager(Comic.volume).contains_eager(Volume.series)
         ).filter(
