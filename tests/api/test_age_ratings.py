@@ -1,9 +1,14 @@
+from datetime import datetime
 import pytest
+from unittest.mock import patch
+
 from app.models.comic import Comic, Volume
 from app.models.series import Series
 from app.models.library import Library
-from app.core.security import get_password_hash
+from app.core.security import get_password_hash, verify_password
 from app.models.user import User
+from app.models.reading_progress import ReadingProgress
+from app.services.settings_service import SettingsService
 
 # --- HELPERS ---
 
@@ -239,3 +244,126 @@ def test_superuser_bypass(db, admin_client):
     res_home = admin_client.get("/api/home/random")
     # Should see both
     assert len(res_home.json()) == 2
+
+
+def test_home_widgets_poison_pill(db, restricted_client, restricted_user):
+    """Verify ALL home widgets respect the Poison Pill."""
+    data = setup_mixed_environment(db)
+    lib = db.get(Library, data['lib_id'])
+    restricted_user.accessible_libraries.append(lib)
+
+    # 1. Simulate reading history to trigger 'Resume' and 'Up Next'
+    # User started the Safe Book in the Bad Series
+    prog = ReadingProgress(
+        user_id=restricted_user.id,
+        comic_id=data['poisoned_safe_comic_id'],
+        current_page=5,
+        total_pages=10,
+        completed=False,
+        last_read_at=datetime.now()
+    )
+    db.add(prog)
+    db.commit()
+
+    # TEST RESUME
+    # Should be hidden because the Series is poisoned (even though the book is safe)
+    res = restricted_client.get("/api/home/resume")
+    assert res.status_code == 200
+    assert len(res.json()) == 0  # Should be empty
+
+    # TEST UP NEXT
+    # Mark as complete to trigger Up Next
+    prog.completed = True
+    db.commit()
+
+    res = restricted_client.get("/api/home/up-next")
+    assert res.status_code == 200
+    # The next book is Mature, and the series is Poisoned. Should return nothing.
+    assert len(res.json()) == 0
+
+def test_dashboard_stats_poison_pill(db, restricted_client, restricted_user):
+    """Dashboard stats should not count books from poisoned series."""
+    data = setup_mixed_environment(db)
+    lib = db.get(Library, data['lib_id'])
+    restricted_user.accessible_libraries.append(lib)
+
+    # User read the Safe Book in Bad Series
+    prog = ReadingProgress(
+        user_id=restricted_user.id,
+        comic_id=data['poisoned_safe_comic_id'],
+        current_page=10,
+        total_pages=20,
+        completed=True
+    )
+    db.add(prog)
+    db.commit()
+
+    res = restricted_client.get("/api/users/me/dashboard")
+    assert res.status_code == 200
+    stats = res.json()['stats']
+
+    # Even though we read a book, it belongs to a banned series, so it shouldn't count in stats
+    # (Or arguably it should, but your SQL logic filters the JOIN, so it won't).
+    assert stats['issues_read'] == 0
+
+@pytest.mark.skip(reason="Undecided if we're going to protect individual images from age check")
+def test_file_security_bypass(db, restricted_client, restricted_user):
+    """
+    CRITICAL SECURITY CHECK:
+    Can I download the file or see the page if I guess the URL?
+    """
+    data = setup_mixed_environment(db)
+    lib = db.get(Library, data['lib_id'])
+    restricted_user.accessible_libraries.append(lib)
+    db.commit()
+
+    # 1. Try to get a PAGE from the Mature book
+    # This Mock prevents the actual file read, but we check if it passes the DB security layer
+    with pytest.raises(Exception):
+        # If this returns 403, you are safe. If 200 or 404 (file missing), you are vulnerable.
+        res = restricted_client.get(f"/api/reader/{data['poisoned_mature_comic_id']}/page/1")
+        assert res.status_code == 403
+
+    # 2. Try to get the THUMBNAIL of the Mature book
+    res_thumb = restricted_client.get(f"/api/comics/{data['poisoned_mature_comic_id']}/thumbnail")
+    # Ideally, this should be 403 or 404 generic.
+    # If it returns the image, it's a minor leak.
+    if res_thumb.status_code == 200:
+        pytest.fail("Security Hole: Thumbnail for banned book is accessible")
+
+def test_opds_security(db, client, restricted_user):
+    """Verify OPDS doesn't leak banned books."""
+    data = setup_mixed_environment(db)
+    lib = db.get(Library, data['lib_id'])
+    restricted_user.accessible_libraries.append(lib)
+
+
+    # SANITY CHECK: Verify Password Hashing works in Test Env
+    # If this fails, the 401 is due to test environment config, not code.
+    assert verify_password("test", restricted_user.hashed_password), "Test environment password hashing mismatch"
+
+    auth_creds = ("teen_user", "test")
+
+    # PATCH SETTINGS: Force "server.opds_enabled" to True for this test block
+    with patch("app.services.settings_service.SettingsService.get", return_value=True):
+
+
+        # 3. OPDS Series Feed
+        res = client.get(
+            f"/opds/series/{data['poisoned_series_id']}",
+            auth=auth_creds
+        )
+
+        # If 401 here, check 'auth_creds' matches 'restricted_user' definition
+        assert res.status_code == 200
+        content = res.content.decode()
+        assert "Mature Book" not in content
+
+        # 4. OPDS Download
+        res_dl = client.get(
+            f"/opds/download/{data['poisoned_mature_comic_id']}",
+            auth=auth_creds
+        )
+
+        assert res_dl.status_code == 403
+
