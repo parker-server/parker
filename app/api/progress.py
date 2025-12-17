@@ -11,6 +11,7 @@ from app.models.reading_progress import ReadingProgress
 from app.models.comic import Comic, Volume
 from app.models.series import Series
 from app.services.reading_progress import ReadingProgressService
+from app.core.comic_helpers import get_series_age_restriction
 
 router = APIRouter()
 
@@ -53,6 +54,13 @@ async def get_on_deck_progress(
         ReadingProgress.completed == False,
         ReadingProgress.current_page > 0  # Must have actually started
     )
+
+    # --- AGE RATING FILTER (Poison Pill) ---
+    # Hide items from On Deck if the Series is now banned
+    series_filter = get_series_age_restriction(service.user)
+    if series_filter is not None:
+        query = query.filter(series_filter)
+    # ---------------------------------------
 
     if cutoff_date:
         query = query.filter(ReadingProgress.last_read_at >= cutoff_date)
@@ -186,6 +194,7 @@ async def mark_comic_as_unread(comic_id: int,
 
 @router.get("/", name="recent_progress")
 async def get_recent_progress(
+        current_user: CurrentUser,
         service: Annotated[ReadingProgressService, Depends(get_progress_service)],
         filter: Annotated[str, Query(pattern="^(recent|in_progress|completed)$")] = "recent",
         limit: Annotated[int, Query(ge=1, le=100)] = 20
@@ -198,9 +207,18 @@ async def get_recent_progress(
 
     # We build the query directly to ensure we can attach .options(joinedload...)
     # This bypasses the basic service methods but is necessary for the List View performance.
-    query = service.db.query(ReadingProgress).options(
-        joinedload(ReadingProgress.comic).joinedload(Comic.volume).joinedload(Volume.series)
-    ).filter(ReadingProgress.user_id == service.user_id)
+    # FIX: Explicitly join Comic/Volume/Series so we can filter by Age Rating
+    query = service.db.query(ReadingProgress) \
+        .join(Comic).join(Volume).join(Series) \
+        .options(joinedload(ReadingProgress.comic).joinedload(Comic.volume).joinedload(Volume.series)) \
+        .filter(ReadingProgress.user_id == service.user_id)
+
+    # --- AGE RATING FILTER (Poison Pill) ---
+    # Hide items from History if the Series is now banned
+    series_filter = get_series_age_restriction(current_user)
+    if series_filter is not None:
+        query = query.filter(series_filter)
+    # ---------------------------------------
 
     if filter == "in_progress":
         query = query.filter(ReadingProgress.completed == False, ReadingProgress.current_page > 0)
