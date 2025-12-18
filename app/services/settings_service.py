@@ -140,13 +140,44 @@ class SettingsService:
     ]
 
     def initialize_defaults(self):
-        """Idempotent seed: Only adds keys if they don't exist"""
-        existing_keys = {s.key for s in self.db.query(SystemSetting.key).all()}
+        """
+        Seeds default settings and updates metadata (labels, descriptions) for existing ones.
+        Does NOT overwrite existing 'values' to preserve user configuration.
+        """
+        # 1. Fetch all existing settings mapped by key for fast lookup
+        existing_settings = {
+            s.key: s
+            for s in self.db.query(SystemSetting).all()
+        }
 
         for default in self.DEFAULTS:
-            if default["key"] not in existing_keys:
+
+            key = default["key"]
+
+            if key not in existing_settings:
+                # Case 1: New Setting -> Create it fully (including default value)
                 obj = SystemSetting(**default)
                 self.db.add(obj)
+            else:
+                # Case 2: Existing Setting -> Sync metadata only
+                # We update definitions to match the code, but we generally
+                # DO NOT touch 'value' so we don't overwrite user preferences.
+                setting = existing_settings[key]
+
+                # Update metadata fields
+                setting.label = default.get("label")
+                setting.description = default.get("description")
+                setting.category = default.get("category")
+                setting.data_type = default.get("data_type")
+
+                # Update 'options' if your model supports it (JSON column)
+                # This ensures new dropdown choices appear in the UI.
+                if "options" in default:
+                    setting.options = default["options"]
+
+                # NOTE: If we strictly needed to force-update a value (e.g. security patch),
+                # we would need explicit logic here, but usually we leave .value alone.
+
         self.db.commit()
 
     def get_all_grouped(self) -> Dict[str, List[SystemSetting]]:
