@@ -4,6 +4,23 @@ from typing import Any, List, Dict
 
 from app.api.deps import SessionDep
 from app.core.settings_loader import invalidate_settings_cache
+from app.core.login_backgrounds import SOLID_COLORS, STATIC_COVERS
+
+def generate_color_options():
+    """Generate color options from SOLID_COLORS dictionary"""
+
+    return [
+        {"label": data["name"], "value": key, "group": data.get("group")}
+        for key, data in SOLID_COLORS.items()
+    ]
+
+def generate_cover_options():
+    """Generate cover options from STATIC_COVERS dictionary"""
+
+    return [
+        {"label": data["name"], "value": filename}
+        for filename, data in STATIC_COVERS.items()
+    ]
 
 class SettingsService:
     def __init__(self, db: SessionDep):
@@ -25,7 +42,7 @@ class SettingsService:
             "description": "Time to wait for file operations to settle."
         },
         {
-            "key": "ui.login_background_style", "value": "none",
+            "key": "ui.login_background_style", "value": "random_covers",
             "category": "appearance", "data_type": "select",
             "label": "Login Background Style",
             "description": "Choose what appears behind the login form.",
@@ -44,109 +61,7 @@ class SettingsService:
             "label": "Login Solid Color",
             "description": "Choose a color gradient.",
             "depends_on": { "key": "ui.login_background_style", "value": "solid_color" },
-            "options": [
-                # DC Heroes
-                {"label": "Superman Classic", "value": "superman_classic", "group": "DC Heroes"},
-                {"label": "Wonder Woman", "value": "wonder_woman", "group": "DC Heroes"},
-                {"label": "Batman Gotham", "value": "batman_gotham", "group": "DC Heroes"},
-                {"label": "Nightwing", "value": "nightwing_blue", "group": "DC Heroes"},
-                {"label": "Robin Traffic Light", "value": "robin_traffic", "group": "DC Heroes"},
-                {"label": "Red Hood", "value": "red_hood", "group": "DC Heroes"},
-                {"label": "Batgirl/Oracle", "value": "batgirl_purple", "group": "DC Heroes"},
-                {"label": "Batwoman", "value": "batwoman_crimson", "group": "DC Heroes"},
-                {"label": "Green Arrow", "value": "green_arrow", "group": "DC Heroes"},
-                {"label": "Kryptonian Blue (Superman)", "value": "kryptonian_blue", "group": "DC Heroes"},
-                {"label": "Shazam", "value": "shazam_thunder", "group": "DC Heroes"},
-                {"label": "Blue Beetle", "value": "blue_beetle", "group": "DC Heroes"},
-                {"label": "Booster Gold", "value": "booster_gold", "group": "DC Heroes"},
-                {"label": "Cyborg", "value": "cyborg_tech", "group": "DC Heroes"},
-                {"label": "Scarlet Speedster (Flash)", "value": "scarlet_speedster", "group": "DC Heroes"},
-                {"label": "Stargirl", "value": "stargirl", "group": "DC Heroes"},
-                {"label": "Hawkman", "value": "hawkman_wings", "group": "DC Heroes"},
-                {"label": "Martian Manhunter", "value": "martian_manhunter", "group": "DC Heroes"},
-                {"label": "Teen Titans", "value": "teen_titans", "group": "DC Heroes"},
-
-                # Marvel Heroes
-                {"label": "Hulk Gamma", "value": "hulk_gamma", "group": "Marvel Heroes"},
-                {"label": "Iron Man Gold", "value": "iron_gold", "group": "Marvel Heroes"},
-                {"label": "Mjolnir Silver (Thor)", "value": "mjolnir_silver", "group": "Marvel Heroes"},
-                {"label": "Wakanda Purple (Black Panther)", "value": "wakanda_purple", "group": "Marvel Heroes"},
-                {"label": "Spider-Gwen", "value": "spider_gwen", "group": "Marvel Heroes"},
-                {"label": "Nova Corps", "value": "nova_corps", "group": "Marvel Heroes"},
-                {"label": "Daredevil Red", "value": "daredevil_red", "group": "Marvel Heroes"},
-                {"label": "Nightcrawler", "value": "nightcrawler", "group": "Marvel Heroes"},
-                {"label": "X-Men Gold", "value": "x_men_gold", "group": "Marvel Heroes"},
-
-                # DC Villains
-                {"label": "Joker Madness", "value": "joker_madness", "group": "DC Villains"},
-                {"label": "Harley Chaos", "value": "harley_chaos", "group": "DC Villains"},
-                {"label": "Lex Luthor", "value": "lex_luthor", "group": "DC Villains"},
-                {"label": "Darkseid", "value": "darkseid_omega", "group": "DC Villains"},
-                {"label": "Brainiac", "value": "brainiac", "group": "DC Villains"},
-                {"label": "Deathstroke", "value": "deathstroke", "group": "DC Villains"},
-                {"label": "Reverse Flash", "value": "reverse_flash", "group": "DC Villains"},
-                {"label": "Sinestro", "value": "sinestro", "group": "DC Villains"},
-                {"label": "Black Adam", "value": "black_adam", "group": "DC Villains"},
-                {"label": "Killer Croc", "value": "killer_croc", "group": "DC Villains"},
-                {"label": "Mr. Freeze", "value": "mr_freeze", "group": "DC Villains"},
-                {"label": "The Riddler", "value": "riddler", "group": "DC Villains"},
-                {"label": "Two-Face", "value": "two_face", "group": "DC Villains"},
-                {"label": "The Penguin", "value": "penguin", "group": "DC Villains"},
-                {"label": "Bane", "value": "bane_venom", "group": "DC Villains"},
-
-                # Marvel Villains & Anti-Heroes
-                {"label": "Venom Black", "value": "venom_black", "group": "Marvel Villains & Anti-Heroes"},
-                {"label": "Symbiote Swirl", "value": "symbiote_swirl", "group": "Marvel Villains & Anti-Heroes"},
-                {"label": "Carnage Chaos", "value": "carnage_chaos", "group": "Marvel Villains & Anti-Heroes"},
-                {"label": "Deadpool Merc", "value": "deadpool_merc", "group": "Marvel Villains & Anti-Heroes"},
-                {"label": "Green Goblin", "value": "green_goblin", "group": "Marvel Villains & Anti-Heroes"},
-                {"label": "Magneto Master", "value": "magneto_master", "group": "Marvel Villains & Anti-Heroes"},
-                {"label": "Punisher Skull", "value": "punisher_skull", "group": "Marvel Villains & Anti-Heroes"},
-                {"label": "Ghost Rider Flame", "value": "ghost_rider", "group": "Marvel Villains & Anti-Heroes"},
-                {"label": "Elektra Crimson", "value": "elektra_crimson", "group": "Marvel Villains & Anti-Heroes"},
-                {"label": "Poison Ivy", "value": "poison_ivy", "group": "Marvel Villains & Anti-Heroes"},
-                {"label": "Mystique Blue", "value": "mystique_blue", "group": "Marvel Villains & Anti-Heroes"},
-                {"label": "Thanos Titan", "value": "thanos_titan", "group": "Marvel Villains & Anti-Heroes"},
-                {"label": "Apocalypse", "value": "apocalypse", "group": "Marvel Villains & Anti-Heroes"},
-
-                # Lantern Corps
-                {"label": "Green Lantern (Will)", "value": "lantern_green", "group": "Lantern Corps"},
-                {"label": "Red Lantern (Rage)", "value": "red_lantern", "group": "Lantern Corps"},
-                {"label": "Blue Lantern (Hope)", "value": "blue_lantern", "group": "Lantern Corps"},
-                {"label": "Sinestro Corps (Fear)", "value": "sinestro_corps", "group": "Lantern Corps"},
-                {"label": "Star Sapphire (Love)", "value": "star_sapphire", "group": "Lantern Corps"},
-                {"label": "Indigo Tribe (Compassion)", "value": "indigo_tribe", "group": "Lantern Corps"},
-                {"label": "Agent Orange (Avarice)", "value": "agent_orange", "group": "Lantern Corps"},
-                {"label": "White Lantern (Life)", "value": "white_lantern", "group": "Lantern Corps"},
-                {"label": "Black Lantern (Death)", "value": "black_lantern", "group": "Lantern Corps"},
-
-                # DC Dark/Mystical
-                {"label": "Zatanna", "value": "zatanna_magic", "group": "DC Dark/Mystical"},
-                {"label": "Constantine", "value": "constantine_trench", "group": "DC Dark/Mystical"},
-                {"label": "Swamp Thing", "value": "swamp_thing", "group": "DC Dark/Mystical"},
-                {"label": "Sandman (Dream)", "value": "sandman_dream", "group": "DC Dark/Mystical"},
-                {"label": "Rorschach", "value": "rorschach", "group": "DC Dark/Mystical"},
-                {"label": "Dr. Manhattan", "value": "dr_manhattan", "group": "DC Dark/Mystical"},
-
-                # Cosmic & Special
-                {"label": "Phoenix Force", "value": "phoenix_force", "group": "Cosmic & Special"},
-                {"label": "Doctor Strange", "value": "doctor_strange", "group": "Cosmic & Special"},
-                {"label": "Silver Surfer", "value": "silver_surfer", "group": "Cosmic & Special"},
-                {"label": "Galactus Cosmic", "value": "galactus_cosmic", "group": "Cosmic & Special"},
-                {"label": "Iron Patriot", "value": "iron_patriot", "group": "Cosmic & Special"},
-                {"label": "Cosmic Entity", "value": "cosmic_entity", "group": "Cosmic & Special"},
-                {"label": "Infinity Stones", "value": "infinity_stones", "group": "Cosmic & Special"},
-
-                # DC Teams
-                {"label": "Justice League", "value": "justice_league", "group": "DC Teams"},
-                {"label": "Suicide Squad", "value": "suicide_squad", "group": "DC Teams"},
-                {"label": "Birds of Prey", "value": "birds_of_prey", "group": "DC Teams"},
-
-                # Other
-                {"label": "Waverider Yellow", "value": "waverider_yellow", "group": "Other"},
-                {"label": "Atlantis Teal (Aquaman)", "value": "atlantis_teal", "group": "Other"},
-                {"label": "Gotham Night (Batman)", "value": "gotham_night", "group": "Other"},
-            ]
+            "options": generate_color_options()
         },
         {
             "key": "ui.login_static_cover",
@@ -156,29 +71,7 @@ class SettingsService:
             "label": "Login Static Cover",
             "description": "Choose an iconic comic cover.",
             "depends_on": { "key": "ui.login_background_style", "value": "static_cover" },
-            "options": [
-                {"label": "Action Comics #1 (Superman)", "value": "action-comics-1.jpg" },
-                {"label": "Amazing Fantasy #15 (Spider-Man)", "value": "amazing-fantasy-15.jpg" },
-                {"label": "Amazing Spider-Man #121", "value": "amazing-spider-man-121.jpg" },
-                {"label": "Amazing Spiderman #300", "value": "amazing-spiderman-300.jpg" },
-                {"label": "Avengers #1", "value": "avengers-1.jpg" },
-                {"label": "Avengers #4 (Captain America)", "value": "avengers-4.jpg" },
-                {"label": "Batman #227", "value": "batman-227.jpg" },
-                {"label": "Crisis on Infinite Earths #1", "value": "crisis-infinite-earths-1.jpg" },
-                {"label": "Dark Knight Returns #1", "value": "dark-knight-returns-1.jpg" },
-                {"label": "Detective Comics #27 (Batman)", "value": "detective-comics-27.jpg" },
-                {"label": "Fantastic Four #1", "value": "fantastic-four-1.jpg" },
-                {"label": "Giant Size X-Men #1", "value": "giant-size-x-men-1.jpg" },
-                {"label": "Incredible Hulk #1", "value": "incredible-hulk-1.jpg" },
-                {"label": "Iron Man #1", "value": "iron-man-1.jpg" },
-                {"label": "Mister X #1", "value": "mister-x-1.jpg" },
-                {"label": "Spawn #1", "value": "spawn-1.jpg" },
-                {"label": "Spiderman #1", "value": "spiderman-1.jpg" },
-                {"label": "Superman v2 #75", "value": "superman-75.jpg" },
-                {"label": "Uncanny X-Men #141", "value": "uncanny-x-men-141.jpg" },
-                {"label": "Watchmen #1", "value": "watchmen-1.jpg" },
-                {"label": "X-Men #1", "value": "x-men-1.jpg" },
-            ]
+            "options": generate_cover_options()
         },
 
         {
