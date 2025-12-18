@@ -10,13 +10,15 @@
             
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <template x-for="setting in groupSettings" :key="setting.key">
-                    <div class="bg-gray-900 p-4 rounded border border-gray-700">
+
+                    <!-- Only show if no dependency, or if dependency is satisfied -->
+                    <div x-show="!setting.depends_on || isDependent(setting)" class="bg-gray-900 p-4 rounded border border-gray-700">
                         <label class="block text-sm font-medium text-gray-400 mb-1" x-text="setting.label"></label>
 
                         <template x-if="setting.data_type === 'bool'">
                             <div class="flex items-center mt-2">
                                 <button 
-                                    @click="update(setting, !setting.value)"
+                                    x-on:click="update(setting, !setting.value)"
                                     class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
                                     :class="setting.value ? 'bg-blue-600' : 'bg-gray-700'"
                                 >
@@ -33,11 +35,19 @@
                             <div class="flex gap-2">
                                 <select
                                     x-model="setting.tempValue"
-                                    @change="update(setting, $event.target.value)"
+                                    x-on:change="update(setting, $event.target.value)"
                                     class="bg-gray-800 text-white px-3 py-2 rounded w-full border border-gray-600 focus:border-blue-500 focus:outline-none appearance-none"
                                 >
-                                    <template x-for="opt in setting.options" :key="opt.value">
+                                    <template x-for="opt in getGroupedOptions(setting.options).orphans" :key="opt.value">
                                         <option :value="opt.value" x-text="opt.label" :selected="opt.value == setting.value"></option>
+                                    </template>
+
+                                    <template x-for="groupName in getGroupedOptions(setting.options).groupOrder" :key="groupName">
+                                        <optgroup :label="groupName">
+                                            <template x-for="opt in getGroupedOptions(setting.options).groups[groupName]" :key="opt.value">
+                                                <option :value="opt.value" x-text="opt.label" :selected="opt.value == setting.value"></option>
+                                            </template>
+                                        </optgroup>
                                     </template>
                                 </select>
                                 </div>
@@ -48,11 +58,11 @@
                                 <input
                                     :type="setting.data_type === 'int' ? 'number' : 'text'" 
                                     x-model="setting.tempValue" 
-                                    @focus="setting.tempValue = setting.value"
+                                    x-on:focus="setting.tempValue = setting.value"
                                     class="bg-gray-800 text-white px-3 py-2 rounded w-full border border-gray-600 focus:border-blue-500 focus:outline-none"
                                 >
                                 <button 
-                                    @click="update(setting, setting.tempValue)"
+                                    x-on:click="update(setting, setting.tempValue)"
                                     class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded text-sm"
                                 >Save</button>
                             </div>
@@ -79,6 +89,50 @@ function settingsManager() {
             Object.values(this.settings).flat().forEach(s => {
                 s.tempValue = s.value;
             });
+        },
+
+        /**
+         * Check if a dependent setting should be shown
+         */
+        isDependent(setting) {
+            console.log(setting);
+            if (!setting.depends_on) return true;
+
+            const parentKey = setting.depends_on.key;
+            const requiredValue = setting.depends_on.value;
+console.log(parentKey, requiredValue);
+            // Find the parent setting across all categories
+            const parentSetting = Object.values(this.settings)
+                .flat()
+                .find(s => s.key === parentKey);
+
+            return parentSetting && parentSetting.value === requiredValue;
+        },
+
+        /**
+         * Transforms a flat list of options into a structure for rendering groups.
+         * Returns: { orphans: [], groups: { "GroupName": [opt, opt] } }
+         */
+        getGroupedOptions(options) {
+            const orphans = [];
+            const groups = {};
+
+            // Maintain insertion order for groups
+            const groupOrder = [];
+
+            options.forEach(opt => {
+                if (opt.group) {
+                    if (!groups[opt.group]) {
+                        groups[opt.group] = [];
+                        groupOrder.push(opt.group);
+                    }
+                    groups[opt.group].push(opt);
+                } else {
+                    orphans.push(opt);
+                }
+            });
+
+            return { orphans, groups, groupOrder };
         },
 
         async update(setting, newValue) {
