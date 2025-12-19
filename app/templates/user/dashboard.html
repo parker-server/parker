@@ -3,12 +3,13 @@
 {% block title %}My Dashboard - Parker{% endblock %}
 
 {% block content %}
-<div class="max-w-6xl mx-auto space-y-8" x-data="dashboard()">
+<div class="max-w-7xl mx-auto space-y-8" x-data="dashboard()">
 
-    <div class="bg-gray-800 rounded-xl p-8 border border-gray-700 shadow-xl flex flex-col md:flex-row items-center gap-8 relative overflow-hidden">
-        
+    <!-- User Header with Core Stats -->
+    <div class="bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl p-8 border border-gray-700 shadow-xl flex flex-col md:flex-row items-center gap-8 relative overflow-hidden">
+
         <div class="absolute top-0 right-0 w-64 h-64 bg-blue-600 rounded-full mix-blend-multiply filter blur-3xl opacity-10 animate-blob"></div>
-        
+
         <div class="relative group">
             <div class="w-32 h-32 rounded-full overflow-hidden border-4 border-gray-700 bg-gray-900 flex items-center justify-center shadow-lg">
                 <template x-if="data?.user?.avatar_url">
@@ -18,7 +19,7 @@
                     <span class="text-4xl font-bold text-gray-500" x-text="data?.user?.username?.charAt(0).toUpperCase()"></span>
                 </template>
             </div>
-            
+
             <label class="absolute inset-0 bg-black/60 flex items-center justify-center rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
                 <span class="text-xs text-white font-bold">Change</span>
                 <input type="file" class="hidden" accept="image/*" @change="uploadAvatar($event)">
@@ -36,16 +37,17 @@
                 </a>
             </div>
 
-            <div class="grid grid-cols-3 gap-4 mt-6 max-w-lg">
-                <div class="bg-gray-900/50 p-3 rounded-lg border border-gray-700 text-center">
+            <!-- Core Stats Grid -->
+            <div class="grid grid-cols-3 gap-4 mt-6 max-w-2xl">
+                <div class="bg-gray-900/50 p-3 rounded-lg border border-gray-700 text-center hover:border-blue-500 transition-colors">
                     <div class="text-2xl font-bold text-blue-400" x-text="data?.stats?.issues_read"></div>
                     <div class="text-xs text-gray-500 uppercase tracking-wider">Issues Read</div>
                 </div>
-                <div class="bg-gray-900/50 p-3 rounded-lg border border-gray-700 text-center">
+                <div class="bg-gray-900/50 p-3 rounded-lg border border-gray-700 text-center hover:border-green-500 transition-colors">
                     <div class="text-2xl font-bold text-green-400" x-text="data?.stats?.time_read"></div>
                     <div class="text-xs text-gray-500 uppercase tracking-wider">Time Spent</div>
                 </div>
-                <div class="bg-gray-900/50 p-3 rounded-lg border border-gray-700 text-center">
+                <div class="bg-gray-900/50 p-3 rounded-lg border border-gray-700 text-center hover:border-purple-500 transition-colors">
                     <div class="text-2xl font-bold text-purple-400" x-text="formatNumber(data?.stats?.pages_turned)"></div>
                     <div class="text-xs text-gray-500 uppercase tracking-wider">Pages Turned</div>
                 </div>
@@ -53,45 +55,267 @@
         </div>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        <div class="lg:col-span-2 space-y-4">
-            <div class="flex justify-between items-center">
-                <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                    <span>📖</span> Continue Reading
-                </h2>
-                <a :href="window.parker.route('pages.continue_reading')" class="text-xs text-blue-400 hover:text-white">View All</a>
-            </div>
+    <!-- Analytics Grid -->
+    <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <template x-for="item in data?.continue_reading" :key="item.comic_id">
-                    <a :href="window.parker.route('pages.reader', { comic_id: item.comic_id})" class="flex bg-gray-800 rounded-lg overflow-hidden border border-gray-700 hover:border-blue-500 transition-colors group h-32 relative">
-                        <img :src="item.thumbnail" class="w-24 h-full object-cover">
-                        
-                        <div class="p-4 flex flex-col justify-center min-w-0">
-                            <h4 class="font-bold text-white truncate" x-text="item.series_name"></h4>
-                            <p class="text-sm text-gray-400 mb-2" x-text="`Issue #${item.number}`"></p>
-                            
-                            <div class="w-full h-1.5 bg-gray-700 rounded-full mt-auto overflow-hidden">
-                                <div class="h-full bg-blue-500" :style="`width: ${item.percentage}%`"></div>
-                            </div>
-                            <div class="text-xs text-gray-500 mt-1 text-right" x-text="`${Math.round(item.percentage)}%`"></div>
+        <!-- Series Progress -->
+        <div class="bg-gray-800 rounded-lg p-6 border border-gray-700 hover:border-blue-500/50 transition-colors">
+            <div class="flex items-center gap-3 mb-4">
+                <span class="text-2xl">📚</span>
+                <h3 class="font-bold text-white">Series Progress</h3>
+            </div>
+            <div class="space-y-3">
+                <div>
+                    <div class="text-3xl font-bold text-blue-400" x-text="data?.stats?.series_explored || 0"></div>
+                    <div class="text-sm text-gray-400">Series Explored</div>
+                </div>
+                <div>
+                    <div class="text-2xl font-bold text-green-400" x-text="data?.stats?.series_completed || 0"></div>
+                    <div class="text-sm text-gray-400">Series Completed</div>
+                </div>
+                <div class="w-full h-2 bg-gray-700 rounded-full overflow-hidden">
+                    <div class="h-full bg-green-500"
+                         :style="`width: ${data?.stats?.series_explored > 0 ? (data.stats.series_completed / data.stats.series_explored * 100) : 0}%`">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Collection Progress -->
+        <div class="bg-gray-800 rounded-lg p-6 border border-gray-700 hover:border-purple-500/50 transition-colors">
+            <div class="flex items-center gap-3 mb-4">
+                <span class="text-2xl">🗂️</span>
+                <h3 class="font-bold text-white">Collection</h3>
+            </div>
+            <div class="space-y-3">
+                <div>
+                    <div class="text-3xl font-bold text-purple-400" x-text="`${data?.collection?.read_percentage || 0}%`"></div>
+                    <div class="text-sm text-gray-400">Library Read</div>
+                </div>
+                <div class="text-xs text-gray-500">
+                    <span x-text="data?.stats?.completed_comics || 0">0</span> of
+                    <span x-text="data?.collection?.total_available || 0">0</span> comics
+                </div>
+                <div class="w-full h-2 bg-gray-700 rounded-full overflow-hidden">
+                    <div class="h-full bg-purple-500"
+                         :style="`width: ${data?.collection?.read_percentage || 0}%`">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Reading Pace -->
+        <div class="bg-gray-800 rounded-lg p-6 border border-gray-700 hover:border-yellow-500/50 transition-colors">
+            <div class="flex items-center gap-3 mb-4">
+                <span class="text-2xl">⚡</span>
+                <h3 class="font-bold text-white">Reading Pace</h3>
+            </div>
+            <div class="space-y-3">
+                <div>
+                    <div class="text-xl font-bold text-yellow-400" x-text="data?.reading_behavior?.reading_pace || 'N/A'"></div>
+                    <div class="text-sm text-gray-400">Reader Type</div>
+                </div>
+                <div class="text-xs text-gray-500">
+                    Avg: <span x-text="data?.reading_behavior?.avg_days_to_complete || 0"></span> days/comic
+                </div>
+            </div>
+        </div>
+
+        <!-- Last 30 Days -->
+        <div class="bg-gray-800 rounded-lg p-6 border border-gray-700 hover:border-orange-500/50 transition-colors">
+            <div class="flex items-center gap-3 mb-4">
+                <span class="text-2xl">📅</span>
+                <h3 class="font-bold text-white">Last 30 Days</h3>
+            </div>
+            <div class="space-y-3">
+                <div>
+                    <div class="text-3xl font-bold text-orange-400" x-text="data?.reading_behavior?.last_30_days?.comics_read || 0"></div>
+                    <div class="text-sm text-gray-400">Comics Read</div>
+                </div>
+                <div class="text-xs text-gray-500">
+                    <span x-text="formatNumber(data?.reading_behavior?.last_30_days?.pages_read || 0)"></span> pages
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Creators, Publishers, Characters -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+        <!-- Top Writers -->
+        <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+            <div class="flex items-center gap-3 mb-4">
+                <span class="text-2xl">✍️</span>
+                <h3 class="font-bold text-white">Top Writers</h3>
+            </div>
+            <div class="space-y-2">
+                <template x-for="(writer, index) in data?.creators?.top_writers || []" :key="writer.name">
+                    <div class="flex items-center justify-between p-2 bg-gray-900/50 rounded">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-bold text-gray-500" x-text="`#${index + 1}`"></span>
+                            <a :href="window.parker.route('pages.search', {}, `field=writer&value=${encodeURIComponent(writer.name)}&operator=contains`)">
+                                <span class="text-sm text-gray-300" x-text="writer.name"></span>
+                            </a>
                         </div>
-                        
-                        <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                            <span class="text-white font-bold bg-blue-600 px-3 py-1 text-sm rounded-full shadow-lg">Continue</span>
-                        </div>
-                    </a>
+                        <span class="text-xs text-blue-400" x-text="`${writer.comics_read} comics`"></span>
+                    </div>
                 </template>
-                
-                <div x-show="data?.continue_reading?.length === 0" class="col-span-full py-10 text-center text-gray-500 bg-gray-800/50 rounded-lg border-dashed border border-gray-700">
-                    No books in progress. Start reading something!
+                <div x-show="!data?.creators?.top_writers?.length" class="text-center py-4 text-gray-500 text-sm">
+                    No data yet
+                </div>
+            </div>
+        </div>
+
+        <!-- Top Artists -->
+        <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+            <div class="flex items-center gap-3 mb-4">
+                <span class="text-2xl">🎨</span>
+                <h3 class="font-bold text-white">Top Artists</h3>
+            </div>
+            <div class="space-y-2">
+                <template x-for="(artist, index) in data?.creators?.top_artists || []" :key="artist.name">
+                    <div class="flex items-center justify-between p-2 bg-gray-900/50 rounded">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-bold text-gray-500" x-text="`#${index + 1}`"></span>
+                            <a :href="window.parker.route('pages.search', {}, `field=penciller&value=${encodeURIComponent(artist.name)}&operator=contains`)">
+                                <span class="text-sm text-gray-300" x-text="artist.name"></span>
+                            </a>
+                        </div>
+                        <span class="text-xs text-purple-400" x-text="`${artist.comics_read} comics`"></span>
+                    </div>
+                </template>
+                <div x-show="!data?.creators?.top_artists?.length" class="text-center py-4 text-gray-500 text-sm">
+                    No data yet
+                </div>
+            </div>
+        </div>
+
+        <!-- Top Publishers -->
+        <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+            <div class="flex items-center gap-3 mb-4">
+                <span class="text-2xl">🏢</span>
+                <h3 class="font-bold text-white">Top Publishers</h3>
+            </div>
+            <div class="space-y-2">
+                <template x-for="(pub, index) in data?.publishers?.top_publishers || []" :key="pub.name">
+                    <div class="flex items-center justify-between p-2 bg-gray-900/50 rounded">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-bold text-gray-500" x-text="`#${index + 1}`"></span>
+                            <a :href="window.parker.route('pages.search', {}, `field=publisher&value=${encodeURIComponent(pub.name)}&operator=equal`)">
+                            <span class="text-sm text-gray-300" x-text="pub.name"></span>
+                            </a>
+                        </div>
+                        <span class="text-xs text-green-400" x-text="`${pub.comics_read} comics`"></span>
+                    </div>
+                </template>
+                <div x-show="!data?.publishers?.top_publishers?.length" class="text-center py-4 text-gray-500 text-sm">
+                    No data yet
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Genre Breakdown & Characters -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+        <!-- Genre Distribution -->
+        <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+            <div class="flex items-center gap-3 mb-4">
+                <span class="text-2xl">🎭</span>
+                <h3 class="font-bold text-white">Genre Diversity</h3>
+                <span class="ml-auto text-sm text-gray-400" x-text="`${data?.genres?.genres_explored || 0} genres`"></span>
+            </div>
+            <div class="space-y-3">
+                <template x-for="genre in data?.genres?.top_genres || []" :key="genre.name">
+                    <div>
+                        <div class="flex justify-between text-sm mb-1">
+                            <a :href="window.parker.route('pages.search', {}, `field=genre&value=${encodeURIComponent(genre.name)}&operator=contains`)">
+                                <span class="text-gray-300" x-text="genre.name"></span>
+                            </a>
+                            <span class="text-gray-500" x-text="`${genre.count} (${genre.percentage}%)`"></span>
+                        </div>
+                        <div class="w-full h-2 bg-gray-700 rounded-full overflow-hidden">
+                            <div class="h-full bg-gradient-to-r from-blue-500 to-purple-500"
+                                 :style="`width: ${genre.percentage}%`">
+                            </div>
+                        </div>
+                    </div>
+                </template>
+                <div x-show="!data?.genres?.top_genres?.length" class="text-center py-4 text-gray-500 text-sm">
+                    No genre data yet
+                </div>
+            </div>
+        </div>
+
+        <!-- Top Characters -->
+        <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+            <div class="flex items-center gap-3 mb-4">
+                <span class="text-2xl">🦸</span>
+                <h3 class="font-bold text-white">Top Characters</h3>
+            </div>
+            <div class="space-y-2">
+                <template x-for="(char, index) in data?.characters?.top_characters || []" :key="char.name">
+                    <div class="flex items-center justify-between p-2 bg-gray-900/50 rounded">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-bold text-gray-500" x-text="`#${index + 1}`"></span>
+                            <a :href="window.parker.route('pages.search', {}, `field=character&value=${encodeURIComponent(char.name)}&operator=contains`)">
+                                <span class="text-sm text-gray-300" x-text="char.name"></span>
+                            </a>
+                        </div>
+                        <span class="text-xs text-yellow-400" x-text="`${char.appearances} appearances`"></span>
+                    </div>
+                </template>
+                <div x-show="!data?.characters?.top_characters?.length" class="text-center py-4 text-gray-500 text-sm">
+                    No character data yet
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content Grid: Continue Reading + Sidebar -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+        <!-- Left Column: Continue Reading + Smart Filters -->
+        <div class="lg:col-span-2 space-y-8">
+
+            <!-- Continue Reading -->
+            <div class="space-y-4">
+                <div class="flex justify-between items-center">
+                    <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                        <span>📖</span> Continue Reading
+                    </h2>
+                    <a :href="window.parker.route('pages.continue_reading')" class="text-xs text-blue-400 hover:text-white">View All</a>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <template x-for="item in data?.continue_reading" :key="item.comic_id">
+                        <a :href="window.parker.route('pages.reader', { comic_id: item.comic_id})" class="flex bg-gray-800 rounded-lg overflow-hidden border border-gray-700 hover:border-blue-500 transition-colors group h-32 relative">
+                            <img :src="item.thumbnail" class="w-24 h-full object-cover">
+
+                            <div class="p-4 flex flex-col justify-center min-w-0 flex-1">
+                                <h4 class="font-bold text-white truncate" x-text="item.series_name"></h4>
+                                <p class="text-sm text-gray-400 mb-2" x-text="`Issue #${item.number}`"></p>
+
+                                <div class="w-full h-1.5 bg-gray-700 rounded-full mt-auto overflow-hidden">
+                                    <div class="h-full bg-blue-500" :style="`width: ${item.percentage}%`"></div>
+                                </div>
+                                <div class="text-xs text-gray-500 mt-1 text-right" x-text="`${Math.round(item.percentage)}%`"></div>
+                            </div>
+
+                            <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                <span class="text-white font-bold bg-blue-600 px-3 py-1 text-sm rounded-full shadow-lg">Continue</span>
+                            </div>
+                        </a>
+                    </template>
+
+                    <div x-show="data?.continue_reading?.length === 0" class="col-span-full py-10 text-center text-gray-500 bg-gray-800/50 rounded-lg border-dashed border border-gray-700">
+                        No books in progress. Start reading something!
+                    </div>
                 </div>
             </div>
 
-
-            {# Smart Filters #}
-            <div class="space-y-4 mt-8">
+            <!-- Smart Filters -->
+            <div class="space-y-4">
                 <div class="flex justify-between items-center">
                     <h2 class="text-xl font-bold text-white flex items-center gap-2">
                         <span>⚡</span> Smart Filters
@@ -140,83 +364,68 @@
                                     </td>
                                 </tr>
                             </template>
-
-                            <tr x-show="!data?.smart_lists || data?.smart_lists?.length === 0">
+                            <tr x-show="!data?.smart_lists?.length">
                                 <td colspan="3" class="px-6 py-8 text-center text-gray-500">
-                                    No smart filters yet. <a :href="window.parker.route('pages.search')" class="text-blue-400 hover:underline">Create one</a> to track specific comics automatically.
+                                    No smart filters yet. Create one to get started!
                                 </td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
             </div>
-
-
         </div>
 
-        <div class="space-y-4">
+        <!-- Right Sidebar: OPDS + Pull Lists -->
+        <div class="space-y-6">
 
+            <!-- OPDS Feed -->
             <template x-if="data?.opds_enabled">
-                <div class="bg-gradient-to-br from-indigo-900/40 to-gray-800 p-5 rounded-lg border border-indigo-500/30 shadow-lg relative overflow-hidden">
-                    <div class="absolute -top-4 -right-4 w-16 h-16 bg-indigo-500 rounded-full blur-2xl opacity-20"></div>
-
-                    <div class="flex items-center justify-between mb-3 relative z-10">
-                        <h2 class="text-lg font-bold text-white flex items-center gap-2">
-                            <span>📱</span> Connect Reader
-                        </h2>
-                        <span class="text-[10px] bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded border border-indigo-500/30">OPDS</span>
+                <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                    <div class="flex items-center gap-3 mb-4">
+                        <span class="text-2xl">📡</span>
+                        <h3 class="font-bold text-white">OPDS Feed</h3>
                     </div>
-
-                    <p class="text-xs text-gray-400 mb-3">
-                        Read on your tablet using <b>Chunky</b>, <b>Panels</b>, or <b>Tachiyomi</b>.
-                    </p>
-
-                    <div class="relative flex items-center group">
-                        <input type="text" readonly
-                               :value="window.location.origin + '/opds/'"
-                               class="w-full bg-gray-900/80 border border-gray-600 text-gray-300 text-xs rounded-md px-3 py-2.5 font-mono focus:outline-none focus:border-indigo-500 transition-colors select-all"
-                               id="opds-input">
-
-                        <button @click="copyToClipboard(window.location.origin + '/opds/')"
-                                class="absolute right-1 p-1.5 bg-gray-700 hover:bg-white hover:text-black text-gray-300 rounded text-xs transition-colors shadow-sm"
-                                title="Copy URL">
-                             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
-                            </svg>
+                    <div class="space-y-3">
+                        <p class="text-sm text-gray-400">Connect your e-reader or comics app</p>
+                        <input id="opds-input"
+                               readonly
+                               :value="`${window.location.origin}/api/opds/`"
+                               class="w-full text-xs bg-gray-900 text-gray-300 px-3 py-2 rounded border border-gray-700 font-mono cursor-pointer"
+                               @click="$event.target.select()">
+                        <button @click="copyToClipboard($event.target.previousElementSibling.value)"
+                                class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded text-sm font-bold transition-colors">
+                            Copy URL
                         </button>
-                    </div>
-
-                    <div class="mt-2 flex items-center gap-2 text-[10px] text-gray-500">
-                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        <span>Use your Parker username & password.</span>
+                        <span class="text-xs text-gray-500 block">Use your Parker username & password.</span>
                     </div>
                 </div>
             </template>
 
+            <!-- Pull Lists -->
+            <div>
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                        <span>🗃️</span> My Pull Lists
+                    </h2>
+                    <a :href="window.parker.route('pages.pull_lists')" class="text-xs text-blue-400 hover:text-white">View All</a>
+                </div>
 
-            <div class="flex justify-between items-center">
-                <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                    <span>🗃️</span> My Pull Lists
-                </h2>
-                <a :href="window.parker.route('pages.pull_lists')" class="text-xs text-blue-400 hover:text-white">View All</a>
-            </div>
+                <div class="space-y-3">
+                    <template x-for="list in data?.pull_lists" :key="list.id">
+                        <a :href="window.parker.route('pages.pull_list_detail', {list_id: list.id})" class="block bg-gray-800 p-4 rounded-lg border border-gray-700 hover:bg-gray-750 hover:border-gray-500 transition-all">
+                            <div class="flex justify-between items-center">
+                                <span class="font-bold text-white" x-text="list.name"></span>
+                                <span class="bg-gray-700 text-gray-300 text-xs px-2 py-1 rounded-full" x-text="list.count"></span>
+                            </div>
+                        </a>
+                    </template>
 
-            <div class="space-y-3">
-                <template x-for="list in data?.pull_lists" :key="list.id">
-                    <a :href="window.parker.route('pages.pull_list_detail', {list_id: list.id})" class="block bg-gray-800 p-4 rounded-lg border border-gray-700 hover:bg-gray-750 hover:border-gray-500 transition-all">
-                        <div class="flex justify-between items-center">
-                            <span class="font-bold text-white" x-text="list.name"></span>
-                            <span class="bg-gray-700 text-gray-300 text-xs px-2 py-1 rounded-full" x-text="list.count"></span>
-                        </div>
-                    </a>
-                </template>
-                
-                <button x-on:click="window.location.href=window.parker.route('pages.pull_lists')" class="w-full py-3 border border-gray-700 border-dashed rounded-lg text-gray-500 hover:text-white hover:border-gray-500 hover:bg-gray-800/50 transition-all text-sm">
-                    + Create New List
-                </button>
+                    <button x-on:click="window.location.href=window.parker.route('pages.pull_lists')" class="w-full py-3 border border-gray-700 border-dashed rounded-lg text-gray-500 hover:text-white hover:border-gray-500 hover:bg-gray-800/50 transition-all text-sm">
+                        + Create New List
+                    </button>
+                </div>
             </div>
         </div>
-
     </div>
 </div>
 
@@ -224,7 +433,7 @@
 function dashboard() {
     return {
         data: null,
-        
+
         async init() {
             try {
                 const res = await fetch(window.parker.route('users.dashboard'));
@@ -233,25 +442,23 @@ function dashboard() {
                     await this.fetchSmartLists();
                 }
             } catch(e) { console.error("Dashboard load failed", e); }
-
         },
 
         async uploadAvatar(e) {
             const file = e.target.files[0];
             if(!file) return;
-            
+
             const formData = new FormData();
             formData.append('file', file);
-            
+
             try {
                 const res = await fetch(window.parker.route('users.upload_avatar'), {
                     method: 'POST',
                     body: formData
                 });
-                
+
                 if(res.ok) {
                     const result = await res.json();
-                    // Force refresh image by appending timestamp
                     this.data.user.avatar_url = result.url + '?t=' + Date.now();
                     window.parker.showToast("Avatar updated!", "success");
                 }
@@ -266,11 +473,6 @@ function dashboard() {
                 window.parker.showToast("Feed URL copied!", "success");
             } catch (err) {
                 console.error('Failed to copy!', err);
-                // Fallback for non-secure contexts if needed, though simpler is better
-                const input = document.getElementById('opds-input');
-                input.select();
-                document.execCommand('copy');
-                window.parker.showToast("Feed URL copied!", "success");
             }
         },
 
@@ -292,13 +494,12 @@ function dashboard() {
                     body: JSON.stringify({ show_on_dashboard: list.show_on_dashboard })
                 });
             } catch(e) {
-                list.show_on_dashboard = !list.show_on_dashboard; // Revert
+                list.show_on_dashboard = !list.show_on_dashboard;
                 console.error(e);
             }
         },
 
         async deleteSmartList(id) {
-
             const confirmed = await window.parker.dialog.confirm(
                 "Delete List?",
                 "Delete this smart filter?",

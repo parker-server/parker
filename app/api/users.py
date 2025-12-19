@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, status, HTTPException, UploadFile, File, Depends
 from fastapi.responses import FileResponse
 from sqlalchemy import or_
@@ -17,6 +18,9 @@ from app.models.comic import Comic, Volume
 from app.models.series import Series
 from app.models.user import User
 from app.models.library import Library
+from app.models.credits import Person, ComicCredit
+from app.models.tags import Character, comic_characters
+from app.models.tags import Genre, comic_genres
 from app.models.reading_progress import ReadingProgress
 from app.models.pull_list import PullList, PullListItem
 from app.services.images import ImageService
@@ -100,12 +104,114 @@ async def get_user_dashboard(db: SessionDep, current_user: CurrentUser):
     series_age_filter = get_series_age_restriction(current_user)
     banned_condition = get_banned_comic_condition(current_user)
 
-    # 1. Calculate Stats
-    # Join Progress -> Comic to get page counts
-    stats_query = db.query(
+    # === BASIC STATS (Existing) ===
+    basic_stats = db.query(
         func.count(ReadingProgress.id).label('issues_read'),
-        func.sum(Comic.page_count).label('total_pages')
+        func.sum(Comic.page_count).label('total_pages'),
+        func.count(func.distinct(ReadingProgress.comic_id)).filter(
+            ReadingProgress.completed == True
+        ).label('completed_comics')
     ).join(Comic, ReadingProgress.comic_id == Comic.id) \
+        .join(Volume).join(Series) \
+        .filter(ReadingProgress.user_id == current_user.id)
+
+    if series_age_filter is not None:
+        basic_stats = basic_stats.filter(series_age_filter)
+
+    stats = basic_stats.first()
+
+    # === SERIES STATS ===
+    series_stats = db.query(
+        func.count(func.distinct(Series.id)).label('series_explored'),
+        func.count(func.distinct(Series.id)).filter(
+            ~Series.volumes.any(
+                Volume.comics.any(
+                    ~Comic.reading_progress.any(
+                        (ReadingProgress.user_id == current_user.id) &
+                        (ReadingProgress.completed == True)
+                    )
+                )
+            )
+        ).label('series_completed')
+    ).join(Volume).join(Comic).join(ReadingProgress) \
+        .filter(ReadingProgress.user_id == current_user.id)
+
+    if series_age_filter is not None:
+        series_stats = series_stats.filter(series_age_filter)
+
+    series_data = series_stats.first()
+
+    # === TOP CREATORS (Writers & Artists) ===
+
+
+    top_writers = db.query(
+        Person.name,
+        func.count(func.distinct(ReadingProgress.comic_id)).label('comics_read')
+    ).join(ComicCredit, Person.id == ComicCredit.person_id) \
+        .join(Comic, ComicCredit.comic_id == Comic.id) \
+        .join(ReadingProgress, Comic.id == ReadingProgress.comic_id) \
+        .join(Volume).join(Series) \
+        .filter(
+        ComicCredit.role == 'writer',
+        ReadingProgress.user_id == current_user.id,
+        ReadingProgress.completed == True
+    )
+
+    if series_age_filter is not None:
+        top_writers = top_writers.filter(series_age_filter)
+
+    top_writers = top_writers.group_by(Person.id, Person.name) \
+        .order_by(func.count(func.distinct(ReadingProgress.comic_id)).desc()) \
+        .limit(3).all()
+
+    top_artists = db.query(
+        Person.name,
+        func.count(func.distinct(ReadingProgress.comic_id)).label('comics_read')
+    ).join(ComicCredit, Person.id == ComicCredit.person_id) \
+        .join(Comic, ComicCredit.comic_id == Comic.id) \
+        .join(ReadingProgress, Comic.id == ReadingProgress.comic_id) \
+        .join(Volume).join(Series) \
+        .filter(
+        ComicCredit.role == 'penciller',
+        ReadingProgress.user_id == current_user.id,
+        ReadingProgress.completed == True
+    )
+
+    if series_age_filter is not None:
+        top_artists = top_artists.filter(series_age_filter)
+
+    top_artists = top_artists.group_by(Person.id, Person.name) \
+        .order_by(func.count(func.distinct(ReadingProgress.comic_id)).desc()) \
+        .limit(3).all()
+
+    # === TOP PUBLISHERS ===
+    top_publishers = db.query(
+        Comic.publisher,
+        func.count(func.distinct(ReadingProgress.comic_id)).label('comics_read')
+    ).join(ReadingProgress, Comic.id == ReadingProgress.comic_id) \
+        .join(Volume).join(Series) \
+        .filter(
+        ReadingProgress.user_id == current_user.id,
+        ReadingProgress.completed == True,
+        Comic.publisher.isnot(None)
+    )
+
+    if series_age_filter is not None:
+        top_publishers = top_publishers.filter(series_age_filter)
+
+    top_publishers = top_publishers.group_by(Comic.publisher) \
+        .order_by(func.count(func.distinct(ReadingProgress.comic_id)).desc()) \
+        .limit(3).all()
+
+    # === GENRE DIVERSITY ===
+
+
+    genre_breakdown = db.query(
+        Genre.name,
+        func.count(func.distinct(ReadingProgress.comic_id)).label('count')
+    ).join(comic_genres, Genre.id == comic_genres.c.genre_id) \
+        .join(Comic, comic_genres.c.comic_id == Comic.id) \
+        .join(ReadingProgress, Comic.id == ReadingProgress.comic_id) \
         .join(Volume).join(Series) \
         .filter(
         ReadingProgress.user_id == current_user.id,
@@ -113,18 +219,103 @@ async def get_user_dashboard(db: SessionDep, current_user: CurrentUser):
     )
 
     if series_age_filter is not None:
-        stats_query = stats_query.filter(series_age_filter)
+        genre_breakdown = genre_breakdown.filter(series_age_filter)
 
-    stats_result = stats_query.first()
+    genres = genre_breakdown.group_by(Genre.id, Genre.name).all()
 
-    issues_read = stats_result.issues_read or 0
-    total_pages = stats_result.total_pages or 0
+    # Calculate total for percentages
+    total_genre_reads = sum(g.count for g in genres)
+    genre_diversity = {
+        'genres_explored': len(genres),
+        'top_genres': [
+            {
+                'name': g.name,
+                'count': g.count,
+                'percentage': round((g.count / total_genre_reads * 100), 1) if total_genre_reads > 0 else 0
+            }
+            for g in sorted(genres, key=lambda x: x.count, reverse=True)[:5]
+        ]
+    }
 
-    # Calculate Time (1.25 mins per page)
-    time_read_str = get_reading_time(total_pages)
+    # === CHARACTER STATS ===
+    top_characters = db.query(
+        Character.name,
+        func.count(func.distinct(ReadingProgress.comic_id)).label('appearances')
+    ).join(comic_characters, Character.id == comic_characters.c.character_id) \
+        .join(Comic, comic_characters.c.comic_id == Comic.id) \
+        .join(ReadingProgress, Comic.id == ReadingProgress.comic_id) \
+        .join(Volume).join(Series) \
+        .filter(
+        ReadingProgress.user_id == current_user.id,
+        ReadingProgress.completed == True
+    )
 
-    # 2. Get Pull Lists (Limit 5 for dashboard overview)
-    # OPTIMIZATION: selectinload(PullList.items) prevents N+1 when calling len(pl.items) later
+    if series_age_filter is not None:
+        top_characters = top_characters.filter(series_age_filter)
+
+    top_characters = top_characters.group_by(Character.id, Character.name) \
+        .order_by(func.count(func.distinct(ReadingProgress.comic_id)).desc()) \
+        .limit(5).all()
+
+    # === READING BEHAVIOR ===
+    # Calculate reading velocity (last 30 days)
+
+    thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
+
+    recent_activity = db.query(
+        func.count(func.distinct(ReadingProgress.comic_id)).label('recent_reads'),
+        func.sum(Comic.page_count).label('recent_pages')
+    ).join(Comic, ReadingProgress.comic_id == Comic.id) \
+        .join(Volume).join(Series) \
+        .filter(
+        ReadingProgress.user_id == current_user.id,
+        ReadingProgress.last_read_at >= thirty_days_ago,
+        ReadingProgress.completed == True
+    )
+
+    if series_age_filter is not None:
+        recent_activity = recent_activity.filter(series_age_filter)
+
+    recent = recent_activity.first()
+
+    # Average reading session length (days to complete)
+    avg_completion_time = db.query(
+        func.avg(
+            func.julianday(ReadingProgress.last_read_at) -
+            func.julianday(ReadingProgress.created_at)
+        ).label('avg_days')
+    ).filter(
+        ReadingProgress.user_id == current_user.id,
+        ReadingProgress.completed == True
+    ).scalar() or 0
+
+    reading_behavior = {
+        'last_30_days': {
+            'comics_read': recent.recent_reads or 0,
+            'pages_read': recent.recent_pages or 0
+        },
+        'avg_days_to_complete': round(avg_completion_time, 1),
+        'reading_pace': 'Binge Reader' if avg_completion_time < 1 else
+        'Active Reader' if avg_completion_time < 7 else
+        'Casual Reader' if avg_completion_time < 30 else
+        'Slow Reader'
+    }
+
+    # === COLLECTION STATS ===
+    total_comics_available = db.query(func.count(Comic.id)) \
+        .join(Volume).join(Series)
+
+    if series_age_filter is not None:
+        total_comics_available = total_comics_available.filter(series_age_filter)
+
+    total_available = total_comics_available.scalar() or 0
+
+    collection_stats = {
+        'total_available': total_available,
+        'read_percentage': round((stats.completed_comics / total_available * 100), 1) if total_available > 0 else 0
+    }
+
+    # === PULL LISTS (Existing) ===
     pull_lists_query = db.query(PullList).options(selectinload(PullList.items)) \
         .filter(PullList.user_id == current_user.id) \
         .order_by(PullList.updated_at.desc())
@@ -136,38 +327,39 @@ async def get_user_dashboard(db: SessionDep, current_user: CurrentUser):
 
     pull_lists = pull_lists_query.limit(5).all()
 
-    # 3. Get "Continue Reading" (Limit 6)
-    # OPTIMIZATION: joinedload Comic->Volume->Series to prevent N+1 loop during formatting
-    # FIX: Use contains_eager to rely on the explicit joins we made.
-    # This prevents double-joining and ensures filtering applies to the loaded objects.
-
+    # === CONTINUE READING (Existing) ===
     recent_progress_query = db.query(ReadingProgress) \
         .join(ReadingProgress.comic).join(Comic.volume).join(Volume.series) \
         .options(
-            contains_eager(ReadingProgress.comic).contains_eager(Comic.volume).contains_eager(Volume.series)
-        ).filter(
+        contains_eager(ReadingProgress.comic)
+        .contains_eager(Comic.volume)
+        .contains_eager(Volume.series)
+    ).filter(
         ReadingProgress.user_id == current_user.id,
         # Robust check for Incomplete (Handles False or NULL)
         or_(ReadingProgress.completed == False, ReadingProgress.completed == None),
         ReadingProgress.current_page > 0
-        )
+    )
 
     if series_age_filter is not None:
         recent_progress_query = recent_progress_query.filter(series_age_filter)
 
-    recent_progress = recent_progress_query.order_by(ReadingProgress.last_read_at.desc()).limit(6).all()
+    recent_progress = recent_progress_query \
+        .order_by(ReadingProgress.last_read_at.desc()) \
+        .limit(6).all()
 
-    continue_reading = []
-    for p in recent_progress:
-        # Accessing these properties is instant (in-memory)
-        continue_reading.append({
+    continue_reading = [
+        {
             "comic_id": p.comic.id,
             "series_name": p.comic.volume.series.name,
             "number": p.comic.number,
             "percentage": p.progress_percentage,
             "thumbnail": f"/api/comics/{p.comic.id}/thumbnail"
-        })
+        }
+        for p in recent_progress
+    ]
 
+    # === ASSEMBLE RESPONSE ===
     return {
         "opds_enabled": opds_enabled,
         "user": {
@@ -176,10 +368,26 @@ async def get_user_dashboard(db: SessionDep, current_user: CurrentUser):
             "avatar_url": f"/api/users/{current_user.id}/avatar" if current_user.avatar_path else None
         },
         "stats": {
-            "issues_read": issues_read,
-            "pages_turned": total_pages,
-            "time_read": time_read_str
+            "issues_read": stats.issues_read or 0,
+            "pages_turned": stats.total_pages or 0,
+            "time_read": get_reading_time(stats.total_pages or 0),
+            "completed_comics": stats.completed_comics or 0,
+            "series_explored": series_data.series_explored or 0,
+            "series_completed": series_data.series_completed or 0
         },
+        "creators": {
+            "top_writers": [{"name": w.name, "comics_read": w.comics_read} for w in top_writers],
+            "top_artists": [{"name": a.name, "comics_read": a.comics_read} for a in top_artists]
+        },
+        "publishers": {
+            "top_publishers": [{"name": p.publisher, "comics_read": p.comics_read} for p in top_publishers]
+        },
+        "characters": {
+            "top_characters": [{"name": c.name, "appearances": c.appearances} for c in top_characters]
+        },
+        "genres": genre_diversity,
+        "reading_behavior": reading_behavior,
+        "collection": collection_stats,
         "pull_lists": [{"id": pl.id, "name": pl.name, "count": len(pl.items)} for pl in pull_lists],
         "continue_reading": continue_reading
     }
