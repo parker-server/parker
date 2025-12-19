@@ -4,21 +4,22 @@
 
 {% block content %}
 <div class="max-w-6xl mx-auto" x-data="duplicatesReport()">
-    
-    <div class="flex justify-between items-center mb-8">
-        <div>
-            <h1 class="text-3xl font-bold text-white mb-2">Duplicate Detector</h1>
-            <p class="text-gray-400">Items identified as duplicates based on Series, Volume, Issue, and Format.</p>
-        </div>
-        <div class="flex items-center gap-4">
-            <span class="text-gray-400" x-show="!loading && totalItems > 0">
-                <span x-text="totalItems"></span> conflicts found
-            </span>
-            <button @click="loadReport(1)" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2">
-                <span :class="loading ? 'animate-spin' : ''">↻</span> Refresh
-            </button>
-        </div>
-    </div>
+
+
+    {% from "partials/admin_header.html" import admin_header %}
+    {{ admin_header(
+        title="Duplicate Detector",
+        description="Items identified as duplicates based on Series, Volume, Issue, and Format.",
+
+        stats_var="totalItems",
+        stats_label="issue(s) found",
+        stats_condition="!loading && totalItems > 0",
+
+        refresh_func="loadReport(1)",
+        loading_var="loading",
+        back_href=url("/admin/reports"),
+        back_label="Back to Reports"
+    ) }}
 
     <div x-show="loading" class="flex justify-center py-20">
         <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
