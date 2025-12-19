@@ -1,5 +1,5 @@
 <div x-data="globalDialog()"
-     @keydown.window.escape="close()"
+     x-on:keydown.window.escape="close()"
      class="relative z-[100]"
      style="display: none;"
      x-show="isOpen">
@@ -11,7 +11,7 @@
          x-transition:leave="transition ease-in duration-100"
          x-transition:leave-start="opacity-100"
          x-transition:leave-end="opacity-0"
-         @click="close()"></div>
+         x-on:click="close()"></div>
 
     <div class="fixed inset-0 z-10 overflow-y-auto">
         <div class="flex min-h-full items-center justify-center p-4 text-center">
