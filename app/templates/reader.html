@@ -620,7 +620,7 @@ function reader() {
                 const res = await fetch(window.parker.route('reader.init', { comic_id: this.comicId }, `${params.toString()}`));
 
                 if (!res.ok) {
-                    window.showToast('Failed to init reader', 'error')
+                    window.parker.showToast('Failed to init reader', 'error')
                     throw new Error('Failed to init reader');
                 }
                 this.meta = await res.json();
@@ -646,15 +646,28 @@ function reader() {
         // --- Preloading Engine ---
         // ------------------------------
         preloadContext() {
-            // Determine how far to look ahead
-            const lookahead = this.viewMode === 'double' ? 4 : 2;
 
-            for (let i = 1; i <= lookahead; i++) {
+            // Calculate Buffer Size (2 Turns)
+            // Single Mode: 2 pages total
+            // Double Mode: 4 pages total
+            const bufferSize = this.viewMode === 'double' ? 4 : 2;
+
+            // Look Ahead (Next 2 Turns)
+            for (let i = 1; i <= bufferSize; i++) {
                 const targetPage = this.currentPage + i;
                 if (targetPage < this.meta.page_count) {
                     this.preloadImage(targetPage);
                 }
             }
+
+            // Look Behind (Previous 2 Turns)
+            for (let i = 1; i <= bufferSize; i++) {
+                const targetPreviousPage = this.currentPage - i;
+                if (targetPreviousPage >= 0) {
+                    this.preloadImage(targetPreviousPage);
+                }
+            }
+
         },
 
         preloadImage(index) {
@@ -908,7 +921,7 @@ function reader() {
         toggleFullscreen() {
             if (!document.fullscreenElement) {
                 document.documentElement.requestFullscreen();
-                void setTimeout(() => { window.showToast('Fullscreen mode on', 'info')}, 500);
+                void setTimeout(() => { window.parker.showToast('Fullscreen mode on', 'info')}, 500);
             }
             else document.exitFullscreen();
         },
