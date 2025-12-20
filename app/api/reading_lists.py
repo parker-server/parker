@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import joinedload, aliased
 from sqlalchemy import func, select, and_, or_, not_
+from typing import Annotated, List
 
-from app.api.deps import SessionDep, CurrentUser
+from app.api.deps import SessionDep, CurrentUser, PaginationParams, PaginatedResponse
 from app.core.comic_helpers import (get_aggregated_metadata,
                                     get_age_rating_config, get_banned_comic_condition,
                                     check_container_restriction)
@@ -15,8 +16,10 @@ from app.models.reading_list import ReadingList, ReadingListItem
 router = APIRouter()
 
 
-@router.get("/", name="list")
-async def list_reading_lists(db: SessionDep, current_user: CurrentUser):
+@router.get("/", response_model=PaginatedResponse, name="list")
+async def list_reading_lists(db: SessionDep,
+                             current_user: CurrentUser,
+                             params: Annotated[PaginationParams, Depends()]):
     """
     List reading lists.
     OPTIMIZED: Uses a SQL subquery to count visible items instead of fetching all rows.
@@ -61,12 +64,18 @@ async def list_reading_lists(db: SessionDep, current_user: CurrentUser):
         )
     # ------------------------------
 
-    results = query.order_by(ReadingList.name).all()
+    # 4. Pagination & Execute
+    total = query.count()  # Count before slicing
+
+    results = query.order_by(ReadingList.name) \
+        .offset(params.skip) \
+        .limit(params.size) \
+        .all()
 
     # 4. Format Results
-    response = []
+    items = []
     for rl, v_count in results:
-        response.append({
+        items.append({
             "id": rl.id,
             "name": rl.name,
             "description": rl.description,
@@ -77,8 +86,10 @@ async def list_reading_lists(db: SessionDep, current_user: CurrentUser):
         })
 
     return {
-        "total": len(response),
-        "reading_lists": response
+        "total": total,
+        "page": params.page,
+        "size": params.size,
+        "items": items
     }
 
 

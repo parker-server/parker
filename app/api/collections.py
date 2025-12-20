@@ -5,7 +5,7 @@ from typing import List, Annotated
 
 from app.core.comic_helpers import (get_aggregated_metadata, get_series_age_restriction,
                                     get_banned_comic_condition, check_container_restriction)
-from app.api.deps import SessionDep, CurrentUser, AdminUser
+from app.api.deps import SessionDep, CurrentUser, AdminUser, PaginationParams, PaginatedResponse
 from app.models.collection import Collection, CollectionItem
 from app.models.comic import Comic, Volume
 from app.models.series import Series
@@ -16,8 +16,10 @@ from app.models.user import User
 router = APIRouter()
 
 
-@router.get("/", name="list")
-async def list_collections(current_user: CurrentUser, db: SessionDep):
+@router.get("/", response_model=PaginatedResponse, name="list")
+async def list_collections(current_user: CurrentUser,
+                           db: SessionDep,
+                           params: Annotated[PaginationParams, Depends()]):
     """
     List collections.
     OPTIMIZED: Uses SQL subquery to count visible items instead of fetching all rows.
@@ -65,13 +67,18 @@ async def list_collections(current_user: CurrentUser, db: SessionDep):
         )
     # ------------------------------
 
-    # 4. Execute
-    results = query.order_by(Collection.name).all()
+    # 4. Pagination & Execute
+    total = query.count()  # Get total before slicing
+
+    results = query.order_by(Collection.name)\
+        .offset(params.skip)\
+        .limit(params.size)\
+        .all()
 
     # 5. Format
-    response = []
+    items = []
     for col, v_count in results:
-        response.append({
+        items.append({
             "id": col.id,
             "name": col.name,
             "description": col.description,
@@ -82,8 +89,10 @@ async def list_collections(current_user: CurrentUser, db: SessionDep):
         })
 
     return {
-        "total": len(response),
-        "collections": response
+        "total": total,
+        "page": params.page,
+        "size": params.size,
+        "items": items
     }
 
 

@@ -381,6 +381,108 @@ document.addEventListener('error', function(e) {
         }
     };
 
+    /**
+     * Generic Pagination Logic
+     * @param {string} routeName - The Parker route name (e.g., 'libraries.series')
+     * @param {Function} getRouteParams - Callback to get path params (e.g. () => ({ library_id: 1 }))
+     * @param {object} config - Optional overrides { pageSize, mode }
+     */
+    const paginationMixin = (routeName, getRouteParams, config = {}) => {
+
+        return {
+            // State
+            items: [],
+            loading: true,
+            page: 1,
+            size: config.pageSize || 20,
+            total: 0,
+            mode: config.mode || 'infinite',
+
+            // Actions
+            async loadItems(append = false) {
+                this.loading = true;
+                try {
+                    // 1. Resolve Params
+                    const params = getRouteParams ? getRouteParams.call(this) : {};
+
+                    // 2. Build URL
+                    const qs = `page=${this.page}&size=${this.size}`;
+                    const url = window.parker.route(routeName, params, qs);
+
+                    // 3. Fetch
+                    const res = await fetch(url);
+                    const data = await res.json();
+
+                    // 4. Update State
+                    if (append) {
+                        this.items = [...this.items, ...data.items];
+                    } else {
+                        this.items = data.items;
+                        if (this.items.length > 0 && !append) {
+                            // Only scroll up on full page loads, not infinite appends
+                            // (Logic handled by 'append' flag usually implies infinite)
+                            if(this.mode === 'classic') window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }
+                    }
+                    this.total = data.total;
+
+                } catch (e) {
+                    console.error("Pagination Error:", e);
+                    if(window.parker) window.parker.showToast("Failed to load items", "error");
+                } finally {
+                    this.loading = false;
+
+                    // Re-arm Infinite Scroll
+                    if (this.mode === 'infinite') {
+                        this.$nextTick(() => this.setupObserver());
+                    }
+                }
+            },
+
+            // --- Controls ---
+
+            changePage(newPage) {
+                if (newPage < 1) return;
+                const maxPage = Math.ceil(this.total / this.size);
+                if (newPage > maxPage) return;
+
+                this.page = newPage;
+                this.loadItems(false); // Replace
+            },
+
+            setupObserver() {
+                // Requires an element with x-ref="loadSentinel"
+                if (this.$refs.loadSentinel) {
+                    // Disconnect old observer if saved? (Alpine usually handles cleanup,
+                    // but for strict safety we rely on the closure)
+                    const observer = new IntersectionObserver((entries) => {
+                        if (entries[0].isIntersecting && !this.loading) {
+                            this.loadMore();
+                        }
+                    }, { rootMargin: '200px' });
+
+                    observer.observe(this.$refs.loadSentinel);
+                }
+            },
+
+            loadMore() {
+                const maxPage = Math.ceil(this.total / this.size);
+                if (this.page < maxPage) {
+                    this.page++;
+                    this.loadItems(true); // Append
+                }
+            },
+
+            // Computed Helpers (for Template)
+            maxPage() {
+                return Math.ceil(this.total / this.size) || 1;
+            }
+        };
+    }
+
+
+
+
     const prefs = {
         getViewMode() { return storage.get('viewMode', 'grid'); },
         setViewMode(mode) { storage.set('viewMode', mode); },
@@ -396,6 +498,7 @@ document.addEventListener('error', function(e) {
         formatFileSize,
         formatBytes,
         formatDate,
+        paginationMixin,
         storage,
         prefs
     };
