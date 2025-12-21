@@ -149,26 +149,25 @@
                     </p>
                 </div>
                 <button
-                    x-on:click="runTask('refresh-colorscapes')"
+                    x-on:click="runTask('colorscape_refresh')"
                     class="btn-primary flex items-center gap-2"
                     :disabled="loading"
                     :class="loading ? 'opacity-50 cursor-not-allowed' : ''"
                 >
-                    <span x-show="loading && activeTask === 'refresh-colorscapes'" class="animate-spin">↻</span>
-                    <span x-show="!(loading && activeTask === 'refresh-colorscapes')">Run Task</span>
+                    <span x-show="loading && activeTask === 'colorscape_refresh'" class="animate-spin">↻</span>
+                    <span x-show="!(loading && activeTask === 'colorscape_refresh')">Run Task</span>
                 </button>
             </div>
 
-            <div x-show="activeTask === 'refresh-colorscapes' && lastResult"
+            <div x-show="activeTask === 'colorscape_refresh' && lastResult"
                  x-transition
                  class="mt-6 bg-purple-900/20 rounded p-4 border border-purple-500/30 font-mono text-sm">
                 <div class="flex justify-between items-center mb-2">
-                    <span class="text-purple-400 font-bold">Processing Complete</span>
+                    <span class="text-purple-400 font-bold">Background job(s) started. Check the Dashboard for progress.</span>
                     <button x-on:click="lastResult = null" class="text-gray-500 hover:text-white text-xs">Dismiss</button>
                 </div>
                 <div class="text-gray-300">
-                    <p>Queue Size: <span class="text-white font-bold" x-text="lastResult?.stats?.total_scanned"></span> comics.</p>
-                    <p>Processed: <span class="text-green-400 font-bold" x-text="lastResult?.stats?.updated"></span> generated.</p>
+                    <p>Queue Size: <span class="text-white font-bold" x-text="lastResult?.stats?.libraries_queued"></span> libraries.</p>
                 </div>
             </div>
         </div>
