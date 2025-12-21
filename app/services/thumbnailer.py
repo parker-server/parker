@@ -253,11 +253,15 @@ class ThumbnailService:
                 self.logger.info(f"Using exactly {worker_limit} worker(s) for thumbnail generation")
 
         else:
-            requested_workers = get_cached_setting("system.parallel_image_workers", 0)
+            requested_workers = int(get_cached_setting("system.parallel_image_workers", 0))
             self.logger.info(f"Requested {'(Auto)' if requested_workers <= 0 else requested_workers} worker(s) for parallel thumbnail generation")
 
             if requested_workers <= 0:
-                workers = multiprocessing.cpu_count() or 1
+                # AUTO MODE:
+                # Use 50% of cores, with a minimum of 1.
+                # This prevents system starvation when multiple web workers are active.
+                total_cores = multiprocessing.cpu_count() or 1
+                workers = max(1, total_cores // 2)
             else:
                 max_cores = multiprocessing.cpu_count() or 1
                 workers = min(requested_workers, max_cores)
