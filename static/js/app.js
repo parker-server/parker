@@ -406,14 +406,23 @@ document.addEventListener('error', function(e) {
                     const params = getRouteParams ? getRouteParams.call(this) : {};
 
                     // 2. Build URL
-                    const qs = `page=${this.page}&size=${this.size}`;
+                    let qs = `page=${this.page}&size=${this.size}`;
+
+                    // 3. Extra Query Params (Filters, Sorts)
+                    if (config.getQueryParams) {
+                        const extra = config.getQueryParams.call(this);
+                        // Convert object to query string (e.g. {type: 'annual'} -> "&type=annual")
+                        const usp = new URLSearchParams(extra);
+                        qs += `&${usp.toString()}`;
+                    }
+
                     const url = window.parker.route(routeName, params, qs);
 
-                    // 3. Fetch
+                    // 4. Fetch
                     const res = await fetch(url);
                     const data = await res.json();
 
-                    // 4. Update State
+                    // 5. Update State
                     if (append) {
                         this.items = [...this.items, ...data.items];
                     } else {
@@ -443,7 +452,7 @@ document.addEventListener('error', function(e) {
 
             changePage(newPage) {
                 if (newPage < 1) return;
-                const maxPage = Math.ceil(this.total / this.size);
+                const maxPage = this.maxPage ? this.maxPage() : 1;
                 if (newPage > maxPage) return;
 
                 this.page = newPage;
@@ -466,14 +475,13 @@ document.addEventListener('error', function(e) {
             },
 
             loadMore() {
-                const maxPage = Math.ceil(this.total / this.size);
+                const maxPage = this.maxPage();
                 if (this.page < maxPage) {
                     this.page++;
                     this.loadItems(true); // Append
                 }
             },
 
-            // Computed Helpers (for Template)
             maxPage() {
                 return Math.ceil(this.total / this.size) || 1;
             }
