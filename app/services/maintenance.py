@@ -114,35 +114,4 @@ class MaintenanceService:
             self.db.commit()
 
         return {"updated": updated_count, "total_scanned": len(lists)}
-
-    def backfill_colors(self) -> dict:
-        """Generate colors for comics that miss them."""
-        # Get ALL IDs that need processing
-
-        ids = [r[0] for r in self.db.query(Comic.id).filter(Comic.color_primary == None).all()]
-        total = len(ids)
-        updated_count = 0
-        img_svc = ImageService()
-
-        # Process in chunks of 20 (smaller chunks = more responsive app)
-        chunk_size = 20
-        for i in range(0, total, chunk_size):
-            chunk_ids = ids[i:i + chunk_size]
-
-            comics = self.db.query(Comic).filter(Comic.id.in_(chunk_ids)).all()
-
-            for comic in comics:
-                try:
-                    palette_dict = img_svc.extract_palette(str(comic.file_path))
-                    if palette_dict:
-                        comic.color_primary = palette_dict['primary']
-                        comic.color_secondary = palette_dict['secondary']
-                        comic.color_palette = palette_dict
-                        updated_count += 1
-                except:
-                    continue
-
-            # Commit after every chunk
-            self.db.commit()
-
-        return {"updated": updated_count, "total_scanned": total}
+    

@@ -1,10 +1,34 @@
 from sqlalchemy.orm import Session
+import multiprocessing
 from app.models.setting import SystemSetting
 from typing import Any, List, Dict
 
 from app.api.deps import SessionDep
 from app.core.settings_loader import invalidate_settings_cache
 from app.core.login_backgrounds import SOLID_COLORS, STATIC_COVERS
+
+
+def generate_worker_options():
+    """Generate CPU worker options based on available cores"""
+    try:
+        cpu_count = multiprocessing.cpu_count()
+    except Exception:
+        cpu_count = 1
+
+    # Option 1: Auto
+    options = [
+        {"label": "Auto (Safe - 50% Load)", "value": "0"}
+    ]
+
+    # Option 2: Explicit counts (1 up to Max)
+    for i in range(1, cpu_count + 1):
+        label = f"{i} Worker{'s' if i > 1 else ''}"
+        if i == cpu_count:
+            label += " (Max Performance)"
+
+        options.append({"label": label, "value": str(i)})
+
+    return options
 
 def generate_color_options():
     """Generate color options from SOLID_COLORS dictionary"""
@@ -142,9 +166,10 @@ class SettingsService:
             "key": "system.parallel_image_workers",
             "value": "0",
             "category": "system",
-            "data_type": "int",
+            "data_type": "select",
             "label": "Parallel Image Worker Count",
-            "description": "Number of worker processes for thumbnail generation. 0 = auto (use all CPU cores). Values above your CPU count will be clamped."
+            "description": "Control how many CPU cores are used for thumbnail generation.",
+            "options": generate_worker_options()
         },
         {
             "key": "system.task.scan.interval",
@@ -268,6 +293,10 @@ class SettingsService:
 
         # Clear the read-cache so the app sees the change immediately
         invalidate_settings_cache()
+
+        # Cast the value back to Python type (bool/int) so the API returns
+        # actual JSON booleans, not strings like "false".
+        setting.value = self._cast_value(setting.value, setting.data_type)
 
         return setting
 

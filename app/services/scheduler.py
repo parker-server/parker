@@ -5,7 +5,6 @@ from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
 from app.services.backup import BackupService
-from app.services.maintenance import MaintenanceService
 from app.services.scan_manager import scan_manager
 from app.models.setting import SystemSetting
 from app.models.library import Library

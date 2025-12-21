@@ -38,14 +38,14 @@
 
 
     <div class="min-h-[500px]">
-        <div x-show="loading.series && seriesList.length === 0" class="flex justify-center py-20">
+        <div x-show="loading && items.length === 0" class="flex justify-center py-20">
             <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
         </div>
 
-        <div x-show="seriesList.length > 0">
+        <div x-show="items.length > 0">
 
             <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
-                <template x-for="series in seriesList" :key="series.id">
+                <template x-for="series in items" :key="series.id">
                     {% include "partials/series_card.html" %}
                 </template>
             </div>
@@ -53,32 +53,32 @@
             {# Pagination controls #}
             <div class="mt-12 pt-6 border-t border-gray-700">
 
-                <template x-if="paginationMode === 'infinite'">
+                <template x-if="mode === 'infinite'">
                     <div x-ref="loadSentinel" class="py-8 text-center">
-                        <span x-show="loading.series" class="text-blue-400 animate-pulse">Loading more series...</span>
-                        <span x-show="!loading.series && currentPage >= Math.ceil(totalItems / pageSize)" class="text-gray-600 text-sm">
+                        <span x-show="loading" class="text-blue-400 animate-pulse">Loading more series...</span>
+                        <span x-show="!loading && page >= maxPage()" class="text-gray-600 text-sm">
                             End of library
                         </span>
                     </div>
                 </template>
 
-                <template x-if="paginationMode === 'classic'">
+                <template x-if="mode === 'classic'">
                     <div class="flex justify-center items-center space-x-4">
                         <button
-                            @click="changePage(currentPage - 1)"
-                            :disabled="currentPage === 1"
+                            @click="changePage(page - 1)"
+                            :disabled="page === 1"
                             class="px-4 py-2 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors border border-gray-600"
                         >
                             Previous
                         </button>
 
                         <span class="text-gray-400">
-                            Page <span class="text-white font-bold" x-text="currentPage"></span> of <span x-text="Math.ceil(totalItems / pageSize)"></span>
+                            Page <span class="text-white font-bold" x-text="page"></span> of <span x-text="maxPage()"></span>
                         </span>
 
                         <button
-                            x-on:click="changePage(currentPage + 1)"
-                            :disabled="currentPage >= Math.ceil(totalItems / pageSize)"
+                            x-on:click="changePage(page + 1)"
+                            :disabled="page >= maxPage()"
                             class="px-4 py-2 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors border border-gray-600"
                         >
                             Next
@@ -89,7 +89,7 @@
             </div>
         </div>
 
-        <div x-show="!loading.series && seriesList.length === 0" class="text-center py-20 text-gray-500 bg-gray-800/50 rounded-xl border border-dashed border-gray-700">
+        <div x-show="!loading && items.length === 0" class="text-center py-20 text-gray-500 bg-gray-800/50 rounded-xl border border-dashed border-gray-700">
             <p class="text-xl">This library is empty.</p>
             <p class="text-sm mt-2 text-gray-400">Scan this library to populate it with series.</p>
         </div>
@@ -102,23 +102,22 @@ function libraryView() {
     return {
         libraryId: {{ library_id }},
         library: null,
-        seriesList: [],
-
-        // Pagination State
-        currentPage: 1,
-        pageSize: 50,
-        totalItems: 0,
-        paginationMode: '{{ get_system_setting("ui.pagination_mode", "infinite") }}',
         error: null,
 
         loading: {
-            meta: true,
-            series: true
+            meta: true
         },
-
+        ...window.parker.paginationMixin(
+            'libraries.series',
+            function() { return { library_id: this.libraryId }; },
+            {
+                pageSize: 50,
+                mode: '{{ get_system_setting("ui.pagination_mode", "infinite") }}'
+            }
+        ),
         init() {
             this.loadLibraryMeta();
-            this.loadSeries();
+            this.loadItems();
         },
 
         async loadLibraryMeta() {
@@ -141,72 +140,6 @@ function libraryView() {
                 console.error(e);
             } finally {
                 this.loading.meta = false;
-            }
-        },
-
-        async loadSeries(append = false) {
-            this.loading.series = true;
-            try {
-                // Fetch paginated series
-                const url = window.parker.route('libraries.series', { library_id: this.libraryId }, `page=${this.currentPage}&size=${this.pageSize}`);
-
-                const res = await fetch(url);
-                const data = await res.json();
-
-                if (append) {
-                    // INFINITE: Append
-                    this.seriesList = [...this.seriesList, ...data.items];
-                } else {
-                    // CLASSIC: Replace
-                    this.seriesList = data.items;
-
-                    // Only scroll to top on replace
-                    if (this.seriesList.length > 0) {
-                        window.scrollTo({ top: 0, behavior: 'smooth' });
-                    }
-                }
-
-                this.totalItems = data.total;
-
-            } catch (e) {
-                console.error(e);
-            } finally {
-                this.loading.series = false;
-
-                // Re-arm observer
-                if (this.paginationMode === 'infinite') {
-                    this.$nextTick(() => this.setupInfiniteScroll());
-                }
-            }
-        },
-
-        changePage(newPage) {
-            if (newPage < 1) return;
-            const maxPage = Math.ceil(this.totalItems / this.pageSize);
-            if (newPage > maxPage) return;
-
-            this.currentPage = newPage;
-            this.loadSeries();
-        },
-
-        // Observer Logic
-        setupInfiniteScroll() {
-            if (this.$refs.loadSentinel) {
-                const observer = new IntersectionObserver((entries) => {
-                    if (entries[0].isIntersecting && !this.loading.series) {
-                        this.loadMore();
-                    }
-                }, { rootMargin: '200px' });
-
-                observer.observe(this.$refs.loadSentinel);
-            }
-        },
-
-        loadMore() {
-            const maxPage = Math.ceil(this.totalItems / this.pageSize);
-            if (this.currentPage < maxPage) {
-                this.currentPage++;
-                this.loadSeries(true); // true = append
             }
         },
 

@@ -116,6 +116,10 @@ class ScanManager:
 
     def add_task(self, library_id: int, force: bool = False) -> dict:
         """Create a new job record"""
+
+        self.logger.debug(f"Adding SCAN job for library {library_id} to queue (force: {force})")
+
+
         db = SessionLocal()
         try:
             # STRICT BLOCKING
@@ -273,13 +277,21 @@ class ScanManager:
             }
             self._safe_job_update(job_id, JobStatus.COMPLETED, summary=summary)
 
-            # 3. Queue Next Job: THUMBNAIL (Cleanup queued AFTER Thumbnail now)
+            # 3. Queue Pipeline: THUMBNAIL -> CLEANUP
+            # We queue both now so they run in sequence via priority
             db_queue = SessionLocal()
             try:
+                # Add Thumbnail Job
                 db_queue.add(ScanJob(
                     library_id=library_id,
                     job_type=JobType.THUMBNAIL,
                     force_scan=force,
+                    status=JobStatus.PENDING
+                ))
+                # Add Cleanup Job
+                db_queue.add(ScanJob(
+                    library_id=library_id,
+                    job_type=JobType.CLEANUP,
                     status=JobStatus.PENDING
                 ))
                 db_queue.commit()
@@ -325,26 +337,16 @@ class ScanManager:
         # 2. Update Status (With Retry)
         if error:
             self._safe_job_update(job_id, JobStatus.FAILED, error=error)
-            self._set_library_scanning_status(library_id, False)
         else:
             self._safe_job_update(job_id, JobStatus.COMPLETED, summary=stats)
+            # DECOUPLED: We no longer queue Cleanup here.
+            # It is either queued by Scan already, or not needed (manual run).
 
-            # 3. Queue CLEANUP Job (Only if successful)
-            # This ensures Strict Order: Scan -> Thumb -> Cleanup
-            db_queue = SessionLocal()
-            try:
-                db_queue.add(ScanJob(
-                    library_id=library_id,
-                    job_type=JobType.CLEANUP,
-                    status=JobStatus.PENDING
-                ))
-                db_queue.commit()
-            except Exception as e:
-                # If queuing cleanup fails, we must reset the flag here to avoid sticking
-                self.logger.error(f"Failed to queue cleanup job: {e}")
-                self._set_library_scanning_status(library_id, False)
-            finally:
-                db_queue.close()
+        # 3. Reset Flag (CRITICAL)
+        # Since we don't know if a Cleanup job follows, we must reset the flag.
+        # If a Cleanup job IS pending, it will simply set the flag back to True when it starts.
+        if library_id:
+            self._set_library_scanning_status(library_id, False)
 
     def _run_cleanup_job(self, job_data):
         job_id = job_data['id']
@@ -377,6 +379,9 @@ class ScanManager:
 
     def add_cleanup_task(self) -> dict:
         """Queue a global cleanup task"""
+
+        self.logger.debug(f"Adding CLEANUP job to queue")
+
         db = SessionLocal()
         try:
             # Check for existing pending cleanup to avoid stacking
@@ -396,6 +401,41 @@ class ScanManager:
             return {"status": "queued", "job_id": job.id, "message": "Global cleanup job queued"}
         finally:
             db.close()
+
+
+    def add_thumbnail_task(self, library_id: int, force: bool = False) -> dict:
+        """
+        Queue a thumbnail/colorscape generation task.
+        This reuses the parallel image processor to backfill missing data.
+        """
+
+        self.logger.debug(f"Adding THUMBNAIL job for library {library_id} to queue (force: {force})")
+
+        db = SessionLocal()
+        try:
+            # Check for existing job to avoid stacking
+            existing = db.query(ScanJob).filter(
+                ScanJob.library_id == library_id,
+                ScanJob.job_type == JobType.THUMBNAIL,
+                ScanJob.status.in_([JobStatus.PENDING, JobStatus.RUNNING])
+            ).first()
+
+            if existing:
+                return {"status": "ignored", "job_id": existing.id, "message": "Job already active"}
+
+            job = ScanJob(
+                library_id=library_id,
+                force_scan=force,
+                job_type=JobType.THUMBNAIL,
+                status=JobStatus.PENDING
+            )
+            db.add(job)
+            db.commit()
+            db.refresh(job)
+            return {"status": "queued", "job_id": job.id, "message": "Job queued"}
+        finally:
+            db.close()
+
 
 
 # Global instance

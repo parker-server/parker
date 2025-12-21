@@ -8,38 +8,59 @@
         <h1 class="text-3xl font-bold">Collections</h1>
     </div>
 
-    <div x-show="loading" class="flex justify-center py-20">
-        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+    <div class="min-h-[500px]">
+
+        <div x-show="loading && items?.length === 0" class="flex justify-center py-20">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+        </div>
+
+        <div x-show="items.length > 0">
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <template x-for="col in items" :key="col.id">
+                    {% include "partials/collection_card.html" %}
+                </template>
+            </div>
+
+            <div class="mt-12 pt-6 border-t border-gray-700">
+                <template x-if="mode === 'infinite'">
+                    <div x-ref="loadSentinel" class="py-8 text-center">
+                        <span x-show="loading" class="text-blue-400 animate-pulse">Loading more...</span>
+                        <span x-show="!loading && page >= maxPage()" class="text-gray-600 text-sm">End of results</span>
+                    </div>
+                </template>
+
+                <template x-if="mode === 'classic'">
+                    <div class="flex justify-center items-center space-x-4">
+                        <button @click="changePage(page - 1)" :disabled="page === 1" class="btn-pagination">Previous</button>
+                        <span class="text-gray-400">Page <span class="text-white font-bold" x-text="page"></span> of <span x-text="maxPage()"></span></span>
+                        <button @click="changePage(page + 1)" :disabled="page >= maxPage()" class="btn-pagination">Next</button>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <div x-show="!loading && items?.length === 0" class="text-center py-20 text-gray-400" style="display: none;">
+            <p class="text-lg">No collections found.</p>
+            <p class="text-sm mt-2">Collections are automatically generated from your comics metadata.</p>
+        </div>
     </div>
 
-    <div x-show="!loading" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <template x-for="col in collections" :key="col.id">
-            {% include "partials/collection_card.html" %}
-        </template>
-    </div>
-
-    <div x-show="!loading && collections.length === 0" class="text-center py-20 text-gray-400" style="display: none;">
-        <p class="text-lg">No collections found.</p>
-        <p class="text-sm mt-2">Collections are automatically generated from your comics metadata.</p>
-    </div>
 </div>
 
 <script>
 function collectionsList() {
     return {
-        collections: [],
-        loading: true,
-
-        async init() {
-            try {
-                const res = await fetch(window.parker.route('collections.list'));
-                const data = await res.json();
-                this.collections = data.collections;
-            } catch (e) {
-                console.error(e);
-            } finally {
-                this.loading = false;
+        ...window.parker.paginationMixin(
+            'collections.list',
+            null,
+            {
+                pageSize: 20,
+                mode: '{{ get_system_setting("ui.pagination_mode", "infinite") }}'
             }
+        ),
+        init() {
+            this.loadItems();
         }
     }
 }

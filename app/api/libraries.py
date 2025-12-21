@@ -30,7 +30,10 @@ def _has_library_access(library_id: int, current_user: CurrentUser) -> bool:
 async def list_libraries(db: SessionDep,
                          current_user: CurrentUser,
                          limit: Optional[int] = Query(None, gt=0, description="Limit the number of results")):
-    """List libraries accessible to the current user"""
+    """
+    List libraries accessible to the current user
+    Fetches all stats in 2 batch queries instead of N+1 loops.
+    """
 
     # Fetch the libraries based on permissions
     if current_user.is_superuser:
@@ -43,32 +46,40 @@ async def list_libraries(db: SessionDep,
         if limit:
             libs = libs[:limit]
 
+    if not libs:
+        return []
+
+    lib_ids = [lib.id for lib in libs]
 
     # --- AGE RATING FILTER PREP ---
     # We prepare the filter once to reuse inside the loop
     series_age_filter = get_series_age_restriction(current_user)
 
+    # Batch Fetch Series Counts (Grouped by Library)
+    # Query: "SELECT library_id, COUNT(id) FROM series GROUP BY library_id"
+    series_q = db.query(Series.library_id, func.count(Series.id)) \
+        .filter(Series.library_id.in_(lib_ids))
+
+    if series_age_filter is not None:
+        series_q = series_q.filter(series_age_filter)
+
+    series_counts = dict(series_q.group_by(Series.library_id).all())
+
+    # Batch Fetch Issue Counts (Grouped by Library)
+    # Query: "SELECT library_id, COUNT(comic.id) FROM comic JOIN vol JOIN series ..."
+    issue_q = db.query(Series.library_id, func.count(Comic.id)) \
+        .join(Volume, Comic.volume_id == Volume.id) \
+        .join(Series, Volume.series_id == Series.id) \
+        .filter(Series.library_id.in_(lib_ids))
+
+    if series_age_filter is not None:
+        issue_q = issue_q.filter(series_age_filter)
+
+    issue_counts = dict(issue_q.group_by(Series.library_id).all())
+
     # Iterate and Count
     results = []
     for lib in libs:
-
-        # Count Series directly
-        series_query = db.query(Series).filter(Series.library_id == lib.id)
-
-        if series_age_filter is not None:
-            series_query = series_query.filter(series_age_filter)
-
-        series_count = series_query.count()
-
-        # Count Issues (Join Comic -> Volume -> Series)
-        issue_query = db.query(Comic).join(Volume).join(Series) \
-            .filter(Series.library_id == lib.id)
-
-        if series_age_filter is not None:
-            # Applying the series filter removes any comic belonging to a hidden series
-            issue_query = issue_query.filter(series_age_filter)
-
-        issue_count = issue_query.count()
 
         # Construct the response dict
         # We manually build the dict to inject the 'stats' object
@@ -81,9 +92,10 @@ async def list_libraries(db: SessionDep,
             "last_scanned": lib.last_scanned,
             "is_scanning": lib.is_scanning,
             "created_at": lib.created_at,
+            # Lookup stats from our dictionaries (default to 0)
             "stats": {
-                "series": series_count,
-                "issues": issue_count
+                "series": series_counts.get(lib.id, 0),
+                "issues": issue_counts.get(lib.id, 0)
             }
         })
 

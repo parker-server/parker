@@ -18,8 +18,6 @@ from app.services.credits import CreditService
 from app.services.reading_list import ReadingListService
 from app.services.collection import CollectionService
 from app.services.images import ImageService
-from app.services.maintenance import MaintenanceService
-
 
 class LibraryScanner:
     """Scans library directories and imports comics with batch processing"""
@@ -49,7 +47,7 @@ class LibraryScanner:
 
         if not library_path.exists():
             self.logger.error(f"Library path {self.library.path} does not exist")
-            return {"error": f"Library path does not exist: {self.library.path}"}
+            raise FileNotFoundError(f"Library path does not exist: {self.library.path}")
 
         found_comics = []
         errors = []

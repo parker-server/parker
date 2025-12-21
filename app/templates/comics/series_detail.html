@@ -18,7 +18,7 @@
             <span class="text-white" x-text="`${series?.name}`"></span>
         </div>
 
-        <div x-show="loading" class="flex items-center justify-center py-12">
+        <div x-show="metaLoading" class="flex items-center justify-center py-12">
             <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
         </div>
 
@@ -39,7 +39,7 @@
             </div>
         </div>
 
-        <div x-show="!loading && !error && series" style="display: none;" x-cloak>
+        <div x-show="!metaLoading && !error && series" style="display: none;" x-cloak>
 
             <div class="bg-gray-800 rounded-lg p-6 mb-6 shadow-lg border border-gray-700">
 
@@ -246,15 +246,15 @@
 
                         {% include "partials/issues_toolbar.html" %}
 
-                        <div x-show="gridLoading && currentItems.length === 0" class="py-20 text-center">
+                        <div x-show="loading && items.length === 0" class="py-20 text-center">
                             <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
                             <p class="text-gray-400">Loading comics...</p>
                         </div>
 
-                        <div x-show="currentItems.length > 0">
+                        <div x-show="items.length > 0">
 
                             <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                                <template x-for="comic in currentItems" :key="comic.id">
+                                <template x-for="comic in items" :key="comic.id">
                                     {% include "partials/comic_card.html" %}
                                 </template>
                             </div>
@@ -264,8 +264,8 @@
 
                                 <template x-if="paginationMode === 'infinite'">
                                     <div x-ref="loadSentinel" class="py-8 text-center">
-                                        <span x-show="gridLoading" class="text-blue-400 animate-pulse">Loading more issues...</span>
-                                        <span x-show="!gridLoading && currentPage >= Math.ceil(totalItems / pageSize) && totalItems > 0" class="text-gray-600 text-sm">
+                                        <span x-show="loading" class="text-blue-400 animate-pulse">Loading more issues...</span>
+                                        <span x-show="!loading && page >= maxPage() && total > 0" class="text-gray-600 text-sm">
                                             End of list
                                         </span>
                                     </div>
@@ -274,20 +274,20 @@
                                 <template x-if="paginationMode === 'classic'">
                                     <div class="flex justify-center items-center space-x-4">
                                         <button
-                                            x-on:click="changePage(currentPage - 1)"
-                                            :disabled="currentPage === 1"
+                                            x-on:click="changePage(page - 1)"
+                                            :disabled="page === 1"
                                             class="px-4 py-2 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-white"
                                         >
                                             Previous
                                         </button>
 
                                         <span class="text-gray-400">
-                                            Page <span class="text-white font-bold" x-text="currentPage"></span> of <span x-text="Math.ceil(totalItems / pageSize)"></span>
+                                            Page <span class="text-white font-bold" x-text="page"></span> of <span x-text="maxPage()"></span>
                                         </span>
 
                                         <button
-                                            x-on:click="changePage(currentPage + 1)"
-                                            :disabled="currentPage >= Math.ceil(totalItems / pageSize)"
+                                            x-on:click="changePage(page + 1)"
+                                            :disabled="page >= maxPage()"
                                             class="px-4 py-2 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-white"
                                         >
                                             Next
@@ -299,7 +299,7 @@
 
                         </div>
 
-                        <div x-show="!gridLoading && currentItems.length === 0" class="text-center py-20 text-gray-500">
+                        <div x-show="!loading && items.length === 0" class="text-center py-20 text-gray-500">
                             <p>No comics found in this category.</p>
                         </div>
                     </div>
@@ -473,9 +473,27 @@
 <script>
 function seriesDetail() {
     return {
+
+        // 1. Inject Mixin
+        ...window.parker.paginationMixin(
+            'series.issues',
+            function() { return { series_id: this.seriesId }; },
+            {
+                pageSize: 48,
+                mode: '{{ get_system_setting("ui.pagination_mode", "infinite") }}',
+                getQueryParams: function() {
+                    return {
+                        type: this.currentType,
+                        read_filter: this.readFilter,
+                        sort_order: this.sortOrder
+                    };
+                }
+            }
+        ),
+
         seriesId: {{ series_id }},
         series: null,
-        loading: true,
+        metaLoading: true,
         notFound: false,
         error: null,
 
@@ -483,13 +501,7 @@ function seriesDetail() {
         activeTab: 'volumes', // volumes, issues, annuals, specials, related, details, arcs
 
         // Grid Data State
-        gridLoading: false,
-        currentItems: [],
-        currentPage: 1,
-        pageSize: 48, // 6 columns x 8 rows
-        totalItems: 0,
         currentType: 'plain', // plain, annual, special, all
-
         readFilter: 'all', // 'all', 'read', 'unread'
         sortOrder: 'asc',  // 'asc', 'desc'
         isReverseNumbering: false,
@@ -509,7 +521,7 @@ function seriesDetail() {
                         title: "Series Not Found",
                         message: "The series you are looking for does not exist or may have been deleted."
                     };
-                   this.loading = false;
+                   this.metaLoading = false;
                     return;
                 }
 
@@ -517,7 +529,7 @@ function seriesDetail() {
                     throw new Error("Failed to load series");
                 }
                 this.series = await res.json();
-                this.loading = false;
+                this.metaLoading = false;
                 this.isReverseNumbering = this.series.is_reverse_numbering;
 
                 if (this.isReverseNumbering) {
@@ -537,8 +549,8 @@ function seriesDetail() {
             } catch (e) {
                 console.error(e);
                 this.error = "Could not load series details.";
-                this.loading = false;
-            }
+                this.metaLoading = false;
+            } finally { this.metaLoading = false; }
         },
 
         get hasRelatedContent() {
@@ -559,8 +571,8 @@ function seriesDetail() {
             if (['volumes', 'related', 'details', 'arcs'].includes(tabName)) return;
 
             // Reset pagination
-            this.currentPage = 1;
-            this.currentItems = [];
+            this.page = 1;
+            this.items = [];
 
             // LOGIC UPDATE:
             // If it's a standalone series, the 'Issues' tab should just load EVERYTHING ('all')
@@ -576,66 +588,20 @@ function seriesDetail() {
             }
 
             this.currentType = typeParam;
-            this.fetchIssues(false);
-        },
-
-        async fetchIssues(append = false) {
-            this.gridLoading = true;
-            try {
-                // Construct URL with pagination and filters
-                const url = window.parker.route('series.issues', { series_id: this.seriesId }, `type=${this.currentType}&page=${this.currentPage}&size=${this.pageSize}&read_filter=${this.readFilter}&sort_order=${this.sortOrder}`);
-
-                const res = await fetch(url);
-                const data = await res.json();
-
-                if (append) {
-                    // INFINITE MODE: Append new items to existing list
-                    this.currentItems = [...this.currentItems, ...data.items];
-                } else {
-                    // CLASSIC MODE (or Page 1): Replace list
-                    this.currentItems = data.items;
-
-                    // Always scroll to top if we are replacing the list (Classic Mode or Tab Switch)
-                    // We check if we actually have items to avoid jumping on empty results
-                    if (this.currentPage > 0) {
-                         window.scrollTo({ top: 300, behavior: 'smooth' });
-                    }
-                }
-
-                this.totalItems = data.total;
-
-            } catch (e) {
-                console.error("Failed to load comics", e);
-            } finally {
-                this.gridLoading = false;
-
-                // Re-arm the infinite scroll observer if we have more pages
-                if (this.paginationMode === 'infinite') {
-                    this.$nextTick(() => this.setupInfiniteScroll());
-                }
-            }
+            this.loadItems(); // Call Mixin
         },
 
         // Event Listener Handlers (Called via x-on in HTML)
         handleReadFilter(val) {
             this.readFilter = val;
-            this.currentPage = 1;
-            this.fetchIssues();
+            this.page = 1;
+            this.loadItems(); // Call Mixin
         },
 
         handleToggleSort() {
             this.sortOrder = this.sortOrder === 'asc' ? 'desc' : 'asc';
-            this.currentPage = 1;
-            this.fetchIssues();
-        },
-
-        changePage(newPage) {
-            if (newPage < 1) return;
-            const maxPage = Math.ceil(this.totalItems / this.pageSize);
-            if (newPage > maxPage) return;
-
-            this.currentPage = newPage;
-            this.fetchIssues();
+            this.page = 1;
+            this.loadItems(); // Call Mixin
         },
 
         async toggleStar() {
@@ -679,27 +645,6 @@ function seriesDetail() {
             }
         },
 
-        // Observer Logic for infinite scroll mode
-        setupInfiniteScroll() {
-            if (this.$refs.loadSentinel) {
-                const observer = new IntersectionObserver((entries) => {
-                    if (entries[0].isIntersecting && !this.gridLoading) {
-                        this.loadMore();
-                    }
-                }, { rootMargin: '200px' }); // Load when 200px away from bottom
-
-                observer.observe(this.$refs.loadSentinel);
-            }
-        },
-
-        loadMore() {
-            const maxPage = Math.ceil(this.totalItems / this.pageSize);
-            if (this.currentPage < maxPage) {
-                this.currentPage++;
-                this.fetchIssues(true); // true = append
-            }
-        },
-
         getSortLabel() {
             if (this.isReverseNumbering) {
                 // For Countdown:
@@ -712,7 +657,6 @@ function seriesDetail() {
             // DESC = 500 (Newest/End)
             return this.sortOrder === 'asc' ? 'Oldest First' : 'Newest First';
         },
-
     }
 }
 </script>

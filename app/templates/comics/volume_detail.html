@@ -21,7 +21,7 @@
             <span class="text-white" x-text="`Vol ${volume?.volume_number}`"></span>
         </div>
 
-        <div x-show="loading" class="flex justify-center py-20">
+        <div x-show="metaLoading" class="flex justify-center py-20">
             <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
         </div>
 
@@ -42,7 +42,7 @@
             </div>
         </div>
 
-        <div x-show="!loading && volume" style="display: none;">
+        <div x-show="!metaLoading && volume" style="display: none;">
 
             <div class="bg-gray-800 rounded-lg p-6 mb-6 shadow-lg border border-gray-700">
 
@@ -136,7 +136,7 @@
                                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-600" viewBox="0 0 20 20" fill="currentColor">
                                                     <path d="M2 11a1 1 0 011-1h16a1 1 0 011 1v6a1 1 0 01-1 1H3a1 1 0 01-1-1v-6zM2 7a1 1 0 011-1h16a1 1 0 011 1v3a1 1 0 01-1 1H3a1 1 0 01-1-1V7zM2 3a1 1 0 011-1h16a1 1 0 011 1v3a1 1 0 01-1 1H3a1 1 0 01-1-1V3z" />
                                                 </svg>
-                                                <span x-text="formatBytes(volume?.file_size)"></span>
+                                                <span x-text="window.parker.formatBytes(volume?.file_size)"></span>
                                             </span>
 
                                         </div>
@@ -159,7 +159,7 @@
                                                 </svg>
                                                 <div class="flex-1 text-left">
                                                     <span class="font-bold">Missing:</span>
-                                                    <span class="text-orange-200" :title="volume.missing_issues.join(', ')" x-text="formatMissing(volume.missing_issues)"></span>
+                                                    <span class="text-orange-200" :title="volume.missing_issues.join(', ')" x-text="window.parker.formatMissing(volume.missing_issues)"></span>
                                                 </div>
                                             </div>
                                         </template>
@@ -227,14 +227,14 @@
 
                         {% include "partials/issues_toolbar.html" %}
 
-                        <div x-show="gridLoading && currentItems.length === 0" class="py-12 text-center">
+                        <div x-show="loading && items.length === 0" class="py-12 text-center">
                             <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
                             <p class="text-gray-400">Loading comics...</p>
                         </div>
 
-                        <div x-show="currentItems.length > 0">
+                        <div x-show="items.length > 0">
                             <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                                <template x-for="comic in currentItems" :key="comic.id">
+                                <template x-for="comic in items" :key="comic.id">
                                     {% include "partials/comic_card.html" %}
                                 </template>
                             </div>
@@ -244,8 +244,8 @@
 
                                 <template x-if="paginationMode === 'infinite'">
                                     <div x-ref="loadSentinel" class="py-8 text-center">
-                                        <span x-show="gridLoading" class="text-blue-400 animate-pulse">Loading more issues...</span>
-                                        <span x-show="!gridLoading && currentPage >= Math.ceil(totalItems / pageSize) && totalItems > 0" class="text-gray-600 text-sm">
+                                        <span x-show="loading" class="text-blue-400 animate-pulse">Loading more issues...</span>
+                                        <span x-show="!loading && page >= maxPage() && total > 0" class="text-gray-600 text-sm">
                                             End of list
                                         </span>
                                     </div>
@@ -254,20 +254,20 @@
                                 <template x-if="paginationMode === 'classic'">
                                     <div class="flex justify-center items-center space-x-4">
                                         <button
-                                            x-on:click="changePage(currentPage - 1)"
-                                            :disabled="currentPage === 1"
+                                            x-on:click="changePage(page - 1)"
+                                            :disabled="page === 1"
                                             class="px-4 py-2 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-white"
                                         >
                                             Previous
                                         </button>
 
                                         <span class="text-gray-400">
-                                            Page <span class="text-white font-bold" x-text="currentPage"></span> of <span x-text="Math.ceil(totalItems / pageSize)"></span>
+                                            Page <span class="text-white font-bold" x-text="page"></span> of <span x-text="maxPage()"></span>
                                         </span>
 
                                         <button
-                                            x-on:click="changePage(currentPage + 1)"
-                                            :disabled="currentPage >= Math.ceil(totalItems / pageSize)"
+                                            x-on:click="changePage(page + 1)"
+                                            :disabled="page >= maxPage()"
                                             class="px-4 py-2 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-white"
                                         >
                                             Next
@@ -278,7 +278,7 @@
 
                         </div>
 
-                        <div x-show="!gridLoading && currentItems.length === 0" class="text-center py-20 text-gray-500">
+                        <div x-show="!loading && items.length === 0" class="text-center py-20 text-gray-500">
                             <p>No comics found in this section.</p>
                         </div>
                     </div>
@@ -372,19 +372,33 @@
 <script>
 function volumeDetail() {
     return {
+
+        ...window.parker.paginationMixin(
+            'volumes.issues',
+            function() { return { volume_id: this.volumeId }; },
+            {
+                pageSize: 48,
+                mode: '{{ get_system_setting("ui.pagination_mode", "infinite") }}',
+                // 2. Map Filters to Query Params
+                getQueryParams: function() {
+                    return {
+                        type: this.currentType,
+                        read_filter: this.readFilter,
+                        sort_order: this.sortOrder
+                    };
+                }
+            }
+        ),
+
+
         volumeId: {{ volume_id }},
         volume: null,
-        loading: true,
+        metaLoading: true,
 
         // Tab State
         activeTab: 'issues',
 
         // Grid Data
-        gridLoading: false,
-        currentItems: [],
-        currentPage: 1,
-        pageSize: 48,
-        totalItems: 0,
         currentType: 'plain',
 
         readFilter: 'all', // 'all', 'read', 'unread'
@@ -403,7 +417,7 @@ function volumeDetail() {
                 this.currentType = 'all';
             }
 
-            this.fetchIssues();
+            this.loadItems();
         },
 
         async loadVolumeSummary() {
@@ -414,14 +428,14 @@ function volumeDetail() {
                         title: "Volume Not Found",
                         message: "The volume you are looking for does not exist or may have been deleted."
                     };
-                    this.loading = false;
+                    this.metaLoading = false;
                     return;
                 }
 
                 if (!res.ok) throw new Error("Failed to load volume");
                 this.volume = await res.json();
                 document.title = `${this.volume.series_name} Vol ${this.volume.volume_number} - Parker`;
-                this.loading = false;
+                this.metaLoading = false;
 
                 this.isReverseNumbering = this.volume.is_reverse_numbering;
 
@@ -431,7 +445,7 @@ function volumeDetail() {
 
             } catch (e) {
                 console.error(e);
-            }
+            } finally { this.metaLoading = false; }
         },
 
         // Check if this volume is a Standalone (No Plain Issues)
@@ -447,8 +461,8 @@ function volumeDetail() {
             if (['details', 'arcs'].includes(tabName)) return;
 
             // Reset Pagination
-            this.currentPage = 1;
-            this.currentItems = [];
+            this.page = 1;
+            this.items = [];
 
             // Map tabs to API types
             // Logic Update: If Standalone, 'issues' requests 'all'
@@ -463,64 +477,20 @@ function volumeDetail() {
             }
 
             this.currentType = typeParam;
-            this.fetchIssues(false);
-        },
-
-        async fetchIssues(append = false) {
-            this.gridLoading = true;
-            try {
-                const url = window.parker.route('volumes.issues', { volume_id: this.volumeId }, `type=${this.currentType}&page=${this.currentPage}&size=${this.pageSize}&read_filter=${this.readFilter}&sort_order=${this.sortOrder}`);
-
-                const res = await fetch(url);
-                const data = await res.json();
-
-                if (append) {
-                    // INFINITE MODE: Append new items to existing list
-                    this.currentItems = [...this.currentItems, ...data.items];
-                } else {
-                    // CLASSIC MODE (or Page 1): Replace list
-                    this.currentItems = data.items;
-
-                    // Always scroll to top if we are replacing the list (Classic Mode or Tab Switch)
-                    // We check if we actually have items to avoid jumping on empty results
-                    if (this.currentPage > 0) {
-                         window.scrollTo({ top: 300, behavior: 'smooth' });
-                    }
-                }
-
-                this.totalItems = data.total;
-
-            } catch (e) {
-                console.error("Failed to load issues", e);
-            } finally {
-                this.gridLoading = false;
-
-                // Re-arm the infinite scroll observer if we have more pages
-                if (this.paginationMode === 'infinite') {
-                    this.$nextTick(() => this.setupInfiniteScroll());
-                }
-            }
+            this.loadItems(); // Mixin call
         },
 
         // Event Listener Handlers (Called via x-on in HTML)
         handleReadFilter(val) {
             this.readFilter = val;
-            this.currentPage = 1;
-            this.fetchIssues();
+            this.page = 1;
+            this.loadItems();
         },
 
         handleToggleSort() {
             this.sortOrder = this.sortOrder === 'asc' ? 'desc' : 'asc';
-            this.currentPage = 1;
-            this.fetchIssues();
-        },
-
-        changePage(newPage) {
-            if (newPage < 1) return;
-            const maxPage = Math.ceil(this.totalItems / this.pageSize);
-            if (newPage > maxPage) return;
-            this.currentPage = newPage;
-            this.fetchIssues();
+            this.page = 1;
+            this.loadItems();
         },
 
         formatMissing(issues) {
@@ -545,28 +515,6 @@ function volumeDetail() {
             return ranges.join(", ");
         },
 
-        // Observer Logic for infinite scroll mode
-        setupInfiniteScroll() {
-
-            if (this.$refs.loadSentinel) {
-                const observer = new IntersectionObserver((entries) => {
-                    if (entries[0].isIntersecting && !this.gridLoading) {
-                        this.loadMore();
-                    }
-                }, { rootMargin: '200px' }); // Load when 200px away from bottom
-
-                observer.observe(this.$refs.loadSentinel);
-            }
-        },
-
-        loadMore() {
-            const maxPage = Math.ceil(this.totalItems / this.pageSize);
-            if (this.currentPage < maxPage) {
-                this.currentPage++;
-                this.fetchIssues(true); // true = append
-            }
-        },
-
         getSortLabel() {
             if (this.isReverseNumbering) {
                 // For Countdown:
@@ -579,8 +527,6 @@ function volumeDetail() {
             // DESC = 500 (Newest/End)
             return this.sortOrder === 'asc' ? 'Oldest First' : 'Newest First';
         },
-
-
     }
 }
 </script>
