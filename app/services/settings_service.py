@@ -269,6 +269,10 @@ class SettingsService:
         # Clear the read-cache so the app sees the change immediately
         invalidate_settings_cache()
 
+        # Cast the value back to Python type (bool/int) so the API returns
+        # actual JSON booleans, not strings like "false".
+        setting.value = self._cast_value(setting.value, setting.data_type)
+
         return setting
 
     def _cast_value(self, value: str, data_type: str) -> Any:
