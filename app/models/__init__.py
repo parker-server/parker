@@ -14,6 +14,7 @@ from app.models.saved_search import SavedSearch
 from app.models.setting import SystemSetting
 from app.models.pull_list import PullList, PullListItem
 from app.models.smart_list import SmartList
+from app.models.activity_log import ActivityLog
 
 # This ensures all models are loaded before relationships are configured
 __all__ = [
@@ -22,7 +23,7 @@ __all__ = [
     'Person', 'ComicCredit',
     'ReadingList', 'ReadingListItem',
     'Collection', 'CollectionItem',
-    'ReadingProgress',
+    'ReadingProgress', 'ActivityLog',
     'ScanJob',
     'User',
     'UserSeries',

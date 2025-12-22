@@ -43,3 +43,6 @@ class User(Base):
 
     # Pull Lists Relationship. use the string "PullList" to avoid circular imports.
     pull_lists = relationship("PullList", back_populates="user", cascade="all, delete-orphan")
+
+    # Use cascade="all, delete-orphan" so that if a user is deleted, their logs are wiped too
+    activity_logs = relationship("ActivityLog", back_populates="user", cascade="all, delete-orphan")
