@@ -6,7 +6,10 @@ from sqlalchemy.orm import Session, selectinload, contains_eager
 from app.models.user import User
 from app.models.comic import Comic, Volume
 from app.models.series import Series
+from app.models.tags import Genre, comic_genres
+from app.models.credits import Person, ComicCredit
 from app.models.reading_progress import ReadingProgress
+from app.models.tags import Character, comic_characters
 from app.models.activity_log import ActivityLog
 from app.core.comic_helpers import get_reading_time, get_banned_comic_condition, get_series_age_restriction
 
@@ -74,9 +77,6 @@ class StatisticsService:
             'Slow Reader'
         )
 
-        # === TOP CREATORS (Single Query with SQL sorting) ===
-        from app.models.credits import Person, ComicCredit
-
         # Get top 3 writers and top 3 artists - let SQL limit results
         # NOTE: We don't need the full creator list, so SQL LIMIT is more efficient
         creator_stats = self.db.query(
@@ -137,9 +137,6 @@ class StatisticsService:
             .limit(3).all()
         ]
 
-        # === GENRE BREAKDOWN (Single Query) ===
-        from app.models.tags import Genre, comic_genres
-
         # NOTE: We need ALL genres to calculate total for percentages
         # So fetching full list and sorting in Python is appropriate here
         genre_stats = self.db.query(
@@ -178,9 +175,6 @@ class StatisticsService:
                 for g in sorted_genres
             ]
         }
-
-        # === TOP CHARACTERS (Single Query with SQL sorting) ===
-        from app.models.tags import Character, comic_characters
 
         character_stats = self.db.query(
             Character.name,
@@ -333,9 +327,6 @@ class StatisticsService:
 
         stats = year_stats.first()
 
-        # === TOP CREATOR OF THE YEAR ===
-        from app.models.credits import Person, ComicCredit
-
         top_writer = self.db.query(
             Person.name,
             func.count(func.distinct(ReadingProgress.comic_id)).label('comics_read')
@@ -399,9 +390,6 @@ class StatisticsService:
             .order_by(func.count(func.distinct(ReadingProgress.comic_id)).desc()) \
             .first()
 
-        # === TOP GENRE ===
-        from app.models.tags import Genre, comic_genres
-
         top_genre = self.db.query(
             Genre.name,
             func.count(func.distinct(ReadingProgress.comic_id)).label('count')
@@ -422,9 +410,6 @@ class StatisticsService:
         top_genre = top_genre.group_by(Genre.id, Genre.name) \
             .order_by(func.count(func.distinct(ReadingProgress.comic_id)).desc()) \
             .first()
-
-        # === TOP CHARACTER ===
-        from app.models.tags import Character, comic_characters
 
         top_character = self.db.query(
             Character.name,
