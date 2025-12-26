@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Text, DateTime, Float, JSON, Index
+from sqlalchemy import Column, Integer, String, ForeignKey, Text, DateTime, Float, JSON, Index, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from app.database import Base
@@ -85,9 +85,11 @@ class Comic(Base):
 
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    is_dirty = Column(Boolean, default=False, index=True)  # Add index for faster polling
 
+
+    # Relationships
     volume = relationship("Volume", back_populates="comics")
-
     reading_list_items = relationship("ReadingListItem", back_populates="comic", cascade="all, delete-orphan")
     collection_items = relationship("CollectionItem", back_populates="comic", cascade="all, delete-orphan")
     reading_progress = relationship("ReadingProgress", back_populates="comic", cascade="all, delete-orphan")
