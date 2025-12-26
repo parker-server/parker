@@ -43,6 +43,9 @@ def _apply_batch(db, batch, stats_queue):
             comic.color_secondary = palette.get("secondary")
             comic.color_palette = palette
 
+        # Work is complete, reset the flag
+        comic.is_dirty = False
+
         stats_queue.put({"comic_id": comic_id, "status": "processed"})
 
     # Commit the batch (Single Transaction)
@@ -179,14 +182,11 @@ class ThumbnailService:
             .filter(Series.library_id == self.library_id)
         )
 
-        if not force:
-            # Smart Filter: Get comics missing thumbnails OR missing colors
-            # This ensures we backfill colors for existing comics too.
-            query = query.filter(
-                (Comic.thumbnail_path == None) | (Comic.color_primary == None)
-            )
+        if force:
+            return query.all()
 
-        return query.all()
+        return query.filter(Comic.is_dirty == True).all()
+
 
     def process_missing_thumbnails_parallel(self, force: bool = False, series_id: int = None, worker_limit: int = 0) -> Dict[str, int]:
         """
