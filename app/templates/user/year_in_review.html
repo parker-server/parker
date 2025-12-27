@@ -227,19 +227,21 @@
         </div>
 
         <!-- Year Selector -->
-        <div class="text-center py-8 space-y-4">
-            <div class="text-white/60 text-sm">View a different year</div>
-            <div class="flex justify-center gap-3 flex-wrap">
-                <template x-for="y in availableYears" :key="y">
-                    <button
-                        x-on:click="loadYear(y)"
-                        class="px-4 py-2 rounded-lg font-bold transition-all"
-                        :class="y === data?.year ? 'bg-white text-gray-900' : 'bg-white/10 text-white hover:bg-white/20'"
-                        x-text="y"
-                    ></button>
-                </template>
+        <template x-if="availableYears.length > 1">
+            <div class="text-center py-8 space-y-4">
+                <div class="text-white/60 text-sm">View a different year</div>
+                <div class="flex justify-center gap-3 flex-wrap">
+                    <template x-for="y in availableYears" :key="y">
+                        <button
+                            x-on:click="loadYear(y)"
+                            class="px-4 py-2 rounded-lg font-bold transition-all"
+                            :class="y === data?.year ? 'bg-white text-gray-900' : 'bg-white/10 text-white hover:bg-white/20'"
+                            x-text="y"
+                        ></button>
+                    </template>
+                </div>
             </div>
-        </div>
+        </template>
 
         <!-- Share Section -->
         <div class="text-center py-8">
@@ -275,14 +277,16 @@ function yearInReview() {
         async init() {
             // Get current year from URL or default to current year
             const urlParams = new URLSearchParams(window.location.search);
-            const year = urlParams.get('year') || new Date().getFullYear();
-            
-            // Generate available years (current year and 4 years back)
             const currentYear = new Date().getFullYear();
-            for (let i = 0; i < 5; i++) {
-                this.availableYears.push(currentYear - i);
-            }
+            const year = urlParams.get('year') || currentYear;
             
+            // Generate available years
+            this.availableYears = [];
+            for (let i = currentYear; i >= 2025; i--) {
+                this.availableYears.push(i);
+            }
+
+            // If there's only one year available, we can hide the selector entirely in the UI
             await this.loadYear(year);
         },
         
@@ -316,6 +320,7 @@ function yearInReview() {
         },
         
         async shareStats() {
+
             const text = `My ${this.data.year} Year in Comics:\n\n` +
                 `📚 ${this.data.stats.comics_completed} comics completed\n` +
                 `📖 ${this.formatNumber(this.data.stats.total_pages)} pages read\n` +
@@ -326,7 +331,8 @@ function yearInReview() {
                 try {
                     await navigator.share({
                         title: `${this.data.year} Year in Review`,
-                        text: text
+                        text: text,
+                        url: 'https://github.com/parker-server/parker'
                     });
                 } catch (e) {
                     console.log('Share cancelled');
