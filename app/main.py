@@ -3,6 +3,8 @@ import multiprocessing
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import HTTPException
@@ -16,7 +18,7 @@ from app.core.settings_loader import get_system_setting
 from app.core.security import get_redirect_url
 from app.core.templates import templates
 from app.database import engine, Base
-from app.config import settings
+from app.config import settings, debug_print_settings
 from app.database import SessionLocal
 from app.logging import log_config
 from app.core.security import get_password_hash
@@ -52,6 +54,9 @@ logger = log_config.setup_logging("INFO")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+
+    if os.getenv("PARKER_DEBUG") == "1":
+        debug_print_settings()
 
     # --- 1. GLOBAL SETUP (Run on ALL Uvicorn Workers) ---
     # Keep this OUTSIDE the guard so every worker process gets configured logging.
@@ -142,11 +147,13 @@ app = FastAPI(
 # CORS middleware (adjust origins as needed)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify your domains
+    allow_origins=settings.allowed_origins,  # In production, specify your domains
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=settings.trusted_proxies)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -174,7 +181,11 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     if exc.status_code == 401 and "text/html" in request.headers.get("accept", ""):
 
         return_url = get_redirect_url(request.url.path, request.url.query)
-        return RedirectResponse(url=f"/login?next={return_url}")
+
+        # Use settings.clean_base_url to ensure the subpath is included
+        login_path = f"{settings.clean_base_url}/login?next={return_url}"
+
+        return RedirectResponse(url=login_path)
 
     if "text/html" in request.headers.get("accept", ""):
         return templates.TemplateResponse(
