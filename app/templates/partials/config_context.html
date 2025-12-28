@@ -76,7 +76,10 @@
             url += separator + fullQuery.join('&');
         }
 
-        return url;
+        const base = window.parker.config.baseUrl;
+        const finalUrl = url.startsWith('/') ? url : `/${url}`;
+
+        return base ? `${base}${finalUrl}` : finalUrl;
     };
 
     window.parker = {...(window.parker || {}), route: get_route };
