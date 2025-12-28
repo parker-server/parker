@@ -2,8 +2,49 @@
 
 {% block title %}My Dashboard - Parker{% endblock %}
 
+{% block head %}
+<style>
+.animate-bounce-once {
+    animation: bounce 1s 3; /* Runs the bounce animation exactly 3 times */
+}
+</style>
+
+{% endblock %}
+
 {% block content %}
 <div class="max-w-7xl mx-auto space-y-8" x-data="dashboard()">
+
+    <template x-if="shouldShowYearInReviewBanner() && !bannerDismissed" x-cloak>
+        <div class="relative bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 rounded-xl p-6 mb-8 shadow-2xl overflow-hidden group">
+            <button
+                x-on:click="dismissBanner()"
+                class="absolute top-4 right-4 text-white/50 hover:text-white p-2 rounded-full hover:bg-white/10 transition-colors z-20"
+                title="Dismiss"
+            >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+
+            <div class="relative flex flex-col md:flex-row items-center justify-between gap-6 pr-8">
+                <div class="flex items-center gap-5">
+                    <div class="text-4xl animate-bounce [animation-iteration-count:3]">🎊</div>
+                    <div class="space-y-1">
+                        <h2 class="text-2xl font-black text-white tracking-tight">
+                            Your <span x-text="reviewYear"></span> Journey is Ready!
+                        </h2>
+                        <p class="text-white/80 text-sm">Relive your favorite series and reading milestones from this past year.</p>
+                    </div>
+                </div>
+
+                <a :href="window.parker.route('pages.user_year_in_review') + '?year=' + reviewYear"
+                   class="bg-white text-gray-900 px-8 py-3 rounded-full font-black text-sm uppercase tracking-wider hover:bg-gray-100 hover:scale-105 transition-all shadow-lg text-center">
+                    View My Review
+                </a>
+            </div>
+        </div>
+    </template>
+
 
     <!-- User Header with Core Stats -->
     <div class="bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl p-4 md:p-6 border border-gray-700 shadow-xl flex flex-col md:flex-row md:items-center gap-4 md:gap-6 relative overflow-hidden">
@@ -409,7 +450,7 @@
                 <div class="w-full">
                     <div class="grid grid-flow-col grid-rows-7 gap-1 md:gap-1.5 w-full"
                          style="grid-template-columns: repeat(53, minmax(0, 1fr));">
-                        <template x-for="day in heatmapDays" :key="day.date">
+                        <template x-for="day in heatmapDays">
                             <div
                                 class="aspect-square w-full rounded-sm transition-all duration-300 cursor-help hover:ring-2 hover:ring-white/20 hover:scale-110 z-10"
                                 :class="getHeatmapColor(day.count)"
@@ -599,17 +640,27 @@ function dashboard() {
         data: null,
         detailedStatsExpanded: false,  // Collapsed by default
         heatmapDays: [], // Array of {date, count}
+        reviewYear: null,
+        bannerDismissed: false,
 
         async init() {
+
             try {
                 const res = await fetch(window.parker.route('users.dashboard'));
                 if(res.ok) {
                     this.data = await res.json();
-                    console.log(this.data.heatmap);
                     await this.fetchSmartLists();
                     this.generateHeatmapDays();
                 }
+
             } catch(e) { console.error("Dashboard load failed", e); }
+
+            // Check if user dismissed the banner for this specific review year
+            const dismissedYear = localStorage.getItem('dismissed_review_year');
+            if (dismissedYear == this.reviewYear) {
+                this.bannerDismissed = true;
+            }
+
         },
 
         async uploadAvatar(e) {
@@ -693,7 +744,6 @@ function dashboard() {
             return (num || 0).toLocaleString();
         },
 
-
         generateHeatmapDays() {
             const days = [];
             const today = new Date();
@@ -724,9 +774,31 @@ function dashboard() {
 
             // Peak Intensity
             return 'bg-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.4)]';
+        },
+
+        shouldShowYearInReviewBanner() {
+
+            const now = new Date();
+            const month = now.getMonth(); // 0-indexed: 11 is Dec, 0 is Jan
+            const year = now.getFullYear();
+
+            // Only show in December or January, and only for 2026 or later
+            const isYearEndPeriod = (month === 11 || month === 0);
+
+            // Calculate which year the review is for
+            // In Jan 2026, we want the 2025 review. In Dec 2026, we want the 2026 review.
+            this.reviewYear = (month === 0) ? year - 1 : year;
+
+            // Launch floor: Don't show banners for years before 2025
+            const isPostLaunch = this.reviewYear >= 2025;
+
+            return isYearEndPeriod && isPostLaunch && (this.data?.stats?.issues_read > 0);
+        },
+
+        dismissBanner() {
+            this.bannerDismissed = true;
+            localStorage.setItem('dismissed_review_year', this.reviewYear);
         }
-
-
 
     }
 }
