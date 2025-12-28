@@ -87,3 +87,7 @@ def debug_print_settings():
     print("Allowed origins:", settings.allowed_origins)
     print("Trusted proxies:", settings.trusted_proxies)
     print("=== End Configuration ===\n")
+
+if os.getenv("PARKER_DEBUG") == "1":
+    debug_print_settings()
+

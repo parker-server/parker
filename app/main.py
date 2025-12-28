@@ -55,8 +55,6 @@ logger = log_config.setup_logging("INFO")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
 
-    if os.getenv("PARKER_DEBUG") == "1":
-        debug_print_settings()
 
     # --- 1. GLOBAL SETUP (Run on ALL Uvicorn Workers) ---
     # Keep this OUTSIDE the guard so every worker process gets configured logging.
