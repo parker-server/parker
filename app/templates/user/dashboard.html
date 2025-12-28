@@ -636,12 +636,22 @@
 
 <script>
 function dashboard() {
+
+
+    // Pre-calculate the review year outside the return for clarity
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    const activeReviewYear = (currentMonth === 0) ? currentYear - 1 : currentYear;
+
     return {
         data: null,
         detailedStatsExpanded: false,  // Collapsed by default
         heatmapDays: [], // Array of {date, count}
-        reviewYear: null,
-        bannerDismissed: false,
+        reviewYear:activeReviewYear,
+
+        // IMMEDIATE CHECK: Set the state synchronously during object creation
+        bannerDismissed: localStorage.getItem('dismissed_review_year') == activeReviewYear,
 
         async init() {
 
@@ -654,13 +664,6 @@ function dashboard() {
                 }
 
             } catch(e) { console.error("Dashboard load failed", e); }
-
-            // Check if user dismissed the banner for this specific review year
-            const dismissedYear = localStorage.getItem('dismissed_review_year');
-            if (dismissedYear == this.reviewYear) {
-                this.bannerDismissed = true;
-            }
-
         },
 
         async uploadAvatar(e) {
@@ -778,19 +781,11 @@ function dashboard() {
 
         shouldShowYearInReviewBanner() {
 
-            const now = new Date();
-            const month = now.getMonth(); // 0-indexed: 11 is Dec, 0 is Jan
-            const year = now.getFullYear();
-
-            // Only show in December or January, and only for 2026 or later
-            const isYearEndPeriod = (month === 11 || month === 0);
-
-            // Calculate which year the review is for
-            // In Jan 2026, we want the 2025 review. In Dec 2026, we want the 2026 review.
-            this.reviewYear = (month === 0) ? year - 1 : year;
-
+            // Only show in December or January, and only for 2025 or later
+            const isYearEndPeriod = (currentMonth === 11 || currentMonth === 0);
+            
             // Launch floor: Don't show banners for years before 2025
-            const isPostLaunch = this.reviewYear >= 2025;
+            const isPostLaunch = activeReviewYear >= 2025;
 
             return isYearEndPeriod && isPostLaunch && (this.data?.stats?.issues_read > 0);
         },
