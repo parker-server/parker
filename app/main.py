@@ -18,7 +18,7 @@ from app.core.settings_loader import get_system_setting
 from app.core.security import get_redirect_url
 from app.core.templates import templates
 from app.database import engine, Base
-from app.config import settings
+from app.config import settings, debug_print_settings
 from app.database import SessionLocal
 from app.logging import log_config
 from app.core.security import get_password_hash
@@ -54,6 +54,9 @@ logger = log_config.setup_logging("INFO")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+
+    if os.getenv("PARKER_DEBUG") == "1":
+        debug_print_settings()
 
     # --- 1. GLOBAL SETUP (Run on ALL Uvicorn Workers) ---
     # Keep this OUTSIDE the guard so every worker process gets configured logging.
@@ -144,7 +147,7 @@ app = FastAPI(
 # CORS middleware (adjust origins as needed)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify your domains
+    allow_origins=settings.allowed_origins,  # In production, specify your domains
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
