@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     # Default to "/" for root, or "/comics" for subpath
     base_url: str = os.getenv("BASE_URL", "/")
 
+    # --- PROXY SETTINGS ---
+    # Comma-separated list of proxy IPs (e.g., "127.0.0.1,172.18.0.1")
+    # Defaulting to ["127.0.0.1"] for local development
+    trusted_proxies: list[str] = ["127.0.0.1"]
+
     # --- SECURITY SETTINGS ---
     # In production, generating a long random string is best:
     # openssl rand -hex 32
