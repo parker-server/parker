@@ -326,25 +326,33 @@ function yearInReview() {
                 `📖 ${this.formatNumber(this.data.stats.total_pages)} pages read\n` +
                 `✍️ Top Writer: ${this.data.favorites.top_writer.name || 'N/A'}\n` +
                 `🎨 Top Artist: ${this.data.favorites.top_artist.name || 'N/A'}`;
-            
-            if (navigator.share) {
-                try {
+
+            try {
+
+                // 1. Check for Web Share API
+                if (navigator.share) {
                     await navigator.share({
                         title: `${this.data.year} Year in Review`,
                         text: text,
                         url: 'https://github.com/parker-server/parker'
                     });
-                } catch (e) {
-                    console.log('Share cancelled');
+                    return;
                 }
-            } else {
-                // Fallback: copy to clipboard
-                try {
+
+                // 2. Check for Clipboard API
+                if (navigator.clipboard && navigator.clipboard.writeText) {
                     await navigator.clipboard.writeText(text);
                     window.parker.showToast("Stats copied to clipboard!", "success");
-                } catch (e) {
-                    console.error('Failed to copy:', e);
+                    return;
                 }
+
+                // 3. Fallback for Insecure Contexts (Non-HTTPS)
+                throw new Error("Share features require an HTTPS connection");
+
+            }
+            catch (e) {
+                console.error('Share failed:', e);
+                window.parker.showToast(e.message || "Sharing not supported on this connection", "error");
             }
         }
     }
