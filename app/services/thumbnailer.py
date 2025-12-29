@@ -8,12 +8,11 @@ from sqlalchemy.orm import Session
 from app.core.settings_loader import get_cached_setting
 from app.database import SessionLocal, engine
 from app.models.comic import Comic, Volume
-from app.models.library import Library
 from app.models.series import Series
 from app.services.images import ImageService
 
 
-def _apply_batch(db, batch, stats_queue):
+def _apply_batch(db, batch, stats_queue, error_details):
     """
     Apply a batch of updates to the DB.
     This runs inside the dedicated Writer process.
@@ -26,12 +25,22 @@ def _apply_batch(db, batch, stats_queue):
 
         if item.get("error"):
             stats_queue.put({"comic_id": comic_id, "status": "error"})
+            error_details.append({
+                "comic_id": comic_id,
+                "file_path": item.get("file_path"),
+                "message": item.get("message", "Unknown thumbnail error")
+            })
             continue
 
         # Fetch object to update
         comic = db.query(Comic).get(comic_id)
         if not comic:
             stats_queue.put({"comic_id": comic_id, "status": "missing"})
+            error_details.append({
+                "comic_id": comic_id,
+                "file_path": item.get("file_path"),
+                "message": "Comic not found in database"
+            })
             continue
 
         # Update fields
@@ -70,12 +79,14 @@ def _thumbnail_worker(task: Tuple[int, str]) -> Dict[str, Any]:
         if not result.get("success"):
             return {
                 "comic_id": comic_id,
+                "file_path": file_path,
                 "error": True,
                 "message": "Image processing failed"
             }
 
         return {
             "comic_id": comic_id,
+            "file_path": file_path,
             "thumbnail_path": str(target_path),
             "palette": result.get("palette"),
             "error": False,
@@ -85,6 +96,7 @@ def _thumbnail_worker(task: Tuple[int, str]) -> Dict[str, Any]:
         # Keep it small and serializable
         return {
             "comic_id": comic_id,
+            "file_path": str(file_path),
             "error": True,
             "message": str(e)
         }
@@ -105,6 +117,7 @@ def _thumbnail_writer(queue: Queue, stats_queue: Queue, batch_size: int = 25) ->
     processed = 0
     errors = 0
     skipped = 0
+    error_details = []
     batch = []
 
     try:
@@ -132,8 +145,6 @@ def _thumbnail_writer(queue: Queue, stats_queue: Queue, batch_size: int = 25) ->
             errors += sum(1 for i in batch if i.get("error"))
 
     finally:
-
-
         # CRITICAL Close DB *BEFORE* signaling summary.
         # This guarantees the lock is released before the parent process wakes up.
         db.close()
@@ -144,6 +155,7 @@ def _thumbnail_writer(queue: Queue, stats_queue: Queue, batch_size: int = 25) ->
             "processed": processed,
             "errors": errors,
             "skipped": skipped,
+            "error_details": error_details
         })
 
 class ThumbnailService:
@@ -285,6 +297,7 @@ class ThumbnailService:
                 stats["processed"] += item.get("processed", 0)
                 stats["errors"] += item.get("errors", 0)
                 stats["skipped"] += item.get("skipped", 0)
+                stats["error_details"] = item.get("error_details", [])
                 summary_received = True
 
         writer_proc.join()

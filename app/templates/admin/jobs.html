@@ -140,19 +140,6 @@
 
                         </template>
 
-                        <template x-if="selectedJob.summary.error_details && selectedJob.summary.error_details.length > 0">
-                            <div class="mt-6">
-                                <h4 class="font-bold text-red-400 mb-2">Scan Errors</h4>
-
-                                <template x-for="err in selectedJob.summary.error_details">
-                                    <div class="bg-red-900/20 text-red-200 p-3 rounded-lg mb-2 text-xs font-mono">
-                                        <div><strong>File:</strong> <span x-text="err.file_path"></span></div>
-                                        <div><strong>Error:</strong> <span x-text="err.message"></span></div>
-                                    </div>
-                                </template>
-                            </div>
-                        </template>
-
                         <template x-if="selectedJob.job_type === 'thumbnail'">
                             <div class="grid grid-cols-3 gap-2 text-center">
                                 <div class="bg-purple-900/30 p-3 rounded border border-purple-900/50">
@@ -192,6 +179,65 @@
                                     </div>
                                     <div class="text-[10px] text-gray-500 uppercase">Empty Lists</div>
                                 </div>
+                            </div>
+                        </template>
+
+                        <!-- Unified Error Details (SCAN + THUMBNAIL) -->
+                        <template x-if="selectedJob.summary?.error_details && selectedJob.summary.error_details.length > 0">
+                            <div class="mt-8">
+
+                                <h4 class="font-bold text-red-400 mb-3">
+                                    <span x-text="selectedJob.job_type === 'thumbnail' ? 'Thumbnail Errors' : 'Scan Errors'"></span>
+                                </h4>
+
+                                <template x-if="selectedJob.job_type === 'thumbnail'">
+                                    <div class="bg-red-900/10 border border-red-900/30 rounded-lg overflow-hidden">
+
+                                        <table class="w-full text-xs font-mono text-red-200">
+                                            <thead class="bg-red-900/20 text-red-300 uppercase text-[10px]">
+                                                <tr>
+                                                    <th class="px-3 py-2 text-left">Comic ID</th>
+                                                    <th class="px-3 py-2 text-left">File</th>
+                                                    <th class="px-3 py-2 text-left">Error</th>
+                                                </tr>
+                                            </thead>
+
+                                            <tbody>
+                                                <template x-for="err in selectedJob.summary.error_details" :key="err.comic_id">
+                                                    <tr class="border-t border-red-900/20 hover:bg-red-900/10">
+                                                        <td class="px-3 py-1 max-w-[260px] truncate" :title="err.comic_id" x-text="err.comic_id"></td>
+                                                        <td class="px-3 py-1 max-w-[260px] truncate" :title="err.file_path" x-text="err.file_path"></td>
+                                                        <td class="px-3 py-1 max-w-[260px] truncate" :title="err.message" x-text="err.message"></td>
+                                                    </tr>
+                                                </template>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </template>
+
+                                <!-- SCAN: Compact table-style list -->
+                                <template x-if="selectedJob.job_type === 'scan' || !selectedJob.job_type">
+                                    <div class="bg-red-900/10 border border-red-900/30 rounded-lg overflow-hidden">
+                                        <table class="w-full text-xs font-mono text-red-200">
+                                            <thead class="bg-red-900/20 text-red-300 uppercase text-[10px]">
+                                                <tr>
+                                                    <th class="px-3 py-2 text-left">File</th>
+                                                    <th class="px-3 py-2 text-left">Error</th>
+                                                </tr>
+                                            </thead>
+
+                                            <tbody>
+                                                <template x-for="err in selectedJob.summary.error_details" :key="err.file_path">
+                                                    <tr class="border-t border-red-900/20 hover:bg-red-900/10">
+                                                        <td class="px-3 py-1 max-w-[260px] truncate" :title="err.file_path" x-text="err.file_path"></td>
+                                                        <td class="px-3 py-1 max-w-[260px] truncate" :title="err.message" x-text="err.message"></td>
+                                                    </tr>
+                                                </template>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </template>
+
                             </div>
                         </template>
 
