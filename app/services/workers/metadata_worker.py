@@ -49,5 +49,5 @@ def metadata_worker(file_path) -> dict:
         }
 
     except Exception as e:
-        print(e)
+        #print(e)
         return {"file_path": file_path, "error": True, "message": str(e)}
