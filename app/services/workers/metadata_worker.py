@@ -1,18 +1,30 @@
-def metadata_worker(file_path: str) -> dict:
+from pathlib import Path
+
+def metadata_worker(file_path) -> dict:
     from app.services.archive import ComicArchive
     from app.services.metadata import parse_comicinfo
     import os
 
     try:
-        mtime = os.path.getmtime(file_path)
-        size = os.path.getsize(file_path)
+        path = Path(file_path)
 
-        with ComicArchive(file_path) as archive:
+        mtime = os.path.getmtime(path)
+        size = os.path.getsize(path)
+
+        with ComicArchive(path) as archive:
             pages = archive.get_pages()
-            if not pages:
-                return {"file_path": file_path, "error": True, "message": "No pages"}
+            if not isinstance(pages, list) or len(pages) == 0:
+                return {"file_path": file_path, "error": True, "message": "No valid pages found (archive unreadable)"}
 
             xml = archive.get_comicinfo()
+
+            # MUST have ComicInfo.xml
+            if not xml:
+                return {
+                    "file_path": file_path,
+                    "error": True,
+                    "message": "Missing ComicInfo.xml"
+                }
 
             # 1. Establish Physical Truth of page count
             physical_count = len(pages)
@@ -37,4 +49,5 @@ def metadata_worker(file_path: str) -> dict:
         }
 
     except Exception as e:
+        print(e)
         return {"file_path": file_path, "error": True, "message": str(e)}

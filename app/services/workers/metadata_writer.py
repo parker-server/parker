@@ -9,6 +9,7 @@ def _apply_metadata_batch(
     reading_list_service,
     collection_service
 ):
+    from pathlib import Path
     from app.models.comic import Comic
     from datetime import datetime, timezone
     import json
@@ -78,7 +79,7 @@ def _apply_metadata_batch(
         raw_number = metadata.get("number")
         comic.number = _normalize_number(raw_number)
 
-        comic.filename = file_path.split("/")[-1]
+        comic.filename = Path(file_path).name
         comic.title = metadata.get("title")
         comic.summary = metadata.get("summary")
         comic.year = int(metadata.get("year")) if metadata.get("year") else None
@@ -157,111 +158,131 @@ def _apply_metadata_batch(
     }
 
 def metadata_writer(queue, stats_queue, library_id, batch_size=50):
-    from app.database import SessionLocal, engine
-    from app.models import Comic, Series, Volume
-    from app.services.tags import TagService
-    from app.services.credits import CreditService
-    from app.services.reading_list import ReadingListService
-    from app.services.collection import CollectionService
 
-    engine.dispose()
-    db = SessionLocal()
+    try:
 
-    # Preload existing comics
-    existing = {
-        c.file_path: c
-        for c in db.query(Comic)
-            .join(Volume)
-            .join(Series)
-            .filter(Series.library_id == library_id)
-            .all()
-    }
+        from app.database import SessionLocal, engine
+        from app.models import Comic, Series, Volume
+        from app.services.tags import TagService
+        from app.services.credits import CreditService
+        from app.services.reading_list import ReadingListService
+        from app.services.collection import CollectionService
 
-    series_cache = {}
-    volume_cache = {}
+        engine.dispose()
+        db = SessionLocal()
 
-    tag_service = TagService(db)
-    credit_service = CreditService(db)
-    reading_list_service = ReadingListService(db)
-    collection_service = CollectionService(db)
+        # Preload existing comics
+        existing = {
+            c.file_path: c
+            for c in db.query(Comic)
+                .join(Volume)
+                .join(Series)
+                .filter(Series.library_id == library_id)
+                .all()
+        }
 
-    batch = []
+        # Local caches to reduce DB reads during the scan loop
+        series_cache = {}
+        volume_cache = {}
 
-    def get_or_create_series(name: str):
-        """Get existing series or create new one with Caching"""
+        tag_service = TagService(db)
+        credit_service = CreditService(db)
+        reading_list_service = ReadingListService(db)
+        collection_service = CollectionService(db)
 
-        # 1. Check local cache
-        if name in series_cache:
-            return series_cache[name]
+        batch = []
 
-        # 2. Check Database
-        series = db.query(Series).filter_by(name=name, library_id=library_id).first()
+        def get_or_create_series(name: str):
+            """Get existing series or create new one with Caching"""
 
-        if not series:
-            # 3. Create new (Flush, don't commit)
-            series = Series(name=name, library_id=library_id)
-            db.add(series)
-            db.flush()
+            # 1. Check local cache
+            if name in series_cache:
+                return series_cache[name]
 
-        # 4. Add to cache
-        series_cache[name] = series
-        return series
+            # 2. Check Database
+            series = db.query(Series).filter_by(name=name, library_id=library_id).first()
 
-    def get_or_create_volume(series, num):
-        """Get existing volume or create new one with Caching"""
+            if not series:
+                # 3. Create new (Flush, don't commit)
+                series = Series(name=name, library_id=library_id)
+                db.add(series)
+                db.flush()
 
-        # Composite key for cache
-        key = f"{series.id}_{num}"
+            # 4. Add to cache
+            series_cache[name] = series
+            return series
 
-        if key in volume_cache:
-            return volume_cache[key]
+        def get_or_create_volume(series, num):
+            """Get existing volume or create new one with Caching"""
 
-        # 2. Check Database
-        v = db.query(Volume).filter_by(series_id=series.id, volume_number=num).first()
-        if not v:
-            # 3. Create new (Flush, don't commit)
-            v = Volume(series_id=series.id, volume_number=num)
-            db.add(v)
-            db.flush()
+            # Composite key for cache
+            key = f"{series.id}_{num}"
+
+            if key in volume_cache:
+                return volume_cache[key]
+
+            # 2. Check Database
+            v = db.query(Volume).filter_by(series_id=series.id, volume_number=num).first()
+            if not v:
+                # 3. Create new (Flush, don't commit)
+                v = Volume(series_id=series.id, volume_number=num)
+                db.add(v)
+                db.flush()
 
 
-        volume_cache[key] = v
-        return v
+            volume_cache[key] = v
+            return v
 
-    processed = {"imported": 0, "updated": 0, "errors": 0, "skipped": 0}
+        processed = {"imported": 0, "updated": 0, "errors": 0, "skipped": 0}
 
-    while True:
-        item = queue.get()
-        if item is None:
-            break
+        while True:
+            item = queue.get()
+            if item is None:
+                break
 
-        batch.append(item)
+            batch.append(item)
 
-        if len(batch) >= batch_size:
-            stats = _apply_metadata_batch(
-                db, batch, existing,
-                get_or_create_series, get_or_create_volume,
-                tag_service, credit_service,
-                reading_list_service, collection_service
+            if len(batch) >= batch_size:
+                stats = _apply_metadata_batch(
+                    db, batch, existing,
+                    get_or_create_series, get_or_create_volume,
+                    tag_service, credit_service,
+                    reading_list_service, collection_service
+                )
+                for key in processed:
+                    processed[key] += stats.get(key, 0)
+
+                batch.clear()
+
+        # Commit remaining
+        if batch:
+            stats = _apply_metadata_batch(db, batch, existing,
+                    get_or_create_series, get_or_create_volume,
+                    tag_service, credit_service,
+                    reading_list_service, collection_service
             )
             for key in processed:
                 processed[key] += stats.get(key, 0)
 
-            batch.clear()
+        #db.close()
 
-    # Commit remaining
-    if batch:
-        stats = _apply_metadata_batch(db, batch, existing,
-                get_or_create_series, get_or_create_volume,
-                tag_service, credit_service,
-                reading_list_service, collection_service
-        )
-        for key in processed:
-            processed[key] += stats.get(key, 0)
+        stats_queue.put({
+            "summary": True,
+            **processed
+        })
 
-    db.close()
-
-    stats_queue.put({
-        "summary": True,
-        **processed
-    })
+    except Exception as e:
+        # Send failure summary so scan_parallel can finish
+        stats_queue.put({
+            "summary": True,
+            "imported": 0,
+            "updated": 0,
+            "errors": 1,
+            "skipped": 0,
+            "exception": str(e),
+        })
+    finally:
+        try:
+            db.close()
+        except:
+            pass
