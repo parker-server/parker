@@ -100,7 +100,7 @@ class LibraryScanner:
         # --- Start writer ---
         writer_proc = multiprocessing.Process(
             target=metadata_writer,
-            args=(result_queue, stats_queue, self.library.id, force),
+            args=(result_queue, stats_queue, self.library.id),
             kwargs={"batch_size": 50}
         )
         writer_proc.start()
