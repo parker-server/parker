@@ -137,6 +137,20 @@
                                     <div class="text-xs text-gray-500 uppercase">Deleted</div>
                                 </div>
                             </div>
+
+                        </template>
+
+                        <template x-if="selectedJob.summary.error_details && selectedJob.summary.error_details.length > 0">
+                            <div class="mt-6">
+                                <h4 class="font-bold text-red-400 mb-2">Scan Errors</h4>
+
+                                <template x-for="err in selectedJob.summary.error_details">
+                                    <div class="bg-red-900/20 text-red-200 p-3 rounded-lg mb-2 text-xs font-mono">
+                                        <div><strong>File:</strong> <span x-text="err.file_path"></span></div>
+                                        <div><strong>Error:</strong> <span x-text="err.message"></span></div>
+                                    </div>
+                                </template>
+                            </div>
                         </template>
 
                         <template x-if="selectedJob.job_type === 'thumbnail'">

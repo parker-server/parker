@@ -33,11 +33,16 @@ def _apply_metadata_batch(
     updated = 0
     errors = 0
     skipped = 0
+    error_details = []
 
     for item in batch:
         if item.get("error"):
             # Skip errored items
             errors += 1
+            error_details.append({
+                "file_path": item["file_path"],
+                "message": item.get("message", "Unknown error")
+            })
             continue
 
         file_path = item["file_path"]
@@ -161,6 +166,7 @@ def _apply_metadata_batch(
         "updated": updated,
         "errors": errors,
         "skipped": skipped,
+        "error_details": error_details
     }
 
 def metadata_writer(queue, stats_queue, library_id, batch_size=50):
@@ -239,7 +245,7 @@ def metadata_writer(queue, stats_queue, library_id, batch_size=50):
             volume_cache[key] = v
             return v
 
-        processed = {"imported": 0, "updated": 0, "errors": 0, "skipped": 0}
+        processed = {"imported": 0, "updated": 0, "errors": 0, "skipped": 0, "error_details": []}
 
         while True:
             item = queue.get()
@@ -255,8 +261,10 @@ def metadata_writer(queue, stats_queue, library_id, batch_size=50):
                     tag_service, credit_service,
                     reading_list_service, collection_service
                 )
-                for key in processed:
+                for key in ("imported", "updated", "errors", "skipped"):
                     processed[key] += stats.get(key, 0)
+
+                processed["error_details"].extend(stats["error_details"])
 
                 batch.clear()
 
@@ -267,8 +275,10 @@ def metadata_writer(queue, stats_queue, library_id, batch_size=50):
                     tag_service, credit_service,
                     reading_list_service, collection_service
             )
-            for key in processed:
+            for key in ("imported", "updated", "errors", "skipped"):
                 processed[key] += stats.get(key, 0)
+
+            processed["error_details"].extend(stats["error_details"])
 
         #db.close()
 
@@ -285,7 +295,7 @@ def metadata_writer(queue, stats_queue, library_id, batch_size=50):
             "updated": 0,
             "errors": 1,
             "skipped": 0,
-            "exception": str(e),
+            "error_details": [{"file_path": None, "message": str(e)}]
         })
     finally:
         try:
