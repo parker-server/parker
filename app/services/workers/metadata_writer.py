@@ -9,6 +9,7 @@ def _apply_metadata_batch(
     reading_list_service,
     collection_service
 ):
+
     from pathlib import Path
     from app.models.comic import Comic
     from datetime import datetime, timezone
@@ -33,7 +34,6 @@ def _apply_metadata_batch(
     errors = 0
     skipped = 0
 
-
     for item in batch:
         if item.get("error"):
             # Skip errored items
@@ -46,7 +46,6 @@ def _apply_metadata_batch(
         size = item["size"]
         updated_at = datetime.now(timezone.utc)
 
-
         existing = existing_map.get(file_path)
 
         # --- Determine Import vs Update ---
@@ -55,7 +54,6 @@ def _apply_metadata_batch(
             action = "update"
         else:
             comic = Comic(file_path=file_path)
-            db.add(comic)
             action = "import"
 
         # Get or create series (Uses Cache)
@@ -67,7 +65,6 @@ def _apply_metadata_batch(
         # Get or create volume (Uses Cache)
         volume_num = int(metadata.get("volume", 1)) if metadata.get("volume") else 1
         volume = get_or_create_volume(series, volume_num)
-
         comic.volume_id = volume.id
 
         # --- Basic fields ---
@@ -101,7 +98,13 @@ def _apply_metadata_batch(
         comic.count = int(metadata.get("count")) if metadata.get("count") else None
         comic.metadata_json = json.dumps(metadata.get("raw_metadata", {}))
         comic.updated_at = updated_at
-        comic.is_dirty = True  # Mark for thumbnailer
+
+        # Now that all required fields are set, add new comics
+        if action == "import":
+            db.add(comic)
+
+        # CRITICAL: flush before writing credits/tags/etc.
+        db.flush()
 
         # --- Credits ---
         credit_service.add_credits_to_comic(comic, metadata)
@@ -137,11 +140,14 @@ def _apply_metadata_batch(
         # --- Touch Parent Series (Timestamp bubbling) ---
         series.updated_at = updated_at
 
-        # --- Update existing_map if new ---
         if action == "import":
-            existing_map[file_path] = comic
+            comic.is_dirty = True
             imported += 1
-        else:
+            existing_map[file_path] = comic
+
+        elif action == "update":
+            # If the scanner sent it, we *know* it changed (or force=True)
+            comic.is_dirty = True
             updated += 1
 
         # Flush but do not commit
