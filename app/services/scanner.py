@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 import time
 import logging
 import multiprocessing
@@ -8,6 +9,9 @@ from sqlalchemy.orm import Session
 
 from app.core.settings_loader import get_cached_setting
 from app.models.library import Library
+from app.models.comic import Comic
+from app.models.series import Series
+from app.models.comic import Volume
 
 from app.services.workers.metadata_worker import metadata_worker
 from app.services.workers.metadata_writer import metadata_writer
@@ -33,21 +37,62 @@ class LibraryScanner:
 
         start_time = time.time()
 
-        # --- Phase 1: Build task list ---
+        # 0. Prefetch existing comics (same as old scan)
+        self.logger.debug("Pre-fetching existing file list for parallel scan...")
+
+        db_comics = (
+            self.db.query(Comic)
+            .join(Volume)
+            .join(Series)
+            .filter(Series.library_id == self.library.id)
+            .all()
+        )
+
+        existing_map = {c.file_path: c for c in db_comics}
+
+        # --- Phase 1: Build task list with skip/import/update logic ---
         tasks = []
         scanned_paths_on_disk = set()
+        skipped = 0
 
         for file_path in library_path.rglob("*"):
-            if file_path.suffix.lower() in self.supported_extensions:
-                file_path_str = str(file_path)
-                scanned_paths_on_disk.add(file_path_str)
 
-                # Always extract metadata in parallel
+            if file_path.suffix.lower() not in self.supported_extensions:
+                continue
+
+            file_path_str = str(file_path)
+            scanned_paths_on_disk.add(file_path_str)
+
+            file_mtime = os.path.getmtime(file_path)
+            existing = existing_map.get(file_path_str)
+
+            if existing:
+                # unchanged file → skip unless force=True
+                if not force and existing.file_modified_at and existing.file_modified_at >= file_mtime:
+                    skipped += 1
+                    continue
+
+                # changed file → update
                 tasks.append(file_path_str)
 
-        if not tasks:
-            return {"imported": 0, "updated": 0, "deleted": 0, "errors": 0, "elapsed": 0}
+            else:
+                # new file → import
+                tasks.append(file_path_str)
 
+        # If nothing needs work, return early
+        if not tasks:
+            elapsed = round(time.time() - start_time, 2)
+            return {
+                "library": self.library.name,
+                "imported": 0,
+                "updated": 0,
+                "deleted": 0,
+                "errors": 0,
+                "skipped": skipped,
+                "elapsed": elapsed,
+            }
+
+        # 2. Start writer process
         # --- Queues ---
         result_queue = Queue()
         stats_queue = Queue()
@@ -55,7 +100,7 @@ class LibraryScanner:
         # --- Start writer ---
         writer_proc = multiprocessing.Process(
             target=metadata_writer,
-            args=(result_queue, stats_queue, self.library.id),
+            args=(result_queue, stats_queue, self.library.id, force),
             kwargs={"batch_size": 50}
         )
         writer_proc.start()
@@ -83,7 +128,8 @@ class LibraryScanner:
 
             self.logger.info(f"Using {workers} worker(s) for parallel metadata extraction")
 
-        # Start Workers (CPU bound)
+        # Start Workers (only for needed files) (CPU bound)
+        self.logger.debug(f"Scanning {len(tasks)} comic(s)")
         with multiprocessing.Pool(processes=workers) as pool:
             for payload in pool.imap_unordered(metadata_worker, tasks):
                 result_queue.put(payload)
@@ -105,7 +151,7 @@ class LibraryScanner:
 
         return {
             "library": self.library.name,
-            "skipped": summary.get("skipped", 0),
+            "skipped": skipped + summary.get("skipped", 0),
             "imported": summary.get("imported", 0),
             "updated": summary.get("updated", 0),
             "deleted": deleted,
