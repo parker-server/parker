@@ -253,7 +253,19 @@ class ScanManager:
             if library:
                 self.logger.info(f"Starting SCAN job {job_id}")
                 scanner = LibraryScanner(library, db_scan)
-                results = scanner.scan(force=force)
+
+                use_parallel = get_cached_setting("system.parallel_metadata_processing", False)
+
+                self.logger.info(f"Parallel metadata processing is set to {use_parallel}")
+
+                # UNIFIED LOGIC:
+                # If Parallel is ON: Let the service auto-detect worker count (0)
+                # If Parallel is OFF: Force exactly 1 worker
+                workers = 0 if use_parallel else 1
+
+                results = scanner.scan_parallel(force=force, worker_limit=workers)
+
+
             else:
                 error = "Library not found"
         except Exception as e:
