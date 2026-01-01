@@ -133,14 +133,14 @@ def _thumbnail_writer(queue: Queue, stats_queue: Queue, batch_size: int = 25) ->
 
             # If batch is full, write it
             if len(batch) >= batch_size:
-                _apply_batch(db, batch, stats_queue)
+                _apply_batch(db, batch, stats_queue, error_details)
                 processed += sum(1 for i in batch if not i.get("error"))
                 errors += sum(1 for i in batch if i.get("error"))
                 batch.clear()
 
         # Flush remaining items
         if batch:
-            _apply_batch(db, batch, stats_queue)
+            _apply_batch(db, batch, stats_queue, error_details)
             processed += sum(1 for i in batch if not i.get("error"))
             errors += sum(1 for i in batch if i.get("error"))
 
