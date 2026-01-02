@@ -265,6 +265,7 @@ class ScanManager:
 
                 results = scanner.scan_parallel(force=force, worker_limit=workers)
 
+                ScanManager.update_library_last_scanned(library_id)
 
             else:
                 error = "Library not found"
@@ -447,6 +448,15 @@ class ScanManager:
             return {"status": "queued", "job_id": job.id, "message": "Job queued"}
         finally:
             db.close()
+
+    @staticmethod
+    def update_library_last_scanned(library_id: int):
+        db = SessionLocal()
+        lib = db.query(Library).get(library_id)
+        if lib:
+            lib.last_scanned = datetime.utcnow()
+            db.commit()
+        db.close()
 
 
 
