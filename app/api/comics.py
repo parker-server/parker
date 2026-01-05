@@ -22,7 +22,7 @@ from app.models.reading_progress import ReadingProgress
 
 from app.schemas.search import SearchRequest, SearchResponse
 from app.services.search import SearchService
-from app.services.images import ImageService
+
 
 
 router = APIRouter()
