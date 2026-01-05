@@ -18,7 +18,7 @@ from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.collection import Collection, CollectionItem
 from app.models.pull_list import PullList, PullListItem
 from app.models.reading_progress import ReadingProgress
-from app.models.tags import Character, Team, Location, Genre
+
 
 from app.schemas.search import SearchRequest, SearchResponse
 from app.services.search import SearchService
