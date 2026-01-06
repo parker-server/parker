@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List
-import json
 
 from app.api.deps import SessionDep, CurrentUser
 from app.models.smart_list import SmartList
