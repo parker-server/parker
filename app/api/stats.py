@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, case, desc
-from typing import Annotated
 
 from app.api.deps import SessionDep, AdminUser
 from app.models.comic import Comic, Volume
