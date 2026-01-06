@@ -2,7 +2,6 @@ import logging
 from datetime import datetime, timezone
 from functools import lru_cache
 from sqlalchemy import func, or_, not_, case, cast, Float
-from typing import Any
 from fastapi import HTTPException
 from sqlalchemy import func, or_, not_, case
 
