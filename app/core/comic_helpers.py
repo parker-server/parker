@@ -10,6 +10,7 @@ from app.models.comic import Comic, Volume
 from app.models.series import Series
 from app.models.tags import Character, Team, Location, Genre
 from app.models.credits import Person, ComicCredit
+
 logger = logging.getLogger(__name__)
 
 # Titles that number backwards (Countdown) or count down to 0 (Zero Hour)
