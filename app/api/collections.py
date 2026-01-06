@@ -11,7 +11,6 @@ from app.models.comic import Comic, Volume
 from app.models.series import Series
 from app.models.tags import Character, Team, Location
 from app.models.credits import Person
-from app.models.user import User
 
 router = APIRouter()
 
