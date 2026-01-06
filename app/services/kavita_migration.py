@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Dict, Optional, Tuple, Any
 
 from sqlalchemy.orm import Session
-from sqlalchemy import text
 
 from app.core.comic_helpers import NON_PLAIN_FORMATS
 from app.core.security import get_password_hash, verify_password
