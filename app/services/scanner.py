@@ -18,6 +18,7 @@ from app.services.credits import CreditService
 from app.services.reading_list import ReadingListService
 from app.services.collection import CollectionService
 from app.services.images import ImageService
+from app.services.sidecar_service import SidecarService
 
 class LibraryScanner:
     """Scans library directories and imports comics with batch processing"""
@@ -37,6 +38,9 @@ class LibraryScanner:
         # Local caches to reduce DB reads during the scan loop
         self.series_cache: Dict[str, Series] = {}
         self.volume_cache: Dict[str, Volume] = {}
+
+        # Track processed folders in this session
+        self.reconciled_folders = set()
 
     def scan(self, force: bool = False) -> dict:
         """
@@ -80,6 +84,12 @@ class LibraryScanner:
         # Walk through directory
         for file_path in library_path.rglob('*'):
             if file_path.suffix.lower() in self.supported_extensions:
+
+                # --- NEW: CONTAINER RECONCILIATION ---
+                # This runs for EVERY file, but the logic inside ensures it only
+                # performs the disk-check once per folder.
+                self._reconcile_sidecars(file_path, existing_map)
+
                 file_path_str = str(file_path)
                 scanned_paths_on_disk.add(file_path_str)
 
@@ -470,6 +480,10 @@ class LibraryScanner:
         if not series:
             # 3. Create new (Flush, don't commit)
             series = Series(name=name, library_id=self.library.id)
+
+            series_path = Path(self.library.path) / name
+            series.summary_override = SidecarService.get_summary_from_disk(series_path, "series")
+
             self.db.add(series)
             self.db.flush()
 
@@ -512,3 +526,40 @@ class LibraryScanner:
         # Handle variants if needed in future
 
         return number
+
+    def _reconcile_sidecars(self, file_path: Path, existing_map: dict):
+        """
+        Syncs folder-level sidecars with Series/Volume models.
+        Works even if individual comics are skipped.
+        """
+        folder_path = file_path.parent
+        folder_str = str(folder_path)
+
+        if folder_str in self.reconciled_folders:
+            return
+
+        # Identify which Series/Volume this folder belongs to using pre-fetched data
+        # We look at the first comic we know about in this folder
+        existing_comic = existing_map.get(str(file_path))
+        if not existing_comic:
+            return  # New comics will handle this during _import_comic
+
+        # 1. Update Volume Truth
+        vol = existing_comic.volume
+        disk_vol_summary = SidecarService.get_summary_from_disk(folder_path, "volume")
+        if disk_vol_summary and vol.summary_override != disk_vol_summary:
+            vol.summary_override = disk_vol_summary
+            self.logger.info(f"Sidecar: Updated Volume {vol.volume_number} summary.")
+
+        # 2. Update Series Truth
+        series = vol.series
+        # If flat structure, series_path is the same as folder_path
+        # If nested, we look one level up
+        series_path = folder_path if folder_path.parent == Path(self.library.path) else folder_path.parent
+        disk_series_summary = SidecarService.get_summary_from_disk(series_path, "series")
+
+        if disk_series_summary and series.summary_override != disk_series_summary:
+            series.summary_override = disk_series_summary
+            self.logger.info(f"Sidecar: Updated Series '{series.name}' summary.")
+
+        self.reconciled_folders.add(folder_str)
