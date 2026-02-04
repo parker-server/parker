@@ -5,7 +5,7 @@
 {% block content %}
 <div class="space-y-12" x-data="homePage()">
 
-    <div x-show="!isLoading && !isLibraryEmpty" x-cloak>
+    <div x-show="!isLoading && !isLibraryEmpty" class="space-y-16 pb-12" x-cloak>
 
         <div x-show="!loading.resume && resumeComics.length > 0">
             <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
