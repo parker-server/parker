@@ -12,7 +12,6 @@ from app.api.deps import PaginationParams, PaginatedResponse
 
 from app.models.comic import Comic, Volume
 from app.models.series import Series
-from app.models.library import Library
 from app.models.credits import Person, ComicCredit
 from app.models.tags import Character, Team, Location
 from app.models.reading_progress import ReadingProgress
@@ -286,6 +285,7 @@ async def get_volume_detail(volume: VolumeDep, db: SessionDep, current_user: Cur
         "start_year": stats.start_year,
         "end_year": stats.end_year,
         "first_issue_id": first_issue.id if first_issue else None,
+        "first_issue_summary": first_issue.summary if first_issue else None,
         "story_arcs": story_arcs_data,
         "details": details,
         "resume_to": {

@@ -13,17 +13,16 @@ from app.api.deps import SessionDep, CurrentUser, ComicDep
 
 from app.models.comic import Comic, Volume
 from app.models.series import Series
-from app.models.library import Library
 from app.models.credits import Person, ComicCredit
 from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.collection import Collection, CollectionItem
 from app.models.pull_list import PullList, PullListItem
 from app.models.reading_progress import ReadingProgress
-from app.models.tags import Character, Team, Location, Genre
+
 
 from app.schemas.search import SearchRequest, SearchResponse
 from app.services.search import SearchService
-from app.services.images import ImageService
+
 
 
 router = APIRouter()

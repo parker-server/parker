@@ -5,153 +5,200 @@
 {% block content %}
 <div class="space-y-12" x-data="homePage()">
 
-    <div x-show="!loading.resume && resumeComics.length > 0">
-        <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-            <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                <span>📖</span> Jump Back In
-            </h2>
-        </div>
+    <div x-show="!isLoading && !isLibraryEmpty" class="space-y-16 pb-12" x-cloak>
 
-        <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-            <template x-for="comic in resumeComics" :key="comic.id">
-                <div class="w-40 flex-shrink-0">
-                    {% include "partials/comic_card.html" %}
-                </div>
-            </template>
-        </div>
-    </div>
-
-    <div x-show="!loading.onDeck && onDeckSeries.length > 0">
-        <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-            <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                <span>▶</span> Up Next
-            </h2>
-        </div>
-        <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-            <template x-for="comic in onDeckSeries" :key="comic.id">
-                <div class="w-40 flex-shrink-0">
-                    {% include "partials/comic_card.html" %}
-                </div>
-            </template>
-        </div>
-    </div>
-
-
-    <template x-for="list in smartLists" :key="list.id">
-
-        <div x-data="smartRail(list)" x-show="!loading && items.length > 0" class="mb-12">
-
+        <div x-show="!loading.resume && resumeComics.length > 0">
             <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
                 <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                    <span x-text="icon"></span>
-                    <span x-text="title"></span>
+                    <span>📖</span> Jump Back In
                 </h2>
-                <a :href="window.parker.route('pages.search', {}, `smart_list_id=${listId}`)" class="text-xs text-blue-400 hover:text-white transition-colors">View All</a>
             </div>
 
             <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                <template x-for="comic in resumeComics" :key="comic.id">
+                    <div class="w-40 flex-shrink-0">
+                        {% include "partials/comic_card.html" %}
+                    </div>
+                </template>
+            </div>
+        </div>
 
-                <template x-for="comic in items" :key="comic.id">
+
+        <div x-show="!loading.onDeck && onDeckSeries.length > 0">
+            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                    <span>▶</span> Up Next
+                </h2>
+            </div>
+            <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                <template x-for="comic in onDeckSeries" :key="comic.id">
+                    <div class="w-40 flex-shrink-0">
+                        {% include "partials/comic_card.html" %}
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <template x-for="list in smartLists" :key="list.id">
+
+            <div x-data="smartRail(list)" x-show="!loading && items.length > 0" class="mb-12">
+
+                <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+                    <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                        <span x-text="icon"></span>
+                        <span x-text="title"></span>
+                    </h2>
+                    <a :href="window.parker.route('pages.search', {}, `smart_list_id=${listId}`)" class="text-xs text-blue-400 hover:text-white transition-colors">View All</a>
+                </div>
+
+                <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+
+                    <template x-for="comic in items" :key="comic.id">
+                        <div class="w-36 flex-shrink-0">
+                            {% include "partials/comic_card.html" %}
+                        </div>
+                    </template>
+
+                </div>
+            </div>
+        </template>
+
+        <div x-show="!loading.starred && starredSeries.length > 0">
+            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                    <span class="text-yellow-400">★</span> Want to Read
+                </h2>
+                </div>
+
+            <div class="flex space-x-6 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                <template x-for="series in starredSeries" :key="series.id">
+                    {% include "partials/series_card.html" %}
+                </template>
+            </div>
+        </div>
+
+
+        <div x-show="!loading.topRated && topRatedComics.length > 0">
+            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                    <span class="text-yellow-400">★</span> Critically Acclaimed
+                </h2>
+            </div>
+
+            <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                <template x-for="comic in topRatedComics" :key="comic.id">
                     <div class="w-36 flex-shrink-0">
                         {% include "partials/comic_card.html" %}
                     </div>
                 </template>
+            </div>
+        </div>
 
+        <div x-show="!loading.popular && popularSeries.length > 0">
+            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                    <span>🔥</span> Trending
+                </h2>
+            </div>
+
+            <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                <template x-for="series in popularSeries" :key="series.id">
+                        {% include "partials/series_card.html" %}
+                </template>
+            </div>
+        </div>
+
+
+        <div x-show="!loading.random && randomSeries.length > 0">
+            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                    <span>🎲</span> Random Gems
+                </h2>
+                <button x-on:click="fetchRandom()" class="text-xs text-blue-400 hover:text-white">Spin Again ↻</button>
+            </div>
+
+            <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                <template x-for="series in randomSeries" :key="series.id">
+
+                        {% include "partials/series_card.html" %}
+                </template>
+            </div>
+        </div>
+
+        <div x-show="!loading.recent && recentSeries.length > 0">
+            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+                <h2 class="text-xl font-bold text-white">
+                    <span>✨</span> Recently Added Series
+                </h2>
+                <a :href="window.parker.route('pages.search', {}, 'sort_by=created&sort_order=desc')" class="text-sm text-blue-400 hover:text-white transition-colors">View All</a>
+            </div>
+
+            <div class="flex space-x-6 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                <template x-for="series in recentSeries" :key="series.id">
+                    {% include "partials/series_card.html" %}
+                </template>
+            </div>
+        </div>
+
+        <div x-show="!loading.updated && updatedSeries.length > 0">
+            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+                <h2 class="text-xl font-bold text-white">
+                    <span>🔁</span> Recently Updated Series
+                </h2>
+                <a :href="window.parker.route('pages.search', {}, 'sort_by=updated&sort_order=desc')" class="text-sm text-blue-400 hover:text-white transition-colors">View All</a>
+            </div>
+
+            <div class="flex space-x-6 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                <template x-for="series in updatedSeries" :key="series.id">
+                    {% include "partials/series_card.html" %}
+                </template>
+            </div>
+        </div>
+
+    </div>
+
+    <template x-if="!isLoading && isLibraryEmpty">
+
+        <div class="max-w-4xl mx-auto py-12 px-6">
+            <div class="bg-gray-800/50 border border-gray-700 rounded-2xl p-8 md:p-12 text-center space-y-8 shadow-2xl">
+                <div class="inline-flex items-center justify-center w-20 h-20 bg-blue-600/20 rounded-full mb-4">
+                    <span class="text-5xl animate-bounce [animation-iteration-count:3]">📚</span>
+                </div>
+
+                <div class="space-y-3">
+                    <h1 class="text-3xl md:text-4xl font-black text-white tracking-tight">Welcome to Parker!</h1>
+                    <p class="text-gray-400 text-lg max-w-xl mx-auto">
+                        Your library is currently empty. Let's get your collection organized and ready to read.
+                    </p>
+                </div>
+
+                <div class="grid md:grid-cols-2 gap-6 text-left max-w-2xl mx-auto">
+                    <a :href="window.parker.url('/admin/libraries')" class="group p-6 bg-gray-900/50 border border-gray-700 rounded-xl hover:border-blue-500/50 transition-all">
+                        <div class="flex items-start gap-4">
+                            <div class="text-2xl">📁</div>
+                            <div>
+                                <h3 class="font-bold text-white group-hover:text-blue-400 transition-colors">Add your first Library</h3>
+                                <p class="text-sm text-gray-500 mt-1">Connect your comic folders to start scanning.</p>
+                            </div>
+                        </div>
+                    </a>
+
+                    <a href="https://github.com/parker-server/parker/wiki/Getting-Started" target="_blank" class="group p-6 bg-gray-900/50 border border-gray-700 rounded-xl hover:border-blue-500/50 transition-all">
+                        <div class="flex items-start gap-4">
+                            <div class="text-2xl">📖</div>
+                            <div>
+                                <h3 class="font-bold text-white group-hover:text-blue-400 transition-colors">Read the Wiki</h3>
+                                <p class="text-sm text-gray-500 mt-1">Learn about metadata, tagging, and server settings.</p>
+                            </div>
+                        </div>
+                    </a>
+                </div>
+
+                <p class="text-xs text-gray-600 uppercase tracking-widest pt-4">Happy Reading!</p>
             </div>
         </div>
 
     </template>
-
-    <div x-show="!loading.starred && starredSeries.length > 0">
-        <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-            <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                <span class="text-yellow-400">★</span> Want to Read
-            </h2>
-            </div>
-
-        <div class="flex space-x-6 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-            <template x-for="series in starredSeries" :key="series.id">
-                {% include "partials/series_card.html" %}
-            </template>
-        </div>
-    </div>
-
-    <div x-show="!loading.topRated && topRatedComics.length > 0">
-        <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-            <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                <span class="text-yellow-400">★</span> Critically Acclaimed
-            </h2>
-        </div>
-
-        <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-            <template x-for="comic in topRatedComics" :key="comic.id">
-                <div class="w-36 flex-shrink-0">
-                    {% include "partials/comic_card.html" %}
-                </div>
-            </template>
-        </div>
-    </div>
-
-    <div x-show="!loading.popular && popularSeries.length > 0">
-        <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-            <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                <span>🔥</span> Trending
-            </h2>
-        </div>
-
-        <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-            <template x-for="series in popularSeries" :key="series.id">
-                    {% include "partials/series_card.html" %}
-            </template>
-        </div>
-    </div>
-
-
-    <div x-show="!loading.random && randomSeries.length > 0">
-        <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-            <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                <span>🎲</span> Random Gems
-            </h2>
-            <button x-on:click="fetchRandom()" class="text-xs text-blue-400 hover:text-white">Spin Again ↻</button>
-        </div>
-
-        <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-            <template x-for="series in randomSeries" :key="series.id">
-
-                    {% include "partials/series_card.html" %}
-            </template>
-        </div>
-    </div>
-
-    <div x-show="!loading.recent && recentSeries.length > 0">
-        <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-            <h2 class="text-xl font-bold text-white">
-                <span>✨</span> Recently Added Series
-            </h2>
-            <a :href="window.parker.route('pages.search', {}, 'sort_by=created&sort_order=desc')" class="text-sm text-blue-400 hover:text-white transition-colors">View All</a>
-        </div>
-
-        <div class="flex space-x-6 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-            <template x-for="series in recentSeries" :key="series.id">
-                {% include "partials/series_card.html" %}
-            </template>
-        </div>
-    </div>
-
-    <div x-show="!loading.updated && updatedSeries.length > 0">
-        <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-            <h2 class="text-xl font-bold text-white">
-                <span>🔁</span> Recently Updated Series
-            </h2>
-            <a :href="window.parker.route('pages.search', {}, 'sort_by=updated&sort_order=desc')" class="text-sm text-blue-400 hover:text-white transition-colors">View All</a>
-        </div>
-
-        <div class="flex space-x-6 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-            <template x-for="series in updatedSeries" :key="series.id">
-                {% include "partials/series_card.html" %}
-            </template>
-        </div>
-    </div>
 
     <div x-show="isLoading" class="flex justify-center py-20">
         <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
@@ -189,6 +236,13 @@ function homePage() {
                 || this.loading.onDeck || this.loading.random
                 || this.loading.topRated || this.loading.resume
                 ;
+        },
+
+        get isLibraryEmpty() {
+            // Check all main categories to see if anything exists
+            return this.recentSeries.length === 0
+                && this.resumeComics.length === 0
+                && this.starredSeries.length === 0;
         },
 
         init() {

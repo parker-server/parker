@@ -1,8 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, not_
-from typing import List, Optional
-from pydantic import BaseModel
 
 from app.core.comic_helpers import (get_aggregated_metadata, get_series_age_restriction,
                                     get_thumbnail_url, get_banned_comic_condition)

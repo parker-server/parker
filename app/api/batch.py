@@ -5,7 +5,6 @@ from datetime import datetime, timezone
 
 from app.api.deps import SessionDep, CurrentUser
 from app.models.comic import Comic, Volume
-from app.models.series import Series
 from app.models.reading_progress import ReadingProgress
 
 router = APIRouter()

@@ -2,7 +2,6 @@ import logging
 from datetime import datetime, timezone
 from functools import lru_cache
 from sqlalchemy import func, or_, not_, case, cast, Float
-from typing import Any
 from fastapi import HTTPException
 from sqlalchemy import func, or_, not_, case
 
@@ -13,6 +12,7 @@ from app.models.tags import Character, Team, Location, Genre
 from app.models.credits import Person, ComicCredit
 
 logger = logging.getLogger(__name__)
+
 
 # Titles that number backwards (Countdown) or count down to 0 (Zero Hour)
 # where the Highest Number is actually the Debut/Cover.
