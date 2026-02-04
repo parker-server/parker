@@ -250,7 +250,8 @@ class LibraryScanner:
 
         # Get or create volume (Uses Cache)
         volume_num = int(metadata.get('volume', 1)) if metadata.get('volume') else 1
-        volume = self._get_or_create_volume(series, volume_num)
+        # Pass file_path so the helper can check for first-time sidecars
+        volume = self._get_or_create_volume(series, volume_num, file_path)
 
         # Normalize number
         raw_number = metadata.get('number')
@@ -348,7 +349,7 @@ class LibraryScanner:
         return comic
 
     def _update_comic(self, comic: Comic, file_path: Path, file_mtime: float, file_size_bytes: int, metadata: Dict) -> \
-    Optional[Comic]:
+            Optional[Comic]:
         """
         Update an existing comic with new metadata.
         Now accepts 'metadata' as an argument to avoid doing I/O inside the DB transaction.
@@ -361,7 +362,8 @@ class LibraryScanner:
         volume_num = int(metadata.get('volume', 1)) if metadata.get('volume') else 1
 
         series = self._get_or_create_series(series_name)
-        volume = self._get_or_create_volume(series, volume_num)
+        # Pass file_path so the helper can check for first-time sidecars
+        volume = self._get_or_create_volume(series, volume_num, file_path)
 
         # Normalize number
         raw_number = metadata.get('number')
@@ -481,8 +483,15 @@ class LibraryScanner:
             # 3. Create new (Flush, don't commit)
             series = Series(name=name, library_id=self.library.id)
 
-            series_path = Path(self.library.path) / name
-            series.summary_override = SidecarService.get_summary_from_disk(series_path, "series")
+            # Boundary Protection: Don't check root or "Unknown"
+            # 1. Logical Guard: Don't check metadata for the fallback name
+            if name != "Unknown Series":
+                lib_path = Path(self.library.path)
+                series_path = lib_path / name
+
+                # 2. Physical Guard: Ensure it's a valid subfolder, not the root
+                if series_path != lib_path and lib_path in series_path.parents:
+                    series.summary_override = SidecarService.get_summary_from_disk(series_path, "series")
 
             self.db.add(series)
             self.db.flush()
@@ -491,7 +500,7 @@ class LibraryScanner:
         self.series_cache[name] = series
         return series
 
-    def _get_or_create_volume(self, series: Series, volume_number: int) -> Volume:
+    def _get_or_create_volume(self, series: Series, volume_number: int, file_path: Path) -> Volume:
         """Get existing volume or create new one with Caching"""
 
         # Composite key for cache
@@ -507,6 +516,15 @@ class LibraryScanner:
 
         if not volume:
             volume = Volume(series_id=series.id, volume_number=volume_number)
+
+            # --- BOUNDARY PROTECTION ---
+            folder_path = file_path.parent
+            lib_path = Path(self.library.path)
+
+            # Only look for a sidecar if the folder is NOT the library root
+            if folder_path != lib_path:
+                volume.summary_override = SidecarService.get_summary_from_disk(folder_path, "volume")
+
             self.db.add(volume)
             self.db.flush()
 
@@ -534,6 +552,11 @@ class LibraryScanner:
         """
         folder_path = file_path.parent
         folder_str = str(folder_path)
+        lib_path = Path(self.library.path)
+
+        # If the comic is in the root, there is no 'Series' or 'Volume' folder to reconcile
+        if folder_path == lib_path:
+            return
 
         if folder_str in self.reconciled_folders:
             return
@@ -544,21 +567,21 @@ class LibraryScanner:
         if not existing_comic:
             return  # New comics will handle this during _import_comic
 
-        # 1. Update Volume Truth
+        # 1. Update Volume (Clear if missing)
         vol = existing_comic.volume
         disk_vol_summary = SidecarService.get_summary_from_disk(folder_path, "volume")
-        if disk_vol_summary and vol.summary_override != disk_vol_summary:
+        if vol.summary_override != disk_vol_summary:
             vol.summary_override = disk_vol_summary
             self.logger.info(f"Sidecar: Updated Volume {vol.volume_number} summary.")
 
-        # 2. Update Series Truth
+        # 2. Update Series (Clear if missing)
         series = vol.series
         # If flat structure, series_path is the same as folder_path
         # If nested, we look one level up
         series_path = folder_path if folder_path.parent == Path(self.library.path) else folder_path.parent
         disk_series_summary = SidecarService.get_summary_from_disk(series_path, "series")
 
-        if disk_series_summary and series.summary_override != disk_series_summary:
+        if series.summary_override != disk_series_summary:
             series.summary_override = disk_series_summary
             self.logger.info(f"Sidecar: Updated Series '{series.name}' summary.")
 
