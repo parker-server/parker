@@ -168,6 +168,29 @@
                                 </div>
                             </div>
                         </div>
+
+                        {# First Issue summary promoted #}
+                        <div x-show="volume?.first_issue_summary" class="mt-6 text-gray-300 bg-gray-900/50 p-4 rounded-lg border border-gray-700/50">
+                            <h3 class="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Volume Synopsis</h3>
+
+                            <div x-data="{ expandedSummary: false }">
+                                <div
+                                    class="text-sm leading-relaxed"
+                                    :class="expandedSummary ? '' : 'line-clamp-3'"
+                                >
+                                    <p x-text="volume?.first_issue_summary"></p>
+                                </div>
+
+                                <div class="mt-2">
+                                    <button
+                                        x-show="volume?.first_issue_summary.length > 280"
+                                        @click="expandedSummary = !expandedSummary"
+                                        class="text-blue-400 hover:text-blue-300 text-xs font-black uppercase transition-colors"
+                                        x-text="expandedSummary ? 'Show Less ↑' : 'Read More ↓'"
+                                    ></button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
