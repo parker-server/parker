@@ -358,7 +358,9 @@ class ScanManager:
         # 1. Run Logic
         db_clean = SessionLocal()
         try:
-            self.logger.info(f"Starting CLEANUP job {job_id}")
+            scope_name = f"Library {library_id}" if library_id else "GLOBAL"
+            self.logger.info(f"Starting CLEANUP job {job_id} ({scope_name})")
+
             maintenance = MaintenanceService(db_clean)
 
             # Pass 1: Remove DB records for files that no longer exist (e.g., your old CBRs)
