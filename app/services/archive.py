@@ -36,13 +36,13 @@ class ComicArchive:
         # 1. Try to detect the format based on file signatures first (most reliable)
         if zipfile.is_zipfile(self.filepath):
             if self.extension != ".cbz":
-                logger.debug(f"Mislabeled archive: {self.filepath.name} is ZIP but labeled as {self.extension}")
+                logger.warning(f"Mislabeled archive: {self.filepath.name} is ZIP but labeled as {self.extension}")
                 self.extension = ".cbz"
             return zipfile.ZipFile(self.filepath)
 
         if rarfile.is_rarfile(self.filepath):
             if self.extension != ".cbr":
-                logger.debug(f"Mislabeled archive: {self.filepath.name} is RAR but labeled as {self.extension}")
+                logger.warning(f"Mislabeled archive: {self.filepath.name} is RAR but labeled as {self.extension}")
                 self.extension = ".cbr"
             return rarfile.RarFile(self.filepath)
 
