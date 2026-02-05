@@ -396,7 +396,7 @@ async def get_series_detail(series: SeriesDep, db: SessionDep, current_user: Cur
         "read_time": read_time,
         "starred": is_starred,
         "first_issue_id": first_issue.id if first_issue else None,
-        "first_issue_summary": first_issue.summary if first_issue else None,
+        "first_issue_summary": series.summary_override or (first_issue.summary if first_issue else None),
         "volumes": volumes_data,
         "collections": [{"id": c.id, "name": c.name, "description": c.description} for c in related_collections],
         "reading_lists": [{"id": l.id, "name": l.name, "description": l.description} for l in related_reading_lists],

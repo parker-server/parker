@@ -13,6 +13,7 @@ class Volume(Base):
     id = Column(Integer, primary_key=True, index=True)
     series_id = Column(Integer, ForeignKey("series.id"))
     volume_number = Column(Integer, default=1)
+    summary_override = Column(Text, nullable=True)
 
     series = relationship("Series", back_populates="volumes")
     comics = relationship("Comic", back_populates="volume", cascade="all, delete-orphan")
