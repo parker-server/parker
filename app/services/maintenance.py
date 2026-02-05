@@ -1,6 +1,9 @@
+from pathlib import Path
 from sqlalchemy.orm import Session
 import logging
+import os
 
+from app.config import settings
 from app.models.tags import Character, Team, Location
 from app.models.credits import Person
 from app.models.comic import Comic, Volume
@@ -94,6 +97,86 @@ class MaintenanceService:
             self.logger.info(f"Skipping deep tag cleanup for scoped scan (Library {library_id})")
 
         return stats
+
+    def cleanup_missing_files(self, library_id: int = None) -> list[int]:
+        """
+        Removes dead records and returns a list of their IDs for thumbnail cleanup.
+        """
+        query = self.db.query(Comic)
+        if library_id:
+            query = query.join(Volume).join(Series).filter(Series.library_id == library_id)
+
+        comics = query.all()
+        deleted_ids = []
+
+        for comic in comics:
+            if not os.path.exists(comic.file_path):
+                self.logger.info(f"Janitor: Removing missing file: {comic.file_path}")
+                deleted_ids.append(comic.id)
+                self.db.delete(comic)
+
+                if len(deleted_ids) % 100 == 0:
+                    self.db.commit()
+
+        if deleted_ids:
+            self.db.commit()
+
+        return deleted_ids
+
+    def delete_thumbnails_by_id(self, comic_ids: list[int]):
+        """
+        Targeted deletion based on your 'cover_{id}.webp' naming convention.
+        """
+        for c_id in comic_ids:
+            # Construct the path based on your scoped naming convention
+            # Using .as_posix() to ensure we handle the slashes correctly for Linux/Docker
+            thumb_path = (settings.cover_dir / f"cover_{c_id}.webp")
+
+            if thumb_path.exists():
+                try:
+                    thumb_path.unlink()
+                    self.logger.debug(f"Janitor: Deleted thumbnail for removed comic {c_id}")
+                except Exception as e:
+                    self.logger.error(f"Failed to delete thumb {thumb_path}: {e}")
+
+    def cleanup_orphaned_thumbnails(self) -> int:
+        """
+        Delete thumbnail files from storage that are no longer linked to any Comic.
+        Uses POSIX normalization to bridge Windows dev and Linux production environments.
+        """
+        self.logger.info("Janitor: Starting orphaned thumbnail cleanup...")
+
+        # 1. Get all valid image paths currently in the Comic table
+        comic_thumbs = self.db.query(Comic.thumbnail_path).filter(Comic.thumbnail_path != None).all()
+
+        # .as_posix() converts all backslashes to forward slashes for a unified set
+        valid_thumbnails = {Path(t[0]).as_posix() for t in comic_thumbs}
+
+        # 2. Walk the thumbnail directory
+        thumb_root = settings.cover_dir
+        deleted_count = 0
+
+        if not thumb_root.exists():
+            return 0
+
+        for thumb_file in thumb_root.rglob('*'):
+            if thumb_file.is_file():
+
+                # We normalize the physical file to a POSIX-style relative path
+                # This matches the 'storage/cover/comic.webp' format stored in the DB
+                normalized_disk_path = thumb_file.as_posix()
+
+                # Check if this physical file is in our 'Valid' set from the DB
+                if normalized_disk_path not in valid_thumbnails:
+                    try:
+                        self.logger.info(f"Janitor: Deleting unreferenced thumbnail: {normalized_disk_path}")
+                        thumb_file.unlink()
+                        deleted_count += 1
+                    except Exception as e:
+                        self.logger.error(f"Failed to delete orphaned thumb {thumb_file}: {e}")
+
+        self.logger.info(f"Janitor: Deleted {deleted_count} orphaned thumbnail files.")
+        return deleted_count
 
     def refresh_reading_list_descriptions(self) -> dict:
         """Populate missing descriptions for auto-generated lists."""
