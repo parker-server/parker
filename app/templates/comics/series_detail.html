@@ -4,7 +4,7 @@
 
 {% block content %}
 
-{% from "partials/page_context.html" import page_context %}
+{% from "partials/page_context.html" import page_context with context %}
 {{ page_context(cover.id, cover.color_palette) }}
 
 {% include "partials/dynamic_background.html" %}
