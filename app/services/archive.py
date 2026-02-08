@@ -32,7 +32,22 @@ class ComicArchive:
         self.archive = self._open_archive()
 
     def _open_archive(self):
-        """Open the appropriate archive handler"""
+        """Open the appropriate archive handler with fallback for mislabeled extensions"""
+        # 1. Try to detect the format based on file signatures first (most reliable)
+        if zipfile.is_zipfile(self.filepath):
+            if self.extension != ".cbz":
+                logger.warning(f"Mislabeled archive: {self.filepath.name} is ZIP but labeled as {self.extension}")
+                self.extension = ".cbz"
+            return zipfile.ZipFile(self.filepath)
+
+        if rarfile.is_rarfile(self.filepath):
+            if self.extension != ".cbr":
+                logger.warning(f"Mislabeled archive: {self.filepath.name} is RAR but labeled as {self.extension}")
+                self.extension = ".cbr"
+            return rarfile.RarFile(self.filepath)
+
+        # 2. Fall back to extension-based opening if detection failed
+        # This provides standard library error messages if the file is corrupted
         if self.extension == ".cbz":
             return zipfile.ZipFile(self.filepath)
         elif self.extension == ".cbr":

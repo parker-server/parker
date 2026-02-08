@@ -371,9 +371,30 @@ class ScanManager:
         # 1. Run Logic
         db_clean = SessionLocal()
         try:
-            self.logger.info(f"Starting CLEANUP job {job_id}")
+            scope_name = f"Library {library_id}" if library_id else "GLOBAL"
+            self.logger.info(f"Starting CLEANUP job {job_id} ({scope_name})")
+
             maintenance = MaintenanceService(db_clean)
+
+            # Pass 1: Remove DB records for files that no longer exist (e.g., your old CBRs)
+            removed_ids = maintenance.cleanup_missing_files(library_id=library_id)
+
+            # 2. Immediately delete those specific thumbnails
+            if removed_ids:
+                maintenance.delete_thumbnails_by_id(removed_ids)
+
+            self.logger.info(f"Janitor: Removed {len(removed_ids)} dead records from DB.")
+
+            # Pass 2: Delete orphaned Series/Volumes/Tags
             stats = maintenance.cleanup_orphans(library_id=library_id)
+            stats["missing_files_removed"] = len(removed_ids)
+
+            # Pass 3: Physical Thumbnail Purge (Only on Global Cleanups)
+            # Walking the entire thumb directory is expensive, so we keep it to global runs.
+            if library_id is None:
+                thumb_stats = maintenance.cleanup_orphaned_thumbnails()
+                stats["orphaned_thumbnails_deleted"] = thumb_stats
+
         except Exception as e:
             error = str(e)
             self.logger.error(f"Cleanup failed: {e}")
