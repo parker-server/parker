@@ -253,7 +253,20 @@ class ScanManager:
             if library:
                 self.logger.info(f"Starting SCAN job {job_id}")
                 scanner = LibraryScanner(library, db_scan)
-                results = scanner.scan(force=force)
+
+                use_parallel = get_cached_setting("system.parallel_metadata_processing", False)
+
+                self.logger.info(f"Parallel metadata processing is set to {use_parallel}")
+
+                # UNIFIED LOGIC:
+                # If Parallel is ON: Let the service auto-detect worker count (0)
+                # If Parallel is OFF: Force exactly 1 worker
+                workers = 0 if use_parallel else 1
+
+                results = scanner.scan_parallel(force=force, worker_limit=workers)
+
+                ScanManager.update_library_last_scanned(library_id)
+
             else:
                 error = "Library not found"
         except Exception as e:
@@ -456,6 +469,15 @@ class ScanManager:
             return {"status": "queued", "job_id": job.id, "message": "Job queued"}
         finally:
             db.close()
+
+    @staticmethod
+    def update_library_last_scanned(library_id: int):
+        db = SessionLocal()
+        lib = db.query(Library).get(library_id)
+        if lib:
+            lib.last_scanned = datetime.utcnow()
+            db.commit()
+        db.close()
 
 
 

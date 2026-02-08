@@ -1,24 +1,24 @@
 from pathlib import Path
-from typing import List, Dict, Optional
-from sqlalchemy.orm import Session
-from datetime import datetime, timezone
-import json
 import os
 import time
 import logging
+import multiprocessing
+from multiprocessing import Queue
+from datetime import datetime, timezone
 
-from app.config import settings
+from sqlalchemy.orm import Session
+
+from app.core.settings_loader import get_cached_setting
 from app.models.library import Library
+from app.models.comic import Comic
 from app.models.series import Series
-from app.models.comic import Volume, Comic
-from app.services.archive import ComicArchive
-from app.services.metadata import parse_comicinfo
-from app.services.tags import TagService
-from app.services.credits import CreditService
+from app.models.comic import Volume
+
+from app.services.workers.metadata_worker import metadata_worker
+from app.services.workers.metadata_writer import metadata_writer
+from app.services.sidecar_service import SidecarService
 from app.services.reading_list import ReadingListService
 from app.services.collection import CollectionService
-from app.services.images import ImageService
-from app.services.sidecar_service import SidecarService
 
 class LibraryScanner:
     """Scans library directories and imports comics with batch processing"""
@@ -27,195 +27,159 @@ class LibraryScanner:
         self.library = library
         self.db = db
         self.supported_extensions = ['.cbz', '.cbr']
-        self.tag_service = TagService(db)
-        self.credit_service = CreditService(db)
+        self.logger = logging.getLogger(__name__)
+        self.reconciled_folders = set()
         self.reading_list_service = ReadingListService(db)
         self.collection_service = CollectionService(db)
-        self.image_service = ImageService()
 
-        self.logger = logging.getLogger(__name__)
 
-        # Local caches to reduce DB reads during the scan loop
-        self.series_cache: Dict[str, Series] = {}
-        self.volume_cache: Dict[str, Volume] = {}
-
-        # Track processed folders in this session
-        self.reconciled_folders = set()
-
-    def scan(self, force: bool = False) -> dict:
+    def scan_parallel(self, force: bool = False, worker_limit: int = 0) -> dict:
         """
-        Scan the library path and import comics using intelligent batch commits.
-        OPTIMIZED: Separates File I/O from DB Transactions to prevent SQLite Locking.
+        Parallel metadata extraction + single-writer DB updates.
         """
         library_path = Path(self.library.path)
 
         if not library_path.exists():
-            self.logger.error(f"Library path {self.library.path} does not exist")
             raise FileNotFoundError(f"Library path does not exist: {self.library.path}")
 
-        found_comics = []
-        errors = []
-        imported = 0
-        updated = 0
-        skipped = 0
-
-        # Batch configuration
-        BATCH_SIZE = 50
-        pending_changes = 0
-
-        self.logger.info(f"Scanning {library_path} (force={force})")
-
-        # Start timing
         start_time = time.time()
 
-        # 1. OPTIMIZATION: Pre-fetch all existing comics for this library.
-        # This avoids executing a SELECT query for every single file in the loop.
-        self.logger.debug("Pre-fetching existing file list...")
-        db_comics = self.db.query(Comic).join(Volume).join(Series).filter(
-            Series.library_id == self.library.id
-        ).all()
+        # 0. Prefetch existing comics (same as old scan)
+        self.logger.debug("Pre-fetching existing file list for parallel scan...")
 
-        # Map file_path -> Comic object for O(1) lookup
+        db_comics = (
+            self.db.query(Comic)
+            .join(Volume)
+            .join(Series)
+            .filter(Series.library_id == self.library.id)
+            .all()
+        )
+
         existing_map = {c.file_path: c for c in db_comics}
 
-        # Track paths found on disk to identify deletions later
+        # --- Phase 1: Build task list with skip/import/update logic ---
+        tasks = []
         scanned_paths_on_disk = set()
+        skipped = 0
 
-        # Walk through directory
-        for file_path in library_path.rglob('*'):
-            if file_path.suffix.lower() in self.supported_extensions:
+        for file_path in library_path.rglob("*"):
 
-                # --- NEW: CONTAINER RECONCILIATION ---
-                # This runs for EVERY file, but the logic inside ensures it only
-                # performs the disk-check once per folder.
-                self._reconcile_sidecars(file_path, existing_map)
+            if file_path.suffix.lower() not in self.supported_extensions:
+                continue
 
-                file_path_str = str(file_path)
-                scanned_paths_on_disk.add(file_path_str)
+            # --- CONTAINER RECONCILIATION ---
+            # This runs for EVERY file, but the logic inside ensures it only
+            # performs the disk-check once per folder.
+            self._reconcile_sidecars(file_path, existing_map)
 
-                try:
-                    file_mtime = os.path.getmtime(file_path)
-                    file_size_bytes = os.path.getsize(file_path)
+            file_path_str = str(file_path)
+            scanned_paths_on_disk.add(file_path_str)
 
-                    # Check against our pre-fetched map
-                    existing = existing_map.get(file_path_str)
+            file_mtime = os.path.getmtime(file_path)
+            existing = existing_map.get(file_path_str)
 
-                    # --- PHASE 1: FILE I/O (No DB Lock) ---
-                    # We determine if work is needed and extract metadata BEFORE opening the DB transaction.
-                    # This prevents holding the write lock while unzipping large files.
+            if existing:
+                # unchanged file → skip unless force=True
+                if not force and existing.file_modified_at and existing.file_modified_at >= file_mtime:
+                    skipped += 1
+                    continue
 
-                    action = "skip"
-                    metadata = None
+                # changed file → update
+                tasks.append(file_path_str)
 
-                    if existing:
-                        # Check modification time
-                        if not force and existing.file_modified_at and existing.file_modified_at >= file_mtime:
-                            action = "skip"
-                        else:
-                            action = "update"
-                            # Heavy I/O happens here, completely safe
-                            metadata = self._extract_metadata(file_path)
-                    else:
-                        action = "import"
-                        # Heavy I/O happens here, completely safe
-                        metadata = self._extract_metadata(file_path)
+            else:
+                # new file → import
+                tasks.append(file_path_str)
 
-                    if action == "skip":
-                        skipped += 1
-                        continue
+        # Commit any sidecar updates found during discovery
+        self.db.commit()
 
-                    if not metadata:
-                        # Failed to extract, log and continue
-                        errors.append({"file": str(file_path), "error": "Failed to extract metadata"})
-                        continue
+        # If nothing needs work, return early
+        if not tasks:
+            elapsed = round(time.time() - start_time, 2)
+            return {
+                "library": self.library.name,
+                "imported": 0,
+                "updated": 0,
+                "deleted": 0,
+                "errors": 0,
+                "skipped": skipped,
+                "elapsed": elapsed,
+            }
 
-                    # --- PHASE 2: DB WRITE (Short Transaction) ---
-                    # Now we open the transaction. Operations here must be fast.
-                    with self.db.begin_nested():
+        # 2. Start writer process
+        # --- Queues ---
+        result_queue = Queue()
+        stats_queue = Queue()
 
-                        comic = None
+        # --- Start writer ---
+        writer_proc = multiprocessing.Process(
+            target=metadata_writer,
+            args=(result_queue, stats_queue, self.library.id),
+            kwargs={"batch_size": 50}
+        )
+        writer_proc.start()
 
-                        if action == "update":
+        # Determine Worker Count
+        if worker_limit > 0:
+            workers = worker_limit  # Respect the override (e.g., 1)
+            if worker_limit == 1:
+                self.logger.info(f"Using exactly 1 worker for metadata extraction (SERIAL MODE)")
+            else:
+                self.logger.info(f"Using exactly {worker_limit} worker(s) for metadata extraction")
+        else:
+            requested_workers = int(get_cached_setting("system.parallel_metadata_workers", 0))
+            self.logger.info(f"Requested {'(Auto)' if requested_workers <= 0 else requested_workers} worker(s) for parallel metadata extraction")
 
-                            if force:
-                                self.logger.info(f"Force scanning: {file_path.name}")
-                            else:
-                                self.logger.info(f"Updating modified: {file_path.name}")
+            if requested_workers <= 0:
+                # AUTO MODE:
+                # Use 50% of cores, with a minimum of 1.
+                # This prevents system starvation when multiple web workers are active.
+                total_cores = multiprocessing.cpu_count() or 1
+                workers = max(1, total_cores // 2)
+            else:
+                max_cores = multiprocessing.cpu_count() or 1
+                workers = min(requested_workers, max_cores)
 
-                            # Pass pre-extracted metadata
-                            comic = self._update_comic(existing, file_path, file_mtime, file_size_bytes, metadata)
-                            if comic:
-                                updated += 1
-                                pending_changes += 1
+            self.logger.info(f"Using {workers} worker(s) for parallel metadata extraction")
 
-                        elif action == "import":
-                            # Pass pre-extracted metadata
-                            comic = self._import_comic(file_path, file_mtime, file_size_bytes, metadata)
-                            if comic:
-                                imported += 1
-                                pending_changes += 1
-                                existing_map[file_path_str] = comic
+        # Start Workers (only for needed files) (CPU bound)
+        self.logger.debug(f"Scanning {len(tasks)} comic(s)")
+        with multiprocessing.Pool(processes=workers) as pool:
+            for payload in pool.imap_unordered(metadata_worker, tasks):
+                result_queue.put(payload)
 
-                        # FORCE FLUSH: Validate constraints immediately
-                        if comic:
-                            self.db.flush()
+        # Signal writer to finish
+        result_queue.put(None)
 
-                    # --- BATCH COMMIT ---
-                    if comic:
-                        found_comics.append({
-                            "id": comic.id,
-                            "filename": comic.filename,
-                            "series": comic.volume.series.name if comic.volume and comic.volume.series else "Unknown",
-                            "pages": comic.page_count
-                        })
+        # Wait for summary
+        summary = stats_queue.get()
 
-                    # 2. OPTIMIZATION: Batch Commit
-                    # Only hit the disk once every BATCH_SIZE items
-                    if pending_changes >= BATCH_SIZE:
-                        self.logger.debug(f"Committing batch of {pending_changes} items...")
-                        self.db.commit()
-                        pending_changes = 0
+        writer_proc.join()
 
-                except Exception as e:
-                    # Logic: The savepoint has already rolled back the DB changes for this specific file.
-                    # The session is clean and ready for the next file.
-                    errors.append({"file": str(file_path), "error": str(e)})
-                    self.logger.error(f"Error processing {file_path}: {e}")
-
-        # Commit remaining
-        if pending_changes > 0:
-            self.logger.debug(f"Committing final batch of {pending_changes} items...")
-            self.db.commit()
-
-        # Find and remove comics whose files no longer exist
-        # We pass the set we built during the loop
+        # --- Phase 3: Cleanup missing files ---
         deleted = self._cleanup_missing_files(scanned_paths_on_disk, existing_map)
 
         # Cleanup empty containers
         self.reading_list_service.cleanup_empty_lists()
         self.collection_service.cleanup_empty_collections()
 
-
         # Update library scan time
         self.library.last_scanned = datetime.now(timezone.utc)
         self.db.commit()
 
-        elapsed_time = round(time.time() - start_time, 2)
-        self.logger.info(f"Scanning complete - Elapsed time: {elapsed_time} seconds")
+        elapsed = round(time.time() - start_time, 2)
+
+        print(summary)
 
         return {
             "library": self.library.name,
-            "path": self.library.path,
-            "force_scan": force,
-            "found": len(found_comics),
-            "imported": imported,
-            "updated": updated,
+            "skipped": skipped + summary.get("skipped", 0),
+            "imported": summary.get("imported", 0),
+            "updated": summary.get("updated", 0),
             "deleted": deleted,
-            "skipped": skipped,
-            "errors": len(errors),
-            "comics": found_comics[:10],
-            "error_details": errors[:5],
-            "elapsed": elapsed_time
+            "errors": summary.get("errors", 0),
+            "elapsed": elapsed,
         }
 
     def _cleanup_missing_files(self, scanned_paths_on_disk: set, existing_map: dict) -> int:
@@ -233,317 +197,6 @@ class LibraryScanner:
             self.db.commit()
 
         return deleted
-
-    def _import_comic(self, file_path: Path, file_mtime: float, file_size_bytes: int, metadata: Dict) -> Optional[
-        Comic]:
-        """
-        Process and import a new comic file.
-        Now accepts 'metadata' as an argument to avoid doing I/O inside the DB transaction.
-        """
-        # Metadata extraction moved to caller (scan loop)
-
-        # Get or create series (Uses Cache)
-        # Robust 'Unknown' handling for Series Name to prevent NOT NULL errors
-        # If metadata['series'] is None or "", default to "Unknown Series"
-        series_name = metadata.get('series') or 'Unknown Series'
-        series = self._get_or_create_series(series_name)
-
-        # Get or create volume (Uses Cache)
-        volume_num = int(metadata.get('volume', 1)) if metadata.get('volume') else 1
-        # Pass file_path so the helper can check for first-time sidecars
-        volume = self._get_or_create_volume(series, volume_num, file_path)
-
-        # Normalize number
-        raw_number = metadata.get('number')
-        clean_number = self._normalize_number(raw_number)
-
-        # Create comic
-        comic = Comic(
-            volume_id=volume.id,
-            filename=file_path.name,
-            file_path=str(file_path),
-            file_modified_at=file_mtime,
-            file_size=file_size_bytes,
-            page_count=metadata['page_count'],
-
-            # Basic info
-            number=clean_number,
-            title=metadata.get('title'),
-            summary=metadata.get('summary'),
-            year=int(metadata.get('year')) if metadata.get('year') else None,
-            month=int(metadata.get('month')) if metadata.get('month') else None,
-            day=int(metadata.get('day')) if metadata.get('day') else None,
-            web=metadata.get('web'),
-            notes=metadata.get('notes'),
-            age_rating=metadata.get('age_rating'),
-            language_iso=metadata.get('lang'),
-            community_rating=metadata.get('community_rating'),
-
-            # Publishing
-            publisher=metadata.get('publisher'),
-            imprint=metadata.get('imprint'),
-            format=metadata.get('format'),
-            series_group=metadata.get('series_group'),
-
-            # Technical
-            scan_information=metadata.get('scan_information'),
-
-            # Reading lists
-            alternate_series=metadata.get('alternate_series'),
-            alternate_number=metadata.get('alternate_number'),
-            story_arc=metadata.get('story_arc'),
-
-            # Map the Count field
-            count=int(metadata.get('count')) if metadata.get('count') else None,
-
-            # Full metadata
-            metadata_json=json.dumps(metadata.get('raw_metadata', {})),
-
-            is_dirty=True # Mark for thumbnailer / services
-
-        )
-
-        self.db.add(comic)
-        # CRITICAL: Use flush() instead of commit().
-        # This assigns the PK (id) so we can use it for the thumbnail,
-        # but keeps the transaction open for the batch.
-        self.db.flush()
-
-        # Add credits
-        self.credit_service.add_credits_to_comic(comic, metadata)
-
-        # Tags
-        if metadata.get('characters'):
-            comic.characters = self.tag_service.get_or_create_characters(metadata.get('characters'))
-
-        if metadata.get('teams'):
-            comic.teams = self.tag_service.get_or_create_teams(metadata.get('teams'))
-
-        if metadata.get('locations'):
-            comic.locations = self.tag_service.get_or_create_locations(metadata.get('locations'))
-
-        if metadata.get('genre'):
-            comic.genres = self.tag_service.get_or_create_genres(metadata.get('genre'))
-
-        # Reading lists
-        self.reading_list_service.update_comic_reading_lists(
-            comic,
-            metadata.get('alternate_series'),
-            metadata.get('alternate_number')
-        )
-
-        # Collections
-        self.collection_service.update_comic_collections(
-            comic,
-            metadata.get('series_group')
-        )
-
-        # Touch Parent Series to update 'updated_at'
-        # This ensures it shows up in "Recently Updated"
-        series.updated_at = datetime.now(timezone.utc)
-        # Note: SQLAlchemy tracks dirty state, so this will trigger an UPDATE on commit
-
-
-        self.logger.debug(f"Imported: {series_name} #{metadata.get('number', '?')} - {file_path.name}")
-
-        return comic
-
-    def _update_comic(self, comic: Comic, file_path: Path, file_mtime: float, file_size_bytes: int, metadata: Dict) -> \
-            Optional[Comic]:
-        """
-        Update an existing comic with new metadata.
-        Now accepts 'metadata' as an argument to avoid doing I/O inside the DB transaction.
-        """
-        # Metadata extraction moved to caller (scan loop)
-
-        # Check if series/volume changed
-        # Robust 'Unknown' handling
-        series_name = metadata.get('series') or 'Unknown Series'
-        volume_num = int(metadata.get('volume', 1)) if metadata.get('volume') else 1
-
-        series = self._get_or_create_series(series_name)
-        # Pass file_path so the helper can check for first-time sidecars
-        volume = self._get_or_create_volume(series, volume_num, file_path)
-
-        # Normalize number
-        raw_number = metadata.get('number')
-        clean_number = self._normalize_number(raw_number)
-
-        # Update fields
-        comic.volume_id = volume.id
-        comic.file_modified_at = file_mtime
-        comic.file_size = file_size_bytes
-        comic.page_count = metadata['page_count']
-        comic.number = clean_number
-        comic.title = metadata.get('title')
-        comic.summary = metadata.get('summary')
-        comic.year = int(metadata.get('year')) if metadata.get('year') else None
-        comic.month = int(metadata.get('month')) if metadata.get('month') else None
-        comic.day = int(metadata.get('day')) if metadata.get('day') else None
-        comic.web = metadata.get('web')
-        comic.notes = metadata.get('notes')
-        comic.age_rating = metadata.get('age_rating')
-        comic.language_iso = metadata.get('lang')
-        comic.community_rating = metadata.get('community_rating')
-        comic.publisher = metadata.get('publisher')
-        comic.imprint = metadata.get('imprint')
-        comic.format = metadata.get('format')
-        comic.series_group = metadata.get('series_group')
-        comic.scan_information = metadata.get('scan_information')
-        comic.alternate_series = metadata.get('alternate_series')
-        comic.alternate_number = metadata.get('alternate_number')
-        comic.story_arc = metadata.get('story_arc')
-        comic.count = int(metadata.get('count')) if metadata.get('count') else None
-        comic.metadata_json = json.dumps(metadata.get('raw_metadata', {}))
-        comic.updated_at = datetime.now(timezone.utc)
-        comic.is_dirty = True # Mark for thumbnailer / services
-
-        # Update credits
-        self.credit_service.add_credits_to_comic(comic, metadata)
-
-        # Tags
-        comic.characters.clear()
-        comic.teams.clear()
-        comic.locations.clear()
-        comic.genres.clear()
-
-        if metadata.get('characters'):
-            comic.characters = self.tag_service.get_or_create_characters(metadata.get('characters'))
-        if metadata.get('teams'):
-            comic.teams = self.tag_service.get_or_create_teams(metadata.get('teams'))
-        if metadata.get('locations'):
-            comic.locations = self.tag_service.get_or_create_locations(metadata.get('locations'))
-        if metadata.get('genre'):
-            comic.genres = self.tag_service.get_or_create_genres(metadata.get('genre'))
-
-        self.reading_list_service.update_comic_reading_lists(
-            comic,
-            metadata.get('alternate_series'),
-            metadata.get('alternate_number')
-        )
-
-        self.collection_service.update_comic_collections(
-            comic,
-            metadata.get('series_group')
-        )
-
-        # Touch Parent Series
-        series.updated_at = datetime.now(timezone.utc)
-
-        # NO COMMIT HERE - handled by batch loop
-
-        return comic
-
-    def _extract_metadata(self, file_path: Path) -> Optional[Dict]:
-        """Extract metadata from comic archive"""
-        try:
-            with ComicArchive(file_path) as archive:
-                pages = archive.get_pages()
-
-                if not pages:
-                    self.logger.warning(f"Warning: No valid image pages found in {file_path.name}")
-                    return None
-
-                comicinfo_xml = archive.get_comicinfo()
-
-                # 1. Establish Physical Truth of page count
-                physical_count = len(pages)
-                metadata = {'page_count': physical_count}
-
-                if comicinfo_xml:
-                    parsed = parse_comicinfo(comicinfo_xml)
-                    metadata.update(parsed)
-
-                    # Force overwrite: Always use physical count for this field.
-                    # We trust the file system over the XML tag for navigational safety in the reader.
-                    metadata['page_count'] = physical_count
-
-                    metadata['raw_metadata'] = parsed
-
-                return metadata
-
-        except Exception as e:
-            self.logger.error(f"Error extracting metadata from {file_path}: {e}")
-            return None
-
-    def _get_or_create_series(self, name: str) -> Series:
-        """Get existing series or create new one with Caching"""
-
-        # 1. Check local cache
-        if name in self.series_cache:
-            return self.series_cache[name]
-
-        # 2. Check Database
-        series = self.db.query(Series).filter(
-            Series.name == name,
-            Series.library_id == self.library.id
-        ).first()
-
-        if not series:
-            # 3. Create new (Flush, don't commit)
-            series = Series(name=name, library_id=self.library.id)
-
-            # Boundary Protection: Don't check root or "Unknown"
-            # 1. Logical Guard: Don't check metadata for the fallback name
-            if name != "Unknown Series":
-                lib_path = Path(self.library.path)
-                series_path = lib_path / name
-
-                # 2. Physical Guard: Ensure it's a valid subfolder, not the root
-                if series_path != lib_path and lib_path in series_path.parents:
-                    series.summary_override = SidecarService.get_summary_from_disk(series_path, "series")
-
-            self.db.add(series)
-            self.db.flush()
-
-        # 4. Add to cache
-        self.series_cache[name] = series
-        return series
-
-    def _get_or_create_volume(self, series: Series, volume_number: int, file_path: Path) -> Volume:
-        """Get existing volume or create new one with Caching"""
-
-        # Composite key for cache
-        cache_key = f"{series.id}_{volume_number}"
-
-        if cache_key in self.volume_cache:
-            return self.volume_cache[cache_key]
-
-        volume = self.db.query(Volume).filter(
-            Volume.series_id == series.id,
-            Volume.volume_number == volume_number
-        ).first()
-
-        if not volume:
-            volume = Volume(series_id=series.id, volume_number=volume_number)
-
-            # --- BOUNDARY PROTECTION ---
-            folder_path = file_path.parent
-            lib_path = Path(self.library.path)
-
-            # Only look for a sidecar if the folder is NOT the library root
-            if folder_path != lib_path:
-                volume.summary_override = SidecarService.get_summary_from_disk(folder_path, "volume")
-
-            self.db.add(volume)
-            self.db.flush()
-
-        self.volume_cache[cache_key] = volume
-        return volume
-
-    def _normalize_number(self, number: str) -> str:
-        """Normalize weird comic numbers"""
-        if not number:
-            return number
-
-        # Handle "½" -> "0.5"
-        if number == "½" or number == "1/2":
-            return "0.5"
-
-        # Handle "-1" (ensure it stays -1, though our casting handles it)
-        # Handle variants if needed in future
-
-        return number
 
     def _reconcile_sidecars(self, file_path: Path, existing_map: dict):
         """
@@ -586,3 +239,4 @@ class LibraryScanner:
             self.logger.info(f"Sidecar: Updated Series '{series.name}' summary.")
 
         self.reconciled_folders.add(folder_str)
+
