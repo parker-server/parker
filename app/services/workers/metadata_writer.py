@@ -69,7 +69,7 @@ def _apply_metadata_batch(
 
         # Get or create volume (Uses Cache)
         volume_num = int(metadata.get("volume", 1)) if metadata.get("volume") else 1
-        volume = get_or_create_volume(series, volume_num)
+        volume = get_or_create_volume(series, volume_num, file_path)
         comic.volume_id = volume.id
 
         # --- Basic fields ---
@@ -174,14 +174,20 @@ def metadata_writer(queue, stats_queue, library_id, batch_size=50):
     try:
 
         from app.database import SessionLocal, engine
-        from app.models import Comic, Series, Volume
+        from app.models import Comic, Series, Volume, Library
         from app.services.tags import TagService
         from app.services.credits import CreditService
         from app.services.reading_list import ReadingListService
         from app.services.collection import CollectionService
+        from app.services.sidecar_service import SidecarService
+        from pathlib import Path
 
         engine.dispose()
         db = SessionLocal()
+
+        # Get library path for sidecars
+        library = db.query(Library).get(library_id)
+        lib_path = Path(library.path)
 
         # Preload existing comics
         existing = {
@@ -217,6 +223,14 @@ def metadata_writer(queue, stats_queue, library_id, batch_size=50):
             if not series:
                 # 3. Create new (Flush, don't commit)
                 series = Series(name=name, library_id=library_id)
+
+                # Boundary Protection: Don't check root or "Unknown"
+                if name != "Unknown Series":
+                    series_path = lib_path / name
+                    # Physical Guard: Ensure it's a valid subfolder, not the root
+                    if series_path != lib_path and lib_path in series_path.parents:
+                        series.summary_override = SidecarService.get_summary_from_disk(series_path, "series")
+
                 db.add(series)
                 db.flush()
 
@@ -224,7 +238,7 @@ def metadata_writer(queue, stats_queue, library_id, batch_size=50):
             series_cache[name] = series
             return series
 
-        def get_or_create_volume(series, num):
+        def get_or_create_volume(series, num, file_path_str: str):
             """Get existing volume or create new one with Caching"""
 
             # Composite key for cache
@@ -238,6 +252,14 @@ def metadata_writer(queue, stats_queue, library_id, batch_size=50):
             if not v:
                 # 3. Create new (Flush, don't commit)
                 v = Volume(series_id=series.id, volume_number=num)
+
+                # --- BOUNDARY PROTECTION ---
+                folder_path = Path(file_path_str).parent
+
+                # Only look for a sidecar if the folder is NOT the library root
+                if folder_path != lib_path:
+                    v.summary_override = SidecarService.get_summary_from_disk(folder_path, "volume")
+
                 db.add(v)
                 db.flush()
 
