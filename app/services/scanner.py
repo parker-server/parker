@@ -21,7 +21,6 @@ from app.services.sidecar_service import SidecarService
 from app.services.reading_list import ReadingListService
 from app.services.collection import CollectionService
 
-
 class LibraryScanner:
     """Scans library directories and imports comics with batch processing"""
 
@@ -53,7 +52,9 @@ class LibraryScanner:
 
         start_time = time.time()
 
+        # 0. Prefetch existing comics (same as old scan)
         self.logger.debug("Pre-fetching existing file list for parallel scan...")
+
         db_comics = (
             self.db.query(Comic)
             .join(Volume)
@@ -64,14 +65,19 @@ class LibraryScanner:
 
         existing_map = {c.file_path: c for c in db_comics}
 
+        # --- Phase 1: Build task list with skip/import/update logic ---
         tasks = []
         scanned_paths_on_disk = set()
         skipped = 0
 
         for file_path in library_path.rglob("*"):
+
             if file_path.suffix.lower() not in self.supported_extensions:
                 continue
 
+            # --- CONTAINER RECONCILIATION ---
+            # This runs for EVERY file, but the logic inside ensures it only
+            # performs the disk-check once per folder.
             self._reconcile_sidecars(file_path, existing_map)
 
             file_path_str = str(file_path)
@@ -81,12 +87,16 @@ class LibraryScanner:
             existing = existing_map.get(file_path_str)
 
             if existing:
+                # unchanged file → skip unless force=True
                 if not force and existing.file_modified_at and existing.file_modified_at >= file_mtime:
                     skipped += 1
                     continue
 
+                # changed file → update
                 tasks.append(file_path_str)
+
             else:
+                # new file → import
                 tasks.append(file_path_str)
 
         # Persist any sidecar reconciliation updates found during discovery.
@@ -98,6 +108,7 @@ class LibraryScanner:
             result_queue = Queue()
             stats_queue = Queue()
 
+            # --- Start writer ---
             writer_proc = multiprocessing.Process(
                 target=metadata_writer,
                 args=(result_queue, stats_queue, self.library.id),
@@ -105,6 +116,7 @@ class LibraryScanner:
             )
             writer_proc.start()
 
+        # Determine Worker Count
             if worker_limit > 0:
                 workers = worker_limit
                 if worker_limit == 1:
@@ -119,6 +131,9 @@ class LibraryScanner:
                 )
 
                 if requested_workers <= 0:
+                    # AUTO MODE:
+                    # Use 50% of cores, with a minimum of 1.
+                    # This prevents system starvation when multiple web workers are active.
                     total_cores = multiprocessing.cpu_count() or 1
                     workers = max(1, total_cores // 2)
                 else:
@@ -127,20 +142,28 @@ class LibraryScanner:
 
                 self.logger.info(f"Using {workers} worker(s) for parallel metadata extraction")
 
+            # Start Workers (only for needed files) (CPU bound)
             self.logger.debug(f"Scanning {len(tasks)} comic(s)")
             with multiprocessing.Pool(processes=workers) as pool:
                 for payload in pool.imap_unordered(metadata_worker, tasks):
                     result_queue.put(payload)
 
+            # Signal writer to finish
             result_queue.put(None)
+
+            # Wait for summary
             summary = stats_queue.get()
+
             writer_proc.join()
 
+        # --- Phase 3: Cleanup missing files ---
         deleted = self._cleanup_missing_files(scanned_paths_on_disk, existing_map)
 
+        # Cleanup empty containers
         self.reading_list_service.cleanup_empty_lists()
         self.collection_service.cleanup_empty_collections()
 
+        # Update library scan time
         self.library.last_scanned = datetime.now(timezone.utc)
         self.db.commit()
 
@@ -160,6 +183,7 @@ class LibraryScanner:
         """Remove comics from DB whose files no longer exist"""
         deleted = 0
 
+        # Iterate over the map of comics we knew about at start
         for file_path, comic in existing_map.items():
             if file_path not in scanned_paths_on_disk:
                 self.logger.info(f"Removing deleted comic: {comic.filename}")
@@ -208,6 +232,7 @@ class LibraryScanner:
         folder_str = str(folder_path)
         lib_path = Path(self.library.path)
 
+        # If the comic is in the root, there is no 'Series' or 'Volume' folder to reconcile
         if folder_path == lib_path:
             self.logger.debug(
                 f"Skipping sidecar reconciliation for {folder_str} (in root folder)"
@@ -217,6 +242,8 @@ class LibraryScanner:
         if folder_str in self.reconciled_folders:
             return
 
+        # Identify which Series/Volume this folder belongs to using pre-fetched data
+        # We look at the first comic we know about in this folder
         existing_comic = existing_map.get(str(file_path))
         if not existing_comic:
             self.logger.debug(
@@ -225,6 +252,7 @@ class LibraryScanner:
             )
             return
 
+        # 1. Update Volume (Clear if missing)
         vol = existing_comic.volume
         series = vol.series if vol else None
 
