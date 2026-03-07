@@ -29,7 +29,7 @@ def _apply_batch(db, batch, stats_queue):
             continue
 
         # Fetch object to update
-        comic = db.query(Comic).get(comic_id)
+        comic = db.get(Comic, comic_id)
         if not comic:
             stats_queue.put({"comic_id": comic_id, "status": "missing"})
             continue
@@ -290,5 +290,6 @@ class ThumbnailService:
         writer_proc.join()
 
         return stats
+
 
 

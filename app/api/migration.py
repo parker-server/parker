@@ -1,29 +1,27 @@
-from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
+import os
+import tempfile
+from datetime import datetime, timezone
+from typing import Annotated
+
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, Response
 
-from typing import Annotated, Optional
-import tempfile
-import os
-from datetime import datetime, timezone
-
-
-from app.api.deps import SessionDep, AdminUser
+from app.api.deps import AdminUser, SessionDep
 from app.services.kavita_migration import KavitaMigrationService
 
 router = APIRouter()
 
+
 @router.post("/run", name="kavita_migration")
 async def run_kavita_migration(
-        db: SessionDep,
-        admin: AdminUser,  # Ensures only admin can run this
-        kavita_db_file: UploadFile = File(..., description="Kavita SQLite database file"),
-        user_strategy: Annotated[str, Form(description="User migration strategy")] = "temp-password",
+    db: SessionDep,
+    admin: AdminUser,
+    kavita_db_file: UploadFile = File(..., description="Kavita SQLite database file"),
+    user_strategy: Annotated[str, Form(description="User migration strategy")] = "temp-password",
 ):
-    """
-    Performs the full Kavita to Parker migration (users + reading progress).
-    """
-    if user_strategy not in ["temp-password", "first-login"]:
-        raise HTTPException(status_code=400, detail="Invalid user strategy provided.")
+    """Run full Kavita to Parker migration (users + reading progress)."""
+    if user_strategy != "temp-password":
+        raise HTTPException(status_code=400, detail="Only 'temp-password' strategy is currently supported.")
 
     temp_file_path = None
     service = None
@@ -48,7 +46,7 @@ async def run_kavita_migration(
             # 4. Migrate Progress
             stats = service.migrate_progress()
 
-            # Commit the transaction
+            # One transaction boundary for the entire migration.
             db.commit()
 
         except Exception:
@@ -67,30 +65,32 @@ async def run_kavita_migration(
         # 6. Handle Response
         # Check the REAL csv_data, not the mock one
         if user_strategy == 'temp-password' and csv_data:
+            filename = f"parker_migrated_credentials_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.csv"
             return Response(
                 content=csv_data,
                 media_type="text/csv",
-                headers={
-                    "Content-Disposition": f"attachment; filename=parker_migrated_credentials_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.csv"
-                }
+                headers={"Content-Disposition": f"attachment; filename={filename}"},
             )
 
-        return JSONResponse(content={
-            "status": "✅ Migration of users and reading progress complete.",
-            "details": stats
-        }, status_code=200)
+        return JSONResponse(
+            content={
+                "status": "Migration of users and reading progress complete.",
+                "details": stats,
+            },
+            status_code=200,
+        )
 
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=f"File error: {e}")
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Migration failed due to a critical error: {e}")
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"File error: {exc}") from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Migration failed due to a critical error: {exc}") from exc
     finally:
         # Cleanup the temporary file from disk
         if temp_file_path and os.path.exists(temp_file_path):
             try:
                 os.remove(temp_file_path)
             except PermissionError:
-                print(f"Warning: Could not delete temp file {temp_file_path} - file still locked.")
-
+                # Best-effort cleanup on Windows.
+                pass
