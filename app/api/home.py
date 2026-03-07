@@ -398,6 +398,7 @@ def get_popular(
             Comic.year,
             Comic.format,
             Comic.publisher,
+            Comic.updated_at,
             Volume.series_id
         )
         .join(Volume)
