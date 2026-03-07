@@ -101,14 +101,17 @@ class ComicArchive:
         def sort_key(filename):
             """
             Multi-stage sort key:
-            1. Priority: Explicit covers ('fc', 'cover') come first (0 vs 1).
+            1. Priority: Explicit covers ('fc', 'cover') come first (0), end-pages ('z-') come last (2).
             2. Natural: Numbers sorted numerically (1, 2, 10).
             3. Symbols: Separators de-prioritized so 'c01a' < 'c01-'.
             """
             # 1. Normalize case
             text = filename.lower()
 
-            # 2. COVER PRIORITY
+            # 2. PRIORITY BUCKETING
+            # Check for explicit end-of-archive naming conventions like 'z.', 'z-', 'zz_'
+            if re.match(r'^z+[\W_]', text):
+                priority = 2
             # Check for explicit cover naming conventions using regex word boundaries.
             # Regex updated to handle:
             # - Underscore prefixes (e.g. "_cover") which \b misses because _ is a word char
@@ -116,8 +119,11 @@ class ComicArchive:
             # This ensures "scan01" doesn't trigger it (0 is a word char), but "scan.jpg" does.
             # Pattern: (Start/NonWord/_) + Keyword + (End/NonWord/_)
             # matches " fc ", "fc.", "-fc", etc.
-            # 0 = Cover (Highest Priority), 1 = Standard Page
-            is_cover = 0 if re.search(r'(?:^|[\W_])(fc|cover|front|scan)(?:$|[\W_])', text) else 1
+            # 0 = Cover (Highest), 1 = Standard, 2 = End Page (Lowest)
+            elif re.search(r'(?:^|[\W_])(fc|cover|front|scan)(?:$|[\W_])', text):
+                priority = 0
+            else:
+                priority = 1
 
             # 3. SEPARATOR HACK (From previous fix)
             # Replace separators with high-ASCII char '~' to ensure letters sort before symbols.
@@ -129,7 +135,7 @@ class ComicArchive:
             natural_parts = [int(c) if c.isdigit() else c for c in re.split(r'(\d+)', text)]
 
             # Return tuple: (Priority, Natural_Sort_Parts)
-            return (is_cover, natural_parts)
+            return (priority, natural_parts)
 
         # ------------------------------
         pages.sort(key=sort_key)
