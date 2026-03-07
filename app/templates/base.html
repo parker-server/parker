@@ -28,7 +28,33 @@
     </style>
     {% block extra_head %}{% endblock %}
 </head>
-<body class="bg-gray-900 text-gray-100 min-h-screen flex flex-col" x-data="{ mobileMenuOpen: false }">
+<body
+    class="bg-gray-900 text-gray-100 min-h-screen flex flex-col"
+    x-data="{
+        mobileMenuOpen: false,
+        isAdmin: false,
+        async init() {
+            if (!localStorage.getItem('token')) {
+                this.isAdmin = false;
+                return;
+            }
+
+            try {
+                const res = await fetch(window.parker.url('/api/auth/me'));
+                if (!res.ok) {
+                    this.isAdmin = false;
+                    return;
+                }
+
+                const user = await res.json();
+                this.isAdmin = !!user.is_superuser;
+            } catch (error) {
+                this.isAdmin = false;
+                console.error('Failed to load current user role:', error);
+            }
+        }
+    }"
+>
 
     <nav class="bg-gray-900/95 backdrop-blur-md border-b border-gray-800 sticky top-0 z-[100]">
         <div class="container mx-auto px-4">
@@ -63,6 +89,9 @@
                         </div>
                         <a href="{{ url('/collections') }}" class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors">Collections</a>
                         <a href="{{ url('/reading-lists') }}" class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors">Reading Lists</a>
+                        <template x-if="isAdmin">
+                            <a href="{{ url('/admin') }}" class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors">Admin</a>
+                        </template>
                     </div>
                 </div>
 
@@ -130,7 +159,9 @@
                 <a href="{{ url('/libraries') }}" class="block px-4 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-gray-800 rounded-md">Libraries</a>
                 <a href="{{ url('/collections') }}" class="block px-4 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-gray-800 rounded-md">Collections</a>
                 <a href="{{ url('/reading-lists') }}" class="block px-4 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-gray-800 rounded-md">Reading Lists</a>
-
+                <template x-if="isAdmin">
+                    <a href="{{ url('/admin') }}" class="block px-4 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-gray-800 rounded-md">Admin</a>
+                </template>
                 <div class="px-4 pt-4 pb-2">
                     <div class="relative">
                         {% include "partials/search_widget.html" %}

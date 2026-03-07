@@ -5,7 +5,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from jose import jwt, JWTError
 
-from app.api.deps import SessionDep
+from app.api.deps import SessionDep, CurrentUser
 from app.core.security import create_access_token, get_password_hash, verify_password, create_refresh_token
 from app.models.user import User
 from app.config import settings
@@ -115,7 +115,7 @@ async def refresh_access_token(req: RefreshRequest, db: SessionDep):
         raise HTTPException(status_code=401, detail="Could not validate credentials")
 
 @router.get("/me", response_model=UserResponse, name="read_users_me")
-async def read_users_me(current_user: SessionDep):
+async def read_users_me(current_user: CurrentUser):
     """
     Get current user details
     """

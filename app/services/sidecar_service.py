@@ -5,7 +5,22 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class SidecarService:
+    @staticmethod
+    def _read_text_with_fallback(path: Path) -> Optional[str]:
+        """
+        Read text sidecars with a small encoding fallback chain.
+        Windows tools commonly emit UTF-16 or cp1252 text files.
+        """
+        raw = path.read_bytes()
+        for encoding in ("utf-8", "utf-8-sig", "utf-16", "utf-16-le", "utf-16-be", "cp1252"):
+            try:
+                return raw.decode(encoding).strip()
+            except UnicodeDecodeError:
+                continue
+        return None
+
     @staticmethod
     def get_summary_from_disk(folder_path: Path, entity_type: str) -> Optional[str]:
         """
@@ -35,8 +50,12 @@ class SidecarService:
         txt_file = folder_path / f"{entity_type}.txt"
         if txt_file.exists():
             try:
-                return txt_file.read_text(encoding="utf-8").strip()
+                text = SidecarService._read_text_with_fallback(txt_file)
+                if text is None:
+                    logger.error(f"Failed to decode TXT at {txt_file}: unsupported encoding")
+                return text
             except Exception as e:
                 logger.error(f"Failed to read TXT at {txt_file}: {e}")
 
         return None
+
