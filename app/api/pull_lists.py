@@ -153,7 +153,7 @@ def add_item_to_list(list_id: int, item_data: AddComicRequest, db: SessionDep, c
     plist = db.query(PullList).filter(PullList.id == list_id, PullList.user_id == current_user.id).first()
     if not plist: raise HTTPException(status_code=404, detail="Pull list not found")
 
-    comic = db.query(Comic).get(item_data.comic_id)
+    comic = db.get(Comic, item_data.comic_id)
     if not comic: raise HTTPException(status_code=404, detail="Comic not found")
 
     existing = db.query(PullListItem).filter(PullListItem.pull_list_id == list_id,
@@ -228,3 +228,4 @@ def batch_add_items_to_list(list_id: int, batch_data: BatchAddComicRequest, db: 
     db.commit()
 
     return {"message": f"Added {len(new_items)} comics to list"}
+

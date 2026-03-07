@@ -24,6 +24,7 @@ def create_smart_list(
     )
     db.add(smart_list)
     db.commit()
+    db.refresh(smart_list)
     return smart_list
 
 
@@ -37,7 +38,10 @@ def execute_smart_list(
     """The 'Auto-Fire' Endpoint: Loads config -> Runs Search -> Returns Results"""
 
     # 1. Fetch Config
-    smart_list = db.query(SmartList).filter(SmartList.id == list_id).first()
+    smart_list = db.query(SmartList).filter(
+        SmartList.id == list_id,
+        SmartList.user_id == current_user.id
+    ).first()
     if not smart_list:
         raise HTTPException(status_code=404, detail="List not found")
 
@@ -113,7 +117,7 @@ def update_smart_list(
     if updates.show_in_library is not None:
         slist.show_in_library = updates.show_in_library
     if updates.query is not None:
-        slist.query = updates.query = updates.query
+        slist.query_config = updates.query.model_dump()
 
     db.commit()
     db.refresh(slist)

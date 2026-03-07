@@ -568,7 +568,7 @@ async def list_series(
 @router.post("/{series_id}/star", name="star")
 async def star_series(series_id: int, db: SessionDep, current_user: CurrentUser):
     # Check if series exists
-    series = db.query(Series).get(series_id)
+    series = db.get(Series, series_id)
     if not series: raise HTTPException(404)
 
     # Get or create preference
@@ -596,7 +596,7 @@ async def unstar_series(series_id: int, db: SessionDep, current_user: CurrentUse
 
 @router.post("/{series_id}/thumbnails", name="regenerate_thumbnails")
 async def regenerate_thumbnails(series_id: int, background_tasks: BackgroundTasks, db: SessionDep, admin: AdminUser):
-    series = db.query(Series).get(series_id)
+    series = db.get(Series, series_id)
     if not series: raise HTTPException(404)
 
     def _task():
@@ -709,5 +709,6 @@ async def get_series_recommendations(series_id: int, db: SessionDep, user: Curre
             {"title": f"New in {source.library.name}", "items": bulk_serialize_series(lib_matches, db, user)})
 
     return lanes
+
 
 

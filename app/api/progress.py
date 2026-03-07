@@ -27,9 +27,9 @@ def get_progress_service(
 ) -> ReadingProgressService:
     return ReadingProgressService(db, user_id=user.id)
 
-
 @router.get("/on-deck", name="on_deck_progress")
 async def get_on_deck_progress(
+        current_user: CurrentUser,
         service: Annotated[ReadingProgressService, Depends(get_progress_service)],
         limit: int = 10
 
@@ -57,7 +57,7 @@ async def get_on_deck_progress(
 
     # --- AGE RATING FILTER (Poison Pill) ---
     # Hide items from On Deck if the Series is now banned
-    series_filter = get_series_age_restriction(service.user)
+    series_filter = get_series_age_restriction(current_user)
     if series_filter is not None:
         query = query.filter(series_filter)
     # ---------------------------------------
@@ -257,6 +257,9 @@ async def get_recent_progress(
         "total": len(results),
         "results": results
     }
+
+
+
 
 
 
