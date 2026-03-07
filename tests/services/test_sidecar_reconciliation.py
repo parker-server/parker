@@ -68,7 +68,7 @@ def test_sidecar_reconcile_from_parent_folder_for_deep_file(db, tmp_path):
     db.commit()
 
     scanner = LibraryScanner(library, db)
-    result = scanner.scan(force=False)
+    result = scanner.scan_parallel(force=False, worker_limit=1)
 
     db.expire_all()
     refreshed_series = db.query(Series).filter(Series.id == series.id).first()
@@ -109,7 +109,7 @@ def test_sidecar_reconcile_logs_once_per_entity_when_multiple_subfolders(db, tmp
     caplog.set_level(logging.INFO, logger="app.services.scanner")
 
     scanner = LibraryScanner(library, db)
-    result = scanner.scan(force=False)
+    result = scanner.scan_parallel(force=False, worker_limit=1)
 
     volume_logs = [
         rec.message

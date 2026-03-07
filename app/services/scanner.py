@@ -4,6 +4,7 @@ import os
 import time
 import logging
 import multiprocessing
+from queue import Empty
 from multiprocessing import Queue
 from datetime import datetime, timezone
 
@@ -20,6 +21,7 @@ from app.services.workers.metadata_writer import metadata_writer
 from app.services.sidecar_service import SidecarService
 from app.services.reading_list import ReadingListService
 from app.services.collection import CollectionService
+
 
 class LibraryScanner:
     """Scans library directories and imports comics with batch processing"""
@@ -54,7 +56,6 @@ class LibraryScanner:
 
         # 0. Prefetch existing comics (same as old scan)
         self.logger.debug("Pre-fetching existing file list for parallel scan...")
-
         db_comics = (
             self.db.query(Comic)
             .join(Volume)
@@ -71,7 +72,6 @@ class LibraryScanner:
         skipped = 0
 
         for file_path in library_path.rglob("*"):
-
             if file_path.suffix.lower() not in self.supported_extensions:
                 continue
 
@@ -87,16 +87,15 @@ class LibraryScanner:
             existing = existing_map.get(file_path_str)
 
             if existing:
-                # unchanged file → skip unless force=True
+                # unchanged file -> skip unless force=True
                 if not force and existing.file_modified_at and existing.file_modified_at >= file_mtime:
                     skipped += 1
                     continue
 
-                # changed file → update
+                # changed file -> update
                 tasks.append(file_path_str)
-
             else:
-                # new file → import
+                # new file -> import
                 tasks.append(file_path_str)
 
         # Persist any sidecar reconciliation updates found during discovery.
@@ -116,45 +115,75 @@ class LibraryScanner:
             )
             writer_proc.start()
 
-        # Determine Worker Count
-            if worker_limit > 0:
-                workers = worker_limit
-                if worker_limit == 1:
-                    self.logger.info("Using exactly 1 worker for metadata extraction (SERIAL MODE)")
+            summary_timeout = int(
+                get_cached_setting("system.parallel_metadata_writer_summary_timeout_seconds", 600)
+            )
+            summary_timeout = max(10, summary_timeout)
+
+            join_timeout = int(
+                get_cached_setting("system.parallel_metadata_writer_join_timeout_seconds", 30)
+            )
+            join_timeout = max(1, join_timeout)
+
+            sentinel_sent = False
+            try:
+                # Determine Worker Count
+                if worker_limit > 0:
+                    workers = worker_limit
+                    if worker_limit == 1:
+                        self.logger.info("Using exactly 1 worker for metadata extraction (SERIAL MODE)")
+                    else:
+                        self.logger.info(f"Using exactly {worker_limit} worker(s) for metadata extraction")
                 else:
-                    self.logger.info(f"Using exactly {worker_limit} worker(s) for metadata extraction")
-            else:
-                requested_workers = int(get_cached_setting("system.parallel_metadata_workers", 0))
-                requested_label = "(Auto)" if requested_workers <= 0 else requested_workers
-                self.logger.info(
-                    f"Requested {requested_label} worker(s) for parallel metadata extraction"
-                )
+                    requested_workers = int(get_cached_setting("system.parallel_metadata_workers", 0))
+                    requested_label = "(Auto)" if requested_workers <= 0 else requested_workers
+                    self.logger.info(
+                        f"Requested {requested_label} worker(s) for parallel metadata extraction"
+                    )
 
-                if requested_workers <= 0:
-                    # AUTO MODE:
-                    # Use 50% of cores, with a minimum of 1.
-                    # This prevents system starvation when multiple web workers are active.
-                    total_cores = multiprocessing.cpu_count() or 1
-                    workers = max(1, total_cores // 2)
-                else:
-                    max_cores = multiprocessing.cpu_count() or 1
-                    workers = min(requested_workers, max_cores)
+                    if requested_workers <= 0:
+                        # AUTO MODE:
+                        # Use 50% of cores, with a minimum of 1.
+                        # This prevents system starvation when multiple web workers are active.
+                        total_cores = multiprocessing.cpu_count() or 1
+                        workers = max(1, total_cores // 2)
+                    else:
+                        max_cores = multiprocessing.cpu_count() or 1
+                        workers = min(requested_workers, max_cores)
 
-                self.logger.info(f"Using {workers} worker(s) for parallel metadata extraction")
+                    self.logger.info(f"Using {workers} worker(s) for parallel metadata extraction")
 
-            # Start Workers (only for needed files) (CPU bound)
-            self.logger.debug(f"Scanning {len(tasks)} comic(s)")
-            with multiprocessing.Pool(processes=workers) as pool:
-                for payload in pool.imap_unordered(metadata_worker, tasks):
-                    result_queue.put(payload)
+                # Start Workers (only for needed files) (CPU bound)
+                self.logger.debug(f"Scanning {len(tasks)} comic(s)")
+                with multiprocessing.Pool(processes=workers) as pool:
+                    for payload in pool.imap_unordered(metadata_worker, tasks):
+                        result_queue.put(payload)
 
-            # Signal writer to finish
-            result_queue.put(None)
+                # Signal writer to finish
+                result_queue.put(None)
+                sentinel_sent = True
 
-            # Wait for summary
-            summary = stats_queue.get()
+                # Wait for summary, but do not block forever.
+                try:
+                    summary = stats_queue.get(timeout=summary_timeout)
+                except Empty as exc:
+                    raise TimeoutError(
+                        f"Timed out after {summary_timeout}s waiting for metadata writer summary"
+                    ) from exc
+            finally:
+                if not sentinel_sent:
+                    try:
+                        result_queue.put(None)
+                    except Exception:
+                        pass
 
-            writer_proc.join()
+                if writer_proc.is_alive():
+                    writer_proc.join(timeout=join_timeout)
+
+                if writer_proc.is_alive():
+                    self.logger.error("Metadata writer did not exit cleanly; terminating process.")
+                    writer_proc.terminate()
+                    writer_proc.join(timeout=5)
 
         # --- Phase 3: Cleanup missing files ---
         deleted = self._cleanup_missing_files(scanned_paths_on_disk, existing_map)
