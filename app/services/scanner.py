@@ -116,7 +116,7 @@ class LibraryScanner:
             writer_proc.start()
 
             summary_timeout = int(
-                get_cached_setting("system.parallel_metadata_writer_summary_timeout_seconds", 600)
+                get_cached_setting("system.parallel_metadata_writer_summary_timeout_seconds", 180)
             )
             summary_timeout = max(10, summary_timeout)
 
