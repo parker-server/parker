@@ -39,8 +39,10 @@ class LibraryScanner:
         self.series_cache: Dict[str, Series] = {}
         self.volume_cache: Dict[str, Volume] = {}
 
-        # Track processed folders in this session
+        # Track processed entities in this session
         self.reconciled_folders = set()
+        self.reconciled_volumes = set()
+        self.reconciled_series = set()
 
     def scan(self, force: bool = False) -> dict:
         """
@@ -64,6 +66,11 @@ class LibraryScanner:
         pending_changes = 0
 
         self.logger.info(f"Scanning {library_path} (force={force})")
+
+        # Reset reconciliation guards for this run
+        self.reconciled_folders.clear()
+        self.reconciled_volumes.clear()
+        self.reconciled_series.clear()
 
         # Start timing
         start_time = time.time()
@@ -544,6 +551,29 @@ class LibraryScanner:
         # Handle variants if needed in future
 
         return number
+    def _resolve_sidecar_from_parents(self, start_path: Path, entity_type: str, boundary_path: Path) -> Optional[str]:
+        """
+        Resolve sidecar content by checking this folder first, then walking upward
+        until the library boundary. This prevents deep subfolders from incorrectly
+        clearing summaries when sidecars live at the series/volume container level.
+        """
+        boundary_key = os.path.normcase(os.path.normpath(str(boundary_path)))
+        current = start_path
+
+        while True:
+            summary = SidecarService.get_summary_from_disk(current, entity_type)
+            if summary is not None:
+                return summary
+
+            current_key = os.path.normcase(os.path.normpath(str(current)))
+            if current_key == boundary_key:
+                return None
+
+            parent = current.parent
+            if parent == current:
+                return None
+
+            current = parent
 
     def _reconcile_sidecars(self, file_path: Path, existing_map: dict):
         """
@@ -559,35 +589,34 @@ class LibraryScanner:
             self.logger.debug(f"Skipping sidecar reconciliation for {folder_str} (in root folder)")
             return
 
-        # If this folder has already been reconciled for sidecars, just return
+        # If this folder has already been scanned, don't re-check folder-level file I/O
         if folder_str in self.reconciled_folders:
-            #self.logger.debug(f"Skipping {folder_str} as already reconciled")
             return
 
-        # Identify which Series/Volume this folder belongs to using pre-fetched data
-        # We look at the first comic we know about in this folder
+        # Identify which Series/Volume this comic belongs to
         existing_comic = existing_map.get(str(file_path))
         if not existing_comic:
-            self.logger.debug(f"Skipping {existing_comic} as non existent comic, will be handled in _import_comic function")
-            return  # New comics will handle this during _import_comic
+            self.logger.debug("Skipping sidecar reconciliation for unknown comic path; import path will handle first-time sync")
+            return
 
-        # 1. Update Volume (Clear if missing)
         vol = existing_comic.volume
-        disk_vol_summary = SidecarService.get_summary_from_disk(folder_path, "volume")
-        if vol.summary_override != disk_vol_summary:
-            vol.summary_override = disk_vol_summary
-            self.logger.info(f"Sidecar: Updated Volume {vol.volume_number} summary for Series '{vol.series.name}'.")
+        series = vol.series if vol else None
 
-        # 2. Update Series (Clear if missing)
-        series = vol.series
-        # If flat structure, series_path is the same as folder_path
-        # If nested, we look one level up
-        series_path = folder_path if folder_path.parent == Path(self.library.path) else folder_path.parent
-        disk_series_summary = SidecarService.get_summary_from_disk(series_path, "series")
+        # Reconcile each volume exactly once per scan
+        if vol and vol.id not in self.reconciled_volumes:
+            disk_vol_summary = self._resolve_sidecar_from_parents(folder_path, "volume", lib_path)
+            if vol.summary_override != disk_vol_summary:
+                vol.summary_override = disk_vol_summary
+                self.logger.info(f"Sidecar: Updated Volume {vol.volume_number} summary for Series '{vol.series.name}'.")
+            self.reconciled_volumes.add(vol.id)
 
-        if series.summary_override != disk_series_summary:
-            series.summary_override = disk_series_summary
-            self.logger.info(f"Sidecar: Updated Series '{series.name}' summary.")
+        # Reconcile each series exactly once per scan
+        if series and series.id not in self.reconciled_series:
+            disk_series_summary = self._resolve_sidecar_from_parents(folder_path, "series", lib_path)
+            if series.summary_override != disk_series_summary:
+                series.summary_override = disk_series_summary
+                self.logger.info(f"Sidecar: Updated Series '{series.name}' summary.")
+            self.reconciled_series.add(series.id)
 
-        # Add to reconciled folder set so it's not processed again
+        # Mark this folder processed for file-system traversal dedupe
         self.reconciled_folders.add(folder_str)
