@@ -556,15 +556,19 @@ class LibraryScanner:
 
         # If the comic is in the root, there is no 'Series' or 'Volume' folder to reconcile
         if folder_path == lib_path:
+            self.logger.debug(f"Skipping sidecar reconciliation for {folder_str} (in root folder)")
             return
 
+        # If this folder has already been reconciled for sidecars, just return
         if folder_str in self.reconciled_folders:
+            #self.logger.debug(f"Skipping {folder_str} as already reconciled")
             return
 
         # Identify which Series/Volume this folder belongs to using pre-fetched data
         # We look at the first comic we know about in this folder
         existing_comic = existing_map.get(str(file_path))
         if not existing_comic:
+            self.logger.debug(f"Skipping {existing_comic} as non existent comic, will be handled in _import_comic function")
             return  # New comics will handle this during _import_comic
 
         # 1. Update Volume (Clear if missing)
@@ -572,7 +576,7 @@ class LibraryScanner:
         disk_vol_summary = SidecarService.get_summary_from_disk(folder_path, "volume")
         if vol.summary_override != disk_vol_summary:
             vol.summary_override = disk_vol_summary
-            self.logger.info(f"Sidecar: Updated Volume {vol.volume_number} summary.")
+            self.logger.info(f"Sidecar: Updated Volume {vol.volume_number} summary for Series '{vol.series.name}'.")
 
         # 2. Update Series (Clear if missing)
         series = vol.series
@@ -585,4 +589,5 @@ class LibraryScanner:
             series.summary_override = disk_series_summary
             self.logger.info(f"Sidecar: Updated Series '{series.name}' summary.")
 
+        # Add to reconciled folder set so it's not processed again
         self.reconciled_folders.add(folder_str)
