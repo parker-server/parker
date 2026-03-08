@@ -89,7 +89,7 @@ class ScanManager:
         for attempt in range(5):
             db = SessionLocal()
             try:
-                job = db.query(ScanJob).get(job_id)
+                job = db.get(ScanJob, job_id)
                 if not job: return
 
                 job.status = status
@@ -249,7 +249,7 @@ class ScanManager:
         # 1. Run Logic
         db_scan = SessionLocal()
         try:
-            library = db_scan.query(Library).get(library_id)
+            library = db_scan.get(Library, library_id)
             if library:
                 self.logger.info(f"Starting SCAN job {job_id}")
                 scanner = LibraryScanner(library, db_scan)

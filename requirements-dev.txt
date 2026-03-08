@@ -1,4 +1,5 @@
 pytest
+pytest-cov
 httpx
 
 #  other dev tools (black, isort, mypy)

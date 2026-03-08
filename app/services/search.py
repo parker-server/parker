@@ -59,7 +59,7 @@ class SearchService:
 
         # Get total count before pagination
         # Optimization: Count distinct IDs to handle joins correctly
-        total = query.distinct(Comic.id).count()
+        total = query.with_entities(func.count(func.distinct(Comic.id))).scalar()
 
         # Apply sorting
         query = self._apply_sorting(query, request.sort_by, request.sort_order)
