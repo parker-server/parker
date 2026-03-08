@@ -54,7 +54,7 @@ async def save_search(
     saved = SavedSearch(
         user_id=current_user.id,
         name=data.name,
-        query_json=data.query.json()  # Serialize Pydantic model to JSON string
+        query_json=data.query.model_dump_json()  # Serialize Pydantic model to JSON string
     )
     db.add(saved)
     db.commit()

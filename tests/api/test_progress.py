@@ -1,3 +1,5 @@
+from datetime import datetime, timezone, timedelta
+
 from app.models.comic import Comic, Volume
 from app.models.library import Library
 from app.models.reading_progress import ReadingProgress
@@ -46,6 +48,65 @@ def _seed_progress_data(db, *, lib_name: str, series_name: str):
     }
 
 
+def _seed_age_filtered_progress_data(db, normal_user):
+    library = Library(name="progress-age-lib", path="/tmp/progress-age-lib")
+
+    safe_series = Series(name="Safe Progress Series", library=library)
+    safe_volume = Volume(series=safe_series, volume_number=1)
+    safe_comic = Comic(
+        volume=safe_volume,
+        number="1",
+        title="Safe Progress Comic",
+        age_rating="Teen",
+        filename="safe-progress.cbz",
+        file_path="/tmp/safe-progress.cbz",
+        page_count=10,
+    )
+
+    banned_series = Series(name="Banned Progress Series", library=library)
+    banned_volume = Volume(series=banned_series, volume_number=1)
+    banned_comic = Comic(
+        volume=banned_volume,
+        number="1",
+        title="Banned Progress Comic",
+        age_rating="Mature 17+",
+        filename="banned-progress.cbz",
+        file_path="/tmp/banned-progress.cbz",
+        page_count=10,
+    )
+
+    db.add_all([library, safe_series, safe_volume, safe_comic, banned_series, banned_volume, banned_comic])
+    db.flush()
+
+    db.add_all([
+        ReadingProgress(
+            user_id=normal_user.id,
+            comic_id=safe_comic.id,
+            current_page=3,
+            total_pages=10,
+            completed=False,
+            last_read_at=datetime.now(timezone.utc) - timedelta(days=1),
+        ),
+        ReadingProgress(
+            user_id=normal_user.id,
+            comic_id=banned_comic.id,
+            current_page=4,
+            total_pages=10,
+            completed=False,
+            last_read_at=datetime.now(timezone.utc),
+        ),
+    ])
+
+    normal_user.max_age_rating = "Teen"
+    normal_user.allow_unknown_age_ratings = False
+    db.commit()
+
+    return {
+        "safe_comic": safe_comic,
+        "banned_comic": banned_comic,
+    }
+
+
 def test_get_comic_progress_returns_empty_when_missing(auth_client, db):
     data = _seed_progress_data(db, lib_name="progress-empty", series_name="Empty Progress")
 
@@ -77,6 +138,23 @@ def test_update_comic_progress_missing_comic_returns_404(auth_client):
     assert "not found" in response.json()["detail"].lower()
 
 
+def test_update_comic_progress_unexpected_error_returns_500(auth_client, db, monkeypatch):
+    data = _seed_progress_data(db, lib_name="progress-update-error", series_name="Update Error")
+
+    def _raise_runtime_error(*_args, **_kwargs):
+        raise RuntimeError("unexpected failure")
+
+    monkeypatch.setattr("app.api.progress.ReadingProgressService.update_progress", _raise_runtime_error)
+
+    response = auth_client.post(
+        f"/api/progress/{data['first'].id}",
+        json={"current_page": 1, "total_pages": 10},
+    )
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "unexpected failure"
+
+
 def test_mark_read_then_unread_flow(auth_client, db):
     data = _seed_progress_data(db, lib_name="progress-read", series_name="Read Flow")
 
@@ -96,6 +174,27 @@ def test_mark_read_then_unread_flow(auth_client, db):
     get_progress_after = auth_client.get(f"/api/progress/{data['second'].id}")
     assert get_progress_after.status_code == 200
     assert get_progress_after.json() == {"comic_id": data["second"].id, "has_progress": False}
+
+
+def test_mark_comic_as_read_missing_comic_returns_404(auth_client):
+    response = auth_client.post("/api/progress/99999/mark-read")
+
+    assert response.status_code == 404
+    assert "not found" in response.json()["detail"].lower()
+
+
+def test_mark_comic_as_unread_unexpected_error_returns_500(auth_client, db, monkeypatch):
+    data = _seed_progress_data(db, lib_name="progress-unread-error", series_name="Unread Error")
+
+    def _raise_runtime_error(*_args, **_kwargs):
+        raise RuntimeError("failed to mark unread")
+
+    monkeypatch.setattr("app.api.progress.ReadingProgressService.mark_as_unread", _raise_runtime_error)
+
+    response = auth_client.delete(f"/api/progress/{data['first'].id}")
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "failed to mark unread"
 
 
 def test_recent_progress_filters_completed_and_in_progress(auth_client, db, normal_user):
@@ -161,3 +260,45 @@ def test_on_deck_only_returns_started_unfinished_items(auth_client, db, normal_u
     payload = response.json()
     assert len(payload) == 1
     assert payload[0]["comic_id"] == data["first"].id
+
+
+def test_on_deck_applies_age_filter_for_safe_items(auth_client, db, normal_user):
+    data = _seed_progress_data(db, lib_name="progress-age-deck", series_name="Age Deck")
+
+    data["first"].age_rating = "Teen"
+    data["second"].age_rating = "Teen"
+
+    db.add(
+        ReadingProgress(
+            user_id=normal_user.id,
+            comic_id=data["first"].id,
+            current_page=3,
+            total_pages=10,
+            completed=False,
+            last_read_at=datetime.now(timezone.utc),
+        )
+    )
+
+    normal_user.max_age_rating = "Teen"
+    normal_user.allow_unknown_age_ratings = False
+    db.commit()
+
+    response = auth_client.get("/api/progress/on-deck?limit=10")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 1
+    assert payload[0]["comic_id"] == data["first"].id
+
+def test_recent_progress_excludes_age_restricted_series(auth_client, db, normal_user):
+    data = _seed_age_filtered_progress_data(db, normal_user)
+
+    response = auth_client.get("/api/progress/?filter=in_progress")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["filter"] == "in_progress"
+    assert payload["total"] == 1
+    assert payload["results"][0]["comic_id"] == data["safe_comic"].id
+
+
