@@ -11,7 +11,7 @@ from app.models.reading_progress import ReadingProgress
 from app.models.comic import Comic, Volume
 from app.models.series import Series
 from app.services.reading_progress import ReadingProgressService
-from app.core.comic_helpers import get_series_age_restriction, get_thumbnail_url
+from app.core.comic_helpers import get_comic_age_restriction, get_series_age_restriction, get_thumbnail_url
 
 router = APIRouter()
 
@@ -26,6 +26,23 @@ def get_progress_service(
         user: CurrentUser,
 ) -> ReadingProgressService:
     return ReadingProgressService(db, user_id=user.id)
+
+def ensure_progress_write_access(db: SessionDep, current_user: CurrentUser, comic_id: int) -> None:
+    """Reject writes for age-restricted comics while preserving 404 for missing IDs."""
+    allowed_query = db.query(Comic.id).filter(Comic.id == comic_id)
+
+    comic_age_filter = get_comic_age_restriction(current_user)
+    if comic_age_filter is not None:
+        allowed_query = allowed_query.filter(comic_age_filter)
+
+    if allowed_query.first():
+        return
+
+    comic_exists = db.query(Comic.id).filter(Comic.id == comic_id).first()
+    if comic_exists:
+        raise HTTPException(status_code=403, detail="Content restricted by age rating")
+
+    raise HTTPException(status_code=404, detail=f"Comic {comic_id} not found")
 
 @router.get("/on-deck", name="on_deck_progress")
 async def get_on_deck_progress(
@@ -110,6 +127,7 @@ async def update_comic_progress(
         request: UpdateProgressRequest,
         service: Annotated[ReadingProgressService, Depends(get_progress_service)],
         db: SessionDep,
+        current_user: CurrentUser,
         context_type: Optional[str] = None, # Accept context from reader
         context_id: Optional[int] = None
 ):
@@ -117,6 +135,8 @@ async def update_comic_progress(
     Update reading progress for a comic.
     Transactions are committed here (Controller layer).
     """
+
+    ensure_progress_write_access(db, current_user, comic_id)
 
     try:
         # 2. Prepare the data (Service performs flush internally)
@@ -154,8 +174,11 @@ async def update_comic_progress(
 @router.post("/{comic_id}/mark-read", name="mark_comic_as_read")
 async def mark_comic_as_read(comic_id: int,
                              service: Annotated[ReadingProgressService, Depends(get_progress_service)],
-                             db: SessionDep):
+                             db: SessionDep,
+                             current_user: CurrentUser):
     """Mark a comic as completely read"""
+
+    ensure_progress_write_access(db, current_user, comic_id)
 
     try:
         progress = service.mark_as_read(comic_id)

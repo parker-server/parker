@@ -137,6 +137,38 @@ def test_update_comic_progress_missing_comic_returns_404(auth_client):
     assert response.status_code == 404
     assert "not found" in response.json()["detail"].lower()
 
+def test_update_comic_progress_restricted_comic_returns_403(auth_client, db, normal_user):
+    data = _seed_progress_data(db, lib_name="progress-update-restricted", series_name="Update Restricted")
+
+    data["first"].age_rating = "Mature 17+"
+    normal_user.max_age_rating = "Teen"
+    normal_user.allow_unknown_age_ratings = False
+    db.commit()
+
+    response = auth_client.post(
+        f"/api/progress/{data['first'].id}",
+        json={"current_page": 1, "total_pages": 10},
+    )
+
+    assert response.status_code == 403
+    assert "restricted" in response.json()["detail"].lower()
+
+def test_update_comic_progress_service_value_error_returns_404(auth_client, db, monkeypatch):
+    data = _seed_progress_data(db, lib_name="progress-update-value-error", series_name="Update Value Error")
+
+    def _raise_value_error(*_args, **_kwargs):
+        raise ValueError("service validation failed")
+
+    monkeypatch.setattr("app.api.progress.ReadingProgressService.update_progress", _raise_value_error)
+
+    response = auth_client.post(
+        f"/api/progress/{data['first'].id}",
+        json={"current_page": 1, "total_pages": 10},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "service validation failed"
+
 
 def test_update_comic_progress_unexpected_error_returns_500(auth_client, db, monkeypatch):
     data = _seed_progress_data(db, lib_name="progress-update-error", series_name="Update Error")
@@ -181,6 +213,32 @@ def test_mark_comic_as_read_missing_comic_returns_404(auth_client):
 
     assert response.status_code == 404
     assert "not found" in response.json()["detail"].lower()
+
+def test_mark_comic_as_read_restricted_comic_returns_403(auth_client, db, normal_user):
+    data = _seed_progress_data(db, lib_name="progress-read-restricted", series_name="Read Restricted")
+
+    data["second"].age_rating = "Mature 17+"
+    normal_user.max_age_rating = "Teen"
+    normal_user.allow_unknown_age_ratings = False
+    db.commit()
+
+    response = auth_client.post(f"/api/progress/{data['second'].id}/mark-read")
+
+    assert response.status_code == 403
+    assert "restricted" in response.json()["detail"].lower()
+
+def test_mark_comic_as_read_service_value_error_returns_404(auth_client, db, monkeypatch):
+    data = _seed_progress_data(db, lib_name="progress-read-value-error", series_name="Read Value Error")
+
+    def _raise_value_error(*_args, **_kwargs):
+        raise ValueError("service mark-read failed")
+
+    monkeypatch.setattr("app.api.progress.ReadingProgressService.mark_as_read", _raise_value_error)
+
+    response = auth_client.post(f"/api/progress/{data['second'].id}/mark-read")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "service mark-read failed"
 
 
 def test_mark_comic_as_unread_unexpected_error_returns_500(auth_client, db, monkeypatch):
