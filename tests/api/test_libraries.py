@@ -293,3 +293,180 @@ def test_scan_library_returns_404_for_missing_library(admin_client):
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Library not found"}
+
+
+def test_has_library_access_helper_paths(db, normal_user, admin_user):
+    from app.api.libraries import _has_library_access
+
+    allowed_library = Library(name="Helper Allowed", path="/tmp/helper-allowed")
+    denied_library = Library(name="Helper Denied", path="/tmp/helper-denied")
+    db.add_all([allowed_library, denied_library])
+    db.commit()
+
+    normal_user.accessible_libraries.append(allowed_library)
+    db.commit()
+
+    assert _has_library_access(allowed_library.id, normal_user) is True
+    assert _has_library_access(denied_library.id, normal_user) is False
+    assert _has_library_access(denied_library.id, admin_user) is True
+
+
+def test_list_libraries_applies_limit_for_superuser(admin_client, db):
+    db.add_all([
+        Library(name="A Library", path="/tmp/a"),
+        Library(name="B Library", path="/tmp/b"),
+        Library(name="C Library", path="/tmp/c"),
+    ])
+    db.commit()
+
+    response = admin_client.get("/api/libraries/?limit=2")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 2
+    assert [row["name"] for row in payload] == ["A Library", "B Library"]
+
+
+def test_list_libraries_applies_limit_for_normal_user(auth_client, db, normal_user):
+    lib_a = Library(name="Limit User A", path="/tmp/limit-user-a")
+    lib_b = Library(name="Limit User B", path="/tmp/limit-user-b")
+    lib_c = Library(name="Limit User C", path="/tmp/limit-user-c")
+    db.add_all([lib_a, lib_b, lib_c])
+    db.commit()
+
+    normal_user.accessible_libraries.extend([lib_b, lib_a, lib_c])
+    db.commit()
+
+    response = auth_client.get("/api/libraries/?limit=2")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 2
+    assert [row["name"] for row in payload] == ["Limit User A", "Limit User B"]
+
+
+def test_list_libraries_filters_stats_by_age_restriction(auth_client, db, normal_user):
+    library = Library(name="Age Stats Library", path="/tmp/age-stats-library")
+
+    safe_series = Series(name="Safe Stats Series", library=library)
+    safe_volume = Volume(series=safe_series, volume_number=1)
+    safe_comic = Comic(
+        volume=safe_volume,
+        number="1",
+        title="Safe Stats Comic",
+        age_rating="Teen",
+        filename="safe-stats.cbz",
+        file_path="/tmp/safe-stats.cbz",
+    )
+
+    banned_series = Series(name="Banned Stats Series", library=library)
+    banned_volume = Volume(series=banned_series, volume_number=1)
+    banned_comic = Comic(
+        volume=banned_volume,
+        number="1",
+        title="Banned Stats Comic",
+        age_rating="Mature 17+",
+        filename="banned-stats.cbz",
+        file_path="/tmp/banned-stats.cbz",
+    )
+
+    db.add_all([library, safe_series, safe_volume, safe_comic, banned_series, banned_volume, banned_comic])
+    normal_user.accessible_libraries.append(library)
+    normal_user.max_age_rating = "Teen"
+    normal_user.allow_unknown_age_ratings = False
+    db.commit()
+
+    response = auth_client.get("/api/libraries/")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 1
+    assert payload[0]["stats"] == {"series": 1, "issues": 1}
+
+
+def test_get_library_series_filters_by_age_restriction(auth_client, db, normal_user):
+    library = Library(name="Age Series Library", path="/tmp/age-series-library")
+
+    safe_series = Series(name="Safe Series", library=library)
+    safe_volume = Volume(series=safe_series, volume_number=1)
+    safe_comic = Comic(
+        volume=safe_volume,
+        number="1",
+        title="Safe Comic",
+        age_rating="Teen",
+        filename="safe-series.cbz",
+        file_path="/tmp/safe-series.cbz",
+    )
+
+    banned_series = Series(name="Banned Series", library=library)
+    banned_volume = Volume(series=banned_series, volume_number=1)
+    banned_comic = Comic(
+        volume=banned_volume,
+        number="1",
+        title="Banned Comic",
+        age_rating="Mature 17+",
+        filename="banned-series.cbz",
+        file_path="/tmp/banned-series.cbz",
+    )
+
+    db.add_all([library, safe_series, safe_volume, safe_comic, banned_series, banned_volume, banned_comic])
+    normal_user.accessible_libraries.append(library)
+    normal_user.max_age_rating = "Teen"
+    normal_user.allow_unknown_age_ratings = False
+    db.commit()
+
+    response = auth_client.get(f"/api/libraries/{library.id}/series?page=1&size=10")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert len(payload["items"]) == 1
+    assert payload["items"][0]["id"] == safe_series.id
+
+
+def test_get_library_series_cover_fallback_handles_non_numeric_numbers(auth_client, db, normal_user):
+    library = Library(name="Library Non Numeric", path="/tmp/library-non-numeric")
+    series = Series(name="Non Numeric Series", library=library)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([library, series, volume])
+    db.flush()
+
+    comic_alpha = Comic(
+        volume_id=volume.id,
+        number="A",
+        title="Non Numeric A",
+        year=2024,
+        filename="non-numeric-a.cbz",
+        file_path="/tmp/non-numeric-a.cbz",
+    )
+    comic_two = Comic(
+        volume_id=volume.id,
+        number="2",
+        title="Non Numeric #2",
+        year=2023,
+        filename="non-numeric-2.cbz",
+        file_path="/tmp/non-numeric-2.cbz",
+    )
+    db.add_all([comic_alpha, comic_two])
+
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    response = auth_client.get(f"/api/libraries/{library.id}/series?page=1&size=10")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert payload["items"][0]["start_year"] == 2023
+
+
+def test_create_library_with_watch_mode_refreshes_watcher(admin_client):
+    with patch("app.api.libraries.library_watcher.refresh_watches") as mock_refresh:
+        response = admin_client.post(
+            "/api/libraries/",
+            json={"name": "Watched Library", "path": "/tmp/watched-library", "watch_mode": True},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["watch_mode"] is True
+    mock_refresh.assert_called_once()

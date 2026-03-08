@@ -288,7 +288,7 @@ async def create_library(lib_in: LibraryCreate,
     if existing:
         raise HTTPException(status_code=400, detail="Library name already exists")
 
-    library = Library(name=lib_in.name, path=lib_in.path)
+    library = Library(name=lib_in.name, path=lib_in.path, watch_mode=lib_in.watch_mode)
 
     db.add(library)
     db.commit()

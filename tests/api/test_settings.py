@@ -12,6 +12,36 @@ def test_get_public_setting_without_auth_uses_cached_value(client):
     assert response.json() == {"value": "solid_color"}
 
 
+def test_get_public_setting_falls_back_to_service_when_cache_misses(client):
+    with patch("app.api.settings.get_cached_setting", return_value=None), \
+         patch("app.api.settings.SettingsService.get", return_value="grid"):
+        response = client.get("/api/settings/ui.login_background_style")
+
+    assert response.status_code == 200
+    assert response.json() == {"value": "grid"}
+
+
+def test_get_settings_grouped_list_returns_service_payload(admin_client):
+    grouped = {
+        "ui": [
+            {
+                "key": "ui.background_style",
+                "value": "solid",
+                "category": "ui",
+                "data_type": "str",
+                "label": "Background Style",
+            }
+        ]
+    }
+    with patch("app.api.settings.SettingsService.get_all_grouped", return_value=grouped):
+        response = admin_client.get("/api/settings/")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ui"][0]["key"] == "ui.background_style"
+    assert payload["ui"][0]["value"] == "solid"
+
+
 def test_get_protected_setting_requires_auth(client):
     response = client.get("/api/settings/server.opds_enabled")
 

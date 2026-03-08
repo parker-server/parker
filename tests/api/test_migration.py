@@ -101,3 +101,70 @@ def test_migration_run_rolls_back_when_progress_phase_fails(admin_client, db, mo
 
     rolled_back = db.query(User).filter(User.username == "rollback-user").first()
     assert rolled_back is None
+
+
+def test_migration_run_maps_file_not_found_to_404(admin_client, monkeypatch):
+    class MissingKavitaDbService:
+        def __init__(self, db, kavita_db_path):
+            raise FileNotFoundError("kavita.db not found")
+
+    monkeypatch.setattr("app.api.migration.KavitaMigrationService", MissingKavitaDbService)
+
+    payload = _upload_payload()
+    response = admin_client.post("/api/migration/run", data=payload["data"], files=payload["files"])
+
+    assert response.status_code == 404
+    assert "file error" in response.json()["detail"].lower()
+
+
+def test_migration_run_reraises_http_exception_from_inner_flow(admin_client, monkeypatch):
+    from fastapi import HTTPException
+
+    class HttpFailingMigrationService:
+        def __init__(self, db, kavita_db_path):
+            pass
+
+        def migrate_users(self, strategy="temp-password"):
+            raise HTTPException(status_code=418, detail="teapot")
+
+        def migrate_progress(self):
+            return {"inserted": 0, "updated": 0, "skipped": 0}
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr("app.api.migration.KavitaMigrationService", HttpFailingMigrationService)
+
+    payload = _upload_payload()
+    response = admin_client.post("/api/migration/run", data=payload["data"], files=payload["files"])
+
+    assert response.status_code == 418
+    assert response.json() == {"detail": "teapot"}
+
+
+def test_migration_run_ignores_permission_error_while_cleaning_temp_file(admin_client, monkeypatch):
+    class SuccessMigrationService:
+        def __init__(self, db, kavita_db_path):
+            pass
+
+        def migrate_users(self, strategy="temp-password"):
+            return None
+
+        def migrate_progress(self):
+            return {"inserted": 0, "updated": 0, "skipped": 0}
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr("app.api.migration.KavitaMigrationService", SuccessMigrationService)
+
+    def _raise_permission_error(_path):
+        raise PermissionError("in use")
+
+    monkeypatch.setattr("app.api.migration.os.remove", _raise_permission_error)
+
+    payload = _upload_payload()
+    response = admin_client.post("/api/migration/run", data=payload["data"], files=payload["files"])
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "Migration of users and reading progress complete."
