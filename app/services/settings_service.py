@@ -155,12 +155,45 @@ class SettingsService:
             ]
         },
         {
+            "key": "system.parallel_metadata_processing",
+            "value": "false",
+            "category": "system",
+            "data_type": "bool",
+            "label": "Enable Parallel Metadata Processing",
+            "description": "Use multiple CPU cores to speed up comic metadata extraction / parsing. May increase system load."
+        },
+        {
+            "key": "system.parallel_metadata_workers",
+            "value": "0",
+            "category": "system",
+            "data_type": "select",
+            "label": "Parallel Metadata Worker Count",
+            "description": "Control how many CPU cores are used for comic metadata extraction / parsing.",
+            "options": generate_worker_options()
+        },
+        {
+            "key": "system.parallel_metadata_writer_summary_timeout_seconds",
+            "value": "180",
+            "category": "system",
+            "data_type": "int",
+            "label": "Metadata Writer Summary Timeout (Sec)",
+            "description": "Maximum time to wait for the metadata writer to return final scan stats before failing the scan job."
+        },
+        {
+            "key": "system.parallel_metadata_writer_join_timeout_seconds",
+            "value": "30",
+            "category": "system",
+            "data_type": "int",
+            "label": "Metadata Writer Join Timeout (Sec)",
+            "description": "Grace period to wait for the metadata writer process to exit cleanly before force termination."
+        },
+        {
             "key": "system.parallel_image_processing",
             "value": "false",
             "category": "system",
             "data_type": "bool",
             "label": "Enable Parallel Image Processing",
-            "description": "Use all CPU cores to speed up thumbnail generation. May increase system load."
+            "description": "Use multiple CPU cores to speed up thumbnail generation. May increase system load."
         },
         {
             "key": "system.parallel_image_workers",
