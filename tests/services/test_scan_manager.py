@@ -253,13 +253,15 @@ def test_run_scan_job_success_updates_and_queues_followup(monkeypatch, db):
     db.commit()
 
     scanner_mock = MagicMock()
-    scanner_mock.scan.return_value = {"imported": 2, "updated": 1, "deleted": 0, "errors": 0, "elapsed": 1.1}
+    scanner_mock.scan_parallel.return_value = {"imported": 2, "updated": 1, "deleted": 0, "errors": 0, "elapsed": 1.1}
     monkeypatch.setattr(sm, "LibraryScanner", lambda library, session: scanner_mock)
+    monkeypatch.setattr(sm, "get_cached_setting", lambda key, default: True)
 
     manager._safe_job_update = MagicMock()
 
     manager._run_scan_job({"id": 99, "library_id": lib.id, "force": True})
 
+    scanner_mock.scan_parallel.assert_called_once_with(force=True, worker_limit=0)
     manager._safe_job_update.assert_called_once()
     args = manager._safe_job_update.call_args
     assert args.args[0] == 99
@@ -294,8 +296,9 @@ def test_run_scan_job_handles_scanner_exception(monkeypatch, db):
     db.commit()
 
     scanner_mock = MagicMock()
-    scanner_mock.scan.side_effect = RuntimeError("scan exploded")
+    scanner_mock.scan_parallel.side_effect = RuntimeError("scan exploded")
     monkeypatch.setattr(sm, "LibraryScanner", lambda library, session: scanner_mock)
+    monkeypatch.setattr(sm, "get_cached_setting", lambda key, default: False)
     monkeypatch.setattr(sm.traceback, "print_exc", MagicMock())
 
     manager._safe_job_update = MagicMock()
@@ -320,10 +323,12 @@ def test_run_scan_job_logs_followup_queue_failure(monkeypatch):
     queue_db.commit.side_effect = RuntimeError("queue boom")
 
     monkeypatch.setattr(sm, "SessionLocal", MagicMock(side_effect=[scan_db, queue_db]))
+    monkeypatch.setattr(sm.ScanManager, "update_library_last_scanned", MagicMock())
 
     scanner_mock = MagicMock()
-    scanner_mock.scan.return_value = {"imported": 1}
+    scanner_mock.scan_parallel.return_value = {"imported": 1, "updated": 0, "deleted": 0, "errors": 0, "elapsed": 1.0}
     monkeypatch.setattr(sm, "LibraryScanner", lambda library, session: scanner_mock)
+    monkeypatch.setattr(sm, "get_cached_setting", lambda key, default: False)
 
     manager._safe_job_update = MagicMock()
 

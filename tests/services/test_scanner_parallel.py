@@ -317,3 +317,83 @@ def test_scan_parallel_pool_error_still_signals_and_joins_writer(monkeypatch, tm
     assert writer_proc.terminated is False
     assert result_queue.put_items[-1] is None
 
+
+def test_scan_parallel_requested_workers_capped_by_cpu_count(monkeypatch, tmp_path):
+    library_path = tmp_path / "library"
+    _create_file(library_path / "new.cbz")
+
+    db = DummyDB(existing=[])
+    library = SimpleNamespace(path=str(library_path), name="Test", id=102, last_scanned=None)
+    scanner = LibraryScanner(library, db)
+
+    scanner._reconcile_sidecars = lambda *_args, **_kwargs: None
+    scanner._cleanup_missing_files = lambda *_args, **_kwargs: 0
+    _disable_container_cleanup(scanner)
+
+    result_queue = FakeQueue()
+    stats_queue = FakeQueue([
+        {"summary": True, "imported": 1, "updated": 0, "errors": 0, "skipped": 0}
+    ])
+    queues = [result_queue, stats_queue]
+
+    FakePool.last_processes = None
+    FakeProcess.instances = []
+
+    monkeypatch.setattr(scanner_module, "Queue", lambda: queues.pop(0))
+    monkeypatch.setattr(scanner_module, "metadata_worker", fake_worker)
+    monkeypatch.setattr(scanner_module.multiprocessing, "Process", FakeProcess)
+    monkeypatch.setattr(scanner_module.multiprocessing, "Pool", FakePool)
+    monkeypatch.setattr(scanner_module.multiprocessing, "cpu_count", lambda: 4)
+
+    def _settings(key, default=0):
+        if key == "system.parallel_metadata_workers":
+            return 99
+        return default
+
+    monkeypatch.setattr(scanner_module, "get_cached_setting", _settings)
+
+    result = scanner.scan_parallel(force=False, worker_limit=0)
+
+    assert result["imported"] == 1
+    assert FakePool.last_processes == 4
+
+
+def test_scan_parallel_swallows_sentinel_put_error_during_failure_cleanup(monkeypatch, tmp_path):
+    library_path = tmp_path / "library"
+    _create_file(library_path / "new.cbz")
+
+    db = DummyDB(existing=[])
+    library = SimpleNamespace(path=str(library_path), name="Test", id=103, last_scanned=None)
+    scanner = LibraryScanner(library, db)
+
+    scanner._reconcile_sidecars = lambda *_args, **_kwargs: None
+    scanner._cleanup_missing_files = lambda *_args, **_kwargs: 0
+    _disable_container_cleanup(scanner)
+
+    class ExplodingPutQueue(FakeQueue):
+        def put(self, item):
+            raise RuntimeError("result queue unavailable")
+
+    result_queue = ExplodingPutQueue()
+    stats_queue = FakeQueue([])
+    queues = [result_queue, stats_queue]
+
+    FakeProcess.instances = []
+    FakeProcess.force_stuck = False
+
+    class ExplodingPool(FakePool):
+        def imap_unordered(self, worker_fn, tasks):
+            raise RuntimeError("pool exploded")
+
+    monkeypatch.setattr(scanner_module, "Queue", lambda: queues.pop(0))
+    monkeypatch.setattr(scanner_module, "metadata_worker", fake_worker)
+    monkeypatch.setattr(scanner_module.multiprocessing, "Process", FakeProcess)
+    monkeypatch.setattr(scanner_module.multiprocessing, "Pool", ExplodingPool)
+    monkeypatch.setattr(scanner_module, "get_cached_setting", lambda _key, default=0: default)
+
+    with pytest.raises(RuntimeError, match="pool exploded"):
+        scanner.scan_parallel(force=False, worker_limit=2)
+
+    writer_proc = FakeProcess.instances[0]
+    assert writer_proc.joined is True
+    assert writer_proc.terminated is False
