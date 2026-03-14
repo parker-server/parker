@@ -114,6 +114,7 @@ def test_apply_batch_updates_processed_and_reports_error_and_missing(db, tmp_pat
     db.commit()
 
     stats_queue = _WriteQueue()
+    error_details = []
     _apply_batch(
         db,
         [
@@ -131,6 +132,7 @@ def test_apply_batch_updates_processed_and_reports_error_and_missing(db, tmp_pat
             {"comic_id": 123456, "error": True},
         ],
         stats_queue,
+        error_details,
     )
 
     db.refresh(comic_with_palette)
@@ -150,6 +152,7 @@ def test_apply_batch_updates_processed_and_reports_error_and_missing(db, tmp_pat
 
     statuses = {item["status"] for item in stats_queue.put_items}
     assert statuses == {"processed", "missing", "error"}
+    assert len(error_details) == 2
 
 
 @pytest.mark.parametrize(
@@ -194,7 +197,7 @@ def test_thumbnail_worker_exception_path(monkeypatch):
 def test_thumbnail_writer_batches_and_sends_summary(monkeypatch):
     applied_batches = []
 
-    def fake_apply_batch(db, batch, stats_queue):
+    def fake_apply_batch(db, batch, stats_queue, error_details):
         applied_batches.append(list(batch))
 
     class SummaryQueue:
@@ -227,6 +230,7 @@ def test_thumbnail_writer_batches_and_sends_summary(monkeypatch):
     assert summary["processed"] == 2
     assert summary["errors"] == 1
     assert summary["skipped"] == 0
+    assert summary["error_details"] == []
 
 
 def test_process_series_thumbnails_delegates(db, tmp_path, monkeypatch):
@@ -345,7 +349,7 @@ def test_process_missing_thumbnails_parallel_worker_limit_override(db, tmp_path,
 
     stats = service.process_missing_thumbnails_parallel(force=False, worker_limit=worker_limit)
 
-    assert stats == {"processed": 1, "errors": 0, "skipped": 0}
+    assert stats == {"processed": 1, "errors": 0, "skipped": 0, "error_details": []}
     assert _FakePool.created_processes[-1] == expected_workers
     assert result_queue.put_items[-1] is None
 
@@ -378,7 +382,7 @@ def test_process_missing_thumbnails_parallel_auto_worker_count_for_series(db, tm
 
     stats = service.process_missing_thumbnails_parallel(series_id=series.id, worker_limit=0)
 
-    assert stats == {"processed": 1, "errors": 0, "skipped": 0}
+    assert stats == {"processed": 1, "errors": 0, "skipped": 0, "error_details": []}
     assert _FakePool.created_processes[-1] == 4
 
 
@@ -407,6 +411,7 @@ def test_process_missing_thumbnails_parallel_respects_requested_worker_cap(db, t
 
     stats = service.process_missing_thumbnails_parallel(force=False, worker_limit=0)
 
-    assert stats == {"processed": 1, "errors": 0, "skipped": 0}
+    assert stats == {"processed": 1, "errors": 0, "skipped": 0, "error_details": []}
     assert _FakePool.created_processes[-1] == 4
+
 
