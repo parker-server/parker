@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Annotated, Optional
 from pydantic import BaseModel
 from sqlalchemy import func, case
-import json
+import logging
 
 from app.core.comic_helpers import get_thumbnail_url, NON_PLAIN_FORMATS, REVERSE_NUMBERING_SERIES, get_series_age_restriction
 from app.models.library import Library
@@ -11,11 +11,10 @@ from app.models.comic import Comic, Volume
 from app.models.reading_progress import ReadingProgress
 from app.services.scan_manager import scan_manager
 from app.services.watcher import library_watcher
-from app.services.reading_list import ReadingListService
-from app.services.collection import CollectionService
 from app.api.deps import PaginationParams, PaginatedResponse, SessionDep, CurrentUser, AdminUser, LibraryDep
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 def _has_library_access(library_id: int, current_user: CurrentUser) -> bool:
 
@@ -27,101 +26,6 @@ def _has_library_access(library_id: int, current_user: CurrentUser) -> bool:
         return False
 
     return True
-
-
-def _rehydrate_library_metadata_from_cache(
-    db: SessionDep,
-    library_id: int,
-    rehydrate_reading_lists: bool,
-    rehydrate_collections: bool,
-    rehydrate_story_arcs: bool,
-):
-    summary = {
-        "comics_scanned": 0,
-        "source_metadata_missing": 0,
-        "source_metadata_invalid": 0,
-        "reading_lists_restored": 0,
-        "collections_restored": 0,
-        "story_arcs_restored": 0,
-        "force_scan_recommended": False,
-    }
-
-    if not any([rehydrate_reading_lists, rehydrate_collections, rehydrate_story_arcs]):
-        return summary
-
-    reading_list_service = ReadingListService(db) if rehydrate_reading_lists else None
-    collection_service = CollectionService(db) if rehydrate_collections else None
-
-    comics = (
-        db.query(Comic)
-        .join(Volume, Comic.volume_id == Volume.id)
-        .join(Series, Volume.series_id == Series.id)
-        .filter(Series.library_id == library_id)
-        .all()
-    )
-
-    for comic in comics:
-        summary["comics_scanned"] += 1
-
-        raw_metadata = {}
-        metadata_state = None
-
-        if not comic.metadata_json:
-            metadata_state = "missing"
-        else:
-            try:
-                parsed = json.loads(comic.metadata_json)
-                if isinstance(parsed, dict):
-                    raw_metadata = parsed
-                else:
-                    metadata_state = "invalid"
-            except (TypeError, ValueError):
-                metadata_state = "invalid"
-
-        if metadata_state == "missing":
-            summary["source_metadata_missing"] += 1
-        elif metadata_state == "invalid":
-            summary["source_metadata_invalid"] += 1
-
-        if rehydrate_reading_lists:
-            alternate_series = raw_metadata.get("alternate_series")
-            alternate_number = raw_metadata.get("alternate_number")
-            comic.alternate_series = alternate_series
-            comic.alternate_number = alternate_number
-            reading_list_service.update_comic_reading_lists(comic, alternate_series, alternate_number)
-            if alternate_series and alternate_number:
-                try:
-                    float(alternate_number)
-                    summary["reading_lists_restored"] += 1
-                except (TypeError, ValueError):
-                    pass
-
-        if rehydrate_collections:
-            series_group = raw_metadata.get("series_group")
-            comic.series_group = series_group
-            collection_service.update_comic_collections(comic, series_group)
-            if series_group:
-                summary["collections_restored"] += 1
-
-        if rehydrate_story_arcs:
-            story_arc = raw_metadata.get("story_arc")
-            comic.story_arc = story_arc
-            if story_arc:
-                summary["story_arcs_restored"] += 1
-
-    # Ensure newly added list/collection item rows are visible to cleanup queries.
-    db.flush()
-
-    if rehydrate_reading_lists:
-        reading_list_service.cleanup_empty_lists()
-    if rehydrate_collections:
-        collection_service.cleanup_empty_collections()
-
-    summary["force_scan_recommended"] = (
-        summary["source_metadata_missing"] > 0 or summary["source_metadata_invalid"] > 0
-    )
-
-    return summary
 
 
 @router.get("/", name="list")
@@ -460,18 +364,16 @@ async def update_library(
     if updates.parse_story_arcs is not None:
         library.parse_story_arcs = updates.parse_story_arcs
 
-    rehydration_summary = None
-    if enable_reading_lists or enable_collections or enable_story_arcs:
-        rehydration_summary = _rehydrate_library_metadata_from_cache(
-            db=db,
-            library_id=library.id,
-            rehydrate_reading_lists=enable_reading_lists,
-            rehydrate_collections=enable_collections,
-            rehydrate_story_arcs=enable_story_arcs,
-        )
-
     db.commit()
     db.refresh(library)
+
+    rehydration_result = None
+    if enable_reading_lists or enable_collections or enable_story_arcs:
+        try:
+            rehydration_result = scan_manager.add_metadata_rehydrate_task(library.id)
+        except Exception as exc:
+            logger.error("Failed to queue metadata rehydrate for library %s: %s", library.id, exc)
+            rehydration_result = {"status": "failed", "message": "Failed to queue metadata rehydrate"}
 
     # Notify Watcher (Always refresh, covering both Enable and Disable cases)
     library_watcher.refresh_watches()
@@ -490,8 +392,8 @@ async def update_library(
         "created_at": library.created_at,
     }
 
-    if rehydration_summary is not None:
-        response["rehydration"] = rehydration_summary
+    if rehydration_result is not None:
+        response["rehydration"] = rehydration_result
 
     return response
 

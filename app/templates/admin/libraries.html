@@ -241,7 +241,13 @@ function libraryManager() {
                     window.parker.showToast("Library saved", 'success');
 
                     const rehydration = body?.rehydration;
-                    if (rehydration?.force_scan_recommended) {
+                    if (rehydration?.status === 'queued') {
+                        window.parker.showToast("Metadata rehydrate queued in background.", "info");
+                    } else if (rehydration?.status === 'ignored') {
+                        window.parker.showToast("Metadata rehydrate is already queued or running.", "info");
+                    } else if (rehydration?.status === 'failed') {
+                        window.parker.showToast("Library saved, but failed to queue metadata rehydrate.", "warning");
+                    } else if (rehydration?.force_scan_recommended) {
                         window.parker.showToast(
                             "Some cached metadata is missing. Run a force scan to fully repopulate metadata.",
                             "warning"

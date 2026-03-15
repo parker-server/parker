@@ -326,7 +326,7 @@ def test_update_library_disabling_metadata_flags_preserves_existing_metadata_row
     assert db.query(Collection).filter(Collection.name == "Group Alpha").count() == 1
 
 
-def test_update_library_reenabling_metadata_flags_rehydrates_from_cached_metadata(admin_client, db):
+def test_update_library_reenabling_metadata_flags_queues_rehydrate_job(admin_client, db):
     library = Library(
         name="Rehydrate Metadata",
         path="/tmp/rehydrate-metadata",
@@ -366,7 +366,13 @@ def test_update_library_reenabling_metadata_flags_rehydrates_from_cached_metadat
     db.add_all([library, series, volume, restorable, missing_source])
     db.commit()
 
-    with patch("app.api.libraries.library_watcher.refresh_watches"):
+    with (
+        patch("app.api.libraries.library_watcher.refresh_watches"),
+        patch(
+            "app.api.libraries.scan_manager.add_metadata_rehydrate_task",
+            return_value={"status": "queued", "job_id": 321, "message": "Metadata rehydrate queued"},
+        ) as mock_queue,
+    ):
         response = admin_client.patch(
             f"/api/libraries/{library.id}",
             json={
@@ -381,39 +387,27 @@ def test_update_library_reenabling_metadata_flags_rehydrates_from_cached_metadat
     assert payload["parse_reading_lists"] is True
     assert payload["parse_collections"] is True
     assert payload["parse_story_arcs"] is True
-    assert payload["rehydration"]["comics_scanned"] == 2
-    assert payload["rehydration"]["reading_lists_restored"] == 1
-    assert payload["rehydration"]["collections_restored"] == 1
-    assert payload["rehydration"]["story_arcs_restored"] == 1
-    assert payload["rehydration"]["source_metadata_missing"] == 1
-    assert payload["rehydration"]["source_metadata_invalid"] == 0
-    assert payload["rehydration"]["force_scan_recommended"] is True
+    assert payload["rehydration"]["status"] == "queued"
+    assert payload["rehydration"]["job_id"] == 321
+    mock_queue.assert_called_once_with(library.id)
 
     db.refresh(restorable)
     db.refresh(missing_source)
 
-    assert restorable.alternate_series == "Event Beta"
-    assert restorable.alternate_number == "5"
-    assert restorable.series_group == "Group Beta"
-    assert restorable.story_arc == "Arc Beta"
+    assert restorable.alternate_series is None
+    assert restorable.alternate_number is None
+    assert restorable.series_group is None
+    assert restorable.story_arc is None
 
     assert missing_source.alternate_series is None
     assert missing_source.alternate_number is None
     assert missing_source.series_group is None
     assert missing_source.story_arc is None
 
-    restored_list = db.query(ReadingList).filter(ReadingList.name == "Event Beta").first()
-    restored_collection = db.query(Collection).filter(Collection.name == "Group Beta").first()
-    assert restored_list is not None
-    assert restored_collection is not None
-    assert db.query(ReadingListItem).filter(
-        ReadingListItem.reading_list_id == restored_list.id,
-        ReadingListItem.comic_id == restorable.id
-    ).count() == 1
-    assert db.query(CollectionItem).filter(
-        CollectionItem.collection_id == restored_collection.id,
-        CollectionItem.comic_id == restorable.id
-    ).count() == 1
+    assert db.query(ReadingList).filter(ReadingList.name == "Event Beta").count() == 0
+    assert db.query(Collection).filter(Collection.name == "Group Beta").count() == 0
+    assert db.query(ReadingListItem).filter(ReadingListItem.comic_id == restorable.id).count() == 0
+    assert db.query(CollectionItem).filter(CollectionItem.comic_id == restorable.id).count() == 0
 
 
 def test_update_library_rejects_duplicate_name(admin_client, db):

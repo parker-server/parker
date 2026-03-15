@@ -1,7 +1,7 @@
 import json
 import threading
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, ANY
 
 import pytest
 from sqlalchemy.exc import OperationalError
@@ -208,6 +208,12 @@ def test_add_cleanup_task_and_add_thumbnail_task(monkeypatch, db):
 
     thumb_ignored = manager.add_thumbnail_task(10, force=False)
     assert thumb_ignored["status"] == "ignored"
+
+    rehydrate_queued = manager.add_metadata_rehydrate_task(10)
+    assert rehydrate_queued["status"] == "queued"
+
+    rehydrate_ignored = manager.add_metadata_rehydrate_task(10)
+    assert rehydrate_ignored["status"] == "ignored"
 
 
 def test_fix_stuck_libraries_resets_only_without_running_job(monkeypatch, db):
@@ -435,6 +441,80 @@ def test_run_cleanup_job_failure_marks_failed(monkeypatch, db):
     manager._set_library_scanning_status.assert_called_once_with(88, False)
 
 
+def test_run_metadata_rehydrate_job_success(monkeypatch, db):
+    manager = _manager()
+    monkeypatch.setattr(sm, "SessionLocal", _session_local_factory(db))
+
+    lib = Library(
+        name="rehydrate-lib",
+        path="/tmp/rehydrate-lib",
+        parse_reading_lists=True,
+        parse_collections=False,
+        parse_story_arcs=True,
+    )
+    db.add(lib)
+    db.commit()
+
+    expected_summary = {"comics_scanned": 12, "reading_lists_restored": 3}
+    rehydrate = MagicMock(return_value=expected_summary)
+    monkeypatch.setattr(sm, "rehydrate_library_metadata_from_cache", rehydrate)
+
+    manager._safe_job_update = MagicMock()
+    manager._set_library_scanning_status = MagicMock()
+
+    manager._run_metadata_rehydrate_job({"id": 31, "library_id": lib.id})
+
+    rehydrate.assert_called_once_with(
+        db=ANY,
+        library_id=lib.id,
+        rehydrate_reading_lists=True,
+        rehydrate_collections=False,
+        rehydrate_story_arcs=True,
+    )
+    manager._safe_job_update.assert_called_once_with(31, JobStatus.COMPLETED, summary=expected_summary)
+    manager._set_library_scanning_status.assert_called_once_with(lib.id, False)
+
+
+def test_run_metadata_rehydrate_job_missing_library(monkeypatch, db):
+    manager = _manager()
+    monkeypatch.setattr(sm, "SessionLocal", _session_local_factory(db))
+
+    manager._safe_job_update = MagicMock()
+    manager._set_library_scanning_status = MagicMock()
+
+    manager._run_metadata_rehydrate_job({"id": 32, "library_id": 999999})
+
+    manager._safe_job_update.assert_called_once_with(32, JobStatus.FAILED, error="Library not found")
+    manager._set_library_scanning_status.assert_called_once_with(999999, False)
+
+
+def test_run_metadata_rehydrate_job_failure_marks_failed(monkeypatch, db):
+    manager = _manager()
+    monkeypatch.setattr(sm, "SessionLocal", _session_local_factory(db))
+
+    lib = Library(name="rehydrate-fail", path="/tmp/rehydrate-fail")
+    db.add(lib)
+    db.commit()
+
+    monkeypatch.setattr(
+        sm,
+        "rehydrate_library_metadata_from_cache",
+        MagicMock(side_effect=RuntimeError("rehydrate fail")),
+    )
+    monkeypatch.setattr(sm.traceback, "print_exc", MagicMock())
+
+    manager._safe_job_update = MagicMock()
+    manager._set_library_scanning_status = MagicMock()
+
+    manager._run_metadata_rehydrate_job({"id": 33, "library_id": lib.id})
+
+    call = manager._safe_job_update.call_args
+    assert call.args[0] == 33
+    assert call.args[1] == JobStatus.FAILED
+    assert "rehydrate fail" in call.kwargs["error"]
+    manager._set_library_scanning_status.assert_called_once_with(lib.id, False)
+
+
 def test_process_queue_dispatches_scan_job(monkeypatch):
     manager = _manager()
 
@@ -517,10 +597,64 @@ def test_process_queue_dispatches_non_scan_jobs(monkeypatch, job_type, runner_na
     manager._run_scan_job = MagicMock()
     manager._run_thumbnail_job = MagicMock()
     manager._run_cleanup_job = MagicMock()
+    manager._run_metadata_rehydrate_job = MagicMock()
 
     manager._process_queue()
 
     getattr(manager, runner_name).assert_called_once()
+    manager._run_metadata_rehydrate_job.assert_not_called()
+
+
+def test_process_queue_dispatches_metadata_rehydrate_job(monkeypatch):
+    manager = _manager()
+
+    job = SimpleNamespace(id=7, library_id=12, job_type=JobType.METADATA_REHYDRATE, force_scan=False)
+
+    scan_q = MagicMock()
+    scan_q.filter.return_value = scan_q
+    scan_q.order_by.return_value = scan_q
+    scan_q.first.return_value = None
+
+    thumb_q = MagicMock()
+    thumb_q.filter.return_value = thumb_q
+    thumb_q.order_by.return_value = thumb_q
+    thumb_q.first.return_value = None
+
+    cleanup_q = MagicMock()
+    cleanup_q.filter.return_value = cleanup_q
+    cleanup_q.order_by.return_value = cleanup_q
+    cleanup_q.first.return_value = None
+
+    metadata_q = MagicMock()
+    metadata_q.filter.return_value = metadata_q
+    metadata_q.order_by.return_value = metadata_q
+    metadata_q.first.return_value = job
+
+    claim = MagicMock()
+    claim.filter.return_value = claim
+    claim.update.return_value = 1
+
+    db = MagicMock()
+    db.query.side_effect = [scan_q, thumb_q, cleanup_q, metadata_q, claim]
+
+    manager._stop_event = MagicMock()
+    manager._stop_event.is_set.side_effect = [False, True]
+
+    monkeypatch.setattr(sm, "SessionLocal", lambda: db)
+    monkeypatch.setattr(sm.time, "sleep", MagicMock())
+
+    manager._set_library_scanning_status = MagicMock()
+    manager._run_scan_job = MagicMock()
+    manager._run_thumbnail_job = MagicMock()
+    manager._run_cleanup_job = MagicMock()
+    manager._run_metadata_rehydrate_job = MagicMock()
+
+    manager._process_queue()
+
+    manager._set_library_scanning_status.assert_called_once_with(12, True)
+    manager._run_metadata_rehydrate_job.assert_called_once_with(
+        {"id": 7, "library_id": 12, "type": JobType.METADATA_REHYDRATE, "force": False}
+    )
 
 
 def test_process_queue_no_job_triggers_integrity_check(monkeypatch):
