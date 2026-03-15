@@ -206,6 +206,94 @@ def test_apply_metadata_batch_import_update_and_error_paths(db):
     assert collection_service.update_comic_collections.call_count == 2
 
 
+def test_apply_metadata_batch_disables_optional_metadata_flows(db):
+    library = Library(name="writer-disable-lib", path="/tmp/writer-disable-lib")
+    db.add(library)
+    db.flush()
+
+    series = Series(name="Series A", library_id=library.id)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
+    db.flush()
+
+    existing_path = "/tmp/disable-existing.cbz"
+    comic = Comic(
+        volume_id=volume.id,
+        filename="disable-existing.cbz",
+        file_path=existing_path,
+        page_count=10,
+        number="1",
+        alternate_series="Old List",
+        alternate_number="1",
+        series_group="Old Group",
+        story_arc="Old Arc",
+    )
+    db.add(comic)
+    db.commit()
+
+    existing_map = {existing_path: comic}
+
+    def get_or_create_series(name: str):
+        return db.query(Series).filter_by(name=name, library_id=library.id).first()
+
+    def get_or_create_volume(series_obj, volume_num: int, _file_path: str):
+        return db.query(Volume).filter_by(series_id=series_obj.id, volume_number=volume_num).first()
+
+    tag_service = SimpleNamespace(
+        get_or_create_characters=MagicMock(return_value=[]),
+        get_or_create_teams=MagicMock(return_value=[]),
+        get_or_create_locations=MagicMock(return_value=[]),
+        get_or_create_genres=MagicMock(return_value=[]),
+    )
+    credit_service = SimpleNamespace(add_credits_to_comic=MagicMock())
+    reading_list_service = SimpleNamespace(
+        update_comic_reading_lists=MagicMock(),
+        remove_comic_from_all_lists=MagicMock(),
+    )
+    collection_service = SimpleNamespace(
+        update_comic_collections=MagicMock(),
+        remove_comic_from_all_collections=MagicMock(),
+    )
+
+    batch = [{
+        "file_path": existing_path,
+        "mtime": 111.0,
+        "size": 222,
+        "metadata": _metadata(
+            series_group="Event",
+            alternate_series="Alt",
+            alternate_number="1",
+            story_arc="Arc",
+        ),
+        "error": False,
+    }]
+
+    metadata_writer_module._apply_metadata_batch(
+        db,
+        batch,
+        existing_map,
+        get_or_create_series,
+        get_or_create_volume,
+        tag_service,
+        credit_service,
+        reading_list_service,
+        collection_service,
+        parse_reading_lists=False,
+        parse_collections=False,
+        parse_story_arcs=False,
+    )
+
+    db.refresh(comic)
+    assert comic.alternate_series is None
+    assert comic.alternate_number is None
+    assert comic.series_group is None
+    assert comic.story_arc is None
+    reading_list_service.update_comic_reading_lists.assert_not_called()
+    collection_service.update_comic_collections.assert_not_called()
+    reading_list_service.remove_comic_from_all_lists.assert_called_once_with(comic.id)
+    collection_service.remove_comic_from_all_collections.assert_called_once_with(comic.id)
+
+
 def test_metadata_writer_batches_and_emits_summary(monkeypatch, tmp_path):
     fake_db = _FakeDB(str(tmp_path / "lib"))
     applied_batches = []

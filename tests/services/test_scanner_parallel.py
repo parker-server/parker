@@ -166,6 +166,9 @@ def test_scan_parallel_orchestrates_pool_writer_and_summary(monkeypatch, tmp_pat
     assert len(FakeProcess.instances) == 1
     assert FakeProcess.instances[0].started is True
     assert FakeProcess.instances[0].joined is True
+    assert FakeProcess.instances[0].kwargs["parse_reading_lists"] is True
+    assert FakeProcess.instances[0].kwargs["parse_collections"] is True
+    assert FakeProcess.instances[0].kwargs["parse_story_arcs"] is True
 
     assert FakePool.last_processes == 3
 
@@ -397,3 +400,46 @@ def test_scan_parallel_swallows_sentinel_put_error_during_failure_cleanup(monkey
     writer_proc = FakeProcess.instances[0]
     assert writer_proc.joined is True
     assert writer_proc.terminated is False
+
+
+def test_scan_parallel_passes_library_metadata_flags_to_writer(monkeypatch, tmp_path):
+    library_path = tmp_path / "library"
+    _create_file(library_path / "new.cbz")
+
+    db = DummyDB(existing=[])
+    library = SimpleNamespace(
+        path=str(library_path),
+        name="Flagged",
+        id=104,
+        last_scanned=None,
+        parse_reading_lists=False,
+        parse_collections=False,
+        parse_story_arcs=False,
+    )
+    scanner = LibraryScanner(library, db)
+
+    scanner._reconcile_sidecars = lambda *_args, **_kwargs: None
+    scanner._cleanup_missing_files = lambda *_args, **_kwargs: 0
+    _disable_container_cleanup(scanner)
+
+    result_queue = FakeQueue()
+    stats_queue = FakeQueue([
+        {"summary": True, "imported": 1, "updated": 0, "errors": 0, "skipped": 0}
+    ])
+    queues = [result_queue, stats_queue]
+
+    FakePool.last_processes = None
+    FakeProcess.instances = []
+
+    monkeypatch.setattr(scanner_module, "Queue", lambda: queues.pop(0))
+    monkeypatch.setattr(scanner_module, "metadata_worker", fake_worker)
+    monkeypatch.setattr(scanner_module.multiprocessing, "Process", FakeProcess)
+    monkeypatch.setattr(scanner_module.multiprocessing, "Pool", FakePool)
+    monkeypatch.setattr(scanner_module, "get_cached_setting", lambda _key, default=0: default)
+
+    scanner.scan_parallel(force=False, worker_limit=1)
+
+    writer_kwargs = FakeProcess.instances[0].kwargs
+    assert writer_kwargs["parse_reading_lists"] is False
+    assert writer_kwargs["parse_collections"] is False
+    assert writer_kwargs["parse_story_arcs"] is False

@@ -3,7 +3,9 @@ from unittest.mock import patch
 from app.main import app
 from app.api.deps import get_current_user
 from app.models.comic import Comic, Volume
+from app.models.collection import Collection, CollectionItem
 from app.models.library import Library
+from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.reading_progress import ReadingProgress
 from app.models.series import Series
 
@@ -104,9 +106,15 @@ def test_admin_can_create_library(admin_client, db):
     data = response.json()
     assert data["name"] == "Marvel Comics"
     assert data["id"] is not None
+    assert data["parse_reading_lists"] is True
+    assert data["parse_collections"] is True
+    assert data["parse_story_arcs"] is True
 
     lib = db.query(Library).first()
     assert lib.name == "Marvel Comics"
+    assert lib.parse_reading_lists is True
+    assert lib.parse_collections is True
+    assert lib.parse_story_arcs is True
 
 
 def test_create_library_duplicate_name_returns_400(admin_client, db):
@@ -222,14 +230,28 @@ def test_get_library_series_empty_page_returns_empty_items(auth_client, db, norm
 
 
 def test_update_library_applies_fields_and_refreshes_watches(admin_client, db):
-    library = Library(name="UpdateMe", path="/tmp/update-me", watch_mode=False)
+    library = Library(
+        name="UpdateMe",
+        path="/tmp/update-me",
+        watch_mode=False,
+        parse_reading_lists=True,
+        parse_collections=True,
+        parse_story_arcs=True,
+    )
     db.add(library)
     db.commit()
 
     with patch("app.api.libraries.library_watcher.refresh_watches") as mock_refresh:
         response = admin_client.patch(
             f"/api/libraries/{library.id}",
-            json={"name": "Updated", "path": "/tmp/updated", "watch_mode": True},
+            json={
+                "name": "Updated",
+                "path": "/tmp/updated",
+                "watch_mode": True,
+                "parse_reading_lists": False,
+                "parse_collections": False,
+                "parse_story_arcs": False,
+            },
         )
 
     assert response.status_code == 200
@@ -237,7 +259,70 @@ def test_update_library_applies_fields_and_refreshes_watches(admin_client, db):
     assert payload["name"] == "Updated"
     assert payload["path"] == "/tmp/updated"
     assert payload["watch_mode"] is True
+    assert payload["parse_reading_lists"] is False
+    assert payload["parse_collections"] is False
+    assert payload["parse_story_arcs"] is False
     mock_refresh.assert_called_once()
+
+
+def test_update_library_disabling_metadata_flags_cleans_existing_metadata_rows(admin_client, db):
+    library = Library(
+        name="Cleanup Metadata",
+        path="/tmp/cleanup-metadata",
+        parse_reading_lists=True,
+        parse_collections=True,
+        parse_story_arcs=True,
+    )
+    series = Series(name="Cleanup Series", library=library)
+    volume = Volume(series=series, volume_number=1)
+    comic = Comic(
+        volume=volume,
+        number="1",
+        title="Cleanup Issue",
+        filename="cleanup.cbz",
+        file_path="/tmp/cleanup.cbz",
+        alternate_series="Event Alpha",
+        alternate_number="1",
+        series_group="Group Alpha",
+        story_arc="Arc Alpha",
+    )
+
+    reading_list = ReadingList(name="Event Alpha")
+    collection = Collection(name="Group Alpha")
+    db.add_all([library, series, volume, comic, reading_list, collection])
+    db.flush()
+
+    reading_list_item = ReadingListItem(reading_list_id=reading_list.id, comic_id=comic.id, position=1.0)
+    collection_item = CollectionItem(collection_id=collection.id, comic_id=comic.id)
+    db.add_all([reading_list_item, collection_item])
+    db.commit()
+
+    with patch("app.api.libraries.library_watcher.refresh_watches"):
+        response = admin_client.patch(
+            f"/api/libraries/{library.id}",
+            json={
+                "parse_reading_lists": False,
+                "parse_collections": False,
+                "parse_story_arcs": False,
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["parse_reading_lists"] is False
+    assert payload["parse_collections"] is False
+    assert payload["parse_story_arcs"] is False
+
+    db.refresh(comic)
+    assert comic.alternate_series is None
+    assert comic.alternate_number is None
+    assert comic.series_group is None
+    assert comic.story_arc is None
+
+    assert db.query(ReadingListItem).filter(ReadingListItem.comic_id == comic.id).count() == 0
+    assert db.query(CollectionItem).filter(CollectionItem.comic_id == comic.id).count() == 0
+    assert db.query(ReadingList).filter(ReadingList.name == "Event Alpha").count() == 0
+    assert db.query(Collection).filter(Collection.name == "Group Alpha").count() == 0
 
 
 def test_update_library_rejects_duplicate_name(admin_client, db):
@@ -468,5 +553,9 @@ def test_create_library_with_watch_mode_refreshes_watcher(admin_client):
         )
 
     assert response.status_code == 200
-    assert response.json()["watch_mode"] is True
+    payload = response.json()
+    assert payload["watch_mode"] is True
+    assert payload["parse_reading_lists"] is True
+    assert payload["parse_collections"] is True
+    assert payload["parse_story_arcs"] is True
     mock_refresh.assert_called_once()

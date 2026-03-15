@@ -10,6 +10,8 @@ from app.models.comic import Comic, Volume
 from app.models.reading_progress import ReadingProgress
 from app.services.scan_manager import scan_manager
 from app.services.watcher import library_watcher
+from app.services.reading_list import ReadingListService
+from app.services.collection import CollectionService
 from app.api.deps import PaginationParams, PaginatedResponse, SessionDep, CurrentUser, AdminUser, LibraryDep
 
 router = APIRouter()
@@ -24,6 +26,54 @@ def _has_library_access(library_id: int, current_user: CurrentUser) -> bool:
         return False
 
     return True
+
+
+def _library_comic_ids_query(db: SessionDep, library_id: int):
+    return (
+        db.query(Comic.id)
+        .join(Volume, Comic.volume_id == Volume.id)
+        .join(Series, Volume.series_id == Series.id)
+        .filter(Series.library_id == library_id)
+    )
+
+
+def _clear_library_reading_list_metadata(db: SessionDep, library_id: int):
+    comic_ids_query = _library_comic_ids_query(db, library_id)
+    db.query(Comic).filter(Comic.id.in_(comic_ids_query)).update(
+        {
+            Comic.alternate_series: None,
+            Comic.alternate_number: None,
+        },
+        synchronize_session=False,
+    )
+
+    reading_list_service = ReadingListService(db)
+    reading_list_service.remove_library_comics_from_all_lists(library_id)
+    reading_list_service.cleanup_empty_lists()
+
+
+def _clear_library_collection_metadata(db: SessionDep, library_id: int):
+    comic_ids_query = _library_comic_ids_query(db, library_id)
+    db.query(Comic).filter(Comic.id.in_(comic_ids_query)).update(
+        {
+            Comic.series_group: None,
+        },
+        synchronize_session=False,
+    )
+
+    collection_service = CollectionService(db)
+    collection_service.remove_library_comics_from_all_collections(library_id)
+    collection_service.cleanup_empty_collections()
+
+
+def _clear_library_story_arc_metadata(db: SessionDep, library_id: int):
+    comic_ids_query = _library_comic_ids_query(db, library_id)
+    db.query(Comic).filter(Comic.id.in_(comic_ids_query)).update(
+        {
+            Comic.story_arc: None,
+        },
+        synchronize_session=False,
+    )
 
 
 @router.get("/", name="list")
@@ -89,6 +139,9 @@ async def list_libraries(db: SessionDep,
             "path": lib.path,
             "scan_on_startup": lib.scan_on_startup,
             "watch_mode": lib.watch_mode,
+            "parse_reading_lists": lib.parse_reading_lists,
+            "parse_collections": lib.parse_collections,
+            "parse_story_arcs": lib.parse_story_arcs,
             "last_scanned": lib.last_scanned,
             "is_scanning": lib.is_scanning,
             "created_at": lib.created_at,
@@ -276,6 +329,9 @@ class LibraryCreate(BaseModel):
     name: str
     path: str
     watch_mode: bool = False
+    parse_reading_lists: bool = True
+    parse_collections: bool = True
+    parse_story_arcs: bool = True
 
 @router.post("/", tags=["admin"], name="create")
 async def create_library(lib_in: LibraryCreate,
@@ -288,7 +344,14 @@ async def create_library(lib_in: LibraryCreate,
     if existing:
         raise HTTPException(status_code=400, detail="Library name already exists")
 
-    library = Library(name=lib_in.name, path=lib_in.path, watch_mode=lib_in.watch_mode)
+    library = Library(
+        name=lib_in.name,
+        path=lib_in.path,
+        watch_mode=lib_in.watch_mode,
+        parse_reading_lists=lib_in.parse_reading_lists,
+        parse_collections=lib_in.parse_collections,
+        parse_story_arcs=lib_in.parse_story_arcs,
+    )
 
     db.add(library)
     db.commit()
@@ -305,6 +368,9 @@ class LibraryUpdate(BaseModel):
     name: Optional[str] = None
     path: Optional[str] = None
     watch_mode: Optional[bool] = None
+    parse_reading_lists: Optional[bool] = None
+    parse_collections: Optional[bool] = None
+    parse_story_arcs: Optional[bool] = None
 
 @router.patch("/{library_id}", tags=["admin"], name="update")
 async def update_library(
@@ -332,6 +398,26 @@ async def update_library(
 
     if updates.watch_mode is not None:
         library.watch_mode = updates.watch_mode
+
+    disable_reading_lists = updates.parse_reading_lists is False and library.parse_reading_lists
+    disable_collections = updates.parse_collections is False and library.parse_collections
+    disable_story_arcs = updates.parse_story_arcs is False and library.parse_story_arcs
+
+    if updates.parse_reading_lists is not None:
+        library.parse_reading_lists = updates.parse_reading_lists
+
+    if updates.parse_collections is not None:
+        library.parse_collections = updates.parse_collections
+
+    if updates.parse_story_arcs is not None:
+        library.parse_story_arcs = updates.parse_story_arcs
+
+    if disable_reading_lists:
+        _clear_library_reading_list_metadata(db, library.id)
+    if disable_collections:
+        _clear_library_collection_metadata(db, library.id)
+    if disable_story_arcs:
+        _clear_library_story_arc_metadata(db, library.id)
 
     db.commit()
     db.refresh(library)

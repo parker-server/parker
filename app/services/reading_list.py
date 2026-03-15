@@ -1,7 +1,7 @@
 import logging
 from sqlalchemy.orm import Session
 from typing import Optional, Dict
-from app.models import ReadingList, ReadingListItem, Comic
+from app.models import ReadingList, ReadingListItem, Comic, Volume, Series
 from app.services.enrichment import EnrichmentService
 
 class ReadingListService:
@@ -64,6 +64,17 @@ class ReadingListService:
             ReadingListItem.comic_id == comic_id
         ).delete()
         # No commit
+
+    def remove_library_comics_from_all_lists(self, library_id: int) -> int:
+        comic_ids_query = (
+            self.db.query(Comic.id)
+            .join(Volume, Comic.volume_id == Volume.id)
+            .join(Series, Volume.series_id == Series.id)
+            .filter(Series.library_id == library_id)
+        )
+        return self.db.query(ReadingListItem).filter(
+            ReadingListItem.comic_id.in_(comic_ids_query)
+        ).delete(synchronize_session=False)
 
     def update_comic_reading_lists(self, comic: Comic, alternate_series: Optional[str],
                                    alternate_number: Optional[str]):
