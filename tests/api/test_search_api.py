@@ -234,16 +234,32 @@ def test_quick_search_segments_and_scoping(auth_client, db, normal_user):
 
     assert [row["name"] for row in payload["series"]] == ["FindMe Safe Series"]
     assert [row["name"] for row in payload["collections"]] == ["FindMe Safe Collection"]
-
-    # Reading lists are intentionally global in this endpoint.
-    assert "FindMe Safe Reading List" in [row["name"] for row in payload["reading_lists"]]
-    assert "FindMe Banned Reading List" in [row["name"] for row in payload["reading_lists"]]
+    assert [row["name"] for row in payload["reading_lists"]] == ["FindMe Safe Reading List"]
 
     assert [row["name"] for row in payload["people"]] == ["FindMe Writer"]
     assert [row["name"] for row in payload["characters"]] == ["FindMe Hero"]
     assert [row["name"] for row in payload["teams"]] == ["FindMe Team"]
     assert [row["name"] for row in payload["locations"]] == ["FindMe City"]
     assert [row["name"] for row in payload["pull_lists"]] == ["FindMe Safe Pull"]
+
+
+def test_search_suggestions_and_quick_respect_library_metadata_toggles(auth_client, db, normal_user):
+    data = _seed_search_fixture(db, normal_user)
+    data["visible_lib"].parse_collections = False
+    data["visible_lib"].parse_reading_lists = False
+    db.commit()
+
+    collection_suggest = auth_client.get("/api/search/suggestions?field=collection&query=FindMe")
+    reading_list_suggest = auth_client.get("/api/search/suggestions?field=reading_list&query=FindMe")
+    quick = auth_client.get("/api/search/quick?q=FindMe")
+
+    assert collection_suggest.status_code == 200
+    assert reading_list_suggest.status_code == 200
+    assert quick.status_code == 200
+    assert collection_suggest.json() == []
+    assert reading_list_suggest.json() == []
+    assert quick.json()["collections"] == []
+    assert quick.json()["reading_lists"] == []
 
 
 def test_quick_search_validation_for_short_query(auth_client):

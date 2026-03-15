@@ -98,11 +98,14 @@ def _apply_metadata_batch(
         comic.publisher = metadata.get("publisher")
         comic.imprint = metadata.get("imprint")
         comic.format = metadata.get("format")
-        comic.series_group = metadata.get("series_group") if parse_collections else None
+        if parse_collections:
+            comic.series_group = metadata.get("series_group")
         comic.scan_information = metadata.get("scan_information")
-        comic.alternate_series = metadata.get("alternate_series") if parse_reading_lists else None
-        comic.alternate_number = metadata.get("alternate_number") if parse_reading_lists else None
-        comic.story_arc = metadata.get("story_arc") if parse_story_arcs else None
+        if parse_reading_lists:
+            comic.alternate_series = metadata.get("alternate_series")
+            comic.alternate_number = metadata.get("alternate_number")
+        if parse_story_arcs:
+            comic.story_arc = metadata.get("story_arc")
         comic.count = int(metadata.get("count")) if metadata.get("count") else None
         comic.metadata_json = json.dumps(metadata.get("raw_metadata", {}))
         comic.updated_at = updated_at
@@ -139,8 +142,6 @@ def _apply_metadata_batch(
                 metadata.get("alternate_series"),
                 metadata.get("alternate_number")
             )
-        else:
-            reading_list_service.remove_comic_from_all_lists(comic.id)
 
         # --- Collections ---
         if parse_collections:
@@ -148,8 +149,6 @@ def _apply_metadata_batch(
                 comic,
                 metadata.get("series_group")
             )
-        else:
-            collection_service.remove_comic_from_all_collections(comic.id)
 
         # --- Touch Parent Series (Timestamp bubbling) ---
         series.updated_at = updated_at

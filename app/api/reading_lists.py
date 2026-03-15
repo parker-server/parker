@@ -9,6 +9,7 @@ from app.core.comic_helpers import (get_aggregated_metadata,
                                     check_container_restriction)
 from app.models.comic import Comic, Volume
 from app.models.series import Series
+from app.models.library import Library
 from app.models.tags import Character, Team, Location
 from app.models.credits import Person, ComicCredit
 from app.models.reading_list import ReadingList, ReadingListItem
@@ -41,6 +42,8 @@ async def list_reading_lists(db: SessionDep,
         .join(Comic, item_alias.comic_id == Comic.id) \
         .join(Volume, Comic.volume_id == Volume.id) \
         .join(Series, Volume.series_id == Series.id) \
+        .join(Library, Series.library_id == Library.id) \
+        .where(Library.parse_reading_lists == True) \
         .where(item_alias.reading_list_id == ReadingList.id)
 
     # Apply RLS to the count
@@ -119,9 +122,9 @@ async def get_reading_list(list_id: int, db: SessionDep, current_user: CurrentUs
 
     # 1. Get comics (Ordered by Position) (Scoped)
     # Eager load relationships to prevent N+1
-    query = db.query(ReadingListItem).join(Comic).join(Volume).join(Series) \
+    query = db.query(ReadingListItem).join(Comic).join(Volume).join(Series).join(Library) \
         .options(joinedload(ReadingListItem.comic).joinedload(Comic.volume).joinedload(Volume.series)) \
-        .filter(ReadingListItem.reading_list_id == list_id)
+        .filter(ReadingListItem.reading_list_id == list_id, Library.parse_reading_lists == True)
 
     if allowed_ids is not None:
         query = query.filter(Series.library_id.in_(allowed_ids))

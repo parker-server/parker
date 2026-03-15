@@ -131,6 +131,34 @@ def test_list_reading_lists_applies_library_and_banned_filters(auth_client, db, 
     assert payload["items"][0]["name"] == "Visible Reading List"
 
 
+def test_list_reading_lists_hides_entries_when_library_parsing_disabled(admin_client, db):
+    library, _, volume = _create_series_graph(
+        db,
+        lib_name="reading-lists-parse-off-lib",
+        series_name="Reading Lists Parse Off Series",
+        prefix="reading-lists-parse-off",
+    )
+    library.parse_reading_lists = False
+
+    comic = _create_comic(
+        db,
+        volume_id=volume.id,
+        prefix="reading-lists-parse-off",
+        number="1",
+        year=2024,
+    )
+    reading_list = ReadingList(name="Parse Off Reading List", auto_generated=0)
+    db.add(reading_list)
+    db.flush()
+    db.add(ReadingListItem(reading_list_id=reading_list.id, comic_id=comic.id, position=1))
+    db.commit()
+
+    response = admin_client.get("/api/reading-lists/?page=1&size=10")
+
+    assert response.status_code == 200
+    assert response.json()["items"] == []
+
+
 def test_get_reading_list_success_returns_position_order_and_details(auth_client, db, normal_user):
     lib, _, vol = _create_series_graph(
         db,

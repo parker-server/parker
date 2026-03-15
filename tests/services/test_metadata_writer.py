@@ -248,11 +248,9 @@ def test_apply_metadata_batch_disables_optional_metadata_flows(db):
     credit_service = SimpleNamespace(add_credits_to_comic=MagicMock())
     reading_list_service = SimpleNamespace(
         update_comic_reading_lists=MagicMock(),
-        remove_comic_from_all_lists=MagicMock(),
     )
     collection_service = SimpleNamespace(
         update_comic_collections=MagicMock(),
-        remove_comic_from_all_collections=MagicMock(),
     )
 
     batch = [{
@@ -284,14 +282,12 @@ def test_apply_metadata_batch_disables_optional_metadata_flows(db):
     )
 
     db.refresh(comic)
-    assert comic.alternate_series is None
-    assert comic.alternate_number is None
-    assert comic.series_group is None
-    assert comic.story_arc is None
+    assert comic.alternate_series == "Old List"
+    assert comic.alternate_number == "1"
+    assert comic.series_group == "Old Group"
+    assert comic.story_arc == "Old Arc"
     reading_list_service.update_comic_reading_lists.assert_not_called()
     collection_service.update_comic_collections.assert_not_called()
-    reading_list_service.remove_comic_from_all_lists.assert_called_once_with(comic.id)
-    collection_service.remove_comic_from_all_collections.assert_called_once_with(comic.id)
 
 
 def test_metadata_writer_batches_and_emits_summary(monkeypatch, tmp_path):

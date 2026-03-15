@@ -103,6 +103,34 @@ def test_list_collections_applies_restrictions_and_poison_pill(auth_client, db, 
     assert payload["items"][0]["name"] == "Safe Collection"
 
 
+def test_list_collections_hides_entries_when_library_parsing_disabled(admin_client, db):
+    library, _, volume = _create_series_graph(
+        db,
+        lib_name="collections-parse-off-lib",
+        series_name="Collections Parse Off Series",
+        prefix="collections-parse-off",
+    )
+    library.parse_collections = False
+
+    comic = _create_comic(
+        db,
+        volume_id=volume.id,
+        prefix="collections-parse-off",
+        number="1",
+        year=2024,
+    )
+    collection = Collection(name="Parse Off Collection", auto_generated=0)
+    db.add(collection)
+    db.flush()
+    db.add(CollectionItem(collection_id=collection.id, comic_id=comic.id))
+    db.commit()
+
+    response = admin_client.get("/api/collections/?page=1&size=10")
+
+    assert response.status_code == 200
+    assert response.json()["items"] == []
+
+
 def test_get_collection_success_returns_sorted_comics_and_details(auth_client, db, normal_user):
     lib, _, vol = _create_series_graph(
         db,

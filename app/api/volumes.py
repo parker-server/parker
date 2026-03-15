@@ -96,26 +96,28 @@ async def get_volume_detail(volume: VolumeDep, db: SessionDep, current_user: Cur
     # Story Arc Aggregation (Scoped to Volume)
     # 1. Fetch all issues in this volume that have a story_arc defined
     # 2. Sort by Number so we can identify the "First Issue" of the arc
-    arc_rows = db.query(Comic.id, Comic.story_arc, Comic.number) \
-        .filter(Comic.volume_id == volume.id) \
-        .filter(Comic.story_arc != None, Comic.story_arc != "") \
-        .order_by(func.cast(Comic.number, Float), Comic.number) \
-        .all()
+    story_arcs_data = []
+    if volume.series.library.parse_story_arcs:
+        arc_rows = db.query(Comic.id, Comic.story_arc, Comic.number) \
+            .filter(Comic.volume_id == volume.id) \
+            .filter(Comic.story_arc != None, Comic.story_arc != "") \
+            .order_by(func.cast(Comic.number, Float), Comic.number) \
+            .all()
 
-    # Group by Arc Name
-    story_arcs_map = {}
-    for row in arc_rows:
-        name = row.story_arc
-        if name not in story_arcs_map:
-            story_arcs_map[name] = {
-                "name": name,
-                "first_issue_id": row.id,  # First one encountered is the thumbnail/link
-                "count": 0
-            }
-        story_arcs_map[name]["count"] += 1
+        # Group by Arc Name
+        story_arcs_map = {}
+        for row in arc_rows:
+            name = row.story_arc
+            if name not in story_arcs_map:
+                story_arcs_map[name] = {
+                    "name": name,
+                    "first_issue_id": row.id,  # First one encountered is the thumbnail/link
+                    "count": 0
+                }
+            story_arcs_map[name]["count"] += 1
 
-    # Convert to list and sort alphabetically by Arc Name
-    story_arcs_data = sorted(story_arcs_map.values(), key=lambda x: x['name'])
+        # Convert to list and sort alphabetically by Arc Name
+        story_arcs_data = sorted(story_arcs_map.values(), key=lambda x: x['name'])
 
 
     # 2. Find Cover (Plain issues priority)

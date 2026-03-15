@@ -226,6 +226,7 @@ function libraryManager() {
                 });
 
                 if (res.ok) {
+                    const body = await res.json();
                     this.showModal = false;
                     this.loadLibraries();
                     this.form = {
@@ -238,6 +239,16 @@ function libraryManager() {
                         parse_story_arcs: true,
                     };
                     window.parker.showToast("Library saved", 'success');
+
+                    const rehydration = body?.rehydration;
+                    if (rehydration?.force_scan_recommended) {
+                        window.parker.showToast(
+                            "Some cached metadata is missing. Run a force scan to fully repopulate metadata.",
+                            "warning"
+                        );
+                    } else if (rehydration) {
+                        window.parker.showToast("Metadata restored from cached scan data.", "info");
+                    }
                 } else {
                     const err = await res.json();
                     await window.parker.dialog.alert('Error', (err.detail || 'Operation Failed'));

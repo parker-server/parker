@@ -15,6 +15,8 @@ from app.api.deps import PaginationParams, PaginatedResponse
 # Import related models
 from app.models.comic import Comic, Volume
 from app.models.series import Series
+from app.models.series import Series as SeriesModel
+from app.models.library import Library
 from app.models.collection import Collection, CollectionItem
 from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.credits import Person, ComicCredit
@@ -190,29 +192,45 @@ async def get_series_detail(series: SeriesDep, db: SessionDep, current_user: Cur
     is_standalone = (stats.plain_count == 0 and (stats.annual_count > 0 or stats.special_count > 0))
 
     # 3. Story Arcs
-    arc_issues = db.query(Comic.id, Comic.story_arc, Comic.number) \
-        .join(Volume) \
-        .filter(Comic.volume_id.in_(volume_ids)) \
-        .filter(Comic.story_arc != None, Comic.story_arc != "") \
-        .order_by(Volume.volume_number, func.cast(Comic.number, Float), Comic.number) \
-        .all()
+    story_arcs_data = []
+    if series.library.parse_story_arcs:
+        arc_issues = db.query(Comic.id, Comic.story_arc, Comic.number) \
+            .join(Volume) \
+            .filter(Comic.volume_id.in_(volume_ids)) \
+            .filter(Comic.story_arc != None, Comic.story_arc != "") \
+            .order_by(Volume.volume_number, func.cast(Comic.number, Float), Comic.number) \
+            .all()
 
-    # Process in Python
-    # Since we sorted via SQL, the first time we encounter an Arc, it is the first issue.
-    story_arcs_map = {}
+        # Process in Python
+        # Since we sorted via SQL, the first time we encounter an Arc, it is the first issue.
+        story_arcs_map = {}
 
-    for row in arc_issues:
-        if row.story_arc not in story_arcs_map:
-            story_arcs_map[row.story_arc] = {"name": row.story_arc, "first_issue_id": row.id, "count": 0}
-        story_arcs_map[row.story_arc]["count"] += 1
-    story_arcs_data = sorted(story_arcs_map.values(), key=lambda x: x['name'])
+        for row in arc_issues:
+            if row.story_arc not in story_arcs_map:
+                story_arcs_map[row.story_arc] = {"name": row.story_arc, "first_issue_id": row.id, "count": 0}
+            story_arcs_map[row.story_arc]["count"] += 1
+        story_arcs_data = sorted(story_arcs_map.values(), key=lambda x: x['name'])
 
     # 4. Related Content (Lightweight)
-    related_collections_query = db.query(Collection).join(CollectionItem).join(Comic).filter(
-        Comic.volume_id.in_(volume_ids))
+    related_collections_query = (
+        db.query(Collection)
+        .join(CollectionItem)
+        .join(Comic)
+        .join(Volume, Comic.volume_id == Volume.id)
+        .join(SeriesModel, Volume.series_id == SeriesModel.id)
+        .join(Library, SeriesModel.library_id == Library.id)
+        .filter(Comic.volume_id.in_(volume_ids), Library.parse_collections == True)
+    )
 
-    related_reading_lists_query = db.query(ReadingList).join(ReadingListItem).join(Comic).filter(
-        Comic.volume_id.in_(volume_ids))
+    related_reading_lists_query = (
+        db.query(ReadingList)
+        .join(ReadingListItem)
+        .join(Comic)
+        .join(Volume, Comic.volume_id == Volume.id)
+        .join(SeriesModel, Volume.series_id == SeriesModel.id)
+        .join(Library, SeriesModel.library_id == Library.id)
+        .filter(Comic.volume_id.in_(volume_ids), Library.parse_reading_lists == True)
+    )
 
     # --- AGE RATING FILTER (Poison Pill) ---
     banned_condition = get_banned_comic_condition(current_user)

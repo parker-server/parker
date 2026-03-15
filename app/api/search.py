@@ -27,6 +27,26 @@ def _apply_security_scopes(query: SqlQuery, model, user: CurrentUser, allowed_id
     Applies both Library RLS and Age Rating restrictions dynamically. (non admins)
     """
 
+    # Apply metadata visibility toggles for container models (applies to all users)
+    if model == Collection:
+        query = (
+            query.join(CollectionItem)
+            .join(Comic)
+            .join(Volume)
+            .join(Series)
+            .join(Library)
+            .filter(Library.parse_collections == True)
+        )
+    elif model == ReadingList:
+        query = (
+            query.join(ReadingListItem)
+            .join(Comic)
+            .join(Volume)
+            .join(Series)
+            .join(Library)
+            .filter(Library.parse_reading_lists == True)
+        )
+
     if user.is_superuser:
         return query
 
@@ -57,14 +77,12 @@ def _apply_security_scopes(query: SqlQuery, model, user: CurrentUser, allowed_id
 
         # 5. Containers (Collection/ReadingList)
         elif model == Collection:
-            query = query.join(CollectionItem).join(Comic).join(Volume).join(Series).filter(
-                Series.library_id.in_(allowed_ids))
+            query = query.filter(Series.library_id.in_(allowed_ids))
 
         # Reading List Logic
         # Only show lists where the user can see at least one book.
         elif model == ReadingList:
-            query = query.join(ReadingListItem).join(Comic).join(Volume).join(Series).filter(
-                Series.library_id.in_(allowed_ids))
+            query = query.filter(Series.library_id.in_(allowed_ids))
 
     # 2. Apply Age Restrictions
     if user.max_age_rating:
@@ -223,8 +241,8 @@ async def quick_search(
     collections_objs = get_scoped_results(Collection, Collection.name)
     results["collections"] = [{"id": c.id, "name": c.name} for c in collections_objs]
 
-    # 3. Reading Lists (Global for now, or scope if strict RLS needed)
-    lists_objs = db.query(ReadingList).filter(ReadingList.name.ilike(q_str)).limit(limit).all()
+    # 3. Reading Lists
+    lists_objs = get_scoped_results(ReadingList, ReadingList.name)
     results["reading_lists"] = [{"id": l.id, "name": l.name} for l in lists_objs]
 
     # 4. People (Creators)
