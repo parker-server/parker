@@ -246,17 +246,30 @@ class SearchService:
     @staticmethod
     def _build_collection_condition(operator: str, value):
         """Build condition for collections"""
+        is_collection_metadata_enabled = Comic.volume.has(
+            Volume.series.has(Series.library.has(Library.parse_collections == True))
+        )
+
         if operator == 'equal':
-            return Comic.collection_items.any(
-                CollectionItem.collection.has(Collection.name == value)
+            return and_(
+                is_collection_metadata_enabled,
+                Comic.collection_items.any(
+                    CollectionItem.collection.has(Collection.name == value)
+                ),
             )
         elif operator == 'contains':
             if isinstance(value, list):
-                return Comic.collection_items.any(
-                    CollectionItem.collection.has(Collection.name.in_(value))
+                return and_(
+                    is_collection_metadata_enabled,
+                    Comic.collection_items.any(
+                        CollectionItem.collection.has(Collection.name.in_(value))
+                    ),
                 )
-            return Comic.collection_items.any(
-                CollectionItem.collection.has(Collection.name.ilike(f"%{value}%"))
+            return and_(
+                is_collection_metadata_enabled,
+                Comic.collection_items.any(
+                    CollectionItem.collection.has(Collection.name.ilike(f"%{value}%"))
+                ),
             )
 
         return None
@@ -264,17 +277,30 @@ class SearchService:
     @staticmethod
     def _build_reading_list_condition(operator: str, value):
         """Build condition for reading lists"""
+        is_reading_list_metadata_enabled = Comic.volume.has(
+            Volume.series.has(Series.library.has(Library.parse_reading_lists == True))
+        )
+
         if operator == 'equal':
-            return Comic.reading_list_items.any(
-                ReadingListItem.reading_list.has(ReadingList.name == value)
+            return and_(
+                is_reading_list_metadata_enabled,
+                Comic.reading_list_items.any(
+                    ReadingListItem.reading_list.has(ReadingList.name == value)
+                ),
             )
         elif operator == 'contains':
             if isinstance(value, list):
-                return Comic.reading_list_items.any(
-                    ReadingListItem.reading_list.has(ReadingList.name.in_(value))
+                return and_(
+                    is_reading_list_metadata_enabled,
+                    Comic.reading_list_items.any(
+                        ReadingListItem.reading_list.has(ReadingList.name.in_(value))
+                    ),
                 )
-            return Comic.reading_list_items.any(
-                ReadingListItem.reading_list.has(ReadingList.name.ilike(f"%{value}%"))
+            return and_(
+                is_reading_list_metadata_enabled,
+                Comic.reading_list_items.any(
+                    ReadingListItem.reading_list.has(ReadingList.name.ilike(f"%{value}%"))
+                ),
             )
 
         return None
@@ -304,9 +330,19 @@ class SearchService:
         elif field == 'location':
             return ~Comic.locations.any() if is_empty else Comic.locations.any()
         elif field == 'collection':
-            return ~Comic.collection_items.any() if is_empty else Comic.collection_items.any()
+            is_collection_metadata_enabled = Comic.volume.has(
+                Volume.series.has(Series.library.has(Library.parse_collections == True))
+            )
+            if is_empty:
+                return or_(~is_collection_metadata_enabled, ~Comic.collection_items.any())
+            return and_(is_collection_metadata_enabled, Comic.collection_items.any())
         elif field == 'reading_list':
-            return ~Comic.reading_list_items.any() if is_empty else Comic.reading_list_items.any()
+            is_reading_list_metadata_enabled = Comic.volume.has(
+                Volume.series.has(Series.library.has(Library.parse_reading_lists == True))
+            )
+            if is_empty:
+                return or_(~is_reading_list_metadata_enabled, ~Comic.reading_list_items.any())
+            return and_(is_reading_list_metadata_enabled, Comic.reading_list_items.any())
         elif field in ['writer', 'penciller', 'inker', 'colorist', 'letterer', 'cover_artist', 'editor']:
             if is_empty:
                 return ~Comic.credits.any(ComicCredit.role == field)

@@ -6,6 +6,7 @@ from typing import List, Annotated
 from app.core.comic_helpers import (get_aggregated_metadata, get_series_age_restriction, get_thumbnail_url,
                                     get_banned_comic_condition, check_container_restriction)
 from app.api.deps import SessionDep, CurrentUser, AdminUser, PaginationParams, PaginatedResponse
+from app.models.library import Library
 from app.models.collection import Collection, CollectionItem
 from app.models.comic import Comic, Volume
 from app.models.series import Series
@@ -37,6 +38,8 @@ async def list_collections(current_user: CurrentUser,
         .join(Comic, item_alias.comic_id == Comic.id) \
         .join(Volume, Comic.volume_id == Volume.id) \
         .join(Series, Volume.series_id == Series.id) \
+        .join(Library, Series.library_id == Library.id) \
+        .where(Library.parse_collections == True) \
         .where(item_alias.collection_id == Collection.id)
 
     if not is_superuser:
@@ -123,9 +126,9 @@ async def get_collection(current_user: CurrentUser,
 
     # 1. Get Comics (Sorted Chronologically) (Scoped)
     # Sort: Year -> Series Name -> Issue Number
-    query = db.query(CollectionItem).join(Comic).join(Volume).join(Series) \
+    query = db.query(CollectionItem).join(Comic).join(Volume).join(Series).join(Library) \
         .options(joinedload(CollectionItem.comic).joinedload(Comic.volume).joinedload(Volume.series)) \
-        .filter(CollectionItem.collection_id == collection_id)
+        .filter(CollectionItem.collection_id == collection_id, Library.parse_collections == True)
 
     # Apply library scope Filter
     if allowed_ids is not None:

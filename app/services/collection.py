@@ -2,7 +2,7 @@ import logging
 from sqlalchemy.orm import Session
 from typing import Optional, Dict
 
-from app.models import Collection, CollectionItem, Comic
+from app.models import Collection, CollectionItem, Comic, Volume, Series
 
 class CollectionService:
     def __init__(self, db: Session):
@@ -49,6 +49,17 @@ class CollectionService:
             CollectionItem.comic_id == comic_id
         ).delete()
         # No commit
+
+    def remove_library_comics_from_all_collections(self, library_id: int) -> int:
+        comic_ids_query = (
+            self.db.query(Comic.id)
+            .join(Volume, Comic.volume_id == Volume.id)
+            .join(Series, Volume.series_id == Series.id)
+            .filter(Series.library_id == library_id)
+        )
+        return self.db.query(CollectionItem).filter(
+            CollectionItem.comic_id.in_(comic_ids_query)
+        ).delete(synchronize_session=False)
 
     def update_comic_collections(self, comic: Comic, series_group: Optional[str]):
         self.remove_comic_from_all_collections(comic.id)

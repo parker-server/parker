@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Annotated, Optional
 from pydantic import BaseModel
 from sqlalchemy import func, case
+import logging
 
 from app.core.comic_helpers import get_thumbnail_url, NON_PLAIN_FORMATS, REVERSE_NUMBERING_SERIES, get_series_age_restriction
 from app.models.library import Library
@@ -13,6 +14,7 @@ from app.services.watcher import library_watcher
 from app.api.deps import PaginationParams, PaginatedResponse, SessionDep, CurrentUser, AdminUser, LibraryDep
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 def _has_library_access(library_id: int, current_user: CurrentUser) -> bool:
 
@@ -89,6 +91,9 @@ async def list_libraries(db: SessionDep,
             "path": lib.path,
             "scan_on_startup": lib.scan_on_startup,
             "watch_mode": lib.watch_mode,
+            "parse_reading_lists": lib.parse_reading_lists,
+            "parse_collections": lib.parse_collections,
+            "parse_story_arcs": lib.parse_story_arcs,
             "last_scanned": lib.last_scanned,
             "is_scanning": lib.is_scanning,
             "created_at": lib.created_at,
@@ -276,6 +281,9 @@ class LibraryCreate(BaseModel):
     name: str
     path: str
     watch_mode: bool = False
+    parse_reading_lists: bool = True
+    parse_collections: bool = True
+    parse_story_arcs: bool = True
 
 @router.post("/", tags=["admin"], name="create")
 async def create_library(lib_in: LibraryCreate,
@@ -288,7 +296,14 @@ async def create_library(lib_in: LibraryCreate,
     if existing:
         raise HTTPException(status_code=400, detail="Library name already exists")
 
-    library = Library(name=lib_in.name, path=lib_in.path, watch_mode=lib_in.watch_mode)
+    library = Library(
+        name=lib_in.name,
+        path=lib_in.path,
+        watch_mode=lib_in.watch_mode,
+        parse_reading_lists=lib_in.parse_reading_lists,
+        parse_collections=lib_in.parse_collections,
+        parse_story_arcs=lib_in.parse_story_arcs,
+    )
 
     db.add(library)
     db.commit()
@@ -305,6 +320,9 @@ class LibraryUpdate(BaseModel):
     name: Optional[str] = None
     path: Optional[str] = None
     watch_mode: Optional[bool] = None
+    parse_reading_lists: Optional[bool] = None
+    parse_collections: Optional[bool] = None
+    parse_story_arcs: Optional[bool] = None
 
 @router.patch("/{library_id}", tags=["admin"], name="update")
 async def update_library(
@@ -333,13 +351,51 @@ async def update_library(
     if updates.watch_mode is not None:
         library.watch_mode = updates.watch_mode
 
+    enable_reading_lists = updates.parse_reading_lists is True and not library.parse_reading_lists
+    enable_collections = updates.parse_collections is True and not library.parse_collections
+    enable_story_arcs = updates.parse_story_arcs is True and not library.parse_story_arcs
+
+    if updates.parse_reading_lists is not None:
+        library.parse_reading_lists = updates.parse_reading_lists
+
+    if updates.parse_collections is not None:
+        library.parse_collections = updates.parse_collections
+
+    if updates.parse_story_arcs is not None:
+        library.parse_story_arcs = updates.parse_story_arcs
+
     db.commit()
     db.refresh(library)
+
+    rehydration_result = None
+    if enable_reading_lists or enable_collections or enable_story_arcs:
+        try:
+            rehydration_result = scan_manager.add_metadata_rehydrate_task(library.id)
+        except Exception as exc:
+            logger.error("Failed to queue metadata rehydrate for library %s: %s", library.id, exc)
+            rehydration_result = {"status": "failed", "message": "Failed to queue metadata rehydrate"}
 
     # Notify Watcher (Always refresh, covering both Enable and Disable cases)
     library_watcher.refresh_watches()
 
-    return library
+    response = {
+        "id": library.id,
+        "name": library.name,
+        "path": library.path,
+        "scan_on_startup": library.scan_on_startup,
+        "watch_mode": library.watch_mode,
+        "parse_reading_lists": library.parse_reading_lists,
+        "parse_collections": library.parse_collections,
+        "parse_story_arcs": library.parse_story_arcs,
+        "last_scanned": library.last_scanned,
+        "is_scanning": library.is_scanning,
+        "created_at": library.created_at,
+    }
+
+    if rehydration_result is not None:
+        response["rehydration"] = rehydration_result
+
+    return response
 
 @router.delete("/{library_id}", tags=["admin"], name="delete")
 async def delete_library(library_id: int,

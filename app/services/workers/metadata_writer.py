@@ -7,7 +7,10 @@ def _apply_metadata_batch(
     tag_service,
     credit_service,
     reading_list_service,
-    collection_service
+    collection_service,
+    parse_reading_lists=True,
+    parse_collections=True,
+    parse_story_arcs=True,
 ):
 
     from pathlib import Path
@@ -95,11 +98,14 @@ def _apply_metadata_batch(
         comic.publisher = metadata.get("publisher")
         comic.imprint = metadata.get("imprint")
         comic.format = metadata.get("format")
-        comic.series_group = metadata.get("series_group")
+        if parse_collections:
+            comic.series_group = metadata.get("series_group")
         comic.scan_information = metadata.get("scan_information")
-        comic.alternate_series = metadata.get("alternate_series")
-        comic.alternate_number = metadata.get("alternate_number")
-        comic.story_arc = metadata.get("story_arc")
+        if parse_reading_lists:
+            comic.alternate_series = metadata.get("alternate_series")
+            comic.alternate_number = metadata.get("alternate_number")
+        if parse_story_arcs:
+            comic.story_arc = metadata.get("story_arc")
         comic.count = int(metadata.get("count")) if metadata.get("count") else None
         comic.metadata_json = json.dumps(metadata.get("raw_metadata", {}))
         comic.updated_at = updated_at
@@ -130,17 +136,19 @@ def _apply_metadata_batch(
             comic.genres = tag_service.get_or_create_genres(metadata["genre"])
 
         # --- Reading Lists ---
-        reading_list_service.update_comic_reading_lists(
-            comic,
-            metadata.get("alternate_series"),
-            metadata.get("alternate_number")
-        )
+        if parse_reading_lists:
+            reading_list_service.update_comic_reading_lists(
+                comic,
+                metadata.get("alternate_series"),
+                metadata.get("alternate_number")
+            )
 
         # --- Collections ---
-        collection_service.update_comic_collections(
-            comic,
-            metadata.get("series_group")
-        )
+        if parse_collections:
+            collection_service.update_comic_collections(
+                comic,
+                metadata.get("series_group")
+            )
 
         # --- Touch Parent Series (Timestamp bubbling) ---
         series.updated_at = updated_at
@@ -169,7 +177,15 @@ def _apply_metadata_batch(
         "error_details": error_details
     }
 
-def metadata_writer(queue, stats_queue, library_id, batch_size=50):
+def metadata_writer(
+    queue,
+    stats_queue,
+    library_id,
+    batch_size=50,
+    parse_reading_lists=True,
+    parse_collections=True,
+    parse_story_arcs=True,
+):
 
     try:
 
@@ -281,7 +297,10 @@ def metadata_writer(queue, stats_queue, library_id, batch_size=50):
                     db, batch, existing,
                     get_or_create_series, get_or_create_volume,
                     tag_service, credit_service,
-                    reading_list_service, collection_service
+                    reading_list_service, collection_service,
+                    parse_reading_lists=parse_reading_lists,
+                    parse_collections=parse_collections,
+                    parse_story_arcs=parse_story_arcs,
                 )
                 for key in ("imported", "updated", "errors", "skipped"):
                     processed[key] += stats.get(key, 0)
@@ -295,7 +314,10 @@ def metadata_writer(queue, stats_queue, library_id, batch_size=50):
             stats = _apply_metadata_batch(db, batch, existing,
                     get_or_create_series, get_or_create_volume,
                     tag_service, credit_service,
-                    reading_list_service, collection_service
+                    reading_list_service, collection_service,
+                    parse_reading_lists=parse_reading_lists,
+                    parse_collections=parse_collections,
+                    parse_story_arcs=parse_story_arcs,
             )
             for key in ("imported", "updated", "errors", "skipped"):
                 processed[key] += stats.get(key, 0)

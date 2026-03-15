@@ -372,6 +372,24 @@ def test_series_detail_returns_enriched_payload(auth_client, db, normal_user):
     assert by_vol[data["vol2"].id]["read"] is False
 
 
+def test_series_detail_hides_story_arcs_and_related_containers_when_parsing_disabled(auth_client, db, normal_user):
+    data = _create_series_detail_fixture(db)
+    data["library"].parse_story_arcs = False
+    data["library"].parse_collections = False
+    data["library"].parse_reading_lists = False
+
+    normal_user.accessible_libraries.append(data["library"])
+    db.commit()
+
+    response = auth_client.get(f"/api/series/{data['series'].id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["story_arcs"] == []
+    assert payload["collections"] == []
+    assert payload["reading_lists"] == []
+
+
 def test_series_detail_returns_empty_structure_when_no_volumes(auth_client, db, normal_user):
     library = Library(name="empty-series-lib", path="/tmp/empty-series-lib")
     series = Series(name="Empty Series", library=library)

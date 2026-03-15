@@ -12,6 +12,9 @@ class Library(Base):
     path = Column(String, nullable=False)
     scan_on_startup = Column(Boolean, default=False)
     watch_mode = Column(Boolean, default=False)  # Real-time watching
+    parse_reading_lists = Column(Boolean, default=True, nullable=False)
+    parse_collections = Column(Boolean, default=True, nullable=False)
+    parse_story_arcs = Column(Boolean, default=True, nullable=False)
 
     last_scanned = Column(DateTime, nullable=True)
     is_scanning = Column(Boolean, default=False)

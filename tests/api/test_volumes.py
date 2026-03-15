@@ -264,6 +264,33 @@ def test_volume_detail_reports_missing_zero_index_and_metadata(auth_client, db, 
     assert payload["is_reverse_numbering"] is False
 
 
+def test_volume_detail_hides_story_arcs_when_parsing_disabled(auth_client, db, normal_user):
+    library = Library(name="vol-story-parse-off-lib", path="/tmp/vol-story-parse-off-lib", parse_story_arcs=False)
+    series = Series(name="Volume Story Off", library=library)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([library, series, volume])
+    db.flush()
+
+    db.add(
+        Comic(
+            volume_id=volume.id,
+            number="1",
+            title="Story Arc Off",
+            story_arc="Hidden Arc",
+            filename="story-off.cbz",
+            file_path="/tmp/story-off.cbz",
+        )
+    )
+
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    response = auth_client.get(f"/api/volumes/{volume.id}")
+
+    assert response.status_code == 200
+    assert response.json()["story_arcs"] == []
+
+
 def test_volume_detail_marks_standalone_without_plain_issues(auth_client, db, normal_user):
     library = Library(name="vol-standalone-lib", path="/tmp/vol-standalone-lib")
     series = Series(name="Standalone Volume", library=library)

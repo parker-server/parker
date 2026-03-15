@@ -8,6 +8,7 @@ class JobType(str, enum.Enum):
     SCAN = "scan"
     THUMBNAIL = "thumbnail"
     CLEANUP = "cleanup"
+    METADATA_REHYDRATE = "metadata_rehydrate"
 
 class JobStatus(str, enum.Enum):
     PENDING = "pending"

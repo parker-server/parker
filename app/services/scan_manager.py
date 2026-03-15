@@ -15,6 +15,7 @@ from app.models.job import JobType, JobStatus
 from app.services.scanner import LibraryScanner
 from app.services.maintenance import MaintenanceService
 from app.services.thumbnailer import ThumbnailService
+from app.services.metadata import rehydrate_library_metadata_from_cache
 
 
 class ScanManager:
@@ -145,6 +146,34 @@ class ScanManager:
         finally:
             db.close()
 
+    def add_metadata_rehydrate_task(self, library_id: int) -> dict:
+        """Queue a metadata rehydrate job for a library."""
+        self.logger.debug(f"Adding METADATA_REHYDRATE job for library {library_id} to queue")
+
+        db = SessionLocal()
+        try:
+            existing = db.query(ScanJob).filter(
+                ScanJob.library_id == library_id,
+                ScanJob.job_type == JobType.METADATA_REHYDRATE,
+                ScanJob.status.in_([JobStatus.PENDING, JobStatus.RUNNING])
+            ).first()
+
+            if existing:
+                return {"status": "ignored", "job_id": existing.id, "message": "Metadata rehydrate active"}
+
+            job = ScanJob(
+                library_id=library_id,
+                job_type=JobType.METADATA_REHYDRATE,
+                status=JobStatus.PENDING
+            )
+            db.add(job)
+            db.commit()
+            db.refresh(job)
+
+            return {"status": "queued", "job_id": job.id, "message": "Metadata rehydrate queued"}
+        finally:
+            db.close()
+
     def _process_queue(self):
         """Poller loop"""
         self.logger.info("Database Job Worker Started")
@@ -153,7 +182,7 @@ class ScanManager:
         while not self._stop_event.is_set():
             db = SessionLocal()
             try:
-                # Priority: SCAN -> THUMBNAIL -> CLEANUP
+                # Priority: SCAN -> THUMBNAIL -> CLEANUP -> METADATA_REHYDRATE
                 job = db.query(ScanJob).filter(
                     ScanJob.status == JobStatus.PENDING,
                     ScanJob.job_type == JobType.SCAN
@@ -169,6 +198,12 @@ class ScanManager:
                     job = db.query(ScanJob).filter(
                         ScanJob.status == JobStatus.PENDING,
                         ScanJob.job_type == JobType.CLEANUP
+                    ).order_by(asc(ScanJob.created_at)).first()
+
+                if not job:
+                    job = db.query(ScanJob).filter(
+                        ScanJob.status == JobStatus.PENDING,
+                        ScanJob.job_type == JobType.METADATA_REHYDRATE
                     ).order_by(asc(ScanJob.created_at)).first()
 
                 if job:
@@ -204,6 +239,8 @@ class ScanManager:
                         self._run_thumbnail_job(job_data)
                     elif job_data['type'] == JobType.CLEANUP:
                         self._run_cleanup_job(job_data)
+                    elif job_data['type'] == JobType.METADATA_REHYDRATE:
+                        self._run_metadata_rehydrate_job(job_data)
 
                 else:
                     db.close()
@@ -408,6 +445,42 @@ class ScanManager:
             self._safe_job_update(job_id, JobStatus.COMPLETED, summary=stats)
 
         # 3. Reset Flag (Final Step)
+        if library_id:
+            self._set_library_scanning_status(library_id, False)
+
+    def _run_metadata_rehydrate_job(self, job_data):
+        job_id = job_data['id']
+        library_id = job_data['library_id']
+
+        summary = {}
+        error = None
+
+        db_rehydrate = SessionLocal()
+        try:
+            library = db_rehydrate.get(Library, library_id)
+            if not library:
+                error = "Library not found"
+            else:
+                self.logger.info(f"Starting METADATA_REHYDRATE job {job_id}")
+                summary = rehydrate_library_metadata_from_cache(
+                    db=db_rehydrate,
+                    library_id=library_id,
+                    rehydrate_reading_lists=bool(getattr(library, "parse_reading_lists", True)),
+                    rehydrate_collections=bool(getattr(library, "parse_collections", True)),
+                    rehydrate_story_arcs=bool(getattr(library, "parse_story_arcs", True)),
+                )
+        except Exception as e:
+            error = str(e)
+            self.logger.error(f"Metadata rehydrate failed: {e}")
+            traceback.print_exc()
+        finally:
+            db_rehydrate.close()
+
+        if error:
+            self._safe_job_update(job_id, JobStatus.FAILED, error=error)
+        else:
+            self._safe_job_update(job_id, JobStatus.COMPLETED, summary=summary)
+
         if library_id:
             self._set_library_scanning_status(library_id, False)
 

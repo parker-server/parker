@@ -97,6 +97,35 @@
                         </div>
                     </label>
                 </div>
+                <div class="pt-2 border-t border-gray-700">
+                    <p class="text-sm text-gray-300 mb-2">Metadata Parsing</p>
+                    <div class="space-y-2">
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                x-model="form.parse_reading_lists"
+                                class="rounded bg-gray-900 border-gray-700 text-blue-600 focus:ring-blue-500 w-4 h-4"
+                            >
+                            <span class="text-sm text-gray-300">Reading Lists (AlternateSeries / AlternateNumber)</span>
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                x-model="form.parse_collections"
+                                class="rounded bg-gray-900 border-gray-700 text-blue-600 focus:ring-blue-500 w-4 h-4"
+                            >
+                            <span class="text-sm text-gray-300">Collections (SeriesGroup)</span>
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                x-model="form.parse_story_arcs"
+                                class="rounded bg-gray-900 border-gray-700 text-blue-600 focus:ring-blue-500 w-4 h-4"
+                            >
+                            <span class="text-sm text-gray-300">Story Arcs (StoryArc)</span>
+                        </label>
+                    </div>
+                </div>
 
                 <div class="flex justify-end gap-2 mt-6">
                     <button x-on:click="showModal = false" class="text-gray-400 hover:text-white px-4 py-2 transition-colors">Cancel</button>
@@ -116,7 +145,15 @@ function libraryManager() {
         libraries: [],
         showModal: false,
         isEditing: false,
-        form: { id: null, name: '', path: '', watch_mode: false },
+        form: {
+            id: null,
+            name: '',
+            path: '',
+            watch_mode: false,
+            parse_reading_lists: true,
+            parse_collections: true,
+            parse_story_arcs: true,
+        },
         pollInterval: null,
 
         init() {
@@ -141,13 +178,29 @@ function libraryManager() {
 
         openAddModal() {
             this.isEditing = false;
-            this.form = { id: null, name: '', path: '' };
+            this.form = {
+                id: null,
+                name: '',
+                path: '',
+                watch_mode: false,
+                parse_reading_lists: true,
+                parse_collections: true,
+                parse_story_arcs: true,
+            };
             this.showModal = true;
         },
 
         openEditModal(lib) {
             this.isEditing = true;
-            this.form = { id: lib.id, name: lib.name, path: lib.path, watch_mode: lib.watch_mode };
+            this.form = {
+                id: lib.id,
+                name: lib.name,
+                path: lib.path,
+                watch_mode: lib.watch_mode,
+                parse_reading_lists: lib.parse_reading_lists ?? true,
+                parse_collections: lib.parse_collections ?? true,
+                parse_story_arcs: lib.parse_story_arcs ?? true,
+            };
             this.showModal = true;
         },
 
@@ -160,6 +213,9 @@ function libraryManager() {
                 name: this.form.name,
                 path: this.form.path,
                 watch_mode: this.form.watch_mode,
+                parse_reading_lists: this.form.parse_reading_lists,
+                parse_collections: this.form.parse_collections,
+                parse_story_arcs: this.form.parse_story_arcs,
             };
 
             try {
@@ -170,10 +226,35 @@ function libraryManager() {
                 });
 
                 if (res.ok) {
+                    const body = await res.json();
                     this.showModal = false;
                     this.loadLibraries();
-                    this.form = { id: null, name: '', path: '' };
+                    this.form = {
+                        id: null,
+                        name: '',
+                        path: '',
+                        watch_mode: false,
+                        parse_reading_lists: true,
+                        parse_collections: true,
+                        parse_story_arcs: true,
+                    };
                     window.parker.showToast("Library saved", 'success');
+
+                    const rehydration = body?.rehydration;
+                    if (rehydration?.status === 'queued') {
+                        window.parker.showToast("Metadata rehydrate queued in background.", "info");
+                    } else if (rehydration?.status === 'ignored') {
+                        window.parker.showToast("Metadata rehydrate is already queued or running.", "info");
+                    } else if (rehydration?.status === 'failed') {
+                        window.parker.showToast("Library saved, but failed to queue metadata rehydrate.", "warning");
+                    } else if (rehydration?.force_scan_recommended) {
+                        window.parker.showToast(
+                            "Some cached metadata is missing. Run a force scan to fully repopulate metadata.",
+                            "warning"
+                        );
+                    } else if (rehydration) {
+                        window.parker.showToast("Metadata restored from cached scan data.", "info");
+                    }
                 } else {
                     const err = await res.json();
                     await window.parker.dialog.alert('Error', (err.detail || 'Operation Failed'));

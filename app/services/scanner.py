@@ -102,6 +102,9 @@ class LibraryScanner:
         self.db.commit()
 
         summary = {"imported": 0, "updated": 0, "errors": 0, "skipped": 0}
+        parse_reading_lists = bool(getattr(self.library, "parse_reading_lists", True))
+        parse_collections = bool(getattr(self.library, "parse_collections", True))
+        parse_story_arcs = bool(getattr(self.library, "parse_story_arcs", True))
 
         if tasks:
             result_queue = Queue()
@@ -111,7 +114,12 @@ class LibraryScanner:
             writer_proc = multiprocessing.Process(
                 target=metadata_writer,
                 args=(result_queue, stats_queue, self.library.id),
-                kwargs={"batch_size": 50}
+                kwargs={
+                    "batch_size": 50,
+                    "parse_reading_lists": parse_reading_lists,
+                    "parse_collections": parse_collections,
+                    "parse_story_arcs": parse_story_arcs,
+                }
             )
             writer_proc.start()
 
