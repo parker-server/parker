@@ -59,6 +59,14 @@ def test_user_dashboard_returns_expected_sections(auth_client, db, normal_user):
     assert len(payload["continue_reading"]) == 1
 
 
+def test_user_dashboard_page_shows_base_aware_opds_url(auth_client):
+    response = auth_client.get("/user/dashboard")
+
+    assert response.status_code == 200
+    assert "window.parker.url('/opds/')" in response.text
+    assert "/api/opds/" not in response.text
+
+
 def test_get_and_update_preferences(auth_client):
     initial = auth_client.get("/api/users/me/preferences")
     assert initial.status_code == 200

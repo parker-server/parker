@@ -617,7 +617,7 @@
                         <p class="text-sm text-gray-400">Connect your e-reader or comics app</p>
                         <input id="opds-input"
                                readonly
-                               :value="`${window.location.origin}/api/opds/`"
+                               :value="`${window.location.origin}${window.parker.url('/opds/')}`"
                                class="w-full text-xs bg-gray-900 text-gray-300 px-3 py-2 rounded border border-gray-700 font-mono cursor-pointer"
                                @click="$event.target.select()">
                         <button @click="copyToClipboard($event.target.previousElementSibling.value)"
