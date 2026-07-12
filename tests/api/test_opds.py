@@ -1,6 +1,10 @@
 import pytest
+import xml.etree.ElementTree as ET
 from app.services.settings_service import SettingsService
 from app.models.setting import SystemSetting
+from app.models.library import Library
+from app.models.series import Series
+from app.models.comic import Comic, Volume
 
 
 def test_opds_disabled_by_default(client, normal_user):
@@ -73,3 +77,90 @@ def test_opds_auth_flow(client, db, normal_user):
         assert "application/atom+xml" in response.headers["content-type"]
         assert "<feed" in response.text
         assert "Parker Library" in response.text
+
+
+def _enable_opds(db):
+    setting = db.query(SystemSetting).filter(SystemSetting.key == "server.opds_enabled").first()
+    if not setting:
+        setting = SystemSetting(
+            key="server.opds_enabled",
+            value="true",
+            category="server",
+            data_type="bool"
+        )
+        db.add(setting)
+    else:
+        setting.value = "true"
+    db.commit()
+
+
+def test_opds_library_feed_renders_series_entries(client, db, normal_user):
+    _enable_opds(db)
+
+    library = Library(name="OPDS Library", path="/tmp/opds-library")
+    series = Series(name="Alpha Flight", library=library, summary_override="Team book")
+    volume = Volume(series=series, volume_number=1)
+    comic = Comic(
+        volume=volume,
+        number="1",
+        title="First Issue",
+        filename="alpha-flight-001.cbz",
+        file_path="/tmp/alpha-flight-001.cbz",
+        updated_at=series.updated_at,
+    )
+    db.add_all([library, series, volume, comic])
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    from unittest.mock import patch
+
+    with patch("app.api.opds_deps.verify_password", return_value=True):
+        response = client.get(
+            f"/opds/libraries/{library.id}",
+            auth=(normal_user.username, "any_password")
+        )
+
+    assert response.status_code == 200
+    root = ET.fromstring(response.text)
+    ns = {"atom": "http://www.w3.org/2005/Atom"}
+    entries = root.findall("atom:entry", ns)
+    assert len(entries) == 1
+    assert entries[0].findtext("atom:title", namespaces=ns) == "Alpha Flight"
+    assert "Team book" in response.text
+
+
+def test_opds_series_feed_handles_missing_month_and_day(client, db, normal_user):
+    _enable_opds(db)
+
+    library = Library(name="Series Library", path="/tmp/opds-series-library")
+    series = Series(name="Beta Ray", library=library)
+    volume = Volume(series=series, volume_number=1)
+    comic = Comic(
+        volume=volume,
+        number="7",
+        title="Stormbreaker",
+        filename="beta-ray-007.cbz",
+        file_path="/tmp/beta-ray-007.cbz",
+        year=2024,
+        month=None,
+        day=None,
+        file_size=12345,
+    )
+    db.add_all([library, series, volume, comic])
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    from unittest.mock import patch
+
+    with patch("app.api.opds_deps.verify_password", return_value=True):
+        response = client.get(
+            f"/opds/series/{series.id}",
+            auth=(normal_user.username, "any_password")
+        )
+
+    assert response.status_code == 200
+    root = ET.fromstring(response.text)
+    ns = {"atom": "http://www.w3.org/2005/Atom", "dcterms": "http://purl.org/dc/terms/"}
+    entry = root.find("atom:entry", ns)
+    assert entry is not None
+    assert entry.findtext("dcterms:issued", namespaces=ns) == "2024-01-01"

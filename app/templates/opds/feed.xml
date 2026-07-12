@@ -5,7 +5,7 @@
 
   <id>{{ feed_id }}</id>
   <title>{{ feed_title }}</title>
-  <updated>{{ updated_at.isoformat() }}Z</updated>
+  <updated>{{ updated_at }}</updated>
   <author>
     <name>Parker Media Server</name>
   </author>
@@ -15,7 +15,7 @@
   <entry>
     <title>{{ entry.title }}</title>
     <id>{{ entry.id }}</id>
-    <updated>{{ entry.updated }}Z</updated>
+    <updated>{{ entry.updated }}</updated>
     <content type="text">{{ entry.summary or "" }}</content>
 
     <link rel="subsection"
@@ -37,7 +37,7 @@
     <title>{{ book.volume.series.name }} #{{ book.number }} - {{ book.title }}</title>
 
     <id>urn:parker:comic:{{ book.id }}</id>
-    <updated>{{ book.updated_at.isoformat() }}Z</updated>
+    <updated>{{ format_opds_datetime(book.updated_at) }}</updated>
 
     {# 1. Authors / Credits #}
     {# FIX: Iterate through credits instead of 'writers' property (unless you defined that property on the model) #}
@@ -56,8 +56,9 @@
     <dcterms:publisher>{{ book.publisher }}</dcterms:publisher>
     {% endif %}
 
-    {% if book.year %}
-    <dcterms:issued>{{ book.year }}-{{ '%02d' % book.month|default(1) }}-{{ '%02d' % book.day|default(1) }}</dcterms:issued>
+    {% set issued_date = format_opds_issued(book.year, book.month, book.day) %}
+    {% if issued_date %}
+    <dcterms:issued>{{ issued_date }}</dcterms:issued>
     {% endif %}
 
     <dcterms:language>{{ book.language_iso or 'en' }}</dcterms:language>
