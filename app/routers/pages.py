@@ -54,6 +54,12 @@ async def insights_writer_character(request: Request, user: CurrentUser):
     """Writer to character insights page"""
     return templates.TemplateResponse(request=request, name="insights_writer_character.html")
 
+
+@router.get("/insights/artist-character", response_class=HTMLResponse, name="insights_artist_character")
+async def insights_artist_character(request: Request, user: CurrentUser):
+    """Artist to character insights page"""
+    return templates.TemplateResponse(request=request, name="insights_artist_character.html")
+
 @router.get("/collections", response_class=HTMLResponse, name="collections")
 async def collections_view(request: Request, user: CurrentUser):
     """Collections page"""

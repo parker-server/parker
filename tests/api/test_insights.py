@@ -361,6 +361,130 @@ def _seed_writer_character_fixture(db, normal_user):
     }
 
 
+def _seed_artist_character_fixture(db, normal_user):
+    visible_lib = Library(name="Artist Character Visible", path="/tmp/artist-character-visible")
+    hidden_lib = Library(name="Artist Character Hidden", path="/tmp/artist-character-hidden")
+    db.add_all([visible_lib, hidden_lib])
+    db.flush()
+
+    safe_series = Series(name="Artist Character Safe Series", library_id=visible_lib.id)
+    banned_series = Series(name="Artist Character Banned Series", library_id=visible_lib.id)
+    hidden_series = Series(name="Artist Character Hidden Series", library_id=hidden_lib.id)
+    db.add_all([safe_series, banned_series, hidden_series])
+    db.flush()
+
+    safe_volume = Volume(series_id=safe_series.id, volume_number=1)
+    banned_volume = Volume(series_id=banned_series.id, volume_number=1)
+    hidden_volume = Volume(series_id=hidden_series.id, volume_number=1)
+    db.add_all([safe_volume, banned_volume, hidden_volume])
+    db.flush()
+
+    safe_comics = [
+        Comic(
+            volume_id=safe_volume.id,
+            number="1",
+            title="Artist Character Safe #1",
+            age_rating="Teen",
+            filename="artist-character-safe-1.cbz",
+            file_path="/tmp/artist-character-safe-1.cbz",
+        ),
+        Comic(
+            volume_id=safe_volume.id,
+            number="2",
+            title="Artist Character Safe #2",
+            age_rating="Teen",
+            filename="artist-character-safe-2.cbz",
+            file_path="/tmp/artist-character-safe-2.cbz",
+        ),
+        Comic(
+            volume_id=safe_volume.id,
+            number="3",
+            title="Artist Character Safe #3",
+            age_rating="Teen",
+            filename="artist-character-safe-3.cbz",
+            file_path="/tmp/artist-character-safe-3.cbz",
+        ),
+    ]
+    banned_comics = [
+        Comic(
+            volume_id=banned_volume.id,
+            number="1",
+            title="Artist Character Banned #1",
+            age_rating="Mature 17+",
+            filename="artist-character-banned-1.cbz",
+            file_path="/tmp/artist-character-banned-1.cbz",
+        ),
+        Comic(
+            volume_id=banned_volume.id,
+            number="2",
+            title="Artist Character Banned #2",
+            age_rating="Mature 17+",
+            filename="artist-character-banned-2.cbz",
+            file_path="/tmp/artist-character-banned-2.cbz",
+        ),
+    ]
+    hidden_comics = [
+        Comic(
+            volume_id=hidden_volume.id,
+            number="1",
+            title="Artist Character Hidden #1",
+            age_rating="Teen",
+            filename="artist-character-hidden-1.cbz",
+            file_path="/tmp/artist-character-hidden-1.cbz",
+        ),
+        Comic(
+            volume_id=hidden_volume.id,
+            number="2",
+            title="Artist Character Hidden #2",
+            age_rating="Teen",
+            filename="artist-character-hidden-2.cbz",
+            file_path="/tmp/artist-character-hidden-2.cbz",
+        ),
+    ]
+    db.add_all(safe_comics + banned_comics + hidden_comics)
+    db.flush()
+
+    artist_a = Person(name="Artist Character A")
+    artist_b = Person(name="Artist Character B")
+    hidden_artist = Person(name="Artist Hidden")
+    mature_artist = Person(name="Artist Mature")
+    hero_alpha = Character(name="Artist Hero Alpha")
+    hero_beta = Character(name="Artist Hero Beta")
+    hero_gamma = Character(name="Artist Hero Gamma")
+    hidden_ally = Character(name="Artist Hidden Ally")
+    mature_villain = Character(name="Artist Mature Villain")
+    db.add_all([artist_a, artist_b, hidden_artist, mature_artist, hero_alpha, hero_beta, hero_gamma, hidden_ally, mature_villain])
+    db.flush()
+
+    db.add_all([
+        ComicCredit(comic_id=safe_comics[0].id, person_id=artist_a.id, role="penciller"),
+        ComicCredit(comic_id=safe_comics[1].id, person_id=artist_a.id, role="penciller"),
+        ComicCredit(comic_id=safe_comics[2].id, person_id=artist_b.id, role="penciller"),
+        ComicCredit(comic_id=banned_comics[0].id, person_id=mature_artist.id, role="penciller"),
+        ComicCredit(comic_id=banned_comics[1].id, person_id=mature_artist.id, role="penciller"),
+        ComicCredit(comic_id=hidden_comics[0].id, person_id=hidden_artist.id, role="penciller"),
+        ComicCredit(comic_id=hidden_comics[1].id, person_id=hidden_artist.id, role="penciller"),
+    ])
+
+    safe_comics[0].characters.extend([hero_alpha, hero_beta])
+    safe_comics[1].characters.extend([hero_alpha, hero_beta])
+    safe_comics[2].characters.extend([hero_alpha, hero_gamma])
+    banned_comics[0].characters.extend([hero_alpha, mature_villain])
+    banned_comics[1].characters.extend([hero_alpha, mature_villain])
+    hidden_comics[0].characters.extend([hidden_ally, hero_alpha])
+    hidden_comics[1].characters.extend([hidden_ally, hero_alpha])
+
+    normal_user.accessible_libraries.append(visible_lib)
+    normal_user.max_age_rating = "Teen"
+    normal_user.allow_unknown_age_ratings = False
+    db.commit()
+
+    return {
+        "visible_lib": visible_lib,
+        "hidden_lib": hidden_lib,
+    }
+
+
 def test_creator_collaborations_respect_rls_and_age_filters(auth_client, db, normal_user):
     _seed_creator_collab_fixture(db, normal_user)
 
@@ -688,5 +812,79 @@ def test_writer_character_collaborations_reject_limit_over_guardrail(auth_client
     _seed_writer_character_fixture(db, normal_user)
 
     response = auth_client.get("/api/insights/creator-character-collaborations?role_a=writer&limit=16")
+
+    assert response.status_code == 422
+
+
+def test_artist_character_collaborations_respect_rls_and_age_filters(auth_client, db, normal_user):
+    _seed_artist_character_fixture(db, normal_user)
+
+    response = auth_client.get("/api/insights/creator-character-collaborations?role_a=penciller")
+
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["pair_count"] == 2
+    assert payload["max_shared_issues"] == 2
+    assert len(payload["rows"]) == 1
+    assert len(payload["columns"]) == 2
+    assert payload["rows"][0]["name"] == "Artist Character A"
+    assert payload["rows"][0]["total_shared"] == 4
+    assert payload["columns"][0]["name"] == "Artist Hero Alpha"
+    assert payload["columns"][0]["total_shared"] == 2
+    assert payload["columns"][1]["name"] == "Artist Hero Beta"
+    assert payload["columns"][1]["total_shared"] == 2
+    assert payload["top_collaborations"][0]["person_a"] == "Artist Character A"
+    assert payload["top_collaborations"][0]["person_b"] == "Artist Hero Alpha"
+    assert payload["top_collaborations"][0]["shared_issues"] == 2
+
+
+def test_artist_character_collaborations_library_filter_blocks_unauthorized_library(auth_client, db, normal_user):
+    data = _seed_artist_character_fixture(db, normal_user)
+
+    response = auth_client.get(
+        f"/api/insights/creator-character-collaborations?role_a=penciller&library_id={data['hidden_lib'].id}"
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Library not found"
+
+
+def test_artist_character_collaborations_superuser_sees_hidden_library(admin_client, db, normal_user):
+    data = _seed_artist_character_fixture(db, normal_user)
+
+    response = admin_client.get(
+        f"/api/insights/creator-character-collaborations?role_a=penciller&library_id={data['hidden_lib'].id}&min_shared=2"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["pair_count"] == 2
+    names = {(pair["person_a"], pair["person_b"], pair["shared_issues"]) for pair in payload["pairs"]}
+    assert ("Artist Hidden", "Artist Hero Alpha", 2) in names
+    assert ("Artist Hidden", "Artist Hidden Ally", 2) in names
+
+
+def test_artist_character_collaborations_include_lower_threshold_pairs(auth_client, db, normal_user):
+    _seed_artist_character_fixture(db, normal_user)
+
+    response = auth_client.get("/api/insights/creator-character-collaborations?role_a=penciller&min_shared=1")
+
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["pair_count"] == 4
+    names = {(pair["person_a"], pair["person_b"], pair["shared_issues"]) for pair in payload["pairs"]}
+    assert ("Artist Character A", "Artist Hero Alpha", 2) in names
+    assert ("Artist Character A", "Artist Hero Beta", 2) in names
+    assert ("Artist Character B", "Artist Hero Alpha", 1) in names
+    assert ("Artist Character B", "Artist Hero Gamma", 1) in names
+
+
+def test_artist_character_collaborations_reject_limit_over_guardrail(auth_client, db, normal_user):
+    _seed_artist_character_fixture(db, normal_user)
+
+    response = auth_client.get("/api/insights/creator-character-collaborations?role_a=penciller&limit=16")
 
     assert response.status_code == 422

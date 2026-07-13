@@ -15,16 +15,21 @@
             <p class="mt-3 text-gray-400 text-sm md:text-base">
                 Explore which creators show up together most often in your library. Click any highlighted cell to jump straight into Advanced Search with those creator filters applied.
             </p>
-            <div class="mt-4 flex flex-wrap gap-2">
-                <span class="px-3 py-1.5 rounded-full border border-blue-500/40 bg-blue-500/10 text-xs font-bold uppercase tracking-wider text-blue-200">
-                    Creator Chemistry
-                </span>
-                <a href="{{ url('/insights/character-chemistry') }}" class="px-3 py-1.5 rounded-full border border-gray-700 text-xs font-bold uppercase tracking-wider text-gray-300 hover:text-white hover:border-emerald-500/50 transition-colors">
-                    Character Chemistry
-                </a>
-                <a href="{{ url('/insights/writer-character') }}" class="px-3 py-1.5 rounded-full border border-gray-700 text-xs font-bold uppercase tracking-wider text-gray-300 hover:text-white hover:border-amber-500/50 transition-colors">
-                    Writer to Character
-                </a>
+            <div class="mt-4 overflow-x-auto pb-1">
+                <div class="inline-flex min-w-max gap-2 pr-1">
+                    <span class="px-3 py-1.5 rounded-full border border-blue-500/40 bg-blue-500/10 text-xs font-bold uppercase tracking-wider text-blue-200 whitespace-nowrap">
+                        Creator Chemistry
+                    </span>
+                    <a href="{{ url('/insights/character-chemistry') }}" class="px-3 py-1.5 rounded-full border border-gray-700 text-xs font-bold uppercase tracking-wider text-gray-300 hover:text-white hover:border-emerald-500/50 transition-colors whitespace-nowrap">
+                        Character Chemistry
+                    </a>
+                    <a href="{{ url('/insights/writer-character') }}" class="px-3 py-1.5 rounded-full border border-gray-700 text-xs font-bold uppercase tracking-wider text-gray-300 hover:text-white hover:border-amber-500/50 transition-colors whitespace-nowrap">
+                        Writer to Character
+                    </a>
+                    <a href="{{ url('/insights/artist-character') }}" class="px-3 py-1.5 rounded-full border border-gray-700 text-xs font-bold uppercase tracking-wider text-gray-300 hover:text-white hover:border-rose-500/50 transition-colors whitespace-nowrap">
+                        Artist to Character
+                    </a>
+                </div>
             </div>
         </div>
 
@@ -283,10 +288,51 @@ function creatorChemistry() {
         minShared: 2,
         limit: 12,
         pairMap: {},
+        storageKey: 'parker-insights-creator-chemistry',
 
         async init() {
             await this.loadLibraries();
+            this.restoreState();
+            this.registerStateWatchers();
             await this.loadInsights();
+        },
+
+        registerStateWatchers() {
+            this.$watch('roleA', () => this.persistState());
+            this.$watch('roleB', () => this.persistState());
+            this.$watch('selectedLibraryId', () => this.persistState());
+            this.$watch('minShared', () => this.persistState());
+            this.$watch('limit', () => this.persistState());
+        },
+
+        restoreState() {
+            try {
+                const raw = sessionStorage.getItem(this.storageKey);
+                if (!raw) return;
+
+                const saved = JSON.parse(raw);
+                if (typeof saved.roleA === 'string') this.roleA = saved.roleA;
+                if (typeof saved.roleB === 'string') this.roleB = saved.roleB;
+                if (typeof saved.selectedLibraryId === 'string') this.selectedLibraryId = saved.selectedLibraryId;
+                if (saved.minShared !== undefined && saved.minShared !== null) this.minShared = saved.minShared;
+                if (saved.limit !== undefined && saved.limit !== null) this.limit = saved.limit;
+            } catch (error) {
+                console.error('Failed to restore creator chemistry state', error);
+            }
+        },
+
+        persistState() {
+            try {
+                sessionStorage.setItem(this.storageKey, JSON.stringify({
+                    roleA: this.roleA,
+                    roleB: this.roleB,
+                    selectedLibraryId: this.selectedLibraryId,
+                    minShared: this.minShared,
+                    limit: this.limit,
+                }));
+            } catch (error) {
+                console.error('Failed to persist creator chemistry state', error);
+            }
         },
 
         normalizeLimit() {
