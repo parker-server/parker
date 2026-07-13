@@ -14,7 +14,7 @@
         </div>
     </section>
 
-    <section class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+    <section class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <a href="{{ url('/insights/creator-chemistry') }}" class="group rounded-3xl border border-gray-700 bg-gray-800/80 hover:border-blue-500/60 hover:bg-gray-800 px-6 py-6 shadow-xl transition-all">
             <h2 class="text-2xl font-black text-white">Creator Chemistry</h2>
             <p class="mt-3 text-sm leading-6 text-gray-400">
@@ -47,6 +47,18 @@
 
             <div class="mt-6 inline-flex items-center gap-2 text-sm font-bold text-amber-300 group-hover:text-amber-200">
                 Open Writer to Character
+                <span aria-hidden="true">&rarr;</span>
+            </div>
+        </a>
+
+        <a href="{{ url('/insights/artist-character') }}" class="group rounded-3xl border border-gray-700 bg-gray-800/80 hover:border-rose-500/60 hover:bg-gray-800 px-6 py-6 shadow-xl transition-all">
+            <h2 class="text-2xl font-black text-white">Artist to Character</h2>
+            <p class="mt-3 text-sm leading-6 text-gray-400">
+                See which artists are most strongly associated with which characters, based on penciller credits in your library metadata.
+            </p>
+
+            <div class="mt-6 inline-flex items-center gap-2 text-sm font-bold text-rose-300 group-hover:text-rose-200">
+                Open Artist to Character
                 <span aria-hidden="true">&rarr;</span>
             </div>
         </a>

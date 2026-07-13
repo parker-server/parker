@@ -1,22 +1,22 @@
 {% extends "base.html" %}
 
-{% block title %}Writer to Character - Parker{% endblock %}
+{% block title %}Artist to Character - Parker{% endblock %}
 
 {% block content %}
-<div class="max-w-7xl mx-auto space-y-8" x-data="writerCharacterInsights()">
+<div class="max-w-7xl mx-auto space-y-8" x-data="artistCharacterInsights()">
     <div class="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
         <div class="max-w-3xl">
             <div class="flex flex-wrap items-center gap-3 text-xs font-bold uppercase tracking-[0.25em]">
                 <a href="{{ url('/insights') }}" class="text-gray-500 hover:text-white transition-colors">Insights</a>
                 <span class="text-gray-700">/</span>
-                <span class="text-amber-300">Writer to Character</span>
+                <span class="text-rose-300">Artist to Character</span>
             </div>
-            <h1 class="mt-3 text-4xl font-black text-white tracking-tight">Writer to Character</h1>
+            <h1 class="mt-3 text-4xl font-black text-white tracking-tight">Artist to Character</h1>
             <p class="mt-3 text-gray-400 text-sm md:text-base">
-                Explore which writers are most associated with which characters in your library. Click any highlighted cell to jump straight into Advanced Search with both writer and character filters applied.
+                Explore which artists are most associated with which characters in your library. Click any highlighted cell to jump straight into Advanced Search with both artist and character filters applied.
             </p>
             <p class="mt-2 text-xs text-gray-500">
-                Based on available writer credits and character tags in your library metadata.
+                Based on available penciller credits and character tags in your library metadata.
             </p>
             <div class="mt-4 overflow-x-auto pb-1">
                 <div class="inline-flex min-w-max gap-2 pr-1">
@@ -26,12 +26,12 @@
                     <a href="{{ url('/insights/character-chemistry') }}" class="px-3 py-1.5 rounded-full border border-gray-700 text-xs font-bold uppercase tracking-wider text-gray-300 hover:text-white hover:border-emerald-500/50 transition-colors whitespace-nowrap">
                         Character Chemistry
                     </a>
-                    <span class="px-3 py-1.5 rounded-full border border-amber-500/40 bg-amber-500/10 text-xs font-bold uppercase tracking-wider text-amber-200 whitespace-nowrap">
+                    <a href="{{ url('/insights/writer-character') }}" class="px-3 py-1.5 rounded-full border border-gray-700 text-xs font-bold uppercase tracking-wider text-gray-300 hover:text-white hover:border-amber-500/50 transition-colors whitespace-nowrap">
                         Writer to Character
-                    </span>
-                    <a href="{{ url('/insights/artist-character') }}" class="px-3 py-1.5 rounded-full border border-gray-700 text-xs font-bold uppercase tracking-wider text-gray-300 hover:text-white hover:border-rose-500/50 transition-colors whitespace-nowrap">
-                        Artist to Character
                     </a>
+                    <span class="px-3 py-1.5 rounded-full border border-rose-500/40 bg-rose-500/10 text-xs font-bold uppercase tracking-wider text-rose-200 whitespace-nowrap">
+                        Artist to Character
+                    </span>
                 </div>
             </div>
         </div>
@@ -43,7 +43,7 @@
             </div>
             <div class="bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 shadow-lg">
                 <div class="text-[10px] uppercase tracking-wider text-gray-500">Strongest Pairing</div>
-                <div class="mt-1 text-sm font-bold text-amber-300 truncate" :title="topPairLabel()" x-text="topPairLabel()"></div>
+                <div class="mt-1 text-sm font-bold text-rose-300 truncate" :title="topPairLabel()" x-text="topPairLabel()"></div>
             </div>
             <div class="bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 shadow-lg col-span-2 md:col-span-1">
                 <div class="text-[10px] uppercase tracking-wider text-gray-500">Peak Shared Issues</div>
@@ -71,7 +71,7 @@
                 </div>
 
                 <div>
-                    <label class="block text-[10px] uppercase tracking-wider text-gray-500 mb-2">Top Writers and Characters</label>
+                    <label class="block text-[10px] uppercase tracking-wider text-gray-500 mb-2">Top Artists and Characters</label>
                     <input
                         type="number"
                         min="2"
@@ -86,7 +86,7 @@
                 <div class="flex items-end">
                     <button
                         x-on:click="loadInsights()"
-                        class="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold px-4 py-2.5 rounded-lg transition-colors flex items-center justify-center"
+                        class="w-full bg-rose-600 hover:bg-rose-500 text-white font-bold px-4 py-2.5 rounded-lg transition-colors flex items-center justify-center"
                     >
                         <span x-show="loading">Working</span>
                         <span x-show="!loading">Refresh</span>
@@ -95,7 +95,7 @@
             </div>
 
             <p x-show="showDensityWarning()" x-cloak class="mt-4 text-[11px] leading-5 text-amber-300">
-                Larger axes get dense fast. Parker will cap this view at 15 writers and 15 characters.
+                Larger axes get dense fast. Parker will cap this view at 15 artists and 15 characters.
             </p>
             <p class="mt-4 text-xs text-gray-500">
                 Stronger cells mean more shared issues. Empty cells do not have enough overlap for the current threshold.
@@ -104,8 +104,8 @@
 
         <div x-show="loading" class="px-6 py-16 text-center text-gray-400">
             <div class="inline-flex items-center gap-3">
-                <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-amber-400"></div>
-                <span>Mapping writer to character relationships...</span>
+                <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-rose-400"></div>
+                <span>Mapping artist to character relationships...</span>
             </div>
         </div>
 
@@ -115,7 +115,7 @@
 
         <div x-show="!loading && !errorMessage && data && data.pair_count === 0" x-cloak class="px-6 py-20 text-center">
             <div class="max-w-xl mx-auto">
-                <h2 class="text-2xl font-bold text-white">No writer and character pairs matched this view</h2>
+                <h2 class="text-2xl font-bold text-white">No artist and character pairs matched this view</h2>
                 <p class="mt-3 text-gray-400">
                     Try lowering the shared-issue threshold or broadening the library scope.
                 </p>
@@ -128,23 +128,23 @@
                     <div class="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center md:justify-between">
                         <div class="text-sm text-gray-300">
                             <span class="font-bold text-white">Rows:</span>
-                            <span>Writer</span>
+                            <span>Artist</span>
                             <span class="mx-2 text-gray-600">&middot;</span>
                             <span class="font-bold text-white">Columns:</span>
                             <span>Character</span>
                         </div>
-                        <div class="text-sm text-amber-300">
+                        <div class="text-sm text-rose-300">
                             Tap a center cell to open the matching books.
                         </div>
                     </div>
                     <div class="mt-2 text-xs text-gray-500">
-                        Header cards show visible totals for each writer or character in this matrix. Only the center intersection cells are drill-down links.
+                        Header cards show visible totals for each artist or character in this matrix. Only the center intersection cells are drill-down links.
                     </div>
                 </div>
 
                 <div class="flex items-center justify-between gap-3 mb-3 xl:hidden">
                     <div class="text-xs uppercase tracking-[0.2em] text-gray-500">Heatmap</div>
-                    <div class="text-[11px] text-amber-300 bg-amber-950/40 border border-amber-900/60 rounded-full px-3 py-1">
+                    <div class="text-[11px] text-rose-300 bg-rose-950/40 border border-rose-900/60 rounded-full px-3 py-1">
                         Swipe sideways to explore
                     </div>
                 </div>
@@ -155,7 +155,7 @@
                             <tr>
                                 <th class="sticky top-0 left-0 z-30 w-[190px] min-w-[190px] align-top bg-gray-900/95 backdrop-blur py-3 px-3 rounded-lg border border-gray-700 shadow-lg text-left">
                                     <div class="text-[11px] uppercase tracking-wider text-gray-500">Rows</div>
-                                    <div class="mt-1 text-sm font-bold text-white">Writer</div>
+                                    <div class="mt-1 text-sm font-bold text-white">Artist</div>
                                     <div class="mt-3 text-[11px] uppercase tracking-wider text-gray-500">Columns</div>
                                     <div class="mt-1 text-xs font-bold text-gray-300">Character</div>
                                 </th>
@@ -174,7 +174,7 @@
                             <template x-for="row in (matrixRows() || [])" :key="`row-${row.id}`">
                                 <tr>
                                     <th scope="row" class="sticky left-0 z-10 w-[190px] min-w-[190px] h-[176px] align-top bg-gray-800/95 backdrop-blur py-3 px-3 rounded-lg border border-gray-700 text-left">
-                                        <div class="text-[11px] uppercase tracking-wider text-gray-500">Writer</div>
+                                        <div class="text-[11px] uppercase tracking-wider text-gray-500">Artist</div>
                                         <div class="mt-1 text-sm font-bold text-white leading-tight" x-text="row.name"></div>
                                         <div class="mt-1 text-[11px] text-gray-500" x-text="`${row.total_shared} visible total`"></div>
                                     </th>
@@ -221,12 +221,12 @@
                     <template x-for="pair in (data?.top_collaborations || [])" :key="`${pair.person_a_id}-${pair.person_b_id}`">
                         <button
                             x-on:click="openSearch(pair)"
-                            class="w-full text-left rounded-xl border border-gray-700 bg-gray-800/80 hover:bg-gray-750 hover:border-amber-500/50 p-4 transition-all shadow-lg"
+                            class="w-full text-left rounded-xl border border-gray-700 bg-gray-800/80 hover:bg-gray-750 hover:border-rose-500/50 p-4 transition-all shadow-lg"
                         >
                             <div class="flex items-start justify-between gap-3">
                                 <div>
                                     <div class="text-sm font-bold text-white" x-text="pair.person_a"></div>
-                                    <div class="text-xs text-amber-300 mt-0.5" x-text="pair.person_b"></div>
+                                    <div class="text-xs text-rose-300 mt-0.5" x-text="pair.person_b"></div>
                                 </div>
                                 <div class="text-right">
                                     <div class="text-xl font-black text-white" x-text="pair.shared_issues"></div>
@@ -244,7 +244,7 @@
                 <div class="mt-6 md:mt-4 xl:mt-6 rounded-xl border border-gray-700 bg-gray-800/60 p-4 md:col-span-2 xl:col-span-1">
                     <h3 class="text-sm font-bold text-white">Why this view works</h3>
                     <p class="mt-2 text-xs leading-6 text-gray-400">
-                        Writer and character metadata make long-run associations easier to spot than a search form alone. Insights helps you notice the connection, then drill into the exact books.
+                        Artist and character metadata make visual stewardship patterns easier to spot than a search form alone. Insights helps you notice the connection, then drill into the exact books.
                     </p>
                 </div>
             </aside>
@@ -253,7 +253,7 @@
 </div>
 
 <script>
-function writerCharacterInsights() {
+function artistCharacterInsights() {
     return {
         libraries: [],
         data: null,
@@ -263,7 +263,7 @@ function writerCharacterInsights() {
         minShared: 2,
         limit: 12,
         pairMap: {},
-        storageKey: 'parker-insights-writer-character',
+        storageKey: 'parker-insights-artist-character',
 
         async init() {
             await this.loadLibraries();
@@ -288,7 +288,7 @@ function writerCharacterInsights() {
                 if (saved.minShared !== undefined && saved.minShared !== null) this.minShared = saved.minShared;
                 if (saved.limit !== undefined && saved.limit !== null) this.limit = saved.limit;
             } catch (error) {
-                console.error('Failed to restore writer character state', error);
+                console.error('Failed to restore artist character state', error);
             }
         },
 
@@ -300,7 +300,7 @@ function writerCharacterInsights() {
                     limit: this.limit,
                 }));
             } catch (error) {
-                console.error('Failed to persist writer character state', error);
+                console.error('Failed to persist artist character state', error);
             }
         },
 
@@ -339,7 +339,7 @@ function writerCharacterInsights() {
             try {
                 const normalizedLimit = this.normalizeLimit();
                 const query = new URLSearchParams({
-                    role_a: 'writer',
+                    role_a: 'penciller',
                     min_shared: String(parseInt(this.minShared, 10) || 1),
                     limit: String(normalizedLimit),
                 });
@@ -400,7 +400,7 @@ function writerCharacterInsights() {
         cellStyle(cell) {
             const alpha = 0.18 + (cell.intensity * 0.62);
             const borderAlpha = 0.12 + (cell.intensity * 0.45);
-            return `background: linear-gradient(160deg, rgba(217, 119, 6, ${alpha}) 0%, rgba(30, 41, 59, 0.92) 100%); border-color: rgba(251, 191, 36, ${borderAlpha});`;
+            return `background: linear-gradient(160deg, rgba(225, 29, 72, ${alpha}) 0%, rgba(30, 41, 59, 0.92) 100%); border-color: rgba(251, 113, 133, ${borderAlpha});`;
         },
 
         buildSearchUrl(pair) {
@@ -408,7 +408,7 @@ function writerCharacterInsights() {
                 match: 'all',
                 libraryId: this.selectedLibraryId || null,
                 filters: [
-                    { field: 'writer', operator: 'contains', value: [pair.person_a] },
+                    { field: 'penciller', operator: 'contains', value: [pair.person_a] },
                     { field: 'character', operator: 'contains', value: [pair.person_b] },
                 ]
             };
