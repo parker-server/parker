@@ -1,6 +1,7 @@
+import logging
 from datetime import datetime, timezone, timedelta
 from typing import Annotated
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from jose import jwt, JWTError
@@ -11,6 +12,7 @@ from app.models.user import User
 from app.config import settings
 
 router = APIRouter()
+logger = logging.getLogger("app.auth")
 
 
 # Schema for Registration
@@ -39,14 +41,34 @@ class RefreshRequest(BaseModel):
 @router.post("/token", response_model=Token, name="login_for_access_token")
 async def login_for_access_token(
         form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
-        db: SessionDep
+        db: SessionDep,
+        request: Request,
 ):
     """
     OAuth2 compatible token login, get an access token for future requests
     """
     user = db.query(User).filter(User.username == form_data.username).first()
 
-    if not user or not verify_password(form_data.password, user.hashed_password):
+    if not user:
+        logger.warning(
+            "Authentication failed via password login: username=%r ip=%s path=%s reason=unknown_user",
+            form_data.username,
+            request.client.host if request.client else "unknown",
+            request.url.path,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if not verify_password(form_data.password, user.hashed_password):
+        logger.warning(
+            "Authentication failed via password login: username=%r ip=%s path=%s reason=invalid_password",
+            form_data.username,
+            request.client.host if request.client else "unknown",
+            request.url.path,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",

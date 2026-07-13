@@ -1,3 +1,4 @@
+import logging
 import pytest
 import xml.etree.ElementTree as ET
 from app.services.settings_service import SettingsService
@@ -77,6 +78,42 @@ def test_opds_auth_flow(client, db, normal_user):
         assert "application/atom+xml" in response.headers["content-type"]
         assert "<feed" in response.text
         assert "Parker Library" in response.text
+
+
+def test_opds_logs_invalid_password(client, db, normal_user, caplog):
+    _enable_opds(db)
+    caplog.set_level(logging.WARNING, logger="app.auth")
+
+    response = client.get(
+        "/opds/",
+        auth=(normal_user.username, "wrong_password")
+    )
+
+    assert response.status_code == 401
+    assert any(
+        "Authentication failed via OPDS basic auth" in record.message
+        and "reason=invalid_password" in record.message
+        and f"username='{normal_user.username}'" in record.message
+        for record in caplog.records
+    )
+
+
+def test_opds_logs_unknown_user(client, db, caplog):
+    _enable_opds(db)
+    caplog.set_level(logging.WARNING, logger="app.auth")
+
+    response = client.get(
+        "/opds/",
+        auth=("missing-user", "wrong_password")
+    )
+
+    assert response.status_code == 401
+    assert any(
+        "Authentication failed via OPDS basic auth" in record.message
+        and "reason=unknown_user" in record.message
+        and "username='missing-user'" in record.message
+        for record in caplog.records
+    )
 
 
 def _enable_opds(db):

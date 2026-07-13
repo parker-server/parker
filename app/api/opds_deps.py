@@ -1,6 +1,6 @@
 import logging
 from typing import Annotated
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from app.api.deps import SessionDep
@@ -9,10 +9,12 @@ from app.core.security import verify_password
 from app.services.settings_service import SettingsService
 
 security = HTTPBasic()
+logger = logging.getLogger("app.auth")
 
 def get_current_user_opds(
         credentials: Annotated[HTTPBasicCredentials, Depends(security)],
-        db: SessionDep
+        db: SessionDep,
+        request: Request,
 ) -> User:
     """
     Validates Basic Auth credentials for OPDS clients.
@@ -30,6 +32,12 @@ def get_current_user_opds(
     user = db.query(User).filter(User.username == credentials.username).first()
 
     if not user:
+        logger.warning(
+            "Authentication failed via OPDS basic auth: username=%r ip=%s path=%s reason=unknown_user",
+            credentials.username,
+            request.client.host if request.client else "unknown",
+            request.url.path,
+        )
         # OPDS clients need standard 401 to prompt for password
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -39,6 +47,12 @@ def get_current_user_opds(
 
     # 3. Verify Password
     if not verify_password(credentials.password, str(user.hashed_password)):
+        logger.warning(
+            "Authentication failed via OPDS basic auth: username=%r ip=%s path=%s reason=invalid_password",
+            credentials.username,
+            request.client.host if request.client else "unknown",
+            request.url.path,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",

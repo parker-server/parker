@@ -1,3 +1,5 @@
+import logging
+
 from app.core.security import create_access_token, create_refresh_token
 
 
@@ -27,6 +29,40 @@ def test_login_for_access_token_rejects_invalid_credentials(client, normal_user)
 
     assert response.status_code == 401
     assert response.json()["detail"] == "Incorrect username or password"
+
+
+def test_login_for_access_token_logs_invalid_password(client, normal_user, caplog):
+    caplog.set_level(logging.WARNING, logger="app.auth")
+
+    response = client.post(
+        "/api/auth/token",
+        data={"username": normal_user.username, "password": "wrong-password"},
+    )
+
+    assert response.status_code == 401
+    assert any(
+        "Authentication failed via password login" in record.message
+        and "reason=invalid_password" in record.message
+        and f"username='{normal_user.username}'" in record.message
+        for record in caplog.records
+    )
+
+
+def test_login_for_access_token_logs_unknown_user(client, caplog):
+    caplog.set_level(logging.WARNING, logger="app.auth")
+
+    response = client.post(
+        "/api/auth/token",
+        data={"username": "missing-user", "password": "wrong-password"},
+    )
+
+    assert response.status_code == 401
+    assert any(
+        "Authentication failed via password login" in record.message
+        and "reason=unknown_user" in record.message
+        and "username='missing-user'" in record.message
+        for record in caplog.records
+    )
 
 
 def test_refresh_access_token_success(client, normal_user):
