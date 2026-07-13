@@ -24,6 +24,7 @@ from app.logging import log_config
 from app.core.security import get_password_hash
 from app.services.settings_service import SettingsService
 from app.services.scheduler import scheduler_service
+from app.services.startup_diagnostics import log_startup_diagnostics
 
 
 from app.models.user import User
@@ -105,6 +106,15 @@ async def lifespan(app: FastAPI):
         is_manager = True
 
         logger.info(f"Worker {worker_pid} acquired Manager Lock. Starting Watcher & Scheduler...")
+
+        try:
+            with SessionLocal() as diagnostics_db:
+                log_startup_diagnostics(
+                    diagnostics_db,
+                    database_url=settings.database_url,
+                )
+        except Exception as exc:
+            logger.warning("Startup storage diagnostic failed: %s", exc)
 
         # START WATCHER
         library_watcher.start()
