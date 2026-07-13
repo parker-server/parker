@@ -498,6 +498,123 @@ document.addEventListener('error', function(e) {
         setFitMode(mode) { storage.set('fitMode', mode); }
     };
 
+    const SEARCH_HANDOFF_PREFIX = 'parker.searchHandoff.';
+    const SEARCH_HANDOFF_MAX_QUERY_LENGTH = 1800;
+    const SEARCH_HANDOFF_TTL_MS = 1000 * 60 * 60 * 6;
+
+    const safeSessionStorage = {
+        get(key) {
+            try {
+                return window.sessionStorage.getItem(key);
+            } catch (e) {
+                console.error('Error reading from sessionStorage:', e);
+                return null;
+            }
+        },
+        set(key, value) {
+            try {
+                window.sessionStorage.setItem(key, value);
+                return true;
+            } catch (e) {
+                console.error('Error writing to sessionStorage:', e);
+                return false;
+            }
+        },
+        remove(key) {
+            try {
+                window.sessionStorage.removeItem(key);
+            } catch (e) {
+                console.error('Error removing from sessionStorage:', e);
+            }
+        },
+        keys() {
+            try {
+                return Object.keys(window.sessionStorage);
+            } catch (e) {
+                console.error('Error listing sessionStorage keys:', e);
+                return [];
+            }
+        }
+    };
+
+    const searchHandoff = {
+        maxQueryLength: SEARCH_HANDOFF_MAX_QUERY_LENGTH,
+
+        cleanup() {
+            const now = Date.now();
+            safeSessionStorage.keys()
+                .filter(key => key.startsWith(SEARCH_HANDOFF_PREFIX))
+                .forEach((key) => {
+                    try {
+                        const raw = safeSessionStorage.get(key);
+                        if (!raw) {
+                            safeSessionStorage.remove(key);
+                            return;
+                        }
+
+                        const payload = JSON.parse(raw);
+                        if (!payload.createdAt || (now - payload.createdAt) > SEARCH_HANDOFF_TTL_MS) {
+                            safeSessionStorage.remove(key);
+                        }
+                    } catch (e) {
+                        safeSessionStorage.remove(key);
+                    }
+                });
+        },
+
+        buildUrl(payload = {}) {
+            const query = new URLSearchParams();
+
+            if (payload.match) query.set('match', payload.match);
+            if (payload.sortBy) query.set('sort_by', payload.sortBy);
+            if (payload.sortOrder) query.set('sort_order', payload.sortOrder);
+            if (payload.limit) query.set('limit', String(payload.limit));
+            if (payload.libraryId) query.set('library_id', String(payload.libraryId));
+            if (payload.filters && payload.filters.length > 0) {
+                query.set('filters', JSON.stringify(payload.filters));
+            }
+
+            const rawQuery = query.toString();
+            if (rawQuery.length <= this.maxQueryLength) {
+                return window.parker.route('pages.search', {}, rawQuery);
+            }
+
+            this.cleanup();
+
+            const key = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+            const stored = safeSessionStorage.set(
+                `${SEARCH_HANDOFF_PREFIX}${key}`,
+                JSON.stringify({
+                    createdAt: Date.now(),
+                    payload
+                })
+            );
+
+            if (!stored) {
+                return window.parker.route('pages.search', {}, rawQuery);
+            }
+
+            return window.parker.route('pages.search', {}, `state_key=${encodeURIComponent(key)}`);
+        },
+
+        load(key) {
+            if (!key) return null;
+
+            this.cleanup();
+
+            const raw = safeSessionStorage.get(`${SEARCH_HANDOFF_PREFIX}${key}`);
+            if (!raw) return null;
+
+            try {
+                const parsed = JSON.parse(raw);
+                return parsed.payload || null;
+            } catch (e) {
+                safeSessionStorage.remove(`${SEARCH_HANDOFF_PREFIX}${key}`);
+                return null;
+            }
+        }
+    };
+
 
     // Export utilities
     window.parker = { ...(window.parker || {}),
@@ -508,7 +625,8 @@ document.addEventListener('error', function(e) {
         formatDate,
         paginationMixin,
         storage,
-        prefs
+        prefs,
+        searchHandoff
     };
 
 })();

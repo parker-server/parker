@@ -40,6 +40,7 @@ from app.api import reports
 from app.api import migration
 from app.api import batch
 from app.api import home
+from app.api import insights
 
 # Frontend Routes (HTML)
 from app.routers import pages, admin
@@ -227,6 +228,7 @@ app.include_router(collections.router, prefix="/api/collections", tags=["collect
 app.include_router(progress.router, prefix="/api/progress", tags=["progress"])
 app.include_router(batch.router, prefix="/api/batch", tags=["batch"])
 app.include_router(search.router, prefix="/api/search", tags=["search"])
+app.include_router(insights.router, prefix="/api/insights", tags=["insights"])
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(users.router, prefix="/api/users", tags=["users"])
 app.include_router(settings_api.router, prefix="/api/settings", tags=["settings"])

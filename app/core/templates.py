@@ -1,5 +1,6 @@
 import re
 from datetime import datetime
+from pathlib import Path
 from fastapi.templating import Jinja2Templates
 from app.config import settings
 from app.core.settings_loader import get_cached_setting
@@ -28,11 +29,23 @@ def url_builder(path: str) -> str:
     return f"{base}/{clean_path}" if base else f"/{clean_path}"
 
 
+def asset_version(path: str) -> str:
+    """
+    Returns a lightweight cache-busting version for a local asset.
+    Falls back to the application version if the file is missing.
+    """
+    try:
+        return str(int(Path(path).stat().st_mtime))
+    except OSError:
+        return settings.version
+
+
 templates.env.globals["app_version"] = settings.version
 templates.env.globals["app_name"] = settings.app_name
 
 # Inject URL data into Templates
 templates.env.globals["url"] = url_builder
+templates.env.globals["asset_version"] = asset_version
 templates.env.globals["base_url"] = settings.clean_base_url
 templates.env.globals["routes"] = route_map_injector
 templates.env.globals["get_system_setting"] = get_cached_setting

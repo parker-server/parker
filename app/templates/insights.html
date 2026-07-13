@@ -1,0 +1,413 @@
+{% extends "base.html" %}
+
+{% block title %}Insights - Parker{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto space-y-8" x-data="creatorChemistry()">
+    <div class="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
+        <div class="max-w-3xl">
+            <p class="text-xs font-bold uppercase tracking-[0.3em] text-blue-300">Insights</p>
+            <h1 class="mt-2 text-4xl font-black text-white tracking-tight">Creator Chemistry</h1>
+            <p class="mt-3 text-gray-400 text-sm md:text-base">
+                Explore which creators show up together most often in your library. Click any highlighted cell to jump straight into Advanced Search with those creator filters applied.
+            </p>
+        </div>
+
+        <div class="grid grid-cols-2 md:grid-cols-3 gap-3 lg:w-auto">
+            <div class="bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 shadow-lg">
+                <div class="text-[10px] uppercase tracking-wider text-gray-500">Visible Pairs</div>
+                <div class="mt-1 text-2xl font-bold text-white" x-text="data?.pair_count || 0"></div>
+            </div>
+            <div class="bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 shadow-lg">
+                <div class="text-[10px] uppercase tracking-wider text-gray-500">Strongest Pair</div>
+                <div class="mt-1 text-sm font-bold text-blue-300 truncate" x-text="topPairLabel()"></div>
+            </div>
+            <div class="bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 shadow-lg col-span-2 md:col-span-1">
+                <div class="text-[10px] uppercase tracking-wider text-gray-500">Peak Shared Issues</div>
+                <div class="mt-1 text-2xl font-bold text-white" x-text="data?.max_shared_issues || 0"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-gray-800/90 border border-gray-700 rounded-2xl shadow-2xl overflow-hidden">
+        <div class="px-4 md:px-6 py-5 border-b border-gray-700 bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+                <div>
+                    <label class="block text-[10px] uppercase tracking-wider text-gray-500 mb-2">Role A</label>
+                    <select x-model="roleA" class="w-full bg-gray-900 text-white rounded-lg px-3 py-2.5 border border-gray-600 outline-none">
+                        <template x-for="role in roles" :key="`a-${role.value}`">
+                            <option :value="role.value" :selected="role.value === roleA" x-text="role.label"></option>
+                        </template>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-[10px] uppercase tracking-wider text-gray-500 mb-2">Role B</label>
+                    <select x-model="roleB" class="w-full bg-gray-900 text-white rounded-lg px-3 py-2.5 border border-gray-600 outline-none">
+                        <template x-for="role in roles" :key="`b-${role.value}`">
+                            <option :value="role.value" :selected="role.value === roleB" x-text="role.label"></option>
+                        </template>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-[10px] uppercase tracking-wider text-gray-500 mb-2">Library</label>
+                    <select x-model="selectedLibraryId" class="w-full bg-gray-900 text-white rounded-lg px-3 py-2.5 border border-gray-600 outline-none">
+                        <option value="">All Visible Libraries</option>
+                        <template x-for="library in libraries" :key="library.id">
+                            <option :value="String(library.id)" x-text="library.name"></option>
+                        </template>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-[10px] uppercase tracking-wider text-gray-500 mb-2">Minimum Shared Issues</label>
+                    <input type="number" min="1" max="100" x-model="minShared" class="w-full bg-gray-900 text-white rounded-lg px-3 py-2.5 border border-gray-600 outline-none">
+                </div>
+
+                <div>
+                    <label class="block text-[10px] uppercase tracking-wider text-gray-500 mb-2">Top Creators Per Axis</label>
+                    <div class="flex gap-2">
+                        <input
+                            type="number"
+                            min="2"
+                            max="15"
+                            x-model="limit"
+                            x-on:blur="normalizeLimit()"
+                            x-on:change="normalizeLimit()"
+                            class="w-full bg-gray-900 text-white rounded-lg px-3 py-2.5 border border-gray-600 outline-none"
+                        >
+                        <button
+                            x-on:click="loadInsights()"
+                            class="shrink-0 bg-blue-600 hover:bg-blue-500 text-white font-bold px-4 rounded-lg transition-colors flex items-center justify-center min-w-[92px]"
+                        >
+                            <span x-show="loading">Working</span>
+                            <span x-show="!loading">Refresh</span>
+                        </button>
+                    </div>
+                    <p x-show="showDensityWarning()" x-cloak class="mt-2 text-[11px] leading-5 text-amber-300">
+                        Larger axes get dense fast. Parker will cap this view at 15 creators per side.
+                    </p>
+                </div>
+            </div>
+
+            <p class="mt-4 text-xs text-gray-500">
+                Stronger cells mean more shared issues. Empty cells do not have enough overlap for the current threshold.
+            </p>
+        </div>
+
+        <div x-show="loading" class="px-6 py-16 text-center text-gray-400">
+            <div class="inline-flex items-center gap-3">
+                <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-400"></div>
+                <span>Mapping creator collaborations...</span>
+            </div>
+        </div>
+
+        <div x-show="errorMessage" x-cloak class="px-6 py-10 text-center">
+            <div class="inline-block bg-red-900/30 border border-red-700 text-red-200 rounded-xl px-5 py-4" x-text="errorMessage"></div>
+        </div>
+
+        <div x-show="!loading && !errorMessage && data && data.pair_count === 0" x-cloak class="px-6 py-20 text-center">
+            <div class="max-w-xl mx-auto">
+                <h2 class="text-2xl font-bold text-white">No creator pairs matched this view</h2>
+                <p class="mt-3 text-gray-400">
+                    Try lowering the shared-issue threshold, changing roles, or broadening the library scope.
+                </p>
+            </div>
+        </div>
+
+        <div x-show="!loading && !errorMessage && data && data.pair_count > 0" x-cloak class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px]">
+            <div class="px-4 md:px-6 pt-4 md:pt-5 pb-6">
+                <div class="mb-4 rounded-xl border border-gray-700 bg-gray-900/50 px-4 py-3">
+                    <div class="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center md:justify-between">
+                        <div class="text-sm text-gray-300">
+                            <span class="font-bold text-white">Rows:</span>
+                            <span x-text="roleLabel(roleA)"></span>
+                            <span class="mx-2 text-gray-600">&middot;</span>
+                            <span class="font-bold text-white">Columns:</span>
+                            <span x-text="roleLabel(roleB)"></span>
+                        </div>
+                        <div class="text-sm text-blue-300">
+                            Tap a center cell to open the matching books.
+                        </div>
+                    </div>
+                    <div class="mt-2 text-xs text-gray-500">
+                        Header cards show visible totals for each creator in this matrix. Only the center intersection cells are drill-down links.
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-between gap-3 mb-3 xl:hidden">
+                    <div class="text-xs uppercase tracking-[0.2em] text-gray-500">Heatmap</div>
+                    <div class="text-[11px] text-blue-300 bg-blue-950/40 border border-blue-900/60 rounded-full px-3 py-1">
+                        Swipe sideways to explore
+                    </div>
+                </div>
+
+                <div class="max-h-[70vh] overflow-auto overscroll-contain touch-pan-x touch-pan-y pb-2">
+                    <table class="table-fixed min-w-[640px] md:min-w-[720px] border-separate [border-spacing:0.5rem]">
+                        <thead>
+                            <tr>
+                                <th class="sticky top-0 left-0 z-30 w-[190px] min-w-[190px] align-top bg-gray-900/95 backdrop-blur py-3 px-3 rounded-lg border border-gray-700 shadow-lg text-left">
+                                    <div class="text-[11px] uppercase tracking-wider text-gray-500">Rows</div>
+                                    <div class="mt-1 text-sm font-bold text-white" x-text="roleLabel(roleA)"></div>
+                                    <div class="mt-3 text-[11px] uppercase tracking-wider text-gray-500">Columns</div>
+                                    <div class="mt-1 text-xs font-bold text-gray-300" x-text="roleLabel(roleB)"></div>
+                                </th>
+
+                                <template x-for="column in (data?.columns || [])" :key="`head-${column.id}`">
+                                    <th class="sticky top-0 z-20 w-[104px] min-w-[104px] align-top py-3 px-3 text-center rounded-lg border border-gray-700 bg-gray-900/95 backdrop-blur shadow-lg">
+                                        <div class="text-[11px] uppercase tracking-wider text-gray-500" x-text="roleLabel(roleB)"></div>
+                                        <div class="mt-1 text-xs font-bold text-gray-200 leading-tight" x-text="column.name"></div>
+                                        <div class="mt-1 text-[11px] text-gray-500" x-text="`${column.total_shared} visible total`"></div>
+                                    </th>
+                                </template>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            <template x-for="row in (matrixRows() || [])" :key="`row-${row.id}`">
+                                <tr>
+                                    <th scope="row" class="sticky left-0 z-10 w-[190px] min-w-[190px] h-[176px] align-top bg-gray-800/95 backdrop-blur py-3 px-3 rounded-lg border border-gray-700 text-left">
+                                        <div class="text-[11px] uppercase tracking-wider text-gray-500" x-text="roleLabel(roleA)"></div>
+                                        <div class="mt-1 text-sm font-bold text-white leading-tight" x-text="row.name"></div>
+                                        <div class="mt-1 text-[11px] text-gray-500" x-text="`${row.total_shared} visible total`"></div>
+                                    </th>
+
+                                    <template x-for="cell in row.cells" :key="`${row.id}-${cell.person_b_id}`">
+                                        <td class="w-[104px] min-w-[104px] h-[176px] align-top">
+                                            <div class="h-[176px] min-h-[176px]">
+                                                <button
+                                                    x-show="cell.shared_issues > 0"
+                                                    x-on:click="openSearch(cell)"
+                                                    class="w-full h-full min-h-[176px] overflow-hidden rounded-xl border text-left px-3 py-3 transition-all hover:-translate-y-0.5 hover:shadow-lg"
+                                                    :style="cellStyle(cell)"
+                                                    :title="cell.sample_series"
+                                                >
+                                                    <div class="text-2xl font-black text-white" x-text="cell.shared_issues"></div>
+                                                    <div class="mt-1 text-xs text-white/85">
+                                                        <span x-text="cell.shared_series"></span> shared series
+                                                    </div>
+                                                    <div class="mt-2 text-[11px] uppercase tracking-wider text-white/60">Pair Total</div>
+                                                    <div class="mt-1 max-w-[80px] overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-white/70" x-text="cell.sample_series"></div>
+                                                </button>
+
+                                                <div
+                                                    x-show="cell.shared_issues === 0"
+                                                    class="w-full h-full min-h-[176px] rounded-xl border border-dashed border-gray-700 bg-gray-900/40"
+                                                ></div>
+                                            </div>
+                                        </td>
+                                    </template>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <aside class="border-t xl:border-t-0 xl:border-l border-gray-700 bg-gray-900/40 p-4 md:p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-lg font-bold text-white">Top Collaborations</h2>
+                    <span class="text-xs uppercase tracking-wider text-gray-500">click to drill down</span>
+                </div>
+
+                <div class="space-y-3 md:grid md:grid-cols-2 md:gap-3 md:space-y-0 xl:grid-cols-1">
+                    <template x-for="pair in (data?.top_collaborations || [])" :key="`${pair.person_a_id}-${pair.person_b_id}`">
+                        <button
+                            x-on:click="openSearch(pair)"
+                            class="w-full text-left rounded-xl border border-gray-700 bg-gray-800/80 hover:bg-gray-750 hover:border-blue-500/50 p-4 transition-all shadow-lg"
+                        >
+                            <div class="flex items-start justify-between gap-3">
+                                <div>
+                                    <div class="text-sm font-bold text-white" x-text="pair.person_a"></div>
+                                    <div class="text-xs text-blue-300 mt-0.5" x-text="pair.person_b"></div>
+                                </div>
+                                <div class="text-right">
+                                    <div class="text-xl font-black text-white" x-text="pair.shared_issues"></div>
+                                    <div class="text-[11px] uppercase tracking-wider text-gray-500">issues</div>
+                                </div>
+                            </div>
+                            <div class="mt-3 flex items-center justify-between text-xs text-gray-400">
+                                <span x-text="`${pair.shared_series} series`"></span>
+                                <span class="truncate ml-3 text-right" x-text="pair.sample_series"></span>
+                            </div>
+                        </button>
+                    </template>
+                </div>
+
+                <div class="mt-6 md:mt-4 xl:mt-6 rounded-xl border border-gray-700 bg-gray-800/60 p-4 md:col-span-2 xl:col-span-1">
+                    <h3 class="text-sm font-bold text-white">Why this view works</h3>
+                    <p class="mt-2 text-xs leading-6 text-gray-400">
+                        Search is still the precise tool. Insights helps you notice patterns first, then jump into the exact books behind them.
+                    </p>
+                </div>
+            </aside>
+        </div>
+    </div>
+</div>
+
+<script>
+function creatorChemistry() {
+    return {
+        roles: [
+            { value: 'writer', label: 'Writer' },
+            { value: 'penciller', label: 'Penciller' },
+            { value: 'inker', label: 'Inker' },
+            { value: 'colorist', label: 'Colorist' },
+            { value: 'letterer', label: 'Letterer' },
+            { value: 'editor', label: 'Editor' },
+            { value: 'cover_artist', label: 'Cover Artist' },
+        ],
+        libraries: [],
+        data: null,
+        loading: true,
+        errorMessage: '',
+        roleA: 'writer',
+        roleB: 'penciller',
+        selectedLibraryId: '',
+        minShared: 2,
+        limit: 12,
+        pairMap: {},
+
+        async init() {
+            await this.loadLibraries();
+            await this.loadInsights();
+        },
+
+        normalizeLimit() {
+            const parsed = parseInt(this.limit, 10);
+            if (Number.isNaN(parsed)) {
+                this.limit = 12;
+                return this.limit;
+            }
+
+            this.limit = Math.min(15, Math.max(2, parsed));
+            return this.limit;
+        },
+
+        showDensityWarning() {
+            const parsed = parseInt(this.limit, 10);
+            if (Number.isNaN(parsed)) return false;
+            return parsed > 12;
+        },
+
+        async loadLibraries() {
+            try {
+                const res = await fetch(window.parker.route('libraries.list'));
+                if (res.ok) {
+                    this.libraries = await res.json();
+                }
+            } catch (error) {
+                console.error('Failed to load libraries', error);
+            }
+        },
+
+        async loadInsights() {
+            this.loading = true;
+            this.errorMessage = '';
+
+            try {
+                const normalizedLimit = this.normalizeLimit();
+                const query = new URLSearchParams({
+                    role_a: this.roleA,
+                    role_b: this.roleB,
+                    min_shared: String(parseInt(this.minShared, 10) || 1),
+                    limit: String(normalizedLimit),
+                });
+
+                if (this.selectedLibraryId) {
+                    query.set('library_id', this.selectedLibraryId);
+                }
+
+                const res = await fetch(window.parker.route('insights.creator_collaborations', {}, query.toString()));
+                if (!res.ok) {
+                    const payload = await res.json().catch(() => ({}));
+                    throw new Error(payload.detail || 'Failed to load insights');
+                }
+
+                this.data = await res.json();
+                this.buildPairMap();
+            } catch (error) {
+                console.error(error);
+                this.errorMessage = error.message || 'Failed to load insights';
+                this.data = null;
+                this.pairMap = {};
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        buildPairMap() {
+            this.pairMap = {};
+            for (const pair of (this.data?.pairs || [])) {
+                this.pairMap[`${pair.person_a_id}__${pair.person_b_id}`] = pair;
+            }
+        },
+
+        matrixRows() {
+            if (!this.data) return [];
+
+            return this.data.rows.map((row) => ({
+                ...row,
+                cells: this.data.columns.map((column) => this.pairMap[`${row.id}__${column.id}`] || {
+                    person_a_id: row.id,
+                    person_a: row.name,
+                    person_b_id: column.id,
+                    person_b: column.name,
+                    shared_issues: 0,
+                    shared_series: 0,
+                    sample_series: '',
+                    intensity: 0,
+                }),
+            }));
+        },
+
+        roleLabel(roleValue) {
+            return this.roles.find((role) => role.value === roleValue)?.label || roleValue;
+        },
+
+        topPairLabel() {
+            const pair = this.data?.top_collaborations?.[0];
+            if (!pair) return 'None yet';
+            return `${pair.person_a} + ${pair.person_b}`;
+        },
+
+        cellStyle(cell) {
+            const alpha = 0.18 + (cell.intensity * 0.62);
+            const borderAlpha = 0.12 + (cell.intensity * 0.45);
+            return `background: linear-gradient(160deg, rgba(37, 99, 235, ${alpha}) 0%, rgba(30, 41, 59, 0.92) 100%); border-color: rgba(96, 165, 250, ${borderAlpha});`;
+        },
+
+        buildSearchUrl(pair) {
+            const payload = {
+                match: 'all',
+                libraryId: this.selectedLibraryId || null,
+                filters: [
+                    { field: this.roleA, operator: 'contains', value: [pair.person_a] },
+                    { field: this.roleB, operator: 'contains', value: [pair.person_b] },
+                ]
+            };
+
+            if (window.parker?.searchHandoff?.buildUrl) {
+                return window.parker.searchHandoff.buildUrl(payload);
+            }
+
+            const query = new URLSearchParams({
+                match: payload.match,
+                filters: JSON.stringify(payload.filters),
+            });
+
+            if (payload.libraryId) {
+                query.set('library_id', String(payload.libraryId));
+            }
+
+            return window.parker.route('pages.search', {}, query.toString());
+        },
+
+        openSearch(pair) {
+            window.location.href = this.buildSearchUrl(pair);
+        },
+    };
+}
+</script>
+{% endblock %}

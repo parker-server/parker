@@ -19,7 +19,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
 
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="{{ url('static/css/style.css') }}">
+    <link rel="stylesheet" href="{{ url('static/css/style.css') }}?v={{ asset_version('static/css/style.css') }}">
     <style>
         [x-cloak] { display: none !important; }
 
@@ -67,6 +67,7 @@
 
                     <div class="hidden lg:flex items-center space-x-1">
                         <a href="{{ url('/user/dashboard') }}" class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors">Dashboard</a>
+                        <a href="{{ url('/insights') }}" class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors">Insights</a>
                         <div class="relative group" x-data="{ open: false, libs: [] }" x-init="libs = await (await fetch(window.parker.route('libraries.list', {}, 'limit=5'))).json()">
 
                             <button class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors flex items-center gap-1">
@@ -156,6 +157,7 @@
                 class="lg:hidden border-t border-gray-800 py-4 space-y-1"
             >
                 <a href="{{ url('/user/dashboard') }}" class="block px-4 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-gray-800 rounded-md">Dashboard</a>
+                <a href="{{ url('/insights') }}" class="block px-4 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-gray-800 rounded-md">Insights</a>
                 <a href="{{ url('/libraries') }}" class="block px-4 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-gray-800 rounded-md">Libraries</a>
                 <a href="{{ url('/collections') }}" class="block px-4 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-gray-800 rounded-md">Collections</a>
                 <a href="{{ url('/reading-lists') }}" class="block px-4 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-gray-800 rounded-md">Reading Lists</a>
@@ -184,7 +186,7 @@
 
     {% include "partials/footer.html" %}
 
-    <script src="{{ url('/static/js/app.js') }}?v={{ app_version }}"></script>
+    <script src="{{ url('/static/js/app.js') }}?v={{ asset_version('static/js/app.js') }}"></script>
 
     <script>
         document.addEventListener('alpine:init', () => {
