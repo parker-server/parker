@@ -31,6 +31,11 @@ async def search(request: Request, user: CurrentUser):
     """Search page"""
     return templates.TemplateResponse(request=request, name="search.html")
 
+@router.get("/insights", response_class=HTMLResponse, name="insights")
+async def insights(request: Request, user: CurrentUser):
+    """Metadata insights page"""
+    return templates.TemplateResponse(request=request, name="insights.html")
+
 @router.get("/collections", response_class=HTMLResponse, name="collections")
 async def collections_view(request: Request, user: CurrentUser):
     """Collections page"""

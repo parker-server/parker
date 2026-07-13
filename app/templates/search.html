@@ -421,6 +421,19 @@ document.addEventListener('alpine:init', () => {
             this.checkUrlParams();
         },
 
+        applyHydratedFilters(filters) {
+            if (!Array.isArray(filters) || filters.length === 0) return false;
+
+            this.rules = filters.map((filter, index) => ({
+                id: Date.now() + index + Math.random(),
+                field: filter.field,
+                operator: filter.operator || 'contains',
+                value: filter.value ?? []
+            }));
+
+            return true;
+        },
+
         checkUrlParams() {
 
             const params = new URLSearchParams(window.location.search);
@@ -443,22 +456,76 @@ document.addEventListener('alpine:init', () => {
             // 1. Handle Sorting overrides
             if (params.has('sort_by')) {
                 this.sortBy = params.get('sort_by');
-                // Optional: Handle sort order if you passed it (e.g. &sort_order=asc)
-                // We default to 'desc' in the model, but you could read it here if needed.
                 shouldSearch = true;
             }
 
             if (params.has('sort_order')) {
-                // You might need to add `sortOrder` to your Alpine data object if it isn't there,
-                // or just pass it directly to the API payload if UI doesn't have a toggle for it.
-                // The current UI relies on hardcoded 'desc' in performSearch or API defaults.
                 this.sortOrder = params.get('sort_order');
+            }
+
+            if (params.has('state_key') && window.parker.searchHandoff) {
+                const hydrated = window.parker.searchHandoff.load(params.get('state_key'));
+                if (hydrated) {
+                    if (hydrated.match) {
+                        this.match = hydrated.match;
+                    }
+
+                    if (hydrated.sortBy) {
+                        this.sortBy = hydrated.sortBy;
+                        shouldSearch = true;
+                    }
+
+                    if (hydrated.sortOrder) {
+                        this.sortOrder = hydrated.sortOrder;
+                    }
+
+                    if (hydrated.limit) {
+                        const hydratedLimit = parseInt(hydrated.limit, 10);
+                        if (!Number.isNaN(hydratedLimit) && hydratedLimit > 0) {
+                            this.limit = hydratedLimit;
+                        }
+                    }
+
+                    if (hydrated.libraryId) {
+                        this.contextLibraryId = parseInt(hydrated.libraryId, 10);
+                        if (!Number.isNaN(this.contextLibraryId)) {
+                            this.fetchLibraryName(this.contextLibraryId);
+                            shouldSearch = true;
+                        }
+                    }
+
+                    if (this.applyHydratedFilters(hydrated.filters)) {
+                        shouldSearch = true;
+                    }
+                }
+            }
+
+            if (params.has('match')) {
+                this.match = params.get('match');
+            }
+
+            if (params.has('limit')) {
+                const urlLimit = parseInt(params.get('limit'), 10);
+                if (!Number.isNaN(urlLimit) && urlLimit > 0) {
+                    this.limit = urlLimit;
+                }
+            }
+
+            if (params.has('filters')) {
+                try {
+                    const parsedFilters = JSON.parse(params.get('filters'));
+                    if (this.applyHydratedFilters(parsedFilters)) {
+                        shouldSearch = true;
+                    }
+                } catch (error) {
+                    console.error('Failed to parse search filters from URL', error);
+                }
             }
 
             // 2. Handle Filters (Deep Linking)
             // Allow search if 'field' exists AND ('value' OR 'operator' exists)
             // This supports ?field=summary&operator=is_empty
-            if (params.has('field') && (params.has('value') || params.has('operator'))) {
+            if (!params.has('filters') && params.has('field') && (params.has('value') || params.has('operator'))) {
                 const field = params.get('field');
                 const value = params.get('value');
                 // Default to 'contains' if not specified
