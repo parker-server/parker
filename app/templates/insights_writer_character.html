@@ -1,41 +1,41 @@
 {% extends "base.html" %}
 
-{% block title %}Character Chemistry - Parker{% endblock %}
+{% block title %}Writer to Character - Parker{% endblock %}
 
 {% block content %}
-<div class="max-w-7xl mx-auto space-y-8" x-data="characterChemistry()">
+<div class="max-w-7xl mx-auto space-y-8" x-data="writerCharacterInsights()">
     <div class="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
         <div class="max-w-3xl">
             <div class="flex flex-wrap items-center gap-3 text-xs font-bold uppercase tracking-[0.25em]">
                 <a href="{{ url('/insights') }}" class="text-gray-500 hover:text-white transition-colors">Insights</a>
                 <span class="text-gray-700">/</span>
-                <span class="text-emerald-300">Character Chemistry</span>
+                <span class="text-amber-300">Writer to Character</span>
             </div>
-            <h1 class="mt-3 text-4xl font-black text-white tracking-tight">Character Chemistry</h1>
+            <h1 class="mt-3 text-4xl font-black text-white tracking-tight">Writer to Character</h1>
             <p class="mt-3 text-gray-400 text-sm md:text-base">
-                Explore which characters co-appear most often in your library. Click any highlighted cell to jump straight into Advanced Search with both character filters applied.
+                Explore which writers are most associated with which characters in your library. Click any highlighted cell to jump straight into Advanced Search with both writer and character filters applied.
             </p>
             <div class="mt-4 flex flex-wrap gap-2">
                 <a href="{{ url('/insights/creator-chemistry') }}" class="px-3 py-1.5 rounded-full border border-gray-700 text-xs font-bold uppercase tracking-wider text-gray-300 hover:text-white hover:border-blue-500/50 transition-colors">
                     Creator Chemistry
                 </a>
-                <span class="px-3 py-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 text-xs font-bold uppercase tracking-wider text-emerald-200">
+                <a href="{{ url('/insights/character-chemistry') }}" class="px-3 py-1.5 rounded-full border border-gray-700 text-xs font-bold uppercase tracking-wider text-gray-300 hover:text-white hover:border-emerald-500/50 transition-colors">
                     Character Chemistry
-                </span>
-                <a href="{{ url('/insights/writer-character') }}" class="px-3 py-1.5 rounded-full border border-gray-700 text-xs font-bold uppercase tracking-wider text-gray-300 hover:text-white hover:border-amber-500/50 transition-colors">
-                    Writer to Character
                 </a>
+                <span class="px-3 py-1.5 rounded-full border border-amber-500/40 bg-amber-500/10 text-xs font-bold uppercase tracking-wider text-amber-200">
+                    Writer to Character
+                </span>
             </div>
         </div>
 
         <div class="grid grid-cols-2 md:grid-cols-3 gap-3 lg:w-auto">
             <div class="bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 shadow-lg">
-                <div class="text-[10px] uppercase tracking-wider text-gray-500">Visible Team-Ups</div>
+                <div class="text-[10px] uppercase tracking-wider text-gray-500">Visible Pairings</div>
                 <div class="mt-1 text-2xl font-bold text-white" x-text="data?.pair_count || 0"></div>
             </div>
             <div class="bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 shadow-lg">
                 <div class="text-[10px] uppercase tracking-wider text-gray-500">Strongest Pairing</div>
-                <div class="mt-1 text-sm font-bold text-emerald-300 truncate" :title="topPairLabel()" x-text="topPairLabel()"></div>
+                <div class="mt-1 text-sm font-bold text-amber-300 truncate" :title="topPairLabel()" x-text="topPairLabel()"></div>
             </div>
             <div class="bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 shadow-lg col-span-2 md:col-span-1">
                 <div class="text-[10px] uppercase tracking-wider text-gray-500">Peak Shared Issues</div>
@@ -63,7 +63,7 @@
                 </div>
 
                 <div>
-                    <label class="block text-[10px] uppercase tracking-wider text-gray-500 mb-2">Top Characters Per Axis</label>
+                    <label class="block text-[10px] uppercase tracking-wider text-gray-500 mb-2">Top Writers and Characters</label>
                     <input
                         type="number"
                         min="2"
@@ -78,7 +78,7 @@
                 <div class="flex items-end">
                     <button
                         x-on:click="loadInsights()"
-                        class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2.5 rounded-lg transition-colors flex items-center justify-center"
+                        class="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold px-4 py-2.5 rounded-lg transition-colors flex items-center justify-center"
                     >
                         <span x-show="loading">Working</span>
                         <span x-show="!loading">Refresh</span>
@@ -87,7 +87,7 @@
             </div>
 
             <p x-show="showDensityWarning()" x-cloak class="mt-4 text-[11px] leading-5 text-amber-300">
-                Larger axes get dense fast. Parker will cap this view at 15 characters per side.
+                Larger axes get dense fast. Parker will cap this view at 15 writers and 15 characters.
             </p>
             <p class="mt-4 text-xs text-gray-500">
                 Stronger cells mean more shared issues. Empty cells do not have enough overlap for the current threshold.
@@ -96,8 +96,8 @@
 
         <div x-show="loading" class="px-6 py-16 text-center text-gray-400">
             <div class="inline-flex items-center gap-3">
-                <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-emerald-400"></div>
-                <span>Mapping character team-ups...</span>
+                <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-amber-400"></div>
+                <span>Mapping writer to character relationships...</span>
             </div>
         </div>
 
@@ -107,7 +107,7 @@
 
         <div x-show="!loading && !errorMessage && data && data.pair_count === 0" x-cloak class="px-6 py-20 text-center">
             <div class="max-w-xl mx-auto">
-                <h2 class="text-2xl font-bold text-white">No character pairs matched this view</h2>
+                <h2 class="text-2xl font-bold text-white">No writer and character pairs matched this view</h2>
                 <p class="mt-3 text-gray-400">
                     Try lowering the shared-issue threshold or broadening the library scope.
                 </p>
@@ -120,23 +120,23 @@
                     <div class="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center md:justify-between">
                         <div class="text-sm text-gray-300">
                             <span class="font-bold text-white">Rows:</span>
-                            <span>Character</span>
+                            <span>Writer</span>
                             <span class="mx-2 text-gray-600">&middot;</span>
                             <span class="font-bold text-white">Columns:</span>
                             <span>Character</span>
                         </div>
-                        <div class="text-sm text-emerald-300">
+                        <div class="text-sm text-amber-300">
                             Tap a center cell to open the matching books.
                         </div>
                     </div>
                     <div class="mt-2 text-xs text-gray-500">
-                        Header cards show visible totals for each character in this matrix. Only the center intersection cells are drill-down links.
+                        Header cards show visible totals for each writer or character in this matrix. Only the center intersection cells are drill-down links.
                     </div>
                 </div>
 
                 <div class="flex items-center justify-between gap-3 mb-3 xl:hidden">
                     <div class="text-xs uppercase tracking-[0.2em] text-gray-500">Heatmap</div>
-                    <div class="text-[11px] text-emerald-300 bg-emerald-950/40 border border-emerald-900/60 rounded-full px-3 py-1">
+                    <div class="text-[11px] text-amber-300 bg-amber-950/40 border border-amber-900/60 rounded-full px-3 py-1">
                         Swipe sideways to explore
                     </div>
                 </div>
@@ -147,7 +147,7 @@
                             <tr>
                                 <th class="sticky top-0 left-0 z-30 w-[190px] min-w-[190px] align-top bg-gray-900/95 backdrop-blur py-3 px-3 rounded-lg border border-gray-700 shadow-lg text-left">
                                     <div class="text-[11px] uppercase tracking-wider text-gray-500">Rows</div>
-                                    <div class="mt-1 text-sm font-bold text-white">Character</div>
+                                    <div class="mt-1 text-sm font-bold text-white">Writer</div>
                                     <div class="mt-3 text-[11px] uppercase tracking-wider text-gray-500">Columns</div>
                                     <div class="mt-1 text-xs font-bold text-gray-300">Character</div>
                                 </th>
@@ -166,7 +166,7 @@
                             <template x-for="row in (matrixRows() || [])" :key="`row-${row.id}`">
                                 <tr>
                                     <th scope="row" class="sticky left-0 z-10 w-[190px] min-w-[190px] h-[176px] align-top bg-gray-800/95 backdrop-blur py-3 px-3 rounded-lg border border-gray-700 text-left">
-                                        <div class="text-[11px] uppercase tracking-wider text-gray-500">Character</div>
+                                        <div class="text-[11px] uppercase tracking-wider text-gray-500">Writer</div>
                                         <div class="mt-1 text-sm font-bold text-white leading-tight" x-text="row.name"></div>
                                         <div class="mt-1 text-[11px] text-gray-500" x-text="`${row.total_shared} visible total`"></div>
                                     </th>
@@ -205,7 +205,7 @@
 
             <aside class="border-t xl:border-t-0 xl:border-l border-gray-700 bg-gray-900/40 p-4 md:p-6">
                 <div class="flex items-center justify-between mb-4">
-                    <h2 class="text-lg font-bold text-white">Top Team-Ups</h2>
+                    <h2 class="text-lg font-bold text-white">Top Pairings</h2>
                     <span class="text-xs uppercase tracking-wider text-gray-500">click to drill down</span>
                 </div>
 
@@ -213,12 +213,12 @@
                     <template x-for="pair in (data?.top_collaborations || [])" :key="`${pair.person_a_id}-${pair.person_b_id}`">
                         <button
                             x-on:click="openSearch(pair)"
-                            class="w-full text-left rounded-xl border border-gray-700 bg-gray-800/80 hover:bg-gray-750 hover:border-emerald-500/50 p-4 transition-all shadow-lg"
+                            class="w-full text-left rounded-xl border border-gray-700 bg-gray-800/80 hover:bg-gray-750 hover:border-amber-500/50 p-4 transition-all shadow-lg"
                         >
                             <div class="flex items-start justify-between gap-3">
                                 <div>
                                     <div class="text-sm font-bold text-white" x-text="pair.person_a"></div>
-                                    <div class="text-xs text-emerald-300 mt-0.5" x-text="pair.person_b"></div>
+                                    <div class="text-xs text-amber-300 mt-0.5" x-text="pair.person_b"></div>
                                 </div>
                                 <div class="text-right">
                                     <div class="text-xl font-black text-white" x-text="pair.shared_issues"></div>
@@ -236,7 +236,7 @@
                 <div class="mt-6 md:mt-4 xl:mt-6 rounded-xl border border-gray-700 bg-gray-800/60 p-4 md:col-span-2 xl:col-span-1">
                     <h3 class="text-sm font-bold text-white">Why this view works</h3>
                     <p class="mt-2 text-xs leading-6 text-gray-400">
-                        Character metadata makes co-appearances easier to spot than a long search form. Insights helps you notice the pairing, then drill into the exact books.
+                        Writer and character metadata make long-run associations easier to spot than a search form alone. Insights helps you notice the connection, then drill into the exact books.
                     </p>
                 </div>
             </aside>
@@ -245,7 +245,7 @@
 </div>
 
 <script>
-function characterChemistry() {
+function writerCharacterInsights() {
     return {
         libraries: [],
         data: null,
@@ -296,6 +296,7 @@ function characterChemistry() {
             try {
                 const normalizedLimit = this.normalizeLimit();
                 const query = new URLSearchParams({
+                    role_a: 'writer',
                     min_shared: String(parseInt(this.minShared, 10) || 1),
                     limit: String(normalizedLimit),
                 });
@@ -304,7 +305,7 @@ function characterChemistry() {
                     query.set('library_id', this.selectedLibraryId);
                 }
 
-                const res = await fetch(window.parker.route('insights.character_collaborations', {}, query.toString()));
+                const res = await fetch(window.parker.route('insights.creator_character_collaborations', {}, query.toString()));
                 if (!res.ok) {
                     const payload = await res.json().catch(() => ({}));
                     throw new Error(payload.detail || 'Failed to load insights');
@@ -356,7 +357,7 @@ function characterChemistry() {
         cellStyle(cell) {
             const alpha = 0.18 + (cell.intensity * 0.62);
             const borderAlpha = 0.12 + (cell.intensity * 0.45);
-            return `background: linear-gradient(160deg, rgba(5, 150, 105, ${alpha}) 0%, rgba(30, 41, 59, 0.92) 100%); border-color: rgba(52, 211, 153, ${borderAlpha});`;
+            return `background: linear-gradient(160deg, rgba(217, 119, 6, ${alpha}) 0%, rgba(30, 41, 59, 0.92) 100%); border-color: rgba(251, 191, 36, ${borderAlpha});`;
         },
 
         buildSearchUrl(pair) {
@@ -364,7 +365,7 @@ function characterChemistry() {
                 match: 'all',
                 libraryId: this.selectedLibraryId || null,
                 filters: [
-                    { field: 'character', operator: 'contains', value: [pair.person_a] },
+                    { field: 'writer', operator: 'contains', value: [pair.person_a] },
                     { field: 'character', operator: 'contains', value: [pair.person_b] },
                 ]
             };

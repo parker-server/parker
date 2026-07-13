@@ -290,3 +290,84 @@ async def get_character_collaborations(
         "limit": limit,
         **_serialize_visible_matrix(pairs, limit),
     }
+
+
+@router.get("/creator-character-collaborations", name="creator_character_collaborations")
+async def get_creator_character_collaborations(
+    db: SessionDep,
+    current_user: CurrentUser,
+    role_a: CreatorRole = Query("writer"),
+    library_id: Optional[int] = Query(None, ge=1),
+    min_shared: int = Query(2, ge=1, le=100),
+    limit: int = Query(12, ge=2, le=15, description="Maximum creators and characters shown per axis"),
+):
+    """
+    Aggregates creator-to-character pairings for heatmap-style insights.
+    """
+    if library_id is not None:
+        _ensure_library_access(library_id, current_user)
+
+    credit_a = aliased(ComicCredit)
+    person_a = aliased(Person)
+    char_link_b = comic_characters.alias("char_link_b")
+    character_b = aliased(Character)
+
+    shared_issue_count = func.count(func.distinct(Comic.id))
+    shared_series_count = func.count(func.distinct(Series.id))
+
+    query = (
+        db.query(
+            person_a.id.label("person_a_id"),
+            person_a.name.label("person_a"),
+            character_b.id.label("person_b_id"),
+            character_b.name.label("person_b"),
+            shared_issue_count.label("shared_issues"),
+            shared_series_count.label("shared_series"),
+            func.min(Series.name).label("sample_series"),
+        )
+        .select_from(Comic)
+        .join(Volume, Comic.volume_id == Volume.id)
+        .join(Series, Volume.series_id == Series.id)
+        .join(credit_a, credit_a.comic_id == Comic.id)
+        .join(person_a, person_a.id == credit_a.person_id)
+        .join(char_link_b, char_link_b.c.comic_id == Comic.id)
+        .join(character_b, character_b.id == char_link_b.c.character_id)
+        .filter(credit_a.role == role_a)
+    )
+
+    if not current_user.is_superuser:
+        allowed_ids = [lib.id for lib in current_user.accessible_libraries]
+        query = query.filter(Series.library_id.in_(allowed_ids))
+
+    if library_id is not None:
+        query = query.filter(Series.library_id == library_id)
+
+    age_filter = get_series_age_restriction(current_user)
+    if age_filter is not None:
+        query = query.filter(age_filter)
+
+    pair_cap = max(limit * limit * 2, 50)
+
+    pairs = (
+        query.group_by(person_a.id, person_a.name, character_b.id, character_b.name)
+        .having(shared_issue_count >= min_shared)
+        .order_by(desc("shared_issues"), person_a.name.asc(), character_b.name.asc())
+        .limit(pair_cap)
+        .all()
+    )
+
+    if not pairs:
+        return _empty_matrix_payload(
+            role_a=role_a,
+            library_id=library_id,
+            min_shared=min_shared,
+            limit=limit,
+        )
+
+    return {
+        "role_a": role_a,
+        "library_id": library_id,
+        "min_shared": min_shared,
+        "limit": limit,
+        **_serialize_visible_matrix(pairs, limit),
+    }
