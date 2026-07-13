@@ -33,8 +33,20 @@ async def search(request: Request, user: CurrentUser):
 
 @router.get("/insights", response_class=HTMLResponse, name="insights")
 async def insights(request: Request, user: CurrentUser):
-    """Metadata insights page"""
+    """Insights landing page"""
     return templates.TemplateResponse(request=request, name="insights.html")
+
+
+@router.get("/insights/creator-chemistry", response_class=HTMLResponse, name="insights_creator_chemistry")
+async def insights_creator_chemistry(request: Request, user: CurrentUser):
+    """Creator collaboration insights page"""
+    return templates.TemplateResponse(request=request, name="insights_creator.html")
+
+
+@router.get("/insights/character-chemistry", response_class=HTMLResponse, name="insights_character_chemistry")
+async def insights_character_chemistry(request: Request, user: CurrentUser):
+    """Character co-appearance insights page"""
+    return templates.TemplateResponse(request=request, name="insights_character.html")
 
 @router.get("/collections", response_class=HTMLResponse, name="collections")
 async def collections_view(request: Request, user: CurrentUser):
