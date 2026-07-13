@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 from app.api.home import _pick_best_cover, format_home_item
 from app.models.comic import Comic, Volume
+from app.models.interactions import UserComicRating
 from app.models.library import Library
 from app.models.reading_progress import ReadingProgress
 from app.models.series import Series
@@ -64,6 +65,9 @@ def test_format_home_item_and_pick_best_cover_helpers():
     assert item["series"] == "Unknown"
     assert item["volume"] == 0
     assert item["thumbnail_path"] == "/api/comics/11/thumbnail?v=0"
+    assert item["rating_mode"] == "none"
+    assert item["rating_value"] is None
+    assert item["rating_label"] is None
     assert item["progress_percentage"] == 100.0
 
     no_progress = format_home_item(comic)
@@ -167,6 +171,111 @@ def test_home_rated_orders_by_rating(auth_client, db):
     assert len(payload) == 2
     assert payload[0]["id"] == high.id
     assert payload[0]["community_rating"] == 4.9
+
+
+def test_home_top_parker_rated_orders_by_average_then_count(auth_client, db):
+    _, _, volume = _create_series_graph(db, lib_name="home-parker-rated-lib", series_name="Home Parker Rated")
+
+    top = _add_comic(db, volume, number="3", title="Parker Top")
+    tiebreak = _add_comic(db, volume, number="2", title="Parker Tiebreak")
+    lower = _add_comic(db, volume, number="1", title="Parker Lower")
+    fourth = _add_comic(db, volume, number="4", title="Parker Fourth")
+
+    user_a = _add_user(db, username="parker-rater-a", email="parker-rater-a@example.com", share_progress_enabled=False)
+    user_b = _add_user(db, username="parker-rater-b", email="parker-rater-b@example.com", share_progress_enabled=False)
+    user_c = _add_user(db, username="parker-rater-c", email="parker-rater-c@example.com", share_progress_enabled=False)
+    user_d = _add_user(db, username="parker-rater-d", email="parker-rater-d@example.com", share_progress_enabled=False)
+
+    db.add_all([
+        UserComicRating(user_id=user_a.id, comic_id=top.id, rating=5),
+        UserComicRating(user_id=user_b.id, comic_id=top.id, rating=5),
+        UserComicRating(user_id=user_a.id, comic_id=tiebreak.id, rating=5),
+        UserComicRating(user_id=user_b.id, comic_id=tiebreak.id, rating=4),
+        UserComicRating(user_id=user_c.id, comic_id=tiebreak.id, rating=5),
+        UserComicRating(user_id=user_a.id, comic_id=lower.id, rating=4),
+        UserComicRating(user_id=user_b.id, comic_id=lower.id, rating=4),
+        UserComicRating(user_id=user_c.id, comic_id=fourth.id, rating=3),
+        UserComicRating(user_id=user_d.id, comic_id=fourth.id, rating=3),
+    ])
+    db.commit()
+
+    response = auth_client.get("/api/home/parker-rated?limit=10")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [item["id"] for item in payload] == [top.id, tiebreak.id, lower.id, fourth.id]
+    assert payload[0]["rating_mode"] == "parker"
+    assert payload[0]["rating_value"] == 5.0
+    assert payload[0]["parker_rating_average"] == 5.0
+    assert payload[0]["parker_rating_count"] == 2
+    assert payload[0]["rating_label"] == "Parker Rating"
+    assert payload[1]["parker_rating_average"] == 14 / 3
+    assert payload[1]["parker_rating_count"] == 3
+
+
+def test_home_top_parker_rated_returns_empty_without_enough_qualifying_items(auth_client, db):
+    _, _, volume = _create_series_graph(db, lib_name="home-parker-threshold-lib", series_name="Home Parker Threshold")
+
+    first = _add_comic(db, volume, number="1", title="Threshold First")
+    second = _add_comic(db, volume, number="2", title="Threshold Second")
+    third = _add_comic(db, volume, number="3", title="Threshold Third")
+
+    user_a = _add_user(db, username="parker-threshold-a", email="parker-threshold-a@example.com", share_progress_enabled=False)
+    user_b = _add_user(db, username="parker-threshold-b", email="parker-threshold-b@example.com", share_progress_enabled=False)
+    user_c = _add_user(db, username="parker-threshold-c", email="parker-threshold-c@example.com", share_progress_enabled=False)
+
+    db.add_all([
+        UserComicRating(user_id=user_a.id, comic_id=first.id, rating=5),
+        UserComicRating(user_id=user_b.id, comic_id=first.id, rating=5),
+        UserComicRating(user_id=user_a.id, comic_id=second.id, rating=4),
+        UserComicRating(user_id=user_b.id, comic_id=second.id, rating=4),
+        UserComicRating(user_id=user_c.id, comic_id=third.id, rating=5),
+    ])
+    db.commit()
+
+    response = auth_client.get("/api/home/parker-rated?limit=10")
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_home_top_parker_rated_applies_age_filter(auth_client, db, normal_user):
+    _, _, safe_volume = _create_series_graph(db, lib_name="home-parker-age-safe-lib", series_name="Home Parker Safe")
+    _, _, second_safe_volume = _create_series_graph(db, lib_name="home-parker-age-safe-lib-2", series_name="Home Parker Safe Two")
+    _, _, third_safe_volume = _create_series_graph(db, lib_name="home-parker-age-safe-lib-3", series_name="Home Parker Safe Three")
+    _, _, fourth_safe_volume = _create_series_graph(db, lib_name="home-parker-age-safe-lib-4", series_name="Home Parker Safe Four")
+    _, _, banned_volume = _create_series_graph(db, lib_name="home-parker-age-banned-lib", series_name="Home Parker Banned")
+
+    safe = _add_comic(db, safe_volume, number="1", title="Parker Safe", age_rating="Teen")
+    safe_two = _add_comic(db, second_safe_volume, number="1", title="Parker Safe Two", age_rating="Teen")
+    safe_three = _add_comic(db, third_safe_volume, number="1", title="Parker Safe Three", age_rating="Teen")
+    safe_four = _add_comic(db, fourth_safe_volume, number="1", title="Parker Safe Four", age_rating="Teen")
+    banned = _add_comic(db, banned_volume, number="1", title="Parker Banned", age_rating="Mature 17+")
+
+    rater = _add_user(db, username="parker-age-rater", email="parker-age-rater@example.com", share_progress_enabled=False)
+    db.add_all([
+        UserComicRating(user_id=rater.id, comic_id=safe.id, rating=4),
+        UserComicRating(user_id=normal_user.id, comic_id=safe.id, rating=4),
+        UserComicRating(user_id=rater.id, comic_id=safe_two.id, rating=4),
+        UserComicRating(user_id=normal_user.id, comic_id=safe_two.id, rating=4),
+        UserComicRating(user_id=rater.id, comic_id=safe_three.id, rating=4),
+        UserComicRating(user_id=normal_user.id, comic_id=safe_three.id, rating=4),
+        UserComicRating(user_id=rater.id, comic_id=safe_four.id, rating=4),
+        UserComicRating(user_id=normal_user.id, comic_id=safe_four.id, rating=4),
+        UserComicRating(user_id=normal_user.id, comic_id=banned.id, rating=5),
+        UserComicRating(user_id=rater.id, comic_id=banned.id, rating=5),
+    ])
+
+    normal_user.max_age_rating = "Teen"
+    normal_user.allow_unknown_age_ratings = False
+    db.commit()
+
+    response = auth_client.get("/api/home/parker-rated?limit=10")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 4
+    assert {item["id"] for item in payload} == {safe.id, safe_two.id, safe_three.id, safe_four.id}
 
 
 def test_home_resume_applies_staleness_and_progress_percentage(auth_client, db, normal_user):

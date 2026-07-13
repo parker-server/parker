@@ -94,6 +94,22 @@
             </div>
         </div>
 
+        <div x-show="!loading.parkerTopRated && parkerTopRatedComics.length > 0">
+            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                    <span class="text-blue-400">&#9733;</span> Top Rated on Parker
+                </h2>
+            </div>
+
+            <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                <template x-for="comic in parkerTopRatedComics" :key="comic.id">
+                    <div class="w-36 flex-shrink-0">
+                        {% include "partials/comic_card.html" %}
+                    </div>
+                </template>
+            </div>
+        </div>
+
         <div x-show="!loading.popular && popularSeries.length > 0">
             <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
                 <h2 class="text-xl font-bold text-white flex items-center gap-2">
@@ -215,6 +231,7 @@ function homePage() {
         onDeckSeries: [],
         randomSeries: [],
         topRatedComics: [],
+        parkerTopRatedComics: [],
         resumeComics: [],
         smartLists: [],
         popularSeries: [],
@@ -226,6 +243,7 @@ function homePage() {
             onDeck: true,
             random: true,
             topRated: true,
+            parkerTopRated: true,
             resume: true,
             popular: true,
         },
@@ -235,6 +253,7 @@ function homePage() {
                 || this.loading.updated || this.loading.starred
                 || this.loading.onDeck || this.loading.random
                 || this.loading.topRated || this.loading.resume
+                || this.loading.parkerTopRated
                 ;
         },
 
@@ -253,6 +272,7 @@ function homePage() {
             this.fetchResume();
             this.fetchRandom();
             this.fetchTopRated();
+            this.fetchTopParkerRated();
             this.fetchSmartLists();
             this.fetchPopular();
         },
@@ -325,6 +345,14 @@ function homePage() {
                 if (res.ok) this.topRatedComics = await res.json();
             } catch(e) { console.error(e); }
             finally { this.loading.topRated = false; }
+        },
+
+        async fetchTopParkerRated() {
+            try {
+                const res = await fetch(window.parker.route('home.top_parker_rated', {}, 'limit=12'));
+                if (res.ok) this.parkerTopRatedComics = await res.json();
+            } catch(e) { console.error(e); }
+            finally { this.loading.parkerTopRated = false; }
         },
 
         async fetchSmartLists() {

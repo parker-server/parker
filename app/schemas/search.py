@@ -57,6 +57,9 @@ class ComicSearchItem(BaseModel):
     format: Optional[str] = None
     thumbnail_path: Optional[str] = None
     community_rating: Optional[float] = None
+    rating_mode: Optional[Literal['parker', 'source', 'none']] = 'none'
+    rating_value: Optional[float] = None
+    rating_label: Optional[str] = None
     progress_percentage: Optional[float] = None
 
 

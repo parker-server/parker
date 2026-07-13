@@ -10,6 +10,7 @@ from app.core.settings_loader import get_cached_setting
 from app.api.deps import SessionDep, CurrentUser
 from app.core.comic_helpers import get_smart_cover, get_series_age_restriction, get_thumbnail_url
 from app.models.comic import Comic, Volume
+from app.models.interactions import UserComicRating
 from app.models.series import Series
 from app.models.user import User
 from app.models.reading_progress import ReadingProgress
@@ -21,7 +22,16 @@ router = APIRouter()
 # (Or define a simple one here if ComicSearchItem is too heavy,
 # but it should be fine as it matches what comic_card expects)
 
-def format_home_item(comic: Comic, progress: ReadingProgress = None) -> dict:
+def format_home_item(
+        comic: Comic,
+        progress: ReadingProgress = None,
+        *,
+        rating_mode: str = "none",
+        rating_value: float | None = None,
+        rating_label: str | None = None,
+        parker_rating_average: float | None = None,
+        parker_rating_count: int = 0,
+) -> dict:
     """Helper to flatten Comic object into ComicSearchItem schema"""
     item = {
         "id": comic.id,
@@ -35,6 +45,12 @@ def format_home_item(comic: Comic, progress: ReadingProgress = None) -> dict:
         "format": comic.format,
         "thumbnail_path": get_thumbnail_url(comic.id, comic.updated_at),
         "community_rating": comic.community_rating,
+        "source_rating": comic.community_rating,
+        "rating_mode": rating_mode,
+        "rating_value": rating_value,
+        "rating_label": rating_label,
+        "parker_rating_average": parker_rating_average,
+        "parker_rating_count": parker_rating_count,
         "progress_percentage": None
     }
 
@@ -189,7 +205,77 @@ def get_top_rated(
 
     gems = query.order_by(desc(Comic.community_rating)).limit(limit).all()
 
-    return [format_home_item(c) for c in gems]
+    return [
+        format_home_item(
+            c,
+            rating_mode="source",
+            rating_value=c.community_rating,
+            rating_label="Source Rating",
+        )
+        for c in gems
+    ]
+
+
+@router.get("/parker-rated", response_model=List[dict], name="top_parker_rated")
+def get_top_parker_rated(
+        db: SessionDep,
+        current_user: CurrentUser,
+        limit: int = 10
+):
+    """
+    Get issues with the highest Parker rating averages.
+    Live aggregate for now; this is the main surface likely to benefit from caching later.
+    """
+    rating_stats = (
+        db.query(
+            UserComicRating.comic_id.label("comic_id"),
+            func.avg(UserComicRating.rating).label("parker_rating_average"),
+            func.count(UserComicRating.user_id).label("parker_rating_count"),
+        )
+        .having(func.count(UserComicRating.user_id) >= 2)
+        .group_by(UserComicRating.comic_id)
+        .subquery()
+    )
+
+    query = (
+        db.query(
+            Comic,
+            rating_stats.c.parker_rating_average,
+            rating_stats.c.parker_rating_count,
+        )
+        .join(rating_stats, rating_stats.c.comic_id == Comic.id)
+        .join(Volume).join(Series)
+        .options(joinedload(Comic.volume).joinedload(Volume.series))
+    )
+
+    age_filter = get_series_age_restriction(current_user)
+    if age_filter is not None:
+        query = query.filter(age_filter)
+
+    results = (
+        query.order_by(
+            desc(rating_stats.c.parker_rating_average),
+            desc(rating_stats.c.parker_rating_count),
+            desc(Comic.updated_at),
+        )
+        .limit(limit)
+        .all()
+    )
+
+    if len(results) < 4:
+        return []
+
+    return [
+        format_home_item(
+            comic,
+            rating_mode="parker",
+            rating_value=float(parker_average) if parker_average is not None else None,
+            rating_label="Parker Rating",
+            parker_rating_average=float(parker_average) if parker_average is not None else None,
+            parker_rating_count=int(parker_count or 0),
+        )
+        for comic, parker_average, parker_count in results
+    ]
 
 
 @router.get("/resume", response_model=List[ComicSearchItem], name="resume_reading")

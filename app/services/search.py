@@ -497,5 +497,8 @@ class SearchService:
             "publisher": comic.publisher,
             "format": comic.format,
             "thumbnail_path": get_thumbnail_url(comic.id, comic.updated_at),
-            "community_rating": comic.community_rating
+            "community_rating": comic.community_rating,
+            "rating_mode": "source" if comic.community_rating and comic.community_rating > 0 else "none",
+            "rating_value": comic.community_rating,
+            "rating_label": "Source Rating" if comic.community_rating and comic.community_rating > 0 else None,
         }
