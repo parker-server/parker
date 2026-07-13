@@ -14,56 +14,40 @@
         </div>
     </section>
 
-    <section class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+    <section class="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <a href="{{ url('/insights/creator-chemistry') }}" class="group rounded-3xl border border-gray-700 bg-gray-800/80 hover:border-blue-500/60 hover:bg-gray-800 px-6 py-6 shadow-xl transition-all">
-            <div class="flex items-start justify-between gap-4">
-                <div>
-                    <div class="text-[10px] uppercase tracking-[0.25em] text-blue-300">Phase 1</div>
-                    <h2 class="mt-3 text-2xl font-black text-white">Creator Chemistry</h2>
-                    <p class="mt-3 text-sm leading-6 text-gray-400">
-                        See which writers, pencillers, inkers, colorists, and editors show up together most often across your library.
-                    </p>
-                </div>
-                <div class="rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1 text-xs font-bold uppercase tracking-wider text-blue-200">
-                    Live
-                </div>
-            </div>
-
-            <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-gray-400">
-                <div class="rounded-xl border border-gray-700 bg-gray-900/50 px-4 py-3">Creator role pair filters</div>
-                <div class="rounded-xl border border-gray-700 bg-gray-900/50 px-4 py-3">Matrix drill-down to Search</div>
-                <div class="rounded-xl border border-gray-700 bg-gray-900/50 px-4 py-3">Visible collaboration totals</div>
-            </div>
+            <h2 class="text-2xl font-black text-white">Creator Chemistry</h2>
+            <p class="mt-3 text-sm leading-6 text-gray-400">
+                See which writers, pencillers, inkers, colorists, and editors show up together most often across your library.
+            </p>
 
             <div class="mt-6 inline-flex items-center gap-2 text-sm font-bold text-blue-300 group-hover:text-blue-200">
                 Open Creator Chemistry
-                <span aria-hidden="true">→</span>
+                <span aria-hidden="true">&rarr;</span>
             </div>
         </a>
 
         <a href="{{ url('/insights/character-chemistry') }}" class="group rounded-3xl border border-gray-700 bg-gray-800/80 hover:border-emerald-500/60 hover:bg-gray-800 px-6 py-6 shadow-xl transition-all">
-            <div class="flex items-start justify-between gap-4">
-                <div>
-                    <div class="text-[10px] uppercase tracking-[0.25em] text-emerald-300">Phase 2</div>
-                    <h2 class="mt-3 text-2xl font-black text-white">Character Chemistry</h2>
-                    <p class="mt-3 text-sm leading-6 text-gray-400">
-                        Explore which characters co-appear most often, surface recurring team-ups, and jump into the matching issues in one click.
-                    </p>
-                </div>
-                <div class="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-bold uppercase tracking-wider text-emerald-200">
-                    New
-                </div>
-            </div>
-
-            <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-gray-400">
-                <div class="rounded-xl border border-gray-700 bg-gray-900/50 px-4 py-3">Character co-appearance matrix</div>
-                <div class="rounded-xl border border-gray-700 bg-gray-900/50 px-4 py-3">Top team-up sidebar</div>
-                <div class="rounded-xl border border-gray-700 bg-gray-900/50 px-4 py-3">Search handoff with dual character rules</div>
-            </div>
+            <h2 class="text-2xl font-black text-white">Character Chemistry</h2>
+            <p class="mt-3 text-sm leading-6 text-gray-400">
+                Explore which characters co-appear most often, surface recurring team-ups, and jump into the matching issues in one click.
+            </p>
 
             <div class="mt-6 inline-flex items-center gap-2 text-sm font-bold text-emerald-300 group-hover:text-emerald-200">
                 Open Character Chemistry
-                <span aria-hidden="true">→</span>
+                <span aria-hidden="true">&rarr;</span>
+            </div>
+        </a>
+
+        <a href="{{ url('/insights/writer-character') }}" class="group rounded-3xl border border-gray-700 bg-gray-800/80 hover:border-amber-500/60 hover:bg-gray-800 px-6 py-6 shadow-xl transition-all">
+            <h2 class="text-2xl font-black text-white">Writer to Character</h2>
+            <p class="mt-3 text-sm leading-6 text-gray-400">
+                See which writers are most closely associated with which characters, then jump straight into the matching books.
+            </p>
+
+            <div class="mt-6 inline-flex items-center gap-2 text-sm font-bold text-amber-300 group-hover:text-amber-200">
+                Open Writer to Character
+                <span aria-hidden="true">&rarr;</span>
             </div>
         </a>
     </section>
