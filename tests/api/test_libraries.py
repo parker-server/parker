@@ -128,6 +128,36 @@ def test_create_library_duplicate_name_returns_400(admin_client, db):
     assert response.json() == {"detail": "Library name already exists"}
 
 
+def test_create_library_rejects_overlapping_child_path(admin_client, db):
+    db.add(Library(name="Main Library", path="/tmp/comics"))
+    db.commit()
+
+    response = admin_client.post(
+        "/api/libraries/",
+        json={"name": "Marvel", "path": "/tmp/comics/Marvel/"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "Library path overlaps with existing library 'Main Library'"
+    }
+
+
+def test_create_library_rejects_overlapping_parent_path(admin_client, db):
+    db.add(Library(name="Marvel", path="/tmp/comics/Marvel"))
+    db.commit()
+
+    response = admin_client.post(
+        "/api/libraries/",
+        json={"name": "Main Library", "path": "/tmp/comics"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "Library path overlaps with existing library 'Marvel'"
+    }
+
+
 def test_user_rls_security(client, db, admin_user, normal_user):
     lib = Library(name="Secret Library", path="/tmp")
     db.add(lib)
@@ -420,6 +450,23 @@ def test_update_library_rejects_duplicate_name(admin_client, db):
 
     assert response.status_code == 400
     assert response.json() == {"detail": "Library name already exists"}
+
+
+def test_update_library_rejects_overlapping_path(admin_client, db):
+    original = Library(name="Original", path="/tmp/original")
+    existing = Library(name="Main Library", path="/tmp/comics")
+    db.add_all([original, existing])
+    db.commit()
+
+    response = admin_client.patch(
+        f"/api/libraries/{original.id}",
+        json={"path": "/tmp/comics/DC"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "Library path overlaps with existing library 'Main Library'"
+    }
 
 
 def test_update_library_returns_404_for_missing_library(admin_client):

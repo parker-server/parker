@@ -3,6 +3,7 @@ from typing import List, Annotated, Optional
 from pydantic import BaseModel
 from sqlalchemy import func, case
 import logging
+import os
 
 from app.core.comic_helpers import get_thumbnail_url, NON_PLAIN_FORMATS, REVERSE_NUMBERING_SERIES, get_series_age_restriction
 from app.models.library import Library
@@ -15,6 +16,40 @@ from app.api.deps import PaginationParams, PaginatedResponse, SessionDep, Curren
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _normalize_library_path(path: str) -> str:
+    return os.path.normcase(os.path.normpath(path.strip()))
+
+
+def _paths_overlap(first_path: str, second_path: str) -> bool:
+    first = _normalize_library_path(first_path)
+    second = _normalize_library_path(second_path)
+
+    try:
+        common = os.path.commonpath([first, second])
+    except ValueError:
+        return False
+
+    return common == first or common == second
+
+
+def _find_overlapping_library(
+        db,
+        candidate_path: str,
+        *,
+        exclude_library_id: Optional[int] = None,
+) -> Optional[Library]:
+    query = db.query(Library)
+    if exclude_library_id is not None:
+        query = query.filter(Library.id != exclude_library_id)
+
+    for existing in query.all():
+        if _paths_overlap(candidate_path, existing.path):
+            return existing
+
+    return None
+
 
 def _has_library_access(library_id: int, current_user: CurrentUser) -> bool:
 
@@ -296,6 +331,13 @@ async def create_library(lib_in: LibraryCreate,
     if existing:
         raise HTTPException(status_code=400, detail="Library name already exists")
 
+    overlapping = _find_overlapping_library(db, lib_in.path)
+    if overlapping:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Library path overlaps with existing library '{overlapping.name}'"
+        )
+
     library = Library(
         name=lib_in.name,
         path=lib_in.path,
@@ -344,6 +386,13 @@ async def update_library(
         library.name = updates.name
 
     if updates.path:
+        overlapping = _find_overlapping_library(db, updates.path, exclude_library_id=library_id)
+        if overlapping:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Library path overlaps with existing library '{overlapping.name}'"
+            )
+
         library.path = updates.path
         # Note: Changing path doesn't delete existing comics, but the next scan
         # might mark them as 'missing' if the new path is totally different.
