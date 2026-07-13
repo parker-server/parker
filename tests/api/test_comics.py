@@ -75,6 +75,8 @@ def test_search_comics_delegates_to_search_service(auth_client):
                 "format": None,
                 "thumbnail_path": None,
                 "community_rating": None,
+                "parker_rating_average": None,
+                "parker_rating_count": 0,
                 "rating_mode": "none",
                 "rating_value": None,
                 "rating_label": None,
@@ -101,6 +103,68 @@ def test_search_comics_delegates_to_search_service(auth_client):
     assert response.status_code == 200
     assert response.json() == expected
     mock_service_cls.return_value.search.assert_called_once()
+
+
+def test_search_comics_can_sort_and_filter_by_parker_rating(auth_client, db, normal_user):
+    library, _, volume = _create_graph(db, lib_name="comic-search-rating", series_name="Search Rating Saga")
+
+    top_rated = Comic(
+        volume_id=volume.id,
+        number="1",
+        title="Top Rated",
+        community_rating=4.8,
+        filename="top-rated.cbz",
+        file_path="/tmp/top-rated.cbz",
+    )
+    lower_rated = Comic(
+        volume_id=volume.id,
+        number="2",
+        title="Lower Rated",
+        community_rating=4.9,
+        filename="lower-rated.cbz",
+        file_path="/tmp/lower-rated.cbz",
+    )
+    second_user = User(
+        username="search-second-rater",
+        email="search-second-rater@example.com",
+        hashed_password="fakehash",
+        is_superuser=False,
+        is_active=True,
+    )
+
+    db.add_all([top_rated, lower_rated, second_user])
+    db.flush()
+    db.add_all([
+        UserComicRating(user_id=normal_user.id, comic_id=top_rated.id, rating=5),
+        UserComicRating(user_id=second_user.id, comic_id=top_rated.id, rating=4),
+        UserComicRating(user_id=normal_user.id, comic_id=lower_rated.id, rating=3),
+        UserComicRating(user_id=second_user.id, comic_id=lower_rated.id, rating=2),
+    ])
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    response = auth_client.post(
+        "/api/comics/search",
+        json={
+            "match": "all",
+            "filters": [
+                {"field": "parker_rating", "operator": "at_least", "value": 4}
+            ],
+            "sort_by": "parker_rating",
+            "sort_order": "desc",
+            "limit": 10,
+            "offset": 0,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert [item["title"] for item in payload["results"]] == ["Top Rated"]
+    assert payload["results"][0]["rating_mode"] == "parker"
+    assert payload["results"][0]["rating_value"] == 4.5
+    assert payload["results"][0]["parker_rating_average"] == 4.5
+    assert payload["results"][0]["parker_rating_count"] == 2
 
 
 def test_get_comic_detail_returns_metadata_and_in_progress_status(auth_client, db, normal_user):

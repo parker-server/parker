@@ -9,7 +9,7 @@ class SearchFilter(BaseModel):
 
         # Metadata
         'series', 'volume', 'number', 'title', 'publisher', 'imprint',
-        'summary', 'web', 'rating', 'age_rating', 'language', 'format', 'year',
+        'summary', 'web', 'rating', 'parker_rating', 'age_rating', 'language', 'format', 'year',
 
         # Creators
         'writer', 'penciller', 'inker', 'colorist', 'letterer', 'cover_artist', 'editor',
@@ -23,6 +23,7 @@ class SearchFilter(BaseModel):
     ]
     operator: Literal[
         'equal', 'not_equal',
+        'at_least', 'at_most',
         'contains', 'does_not_contain', 'must_contain',
         'is_empty', 'is_not_empty'
     ]
@@ -35,7 +36,7 @@ class SearchRequest(BaseModel):
     match: Literal['any', 'all'] = 'all'
     filters: List[SearchFilter] = Field(default_factory=list)
 
-    sort_by: Literal['created', 'updated', 'year', 'series', 'title', 'page_count', 'rating'] = 'created'
+    sort_by: Literal['created', 'updated', 'year', 'series', 'title', 'page_count', 'rating', 'parker_rating'] = 'created'
     sort_order: Literal['asc', 'desc'] = 'desc'
 
     limit: int = Field(default=50, ge=1, le=1000)
@@ -57,6 +58,8 @@ class ComicSearchItem(BaseModel):
     format: Optional[str] = None
     thumbnail_path: Optional[str] = None
     community_rating: Optional[float] = None
+    parker_rating_average: Optional[float] = None
+    parker_rating_count: int = 0
     rating_mode: Optional[Literal['parker', 'source', 'none']] = 'none'
     rating_value: Optional[float] = None
     rating_label: Optional[str] = None

@@ -2,10 +2,13 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+from sqlalchemy import literal_column
 
 from app.models.comic import Comic, Volume
+from app.models.interactions import UserComicRating
 from app.models.library import Library
 from app.models.series import Series
+from app.models.user import User
 from app.schemas.search import SearchFilter, SearchRequest
 from app.services.search import SearchService
 
@@ -164,6 +167,54 @@ def test_search_service_applies_age_filter_and_skips_invalid_filters(db, normal_
     assert len(results["results"]) == 2
 
 
+def test_search_service_filters_and_sorts_by_parker_rating(db, normal_user):
+    data = _seed_search_graph(db)
+    other_alpha_user = User(
+        username="alpha-rater",
+        email="alpha-rater@example.com",
+        hashed_password="x",
+        is_superuser=False,
+        is_active=True,
+    )
+    other_beta_user = User(
+        username="beta-rater",
+        email="beta-rater@example.com",
+        hashed_password="x",
+        is_superuser=False,
+        is_active=True,
+    )
+    db.add_all([other_alpha_user, other_beta_user])
+    db.flush()
+
+    db.add_all([
+        UserComicRating(user_id=normal_user.id, comic_id=data["alpha"].id, rating=5),
+        UserComicRating(user_id=normal_user.id, comic_id=data["beta"].id, rating=3),
+        UserComicRating(user_id=other_alpha_user.id, comic_id=data["alpha"].id, rating=4),
+        UserComicRating(user_id=other_beta_user.id, comic_id=data["beta"].id, rating=2),
+    ])
+    db.commit()
+
+    service = SearchService(db, normal_user)
+    request = SearchRequest(
+        match="all",
+        filters=[SearchFilter(field="parker_rating", operator="at_least", value=4)],
+        sort_by="parker_rating",
+        sort_order="desc",
+        limit=10,
+        offset=0,
+    )
+
+    results = service.search(request)
+
+    assert results["total"] == 1
+    assert len(results["results"]) == 1
+    assert results["results"][0]["id"] == data["alpha"].id
+    assert results["results"][0]["rating_mode"] == "parker"
+    assert results["results"][0]["rating_value"] == 4.5
+    assert results["results"][0]["parker_rating_average"] == 4.5
+    assert results["results"][0]["parker_rating_count"] == 2
+
+
 def test_build_condition_handles_empty_operators_and_fts_routing(normal_user):
     service = SearchService(MagicMock(), normal_user)
     service._build_empty_condition = MagicMock(return_value="empty-expr")
@@ -229,6 +280,20 @@ def test_build_simple_field_condition_operators():
     assert SearchService._build_simple_field_condition(Comic.publisher, "must_contain", "Marvel") is None
 
 
+def test_build_numeric_field_condition_operators():
+    equal_expr = SearchService._build_numeric_field_condition(Comic.community_rating, "equal", 4.5)
+    not_equal_expr = SearchService._build_numeric_field_condition(Comic.community_rating, "not_equal", 3)
+    at_least_expr = SearchService._build_numeric_field_condition(Comic.community_rating, "at_least", "4")
+    at_most_expr = SearchService._build_numeric_field_condition(Comic.community_rating, "at_most", 2.5)
+
+    assert "comics.community_rating = 4.5" in _sql(equal_expr)
+    assert "comics.community_rating != 3.0" in _sql(not_equal_expr)
+    assert "comics.community_rating >= 4.0" in _sql(at_least_expr)
+    assert "comics.community_rating <= 2.5" in _sql(at_most_expr)
+    assert SearchService._build_numeric_field_condition(Comic.community_rating, "contains", 4) is None
+    assert SearchService._build_numeric_field_condition(Comic.community_rating, "equal", "bad") is None
+
+
 def test_build_credit_condition_operators():
     equal_expr = SearchService._build_credit_condition("writer", "equal", "Alan Moore")
     contains_expr = SearchService._build_credit_condition("writer", "contains", ["Alan", "Grant"])
@@ -281,23 +346,29 @@ def test_collection_and_reading_list_condition_operators():
     assert SearchService._build_reading_list_condition("unknown", "x") is None
 
 
-def test_build_empty_condition_relationship_and_simple_paths():
-    assert "NOT (EXISTS" in _sql(SearchService._build_empty_condition("character", True))
-    assert "EXISTS" in _sql(SearchService._build_empty_condition("character", False))
-    assert "NOT (EXISTS" in _sql(SearchService._build_empty_condition("team", True))
-    assert "EXISTS" in _sql(SearchService._build_empty_condition("location", False))
-    assert "NOT (EXISTS" in _sql(SearchService._build_empty_condition("collection", True))
-    assert "EXISTS" in _sql(SearchService._build_empty_condition("reading_list", False))
-    assert "comic_credits.role = 'writer'" in _sql(SearchService._build_empty_condition("writer", True))
-    assert "comic_credits.role = 'writer'" in _sql(SearchService._build_empty_condition("writer", False))
-    assert "NOT (EXISTS" in _sql(SearchService._build_empty_condition("pull_list", True))
+def test_build_empty_condition_relationship_and_simple_paths(normal_user):
+    service = SearchService(MagicMock(), normal_user)
 
-    empty_title = _sql(SearchService._build_empty_condition("title", True))
-    non_empty_title = _sql(SearchService._build_empty_condition("title", False))
+    assert "NOT (EXISTS" in _sql(service._build_empty_condition("character", True))
+    assert "EXISTS" in _sql(service._build_empty_condition("character", False))
+    assert "NOT (EXISTS" in _sql(service._build_empty_condition("team", True))
+    assert "EXISTS" in _sql(service._build_empty_condition("location", False))
+    assert "NOT (EXISTS" in _sql(service._build_empty_condition("collection", True))
+    assert "EXISTS" in _sql(service._build_empty_condition("reading_list", False))
+    assert "comic_credits.role = 'writer'" in _sql(service._build_empty_condition("writer", True))
+    assert "comic_credits.role = 'writer'" in _sql(service._build_empty_condition("writer", False))
+    assert "NOT (EXISTS" in _sql(service._build_empty_condition("pull_list", True))
+
+    empty_title = _sql(service._build_empty_condition("title", True))
+    non_empty_title = _sql(service._build_empty_condition("title", False))
     assert "comics.title IS NULL" in empty_title and "comics.title = ''" in empty_title
     assert "comics.title IS NOT NULL" in non_empty_title and "comics.title != ''" in non_empty_title
 
-    assert SearchService._build_empty_condition("story_arc", True) is None
+    service._parker_rating_column = Comic.community_rating
+    assert "comics.community_rating IS NULL" in _sql(service._build_empty_condition("parker_rating", True))
+    assert "comics.community_rating IS NOT NULL" in _sql(service._build_empty_condition("parker_rating", False))
+
+    assert service._build_empty_condition("story_arc", True) is None
 
 
 def test_build_pull_list_condition_scopes_to_current_user(normal_user):
@@ -350,32 +421,39 @@ class _OrderRecorder:
 
 
 @pytest.mark.parametrize(
-    "sort_by,sort_order,expected_column,expects_secondary",
+    "sort_by,sort_order,expected_column,expected_secondary",
     [
-        ("series", "desc", "series.name", False),
-        ("year", "asc", "comics.year", True),
-        ("title", "asc", "comics.title", False),
-        ("page_count", "desc", "comics.page_count", True),
-        ("rating", "desc", "comics.community_rating", True),
-        ("updated", "asc", "comics.updated_at", False),
-        ("created", "desc", "comics.created_at", False),
-        ("unknown", "asc", "comics.created_at", False),
+        ("series", "desc", "series.name", []),
+        ("year", "asc", "comics.year", ["series.name ASC", "comics.number ASC"]),
+        ("title", "asc", "comics.title", []),
+        ("page_count", "desc", "comics.page_count", ["series.name ASC", "comics.number ASC"]),
+        ("rating", "desc", "comics.community_rating", ["series.name ASC", "comics.number ASC"]),
+        ("parker_rating", "desc", "parker_average", ["parker_count DESC", "series.name ASC", "comics.number ASC"]),
+        ("updated", "asc", "comics.updated_at", []),
+        ("created", "desc", "comics.created_at", []),
+        ("unknown", "asc", "comics.created_at", []),
     ],
 )
-def test_apply_sorting_chooses_expected_columns(sort_by, sort_order, expected_column, expects_secondary):
+def test_apply_sorting_chooses_expected_columns(sort_by, sort_order, expected_column, expected_secondary):
     recorder = _OrderRecorder()
-    result = SearchService._apply_sorting(recorder, sort_by, sort_order)
+    result = SearchService._apply_sorting(
+        recorder,
+        sort_by,
+        sort_order,
+        parker_rating_column=literal_column("parker_average"),
+        parker_rating_count_column=literal_column("parker_count"),
+    )
 
     assert result is recorder
-    assert len(recorder.calls) == (2 if expects_secondary else 1)
+    assert len(recorder.calls) == (1 + (1 if expected_secondary else 0))
 
     primary_sql = str(recorder.calls[0][0])
     assert expected_column in primary_sql
     assert (" DESC" in primary_sql) == (sort_order == "desc")
 
-    if expects_secondary:
+    if expected_secondary:
         secondary = [str(expr) for expr in recorder.calls[1]]
-        assert secondary == ["series.name ASC", "comics.number ASC"]
+        assert secondary == expected_secondary
 
 
 def test_format_comic_uses_thumbnail_helper(monkeypatch, db):
@@ -387,3 +465,29 @@ def test_format_comic_uses_thumbnail_helper(monkeypatch, db):
     assert payload["id"] == comic.id
     assert payload["series"] == data["series"].name
     assert payload["thumbnail_path"] == f"/thumb/{comic.id}"
+
+
+def test_format_comic_prefers_parker_rating_context(monkeypatch, db):
+    data = _seed_search_graph(db)
+    comic = data["alpha"]
+    comic.community_rating = 4.8
+    monkeypatch.setattr("app.services.search.get_thumbnail_url", lambda comic_id, updated_at: f"/thumb/{comic_id}")
+
+    parker_payload = SearchService._format_comic(
+        comic,
+        prefer_parker_rating=True,
+        parker_rating_average=4.25,
+        parker_rating_count=3,
+    )
+    assert parker_payload["rating_mode"] == "parker"
+    assert parker_payload["rating_value"] == 4.25
+    assert parker_payload["parker_rating_count"] == 3
+
+    unrated_payload = SearchService._format_comic(
+        comic,
+        prefer_parker_rating=True,
+        parker_rating_average=None,
+        parker_rating_count=0,
+    )
+    assert unrated_payload["rating_mode"] == "none"
+    assert unrated_payload["rating_value"] is None

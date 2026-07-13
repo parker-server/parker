@@ -106,6 +106,7 @@
                             <option value="summary">Summary</option>
                             <option value="web">Web/Wiki Link</option>
                             <option value="rating">Source Rating</option>
+                            <option value="parker_rating">Parker Rating</option>
                             <option value="age_rating">Age Rating</option>
                             <option value="language">Language (ISO)</option>
                         </optgroup>
@@ -131,22 +132,22 @@
                     </select>
 
                     <select x-model="rule.operator" class="w-full md:w-40 bg-gray-700 text-white rounded px-3 py-2 border border-gray-600 outline-none">
-                        <option value="equal">Equals</option>
-                        <option value="not_equal">Not Equals</option>
-                        <option value="contains">Contains (Any)</option>
-                        <option value="does_not_contain">Does Not Contain</option>
-                        <option value="must_contain">Must Contain (All)</option>
-                        <option value="is_empty">Is Empty</option>
-                        <option value="is_not_empty">Is Not Empty</option>
+                        <template x-for="option in operatorOptions(rule.field)" :key="`${rule.id}-${option.value}`">
+                            <option :value="option.value" x-text="option.label"></option>
+                        </template>
                     </select>
 
                     <div class="flex-1 w-full" x-show="!['is_empty', 'is_not_empty'].includes(rule.operator)">
 
-                        <div x-show="['title', 'year', 'summary', 'web', 'rating'].includes(rule.field)">
+                        <div x-show="usesSimpleInput(rule.field) && !usesNumericInput(rule.field)">
                             <input type="text" x-on:keydown.enter="performSearch()" x-model="rule.value" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600 outline-none focus:border-blue-500">
                         </div>
 
-                        <div x-show="!['title', 'year', 'summary', 'web', 'rating'].includes(rule.field)">
+                        <div x-show="usesNumericInput(rule.field)">
+                            <input type="number" step="0.1" min="0" max="5" x-on:keydown.enter="performSearch()" x-model="rule.value" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600 outline-none focus:border-blue-500">
+                        </div>
+
+                        <div x-show="!usesSimpleInput(rule.field)">
                             <div
                                 x-data="tagInput(rule)"
                                 class="relative w-full"
@@ -214,6 +215,7 @@
                         <option value="title">Issue Title</option>
                         <option value="page_count">Page Count</option>
                         <option value="rating">Source Rating</option>
+                        <option value="parker_rating">Parker Rating</option>
                     </select>
                 </div>
                 <div class="flex items-center space-x-2">
@@ -428,7 +430,7 @@ document.addEventListener('alpine:init', () => {
                 id: Date.now() + index + Math.random(),
                 field: filter.field,
                 operator: filter.operator || 'contains',
-                value: filter.value ?? []
+                value: this.normalizeRuleValue(filter.field, filter.value)
             }));
 
             return true;
@@ -536,9 +538,7 @@ document.addEventListener('alpine:init', () => {
                     id: Date.now(),
                     field: field,
                     operator: operator,
-                    // Check if value exists before wrapping in array.
-                    // If null, return empty array [] which TagInput can handle.
-                    value: value ? [value] : []
+                    value: this.normalizeRuleValue(field, value)
 
                 }];
 
@@ -568,6 +568,48 @@ document.addEventListener('alpine:init', () => {
             this.rules.push({ id: this.nextId++, field: 'character', operator: 'contains', value: [] });
         },
 
+        usesSimpleInput(field) {
+            return ['title', 'year', 'summary', 'web', 'rating', 'parker_rating'].includes(field);
+        },
+
+        usesNumericInput(field) {
+            return ['rating', 'parker_rating'].includes(field);
+        },
+
+        normalizeRuleValue(field, value) {
+            if (this.usesSimpleInput(field)) {
+                if (Array.isArray(value)) return value[0] ?? '';
+                return value ?? '';
+            }
+
+            if (Array.isArray(value)) return value;
+            if (value === null || value === undefined || value === '') return [];
+            return [value];
+        },
+
+        operatorOptions(field) {
+            if (['rating', 'parker_rating'].includes(field)) {
+                return [
+                    { value: 'equal', label: 'Equals' },
+                    { value: 'not_equal', label: 'Not Equals' },
+                    { value: 'at_least', label: 'At Least' },
+                    { value: 'at_most', label: 'At Most' },
+                    { value: 'is_empty', label: 'Is Empty' },
+                    { value: 'is_not_empty', label: 'Is Not Empty' },
+                ];
+            }
+
+            return [
+                { value: 'equal', label: 'Equals' },
+                { value: 'not_equal', label: 'Not Equals' },
+                { value: 'contains', label: 'Contains (Any)' },
+                { value: 'does_not_contain', label: 'Does Not Contain' },
+                { value: 'must_contain', label: 'Must Contain (All)' },
+                { value: 'is_empty', label: 'Is Empty' },
+                { value: 'is_not_empty', label: 'Is Not Empty' },
+            ];
+        },
+
         removeRule(index) {
             // Don't remove the last rule, just reset it
             if (this.rules.length === 1) {
@@ -579,6 +621,10 @@ document.addEventListener('alpine:init', () => {
 
         resetRule(rule) {
             rule.value = []; // Clear values when field changes
+            const options = this.operatorOptions(rule.field);
+            if (!options.some(option => option.value === rule.operator)) {
+                rule.operator = options[0].value;
+            }
         },
 
         async performSearch() {
@@ -695,7 +741,7 @@ document.addEventListener('alpine:init', () => {
                     id: Date.now() + i + Math.random(),
                     field: f.field,
                     operator: f.operator,
-                    value: f.value
+                    value: this.normalizeRuleValue(f.field, f.value)
                 }));
             } else {
                 this.rules = [{ id: Date.now() + 1 + Math.random(), field: 'series', operator: 'contains', value: [] }];
