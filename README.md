@@ -106,6 +106,35 @@ https://github.com/parker-server/parker/wiki/Getting-Started
 
 https://github.com/parker-server/parker/wiki/Getting-Started
 
+### Local Python Environments
+
+Parker now uses pinned dependency versions in `requirements.txt` and
+`requirements-dev.txt` so local machines, Docker builds, and CI all resolve the
+same package set.
+
+When setting up a new machine or refreshing an existing virtualenv, recreate the
+environment from the pinned files instead of reusing older installed packages.
+
+Windows:
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-dev.txt
+```
+
+macOS / Linux:
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt -r requirements-dev.txt
+```
+
+If behavior differs between machines, verify both are using a freshly created
+virtualenv from these pinned requirements.
+
 
 ## 📌 Roadmap
 - Documentation
