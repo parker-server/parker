@@ -1,13 +1,13 @@
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import or_, and_, func, not_, text
-from typing import List, Dict, Any, Union
+from sqlalchemy import or_, and_, func, not_, text, select
+from typing import List, Dict, Any, Union, Optional
 from app.models import (Comic, Volume, Series,
                         Character, Team, Location, Genre,
                         Person, ComicCredit,
                         Collection, CollectionItem,
                         ReadingList, ReadingListItem,
                         PullList, PullListItem,
-                        Library, User)
+                        Library, User, UserComicRating)
 
 from app.core.comic_helpers import get_series_age_restriction, get_thumbnail_url
 from app.schemas.search import SearchRequest, SearchFilter
@@ -19,11 +19,23 @@ class SearchService:
     def __init__(self, db: Session, current_user: User):
         self.db = db
         self.user = current_user
+        self._parker_rating_column = None
+        self._parker_rating_count_column = None
 
     def search(self, request: SearchRequest) -> Dict[str, Any]:
         """Execute search based on request parameters"""
         # Start with base query joining essential tables
+        self._parker_rating_column = None
+        self._parker_rating_count_column = None
         query = self.db.query(Comic).join(Volume).join(Series)
+        parker_stats = None
+        prefer_parker_rating = self._should_prefer_parker_rating(request)
+
+        if self._request_needs_parker_stats(request):
+            parker_stats = self._build_parker_rating_subquery()
+            query = query.outerjoin(parker_stats, parker_stats.c.comic_id == Comic.id)
+            self._parker_rating_column = parker_stats.c.parker_rating_average
+            self._parker_rating_count_column = parker_stats.c.parker_rating_count
 
         # 1. Apply Library Context Scope
         if hasattr(request, 'context_library_id') and request.context_library_id:
@@ -62,7 +74,13 @@ class SearchService:
         total = query.with_entities(func.count(func.distinct(Comic.id))).scalar()
 
         # Apply sorting
-        query = self._apply_sorting(query, request.sort_by, request.sort_order)
+        query = self._apply_sorting(
+            query,
+            request.sort_by,
+            request.sort_order,
+            parker_rating_column=self._parker_rating_column,
+            parker_rating_count_column=self._parker_rating_count_column,
+        )
 
         # Apply pagination
         query = query.offset(request.offset).limit(request.limit)
@@ -71,8 +89,25 @@ class SearchService:
         # OPTIMIZATION: Eager load relationships to prevent N+1 in _format_comic
         query = query.options(joinedload(Comic.volume).joinedload(Volume.series))
 
-        comics = query.all()
-        results = [self._format_comic(comic) for comic in comics]
+        if parker_stats is not None:
+            query = query.add_columns(
+                parker_stats.c.parker_rating_average,
+                parker_stats.c.parker_rating_count,
+            )
+
+            rows = query.all()
+            results = [
+                self._format_comic(
+                    comic,
+                    prefer_parker_rating=prefer_parker_rating,
+                    parker_rating_average=parker_rating_average,
+                    parker_rating_count=parker_rating_count,
+                )
+                for comic, parker_rating_average, parker_rating_count in rows
+            ]
+        else:
+            comics = query.all()
+            results = [self._format_comic(comic, prefer_parker_rating=False) for comic in comics]
 
         return {
             "total": total,
@@ -120,7 +155,7 @@ class SearchService:
 
         elif field in ['title', 'number', 'publisher', 'imprint', 'format',
                        'year', 'series_group', 'web',
-                       'age_rating', 'language', 'rating']:
+                       'age_rating', 'language']:
             # Map string field name to Column object
             col_map = {
                 'title': Comic.title,
@@ -134,9 +169,14 @@ class SearchService:
                 'web': Comic.web,
                 'age_rating': Comic.age_rating,
                 'language': Comic.language_iso,
-                'rating': Comic.community_rating
             }
             return self._build_simple_field_condition(col_map[field], operator, value)
+        elif field == 'rating':
+            return self._build_numeric_field_condition(Comic.community_rating, operator, value)
+        elif field == 'parker_rating':
+            if self._parker_rating_column is None:
+                return None
+            return self._build_numeric_field_condition(self._parker_rating_column, operator, value)
 
         # 2. Credits (Writer, Penciller, etc.)
         elif field in ['writer', 'penciller', 'inker', 'colorist', 'letterer', 'cover_artist', 'editor']:
@@ -159,6 +199,35 @@ class SearchService:
             return self._build_reading_list_condition(operator, value)
         elif field == 'pull_list':
             return self._build_pull_list_condition(operator, value)
+
+        return None
+
+    @staticmethod
+    def _coerce_numeric_value(value) -> Optional[float]:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    @classmethod
+    def _build_numeric_field_condition(cls, column, operator, value):
+        values = value if isinstance(value, list) else [value]
+        numeric_values = [cls._coerce_numeric_value(v) for v in values]
+        numeric_values = [v for v in numeric_values if v is not None]
+
+        if not numeric_values:
+            return None
+
+        single_val = numeric_values[0]
+
+        if operator == 'equal':
+            return column == single_val
+        elif operator == 'not_equal':
+            return column != single_val
+        elif operator == 'at_least':
+            return column >= single_val
+        elif operator == 'at_most':
+            return column <= single_val
 
         return None
 
@@ -305,8 +374,7 @@ class SearchService:
 
         return None
 
-    @staticmethod
-    def _build_empty_condition(field: str, is_empty: bool):
+    def _build_empty_condition(self, field: str, is_empty: bool):
         """Build condition for checking if field is empty/null"""
 
         field_map = {
@@ -321,6 +389,13 @@ class SearchService:
             'age_rating': Comic.age_rating,
             'language': Comic.language_iso,
         }
+
+        if field == 'parker_rating':
+            if self._parker_rating_column is None:
+                return None
+            if is_empty:
+                return self._parker_rating_column.is_(None)
+            return self._parker_rating_column.isnot(None)
 
         # For relationship fields
         if field == 'character':
@@ -451,7 +526,37 @@ class SearchService:
 
 
     @staticmethod
-    def _apply_sorting(query, sort_by: str, sort_order: str):
+    def _build_parker_rating_subquery():
+        return (
+            select(
+                UserComicRating.comic_id.label("comic_id"),
+                func.avg(UserComicRating.rating).label("parker_rating_average"),
+                func.count(UserComicRating.user_id).label("parker_rating_count"),
+            )
+            .group_by(UserComicRating.comic_id)
+            .subquery()
+        )
+
+    @staticmethod
+    def _should_prefer_parker_rating(request: SearchRequest) -> bool:
+        if request.sort_by == 'parker_rating':
+            return True
+        return any(filter_item.field == 'parker_rating' for filter_item in request.filters)
+
+    @staticmethod
+    def _request_needs_parker_stats(request: SearchRequest) -> bool:
+        if request.sort_by == 'parker_rating':
+            return True
+        return any(filter_item.field == 'parker_rating' for filter_item in request.filters)
+
+    @staticmethod
+    def _apply_sorting(
+        query,
+        sort_by: str,
+        sort_order: str,
+        parker_rating_column=None,
+        parker_rating_count_column=None,
+    ):
         if sort_by == 'series':
             col = Series.name
         elif sort_by == 'year':
@@ -462,6 +567,8 @@ class SearchService:
             col = Comic.page_count
         elif sort_by == 'rating':
             col = Comic.community_rating
+        elif sort_by == 'parker_rating' and parker_rating_column is not None:
+            col = parker_rating_column
         elif sort_by == 'updated':
             col = Comic.updated_at
         elif sort_by == 'created':  # (Explicit)
@@ -478,14 +585,49 @@ class SearchService:
         # SECONDARY SORT (Stability)
         # If sorting by Rating, Year, or Page Count, ties are common.
         # Always break ties with Series Name -> Number
-        if sort_by in ['rating', 'year', 'page_count']:
+        if sort_by == 'parker_rating':
+            if parker_rating_count_column is not None:
+                query = query.order_by(
+                    parker_rating_count_column.desc(),
+                    Series.name.asc(),
+                    Comic.number.asc(),
+                )
+            else:
+                query = query.order_by(Series.name.asc(), Comic.number.asc())
+        elif sort_by in ['rating', 'year', 'page_count']:
             query = query.order_by(Series.name.asc(), Comic.number.asc())
 
         return query
 
     @staticmethod
-    def _format_comic(comic: Comic) -> dict:
+    def _format_comic(
+        comic: Comic,
+        *,
+        prefer_parker_rating: bool = False,
+        parker_rating_average: Optional[float] = None,
+        parker_rating_count: Optional[int] = None,
+    ) -> dict:
         """Format comic for response grid"""
+
+        parker_average = float(parker_rating_average) if parker_rating_average is not None else None
+        parker_count = int(parker_rating_count or 0)
+
+        if prefer_parker_rating and parker_average is not None and parker_average > 0:
+            rating_mode = "parker"
+            rating_value = parker_average
+            rating_label = "Parker Rating"
+        elif prefer_parker_rating:
+            rating_mode = "none"
+            rating_value = None
+            rating_label = None
+        elif comic.community_rating and comic.community_rating > 0:
+            rating_mode = "source"
+            rating_value = comic.community_rating
+            rating_label = "Source Rating"
+        else:
+            rating_mode = "none"
+            rating_value = None
+            rating_label = None
 
         return {
             "id": comic.id,
@@ -497,5 +639,10 @@ class SearchService:
             "publisher": comic.publisher,
             "format": comic.format,
             "thumbnail_path": get_thumbnail_url(comic.id, comic.updated_at),
-            "community_rating": comic.community_rating
+            "community_rating": comic.community_rating,
+            "parker_rating_average": parker_average,
+            "parker_rating_count": parker_count,
+            "rating_mode": rating_mode,
+            "rating_value": rating_value,
+            "rating_label": rating_label,
         }

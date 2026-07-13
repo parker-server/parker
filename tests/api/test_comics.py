@@ -5,12 +5,14 @@ from app.api.comics import filter_by_user_access, natural_sort_key
 from app.models.collection import Collection, CollectionItem
 from app.models.comic import Comic, Volume
 from app.models.credits import ComicCredit, Person
+from app.models.interactions import UserComicRating
 from app.models.library import Library
 from app.models.pull_list import PullList, PullListItem
 from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.reading_progress import ReadingProgress
 from app.models.series import Series
 from app.models.tags import Character, Genre, Location, Team
+from app.models.user import User
 
 
 def _create_graph(db, *, lib_name: str, series_name: str):
@@ -73,6 +75,11 @@ def test_search_comics_delegates_to_search_service(auth_client):
                 "format": None,
                 "thumbnail_path": None,
                 "community_rating": None,
+                "parker_rating_average": None,
+                "parker_rating_count": 0,
+                "rating_mode": "none",
+                "rating_value": None,
+                "rating_label": None,
                 "progress_percentage": None,
             }
         ],
@@ -98,6 +105,68 @@ def test_search_comics_delegates_to_search_service(auth_client):
     mock_service_cls.return_value.search.assert_called_once()
 
 
+def test_search_comics_can_sort_and_filter_by_parker_rating(auth_client, db, normal_user):
+    library, _, volume = _create_graph(db, lib_name="comic-search-rating", series_name="Search Rating Saga")
+
+    top_rated = Comic(
+        volume_id=volume.id,
+        number="1",
+        title="Top Rated",
+        community_rating=4.8,
+        filename="top-rated.cbz",
+        file_path="/tmp/top-rated.cbz",
+    )
+    lower_rated = Comic(
+        volume_id=volume.id,
+        number="2",
+        title="Lower Rated",
+        community_rating=4.9,
+        filename="lower-rated.cbz",
+        file_path="/tmp/lower-rated.cbz",
+    )
+    second_user = User(
+        username="search-second-rater",
+        email="search-second-rater@example.com",
+        hashed_password="fakehash",
+        is_superuser=False,
+        is_active=True,
+    )
+
+    db.add_all([top_rated, lower_rated, second_user])
+    db.flush()
+    db.add_all([
+        UserComicRating(user_id=normal_user.id, comic_id=top_rated.id, rating=5),
+        UserComicRating(user_id=second_user.id, comic_id=top_rated.id, rating=4),
+        UserComicRating(user_id=normal_user.id, comic_id=lower_rated.id, rating=3),
+        UserComicRating(user_id=second_user.id, comic_id=lower_rated.id, rating=2),
+    ])
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    response = auth_client.post(
+        "/api/comics/search",
+        json={
+            "match": "all",
+            "filters": [
+                {"field": "parker_rating", "operator": "at_least", "value": 4}
+            ],
+            "sort_by": "parker_rating",
+            "sort_order": "desc",
+            "limit": 10,
+            "offset": 0,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert [item["title"] for item in payload["results"]] == ["Top Rated"]
+    assert payload["results"][0]["rating_mode"] == "parker"
+    assert payload["results"][0]["rating_value"] == 4.5
+    assert payload["results"][0]["parker_rating_average"] == 4.5
+    assert payload["results"][0]["parker_rating_count"] == 2
+
+
 def test_get_comic_detail_returns_metadata_and_in_progress_status(auth_client, db, normal_user):
     library, series, volume = _create_graph(db, lib_name="comic-detail", series_name="Detail Saga")
 
@@ -111,6 +180,7 @@ def test_get_comic_detail_returns_metadata_and_in_progress_status(auth_client, d
         imprint="Detail Imprint",
         age_rating="Teen",
         language_iso="en",
+        community_rating=3.8,
         filename="detail-7.cbz",
         file_path="/tmp/detail-7.cbz",
     )
@@ -166,6 +236,141 @@ def test_get_comic_detail_returns_metadata_and_in_progress_status(auth_client, d
     assert payload["locations"] == ["Detail City"]
     assert payload["genres"] == ["Detail Genre"]
     assert payload["read_status"] == "in_progress"
+    assert payload["source_rating"] == 3.8
+    assert payload["parker_rating_average"] is None
+    assert payload["parker_rating_count"] == 0
+    assert payload["user_rating"] is None
+
+
+def test_set_comic_rating_creates_and_updates_single_user_row(auth_client, db, normal_user):
+    library, _, volume = _create_graph(db, lib_name="comic-rate", series_name="Rate Saga")
+    comic = Comic(
+        volume_id=volume.id,
+        number="1",
+        title="Rate Me",
+        filename="rate-me.cbz",
+        file_path="/tmp/rate-me.cbz",
+    )
+    db.add(comic)
+
+    other_user = User(
+        username="other-rater",
+        email="other-rater@example.com",
+        hashed_password="fakehash",
+        is_superuser=False,
+        is_active=True,
+    )
+    db.add(other_user)
+
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    create_response = auth_client.put(f"/api/comics/{comic.id}/rating", json={"rating": 4})
+
+    assert create_response.status_code == 200
+    assert create_response.json() == {
+        "parker_rating_average": 4.0,
+        "parker_rating_count": 1,
+        "user_rating": 4,
+    }
+
+    rows = db.query(UserComicRating).filter(UserComicRating.user_id == normal_user.id, UserComicRating.comic_id == comic.id).all()
+    assert len(rows) == 1
+    assert rows[0].rating == 4
+
+    db.add(UserComicRating(user_id=other_user.id, comic_id=comic.id, rating=2))
+    db.commit()
+
+    update_response = auth_client.put(f"/api/comics/{comic.id}/rating", json={"rating": 5})
+
+    assert update_response.status_code == 200
+    assert update_response.json() == {
+        "parker_rating_average": 3.5,
+        "parker_rating_count": 2,
+        "user_rating": 5,
+    }
+
+    rows = db.query(UserComicRating).filter(UserComicRating.user_id == normal_user.id, UserComicRating.comic_id == comic.id).all()
+    assert len(rows) == 1
+    assert rows[0].rating == 5
+
+
+def test_delete_comic_rating_updates_aggregate(auth_client, db, normal_user):
+    library, _, volume = _create_graph(db, lib_name="comic-unrate", series_name="Unrate Saga")
+    comic = Comic(
+        volume_id=volume.id,
+        number="1",
+        title="Unrate Me",
+        filename="unrate-me.cbz",
+        file_path="/tmp/unrate-me.cbz",
+    )
+    db.add(comic)
+
+    other_user = User(
+        username="other-unrater",
+        email="other-unrater@example.com",
+        hashed_password="fakehash",
+        is_superuser=False,
+        is_active=True,
+    )
+    db.add(other_user)
+    db.flush()
+
+    db.add_all([
+        UserComicRating(user_id=normal_user.id, comic_id=comic.id, rating=4),
+        UserComicRating(user_id=other_user.id, comic_id=comic.id, rating=2),
+    ])
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    response = auth_client.delete(f"/api/comics/{comic.id}/rating")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "parker_rating_average": 2.0,
+        "parker_rating_count": 1,
+        "user_rating": None,
+    }
+
+    assert db.query(UserComicRating).filter(
+        UserComicRating.user_id == normal_user.id,
+        UserComicRating.comic_id == comic.id,
+    ).first() is None
+
+
+def test_rating_endpoints_respect_hidden_and_age_restricted_comics(auth_client, db, normal_user):
+    hidden_library, _, hidden_volume = _create_graph(db, lib_name="comic-rate-hidden", series_name="Hidden Rate Saga")
+    hidden_comic = Comic(
+        volume_id=hidden_volume.id,
+        number="1",
+        title="Hidden Rate",
+        filename="hidden-rate.cbz",
+        file_path="/tmp/hidden-rate.cbz",
+    )
+
+    safe_library, _, safe_volume = _create_graph(db, lib_name="comic-rate-safe", series_name="Safe Rate Saga")
+    mature_comic = Comic(
+        volume_id=safe_volume.id,
+        number="2",
+        title="Mature Rate",
+        age_rating="Mature 17+",
+        filename="mature-rate.cbz",
+        file_path="/tmp/mature-rate.cbz",
+    )
+
+    db.add_all([hidden_comic, mature_comic])
+    normal_user.accessible_libraries.append(safe_library)
+    normal_user.max_age_rating = "Teen"
+    normal_user.allow_unknown_age_ratings = False
+    db.commit()
+
+    hidden_response = auth_client.put(f"/api/comics/{hidden_comic.id}/rating", json={"rating": 4})
+    assert hidden_response.status_code == 404
+    assert hidden_response.json() == {"detail": "Comic not found"}
+
+    restricted_response = auth_client.put(f"/api/comics/{mature_comic.id}/rating", json={"rating": 4})
+    assert restricted_response.status_code == 403
+    assert restricted_response.json() == {"detail": "Content restricted by age rating"}
 
 
 def test_get_comic_detail_missing_or_hidden_returns_404(auth_client, db):

@@ -6,6 +6,7 @@ from typing import List, Annotated, Literal
 from pathlib import Path
 import re
 import random
+from pydantic import BaseModel, Field
 
 from app.core.comic_helpers import (get_reading_time, get_format_sort_index, REVERSE_NUMBERING_SERIES,
                                     get_age_rating_config, get_series_age_restriction, get_thumbnail_url, get_thumbnail_hash)
@@ -18,14 +19,20 @@ from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.collection import Collection, CollectionItem
 from app.models.pull_list import PullList, PullListItem
 from app.models.reading_progress import ReadingProgress
+from app.models.interactions import UserComicRating
 
 
 from app.schemas.search import SearchRequest, SearchResponse
 from app.services.search import SearchService
+from app.services.comic_ratings import build_parker_rating_state
 
 
 
 router = APIRouter()
+
+
+class ComicRatingUpdate(BaseModel):
+    rating: int = Field(..., ge=1, le=5)
 
 # --- SECURITY HELPER ---
 def filter_by_user_access(query, user: CurrentUser):
@@ -43,6 +50,21 @@ def natural_sort_key(s):
     """Sorts 'Issue 1' before 'Issue 10' and handles '10a'"""
     return [int(text) if text.isdigit() else text.lower()
             for text in re.split('([0-9]+)', str(s))]
+
+
+def _ensure_user_can_view_comic(current_user: CurrentUser, comic: Comic):
+    """
+    Applies the same age restriction logic used by the detail endpoint.
+    """
+    if not current_user.is_superuser and current_user.max_age_rating:
+        _, banned = get_age_rating_config(current_user)
+
+        if comic.age_rating in banned:
+            raise HTTPException(status_code=403, detail="Content restricted by age rating")
+
+        if not current_user.allow_unknown_age_ratings:
+            if not comic.age_rating or comic.age_rating == "" or comic.age_rating.lower() == "unknown":
+                raise HTTPException(status_code=403, detail="Content restricted by age rating")
 
 @router.post("/search", response_model=SearchResponse, name="search")
 async def search_comics(request: SearchRequest, db: SessionDep, current_user: CurrentUser):
@@ -101,23 +123,7 @@ async def get_comic(comic_id: int, db: SessionDep, current_user: CurrentUser):
 
     # --- AGE RATING CHECK ---
     # We have the comic loaded. We can check python side to save a query.
-    if not current_user.is_superuser and current_user.max_age_rating:
-
-        allowed, banned = get_age_rating_config(current_user)
-
-        is_banned = False
-
-        # Check explicit ban
-        if comic.age_rating in banned:
-            is_banned = True
-
-        # Check Unknowns
-        if not current_user.allow_unknown_age_ratings:
-            if not comic.age_rating or comic.age_rating == "" or comic.age_rating.lower() == "unknown":
-                is_banned = True
-
-        if is_banned:
-            raise HTTPException(status_code=403, detail="Content restricted by age rating")
+    _ensure_user_can_view_comic(current_user, comic)
     # ------------------------
 
 
@@ -144,6 +150,8 @@ async def get_comic(comic_id: int, db: SessionDep, current_user: CurrentUser):
     # If started but not finished, show "Continue"
     if progress and not progress.completed and progress.current_page > 0:
         read_status = "in_progress"
+
+    parker_rating = build_parker_rating_state(db, comic.id, current_user.id)
 
     return {
         "id": comic.id,
@@ -189,6 +197,7 @@ async def get_comic(comic_id: int, db: SessionDep, current_user: CurrentUser):
         "age_rating": comic.age_rating,
         "language_iso": comic.language_iso,
         "community_rating": comic.community_rating,
+        "source_rating": comic.community_rating,
 
         # Tags
         "characters": [c.name for c in comic.characters],
@@ -210,7 +219,58 @@ async def get_comic(comic_id: int, db: SessionDep, current_user: CurrentUser):
 
         # ColorScape data
         "color_palette": comic.color_palette,
+
+        # Parker rating
+        **parker_rating,
     }
+
+
+@router.put("/{comic_id}/rating", name="set_rating")
+async def set_comic_rating(
+        comic: ComicDep,
+        payload: ComicRatingUpdate,
+        db: SessionDep,
+        current_user: CurrentUser
+):
+    _ensure_user_can_view_comic(current_user, comic)
+
+    rating = db.query(UserComicRating).filter(
+        UserComicRating.comic_id == comic.id,
+        UserComicRating.user_id == current_user.id,
+    ).first()
+
+    if rating:
+        rating.rating = payload.rating
+    else:
+        rating = UserComicRating(
+            comic_id=comic.id,
+            user_id=current_user.id,
+            rating=payload.rating,
+        )
+        db.add(rating)
+
+    db.commit()
+    return build_parker_rating_state(db, comic.id, current_user.id)
+
+
+@router.delete("/{comic_id}/rating", name="delete_rating")
+async def delete_comic_rating(
+        comic: ComicDep,
+        db: SessionDep,
+        current_user: CurrentUser
+):
+    _ensure_user_can_view_comic(current_user, comic)
+
+    rating = db.query(UserComicRating).filter(
+        UserComicRating.comic_id == comic.id,
+        UserComicRating.user_id == current_user.id,
+    ).first()
+
+    if rating:
+        db.delete(rating)
+        db.commit()
+
+    return build_parker_rating_state(db, comic.id, current_user.id)
 
 
 @router.get("/{comic_id}/thumbnail", name="thumbnail")
