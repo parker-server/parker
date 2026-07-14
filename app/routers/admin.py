@@ -5,9 +5,10 @@ import os
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse
 
-from app.api.deps import AdminUser
+from app.api.deps import AdminUser, SessionDep
 from app.config import settings
 from app.core.templates import templates
+from app.services.startup_diagnostics import build_support_snapshot, collect_startup_diagnostics
 
 router = APIRouter()
 
@@ -99,6 +100,28 @@ async def admin_about_page(request: Request, admin_user: AdminUser):
         request=request,
         name="admin/about.html",
         context=context
+    )
+
+
+@router.get("/diagnostics", response_class=HTMLResponse, name="diagnostics", tags=['admin'])
+async def admin_diagnostics_page(request: Request, db: SessionDep, admin_user: AdminUser):
+    """Serve the Admin diagnostics page."""
+    diagnostics = collect_startup_diagnostics(
+        db,
+        database_url=settings.database_url,
+    )
+    support_snapshot = build_support_snapshot(
+        diagnostics,
+        app_version=settings.version,
+    )
+
+    return templates.TemplateResponse(
+        request=request,
+        name="admin/diagnostics.html",
+        context={
+            "diagnostics": diagnostics,
+            "support_snapshot": support_snapshot,
+        },
     )
 
 

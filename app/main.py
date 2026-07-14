@@ -152,6 +152,7 @@ app = FastAPI(
     lifespan=lifespan,
     root_path=settings.clean_base_url,
 )
+app.state.settings = settings
 
 # CORS middleware (adjust origins as needed)
 app.add_middleware(

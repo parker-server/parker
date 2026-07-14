@@ -2,14 +2,48 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func, case, desc
 
 from app.api.deps import SessionDep, AdminUser
+from app.config import settings
 from app.models.comic import Comic, Volume
 from app.models.series import Series
 from app.models.library import Library
 from app.models.tags import Genre, comic_genres
 from app.models.user import User
 from app.models.reading_progress import ReadingProgress
+from app.services.startup_diagnostics import build_support_snapshot, collect_startup_diagnostics
 
 router = APIRouter()
+
+
+@router.get("/startup", name="startup")
+async def get_startup_diagnostics(
+        db: SessionDep,
+        admin: AdminUser
+):
+    """
+    Return startup diagnostics for troubleshooting suspicious empty-state behavior.
+    """
+    return collect_startup_diagnostics(
+        db,
+        database_url=settings.database_url,
+    )
+
+
+@router.get("/startup/support-snapshot", name="startup_support_snapshot")
+async def get_startup_support_snapshot(
+        db: SessionDep,
+        admin: AdminUser
+):
+    """
+    Return a structured support snapshot JSON for issue reports and troubleshooting.
+    """
+    diagnostics = collect_startup_diagnostics(
+        db,
+        database_url=settings.database_url,
+    )
+    return build_support_snapshot(
+        diagnostics,
+        app_version=settings.version,
+    )
 
 
 @router.get("/", name="system")

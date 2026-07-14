@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 
 from app.models.comic import Comic, Volume
@@ -6,6 +7,13 @@ from app.models.library import Library
 from app.models.series import Series
 from app.models.user import User
 from app.services.startup_diagnostics import (
+    RUNTIME_MODE_CONTAINER,
+    RUNTIME_MODE_LOCAL,
+    STARTUP_STATUS_HEALTHY,
+    STARTUP_STATUS_STORAGE_MISMATCH,
+    build_home_startup_notice,
+    build_support_snapshot,
+    collect_startup_diagnostics,
     log_startup_diagnostics,
     resolve_sqlite_db_path,
 )
@@ -46,14 +54,12 @@ def test_log_startup_diagnostics_warns_for_effectively_empty_database(db, caplog
         comics_root=comics_root,
     )
 
-    assert any("counts users=1 libraries=0 series=0 comics=0" in record.message for record in caplog.records)
     assert any(
-        "effectively empty database" in record.message
+        "status=storage_mismatch_suspected counts users=1 libraries=0 series=0 comics=0" in record.message
         for record in caplog.records
-        if record.levelno == logging.WARNING
     )
     assert any(
-        "database has no libraries configured" in record.message
+        "active database has no libraries configured" in record.message
         for record in caplog.records
         if record.levelno == logging.WARNING
     )
@@ -92,10 +98,127 @@ def test_log_startup_diagnostics_logs_populated_database_summary(db, caplog, tmp
         comics_root=tmp_path / "comics",
     )
 
-    assert any("counts users=1 libraries=1 series=1 comics=1" in record.message for record in caplog.records)
+    assert any("status=healthy counts users=1 libraries=1 series=1 comics=1" in record.message for record in caplog.records)
     assert any("library_sample=[{'name': 'Main Library', 'path': '/comics/main'}]" in record.message for record in caplog.records)
     assert not any(
-        "effectively empty database" in record.message
+        "active database has no libraries configured" in record.message
         for record in caplog.records
         if record.levelno == logging.WARNING
     )
+
+
+def test_collect_startup_diagnostics_classifies_storage_mismatch(db, tmp_path):
+    db.add(
+        User(
+            username="admin",
+            email="admin@example.com",
+            hashed_password="fakehash",
+            is_superuser=True,
+            is_active=True,
+        )
+    )
+    db.commit()
+
+    db_path = tmp_path / "comics.db"
+    db_path.write_bytes(b"x" * 432)
+    comics_root = tmp_path / "comics"
+    comics_root.mkdir()
+    (comics_root / "DC").mkdir()
+
+    diagnostics = collect_startup_diagnostics(
+        db,
+        database_url=f"sqlite:///{db_path.as_posix()}",
+        comics_root=comics_root,
+    )
+
+    assert diagnostics["status"] == STARTUP_STATUS_STORAGE_MISMATCH
+    assert diagnostics["is_suspicious"] is True
+    assert diagnostics["recommended_actions"]
+    assert diagnostics["runtime"]["mode"] == RUNTIME_MODE_LOCAL
+
+
+def test_build_home_startup_notice_returns_admin_notice_for_storage_mismatch():
+    diagnostics = {
+        "status": STARTUP_STATUS_STORAGE_MISMATCH,
+        "status_title": "Storage Mismatch Suspected",
+        "status_summary": "Mismatch summary",
+        "recommended_actions": ["Check storage"],
+    }
+
+    notice = build_home_startup_notice(diagnostics, is_admin=True)
+
+    assert notice is not None
+    assert notice["diagnostics_url"] == "/admin/diagnostics"
+    assert notice["is_admin"] is True
+
+
+def test_build_home_startup_notice_ignores_healthy_state():
+    diagnostics = {
+        "status": STARTUP_STATUS_HEALTHY,
+        "status_title": "Healthy",
+        "status_summary": "Healthy summary",
+        "recommended_actions": [],
+    }
+
+    assert build_home_startup_notice(diagnostics, is_admin=True) is None
+
+
+def test_build_support_snapshot_wraps_diagnostics_with_metadata():
+    diagnostics = {
+        "status": "healthy",
+        "status_title": "Healthy",
+        "status_summary": "Everything looks good.",
+        "is_suspicious": False,
+        "runtime": {"mode": RUNTIME_MODE_LOCAL, "label": "Local filesystem"},
+        "database": {"path": "/tmp/comics.db"},
+        "counts": {"users": 1, "libraries": 2, "series": 3, "comics": 4},
+        "default_admin_present": True,
+        "library_sample": [{"name": "Main", "path": "C:/Comics"}],
+        "comics_root": {"path": "/comics", "exists": False, "sample": []},
+        "recommended_actions": [],
+    }
+
+    snapshot = build_support_snapshot(
+        diagnostics,
+        app_version="0.1.18",
+        generated_at=datetime(2026, 7, 13, 12, 0, tzinfo=timezone.utc),
+    )
+
+    assert snapshot["snapshot_type"] == "parker_startup_diagnostics"
+    assert snapshot["schema_version"] == 1
+    assert snapshot["generated_at_utc"] == "2026-07-13T12:00:00+00:00"
+    assert snapshot["app_version"] == "0.1.18"
+    assert snapshot["status"]["code"] == "healthy"
+    assert snapshot["configured_library_sample"] == [{"name": "Main", "path": "C:/Comics"}]
+
+
+def test_collect_startup_diagnostics_marks_default_comics_root_as_container_runtime(db, tmp_path):
+    library = Library(name="Container Library", path="/comics/main")
+    db.add(library)
+    db.commit()
+
+    db_path = tmp_path / "comics.db"
+    db_path.write_bytes(b"x" * 128)
+
+    diagnostics = collect_startup_diagnostics(
+        db,
+        database_url=f"sqlite:///{db_path.as_posix()}",
+    )
+
+    assert diagnostics["runtime"]["mode"] == RUNTIME_MODE_CONTAINER
+
+
+def test_collect_startup_diagnostics_marks_missing_default_comics_root_as_local_when_library_paths_are_local(db, tmp_path):
+    library = Library(name="Local Library", path="C:/Users/test/MyComics")
+    db.add(library)
+    db.commit()
+
+    db_path = tmp_path / "comics.db"
+    db_path.write_bytes(b"x" * 128)
+
+    diagnostics = collect_startup_diagnostics(
+        db,
+        database_url=f"sqlite:///{db_path.as_posix()}",
+    )
+
+    assert diagnostics["runtime"]["mode"] == RUNTIME_MODE_LOCAL
