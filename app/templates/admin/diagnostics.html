@@ -53,7 +53,7 @@
                 <div class="grid grid-cols-2 gap-3">
                     <div>
                         <dt class="text-gray-500 uppercase tracking-[0.2em] text-xs">DB Size</dt>
-                        <dd class="text-gray-200">{{ diagnostics.database.size_bytes }}</dd>
+                        <dd class="text-gray-200" title="{{ diagnostics.database.size_bytes }}">{{ diagnostics.database.size_display or 'Unknown' }}</dd>
                     </div>
                     <div>
                         <dt class="text-gray-500 uppercase tracking-[0.2em] text-xs">Alembic</dt>
@@ -61,11 +61,11 @@
                     </div>
                     <div>
                         <dt class="text-gray-500 uppercase tracking-[0.2em] text-xs">WAL Size</dt>
-                        <dd class="text-gray-200">{{ diagnostics.database.wal_size_bytes }}</dd>
+                        <dd class="text-gray-200" title="{{ diagnostics.database.wal_size_bytes }}">{{ diagnostics.database.wal_size_display or 'Unknown' }}</dd>
                     </div>
                     <div>
                         <dt class="text-gray-500 uppercase tracking-[0.2em] text-xs">SHM Size</dt>
-                        <dd class="text-gray-200">{{ diagnostics.database.shm_size_bytes }}</dd>
+                        <dd class="text-gray-200" title="{{ diagnostics.database.shm_size_bytes }}">{{ diagnostics.database.shm_size_display or 'Unknown' }}</dd>
                     </div>
                 </div>
             </dl>
@@ -93,7 +93,9 @@
             </div>
             <p class="text-sm text-gray-400">
                 Default seeded admin present:
-                <span class="font-bold text-gray-200">{{ diagnostics.default_admin_present }}</span>
+                <span class="inline-flex rounded-full border px-2 py-0.5 text-xs font-bold {% if diagnostics.default_admin_present %}border-emerald-500/30 bg-emerald-500/10 text-emerald-200{% else %}border-gray-600 bg-gray-700/40 text-gray-200{% endif %}">
+                    {{ 'Yes' if diagnostics.default_admin_present else 'No' }}
+                </span>
             </p>
         </section>
     </div>
@@ -105,7 +107,14 @@
             <ul class="space-y-3 text-sm text-gray-300">
                 {% for library in diagnostics.library_sample %}
                 <li class="rounded-lg border border-gray-700 bg-gray-900/40 px-4 py-3">
-                    <div class="font-bold text-white">{{ library.name }}</div>
+                    <div class="flex items-center justify-between gap-3">
+                        <div class="font-bold text-white">{{ library.name }}</div>
+                        {% if library.path_exists is not none %}
+                        <span class="inline-flex rounded-full border px-2 py-0.5 text-xs font-bold {% if library.path_exists %}border-emerald-500/30 bg-emerald-500/10 text-emerald-200{% else %}border-rose-500/30 bg-rose-500/10 text-rose-200{% endif %}">
+                            {{ 'Path Found' if library.path_exists else 'Path Missing' }}
+                        </span>
+                        {% endif %}
+                    </div>
                     <div class="mt-1 break-all text-gray-400">{{ library.path }}</div>
                 </li>
                 {% endfor %}
@@ -124,7 +133,12 @@
                 {% endif %}
             </h2>
             <p class="text-sm text-gray-300 break-all">{{ diagnostics.comics_root.path }}</p>
-            <p class="text-sm text-gray-400">Exists: {{ diagnostics.comics_root.exists }}</p>
+            <p class="text-sm text-gray-400">
+                Exists:
+                <span class="inline-flex rounded-full border px-2 py-0.5 text-xs font-bold {% if diagnostics.comics_root.exists %}border-emerald-500/30 bg-emerald-500/10 text-emerald-200{% else %}border-gray-600 bg-gray-700/40 text-gray-200{% endif %}">
+                    {{ 'Yes' if diagnostics.comics_root.exists else 'No' }}
+                </span>
+            </p>
 
             {% if diagnostics.comics_root.sample %}
             <ul class="space-y-2 text-sm text-gray-300">

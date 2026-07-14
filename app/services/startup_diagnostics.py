@@ -40,6 +40,34 @@ def _safe_file_size(path: Path | None) -> int | None:
         return None
 
 
+def _safe_path_exists(path_str: str | None) -> bool | None:
+    if not path_str:
+        return None
+
+    try:
+        return Path(path_str).exists()
+    except (OSError, ValueError):
+        return None
+
+
+def _format_bytes(size_bytes: int | None) -> str | None:
+    if size_bytes is None:
+        return None
+
+    units = ["B", "KB", "MB", "GB", "TB"]
+    value = float(size_bytes)
+    unit_index = 0
+
+    while value >= 1024 and unit_index < len(units) - 1:
+        value /= 1024
+        unit_index += 1
+
+    if unit_index == 0:
+        return f"{int(value)} {units[unit_index]}"
+
+    return f"{value:.1f} {units[unit_index]}"
+
+
 def _sample_directory(path: Path, limit: int = 5) -> list[str]:
     if not path.exists() or not path.is_dir():
         return []
@@ -178,7 +206,11 @@ def collect_startup_diagnostics(
     ).first() is not None
 
     library_sample = [
-        {"name": library.name, "path": library.path}
+        {
+            "name": library.name,
+            "path": library.path,
+            "path_exists": _safe_path_exists(library.path),
+        }
         for library in db.query(Library).order_by(Library.name).limit(5).all()
     ]
 
@@ -210,8 +242,11 @@ def collect_startup_diagnostics(
             "path": str(db_path.resolve(strict=False)) if db_path else None,
             "exists": db_exists,
             "size_bytes": db_size,
+            "size_display": _format_bytes(db_size),
             "wal_size_bytes": wal_size,
+            "wal_size_display": _format_bytes(wal_size),
             "shm_size_bytes": shm_size,
+            "shm_size_display": _format_bytes(shm_size),
             "alembic_version": alembic_version,
         },
         "counts": {

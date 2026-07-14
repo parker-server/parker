@@ -99,7 +99,11 @@ def test_log_startup_diagnostics_logs_populated_database_summary(db, caplog, tmp
     )
 
     assert any("status=healthy counts users=1 libraries=1 series=1 comics=1" in record.message for record in caplog.records)
-    assert any("library_sample=[{'name': 'Main Library', 'path': '/comics/main'}]" in record.message for record in caplog.records)
+    assert any(
+        "library_sample=[{'name': 'Main Library', 'path': '/comics/main', 'path_exists': False}]"
+        in record.message
+        for record in caplog.records
+    )
     assert not any(
         "active database has no libraries configured" in record.message
         for record in caplog.records
@@ -135,6 +139,7 @@ def test_collect_startup_diagnostics_classifies_storage_mismatch(db, tmp_path):
     assert diagnostics["is_suspicious"] is True
     assert diagnostics["recommended_actions"]
     assert diagnostics["runtime"]["mode"] == RUNTIME_MODE_LOCAL
+    assert diagnostics["database"]["size_display"] == "432 B"
 
 
 def test_build_home_startup_notice_returns_admin_notice_for_storage_mismatch():
@@ -222,3 +227,28 @@ def test_collect_startup_diagnostics_marks_missing_default_comics_root_as_local_
     )
 
     assert diagnostics["runtime"]["mode"] == RUNTIME_MODE_LOCAL
+
+
+def test_collect_startup_diagnostics_tracks_library_path_existence(db, tmp_path):
+    existing_library_root = tmp_path / "Comics"
+    existing_library_root.mkdir()
+
+    db.add_all([
+        Library(name="Existing", path=str(existing_library_root)),
+        Library(name="Missing", path=str(tmp_path / "DoesNotExist")),
+    ])
+    db.commit()
+
+    db_path = tmp_path / "comics.db"
+    db_path.write_bytes(b"x" * 2048)
+
+    diagnostics = collect_startup_diagnostics(
+        db,
+        database_url=f"sqlite:///{db_path.as_posix()}",
+        comics_root=tmp_path / "probe",
+    )
+
+    by_name = {item["name"]: item for item in diagnostics["library_sample"]}
+    assert by_name["Existing"]["path_exists"] is True
+    assert by_name["Missing"]["path_exists"] is False
+    assert diagnostics["database"]["size_display"] == "2.0 KB"
