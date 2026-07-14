@@ -1,3 +1,6 @@
+from app.core.templates import templates
+
+
 def test_home_page_shows_storage_warning_for_admin_when_startup_looks_suspicious(admin_client, monkeypatch):
     monkeypatch.setattr(
         "app.routers.pages.collect_startup_diagnostics",
@@ -57,6 +60,52 @@ def test_admin_diagnostics_page_exposes_support_snapshot_actions(admin_client):
     assert "Download JSON" in body
     assert "Open Raw JSON" in body
     assert "parker_startup_diagnostics" in body
+
+
+def test_login_page_uses_server_display_name_but_keeps_parker_branding(client, monkeypatch):
+    def fake_get_system_setting(key, default=None):
+        if key == "general.app_name":
+            return "Fortress Comics"
+        return default
+
+    monkeypatch.setitem(templates.env.globals, "get_system_setting", fake_get_system_setting)
+
+    response = client.get("/login")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "Fortress Comics" in body
+    assert "Powered by" in body
+    assert "Parker" in body
+
+
+def test_admin_settings_page_exposes_quick_navigation(admin_client):
+    response = admin_client.get("/admin/settings")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "Settings Overview" in body
+    assert "Jump To" in body
+    assert "Expand All" in body
+    assert "Collapse All" in body
+
+
+def test_search_widget_people_results_use_generic_creator_handoff(auth_client):
+    response = auth_client.get("/")
+
+    assert response.status_code == 200
+    body = response.text
+    assert 'personSearchHref(item)' in body
+    assert 'field=writer&value=${encodeURIComponent(item.name)}&operator=contains' not in body
+
+
+def test_advanced_search_page_exposes_full_creator_filter_set(auth_client):
+    response = auth_client.get("/search")
+
+    assert response.status_code == 200
+    body = response.text
+    assert '<option value="letterer">Letterer</option>' in body
+    assert '<option value="cover_artist">Cover Artist</option>' in body
 
 
 def test_user_settings_page_renders_for_authenticated_user(auth_client):

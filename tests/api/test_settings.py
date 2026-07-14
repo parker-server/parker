@@ -1,5 +1,6 @@
 from unittest.mock import patch
 
+from app.services.settings_service import SettingsService, SERVER_DISPLAY_NAME_MAX_LENGTH
 from app.api.deps import get_current_user_optional
 from app.main import app
 
@@ -84,3 +85,15 @@ def test_update_setting_returns_404_when_setting_missing(admin_client):
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Setting not found"
+
+
+def test_update_setting_rejects_server_display_name_that_is_too_long(admin_client, db):
+    SettingsService(db).initialize_defaults()
+
+    response = admin_client.patch(
+        "/api/settings/general.app_name",
+        json={"value": "X" * (SERVER_DISPLAY_NAME_MAX_LENGTH + 1)},
+    )
+
+    assert response.status_code == 422
+    assert f"{SERVER_DISPLAY_NAME_MAX_LENGTH} characters or fewer" in response.json()["detail"]

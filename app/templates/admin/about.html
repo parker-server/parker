@@ -3,6 +3,8 @@
 {% block title %}About - Parker{% endblock %}
 
 {% block content %}
+{% set configured_instance_name = (get_system_setting("general.app_name", "Parker Comic Server") or "")|trim %}
+{% set instance_name = configured_instance_name or "Parker Comic Server" %}
 <div class="max-w-4xl mx-auto">
 
     {% from "partials/admin_header.html" import admin_header %}
@@ -15,7 +17,8 @@
         
         <div class="p-8 text-center border-b border-gray-700 bg-gray-900/50">
             <div class="text-6xl mb-4">🕷️</div>
-            <h1 class="text-3xl font-bold text-white mb-2">Parker</h1>
+            <h1 class="text-3xl font-bold text-white mb-2">{{ instance_name }}</h1>
+            <p class="text-sm uppercase tracking-[0.24em] text-gray-500 mb-2">Powered by Parker</p>
             <p class="text-blue-400 font-mono">v{{ app_version }}</p>
         </div>
 

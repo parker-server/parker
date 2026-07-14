@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - Parker</title>
+    {% set configured_instance_name = (get_system_setting("general.app_name", "Parker Comic Server") or "")|trim %}
+    {% set instance_name = configured_instance_name or "Parker Comic Server" %}
+    <title>Login - {{ instance_name }} | Parker</title>
 
     {# Used for including context-sensitive path data #}
     {% from "partials/config_context.html" import config_context %}
@@ -77,8 +79,8 @@
         <div class="w-full max-w-md space-y-8 p-10 bg-black/40 backdrop-blur-md rounded-2xl border border-white/10 shadow-2xl">
 
             <div class="text-center">
-                <h1 class="text-4xl font-bold tracking-tight text-white mb-2">Parker</h1>
-                <p class="text-gray-400 text-sm">Sign in to your comic server</p>
+                <h1 class="text-4xl font-bold tracking-tight text-white mb-2">{{ instance_name }}</h1>
+                <p class="text-gray-400 text-sm">Sign in to your Parker comic server</p>
             </div>
 
             <form class="mt-8 space-y-6" @submit.prevent="login">

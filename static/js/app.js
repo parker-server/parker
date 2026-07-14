@@ -164,9 +164,26 @@ document.addEventListener('alpine:init', () => {
         results: {},
         isOpen: false,
         loading: false,
+        creatorRoleFields: ['writer', 'penciller', 'inker', 'colorist', 'letterer', 'editor', 'cover_artist'],
 
         get hasResults() {
             return Object.values(this.results).some(arr => arr && arr.length > 0);
+        },
+
+        personSearchHref(item) {
+            const name = item?.name?.trim();
+            if (!name) {
+                return window.parker.route('pages.search');
+            }
+
+            return window.parker.searchHandoff.buildUrl({
+                match: 'any',
+                filters: this.creatorRoleFields.map((field) => ({
+                    field,
+                    operator: 'equal',
+                    value: [name]
+                }))
+            });
         },
 
         async fetchResults() {

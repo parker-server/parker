@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from typing import Dict, List, Any, Optional
 from app.api.deps import SessionDep, AdminUser, CurrentUser, get_current_user_optional
-from app.services.settings_service import SettingsService
+from app.services.settings_service import SettingsService, SettingValidationError
 from app.core.settings_loader import get_cached_setting
 from app.services.scheduler import scheduler_service
 from app.schemas.setting import SettingUpdate, SettingResponse
@@ -58,5 +58,7 @@ def update_setting(key: str, payload: SettingUpdate, db: SessionDep, admin: Admi
 
         return setting
 
+    except SettingValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     except ValueError:
         raise HTTPException(status_code=404, detail="Setting not found")

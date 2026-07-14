@@ -19,3 +19,8 @@ This file captures follow-up work that should not get lost between releases.
   Key request/runtime settings that commonly affect support cases (`base_url`, selected proxy-related settings, maybe a few safe env-derived values).
   Light filesystem health checks for storage/cache/cover directories.
   Guardrails: Avoid secrets, tokens, full env dumps, or overly large payloads.
+
+- Revisit the startup diagnostics mismatch heuristic for true first-run versus rebuilt-storage scenarios.
+  Context: The current warning logic is much more useful than before, but we lost the original reporter's environment after they rebuilt from scratch, so we no longer have a live repro to interrogate.
+  Current risk: A fresh install with a valid comics mount and no configured libraries can still look superficially similar to a "wrong storage directory" situation.
+  Follow-up goal: Reassess the signals used for `storage_mismatch_suspected` once we have another real-world report or a better synthetic repro, and tune the messaging so first-run onboarding is not mistaken for a broken upgrade.
