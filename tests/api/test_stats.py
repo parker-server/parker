@@ -19,11 +19,14 @@ def _create_series_volume(db, *, prefix: str, series_suffix: str):
 def test_stats_endpoints_require_admin(auth_client):
     system = auth_client.get("/api/stats/")
     genres = auth_client.get("/api/stats/genres")
+    startup = auth_client.get("/api/stats/startup")
 
     assert system.status_code == 400
     assert genres.status_code == 400
+    assert startup.status_code == 400
     assert "privileges" in system.json()["detail"].lower()
     assert "privileges" in genres.json()["detail"].lower()
+    assert "privileges" in startup.json()["detail"].lower()
 
 
 def test_system_stats_empty_defaults(admin_client):
@@ -40,6 +43,41 @@ def test_system_stats_empty_defaults(admin_client):
     }
     assert payload["storage"]["total_bytes"] == 0
     assert payload["activity"] == {"pages_read": 0, "completed_books": 0}
+
+
+def test_startup_diagnostics_endpoint_returns_collected_payload(admin_client, monkeypatch):
+    sentinel = {
+        "status": "storage_mismatch_suspected",
+        "status_title": "Storage Mismatch Suspected",
+        "status_summary": "Mismatch summary",
+        "is_suspicious": True,
+        "database": {"path": "/app/storage/database/comics.db"},
+        "counts": {"users": 1, "libraries": 0, "series": 0, "comics": 0},
+        "default_admin_present": True,
+        "library_sample": [],
+        "comics_root": {"path": "/comics", "exists": True, "sample": ["Marvel/"]},
+        "recommended_actions": ["Check storage"],
+    }
+
+    monkeypatch.setattr("app.api.stats.collect_startup_diagnostics", lambda db, database_url: sentinel)
+
+    response = admin_client.get("/api/stats/startup")
+
+    assert response.status_code == 200
+    assert response.json() == sentinel
+
+
+def test_startup_support_snapshot_endpoint_returns_structured_snapshot(admin_client, monkeypatch):
+    sentinel = {"status": "healthy"}
+    snapshot = {"snapshot_type": "parker_startup_diagnostics", "schema_version": 1}
+
+    monkeypatch.setattr("app.api.stats.collect_startup_diagnostics", lambda db, database_url: sentinel)
+    monkeypatch.setattr("app.api.stats.build_support_snapshot", lambda diagnostics, app_version: snapshot)
+
+    response = admin_client.get("/api/stats/startup/support-snapshot")
+
+    assert response.status_code == 200
+    assert response.json() == snapshot
 
 
 def test_system_stats_aggregates_counts_storage_and_activity(admin_client, db, admin_user):

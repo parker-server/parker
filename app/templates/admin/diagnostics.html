@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+
+{% block title %}Startup Diagnostics - Parker{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto space-y-8">
+    {% from "partials/admin_header.html" import admin_header %}
+    {{ admin_header(
+        title="Startup Diagnostics",
+        description="Inspect the active storage and startup state Parker is using right now."
+    ) }}
+
+    <div class="rounded-2xl border border-gray-700 bg-gray-800/60 p-6 shadow-xl space-y-4">
+        <div class="flex flex-wrap items-center gap-3">
+            <span class="text-xs font-bold uppercase tracking-[0.25em] text-gray-400">Status</span>
+            <span class="inline-flex rounded-full border px-3 py-1 text-sm font-bold
+                {% if diagnostics.status == 'healthy' %}border-emerald-500/40 bg-emerald-500/10 text-emerald-200
+                {% elif diagnostics.status == 'storage_mismatch_suspected' %}border-amber-500/40 bg-amber-500/10 text-amber-200
+                {% else %}border-blue-500/40 bg-blue-500/10 text-blue-200{% endif %}">
+                {{ diagnostics.status_title }}
+            </span>
+        </div>
+        <p class="text-gray-300 leading-relaxed">{{ diagnostics.status_summary }}</p>
+
+        {% if diagnostics.recommended_actions %}
+        <div class="space-y-2">
+            <h2 class="text-sm font-bold uppercase tracking-[0.2em] text-gray-400">Recommended Actions</h2>
+            <ul class="space-y-2 text-sm text-gray-300">
+                {% for action in diagnostics.recommended_actions %}
+                <li class="rounded-lg border border-gray-700 bg-gray-900/40 px-4 py-3">{{ action }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="grid gap-6 lg:grid-cols-2">
+        <section class="rounded-2xl border border-gray-700 bg-gray-800/60 p-6 shadow-xl space-y-4">
+            <h2 class="text-lg font-bold text-white">Database</h2>
+            <dl class="space-y-3 text-sm">
+                <div>
+                    <dt class="text-gray-500 uppercase tracking-[0.2em] text-xs">Runtime</dt>
+                    <dd class="text-gray-200">{{ diagnostics.runtime.label }}</dd>
+                </div>
+                <div>
+                    <dt class="text-gray-500 uppercase tracking-[0.2em] text-xs">URL</dt>
+                    <dd class="text-gray-200 break-all">{{ diagnostics.database.url }}</dd>
+                </div>
+                <div>
+                    <dt class="text-gray-500 uppercase tracking-[0.2em] text-xs">Path</dt>
+                    <dd class="text-gray-200 break-all">{{ diagnostics.database.path }}</dd>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <dt class="text-gray-500 uppercase tracking-[0.2em] text-xs">DB Size</dt>
+                        <dd class="text-gray-200">{{ diagnostics.database.size_bytes }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-gray-500 uppercase tracking-[0.2em] text-xs">Alembic</dt>
+                        <dd class="text-gray-200">{{ diagnostics.database.alembic_version }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-gray-500 uppercase tracking-[0.2em] text-xs">WAL Size</dt>
+                        <dd class="text-gray-200">{{ diagnostics.database.wal_size_bytes }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-gray-500 uppercase tracking-[0.2em] text-xs">SHM Size</dt>
+                        <dd class="text-gray-200">{{ diagnostics.database.shm_size_bytes }}</dd>
+                    </div>
+                </div>
+            </dl>
+        </section>
+
+        <section class="rounded-2xl border border-gray-700 bg-gray-800/60 p-6 shadow-xl space-y-4">
+            <h2 class="text-lg font-bold text-white">Counts</h2>
+            <div class="grid grid-cols-2 gap-4">
+                <div class="rounded-xl border border-gray-700 bg-gray-900/40 p-4">
+                    <div class="text-xs uppercase tracking-[0.2em] text-gray-500">Users</div>
+                    <div class="mt-2 text-3xl font-black text-white">{{ diagnostics.counts.users }}</div>
+                </div>
+                <div class="rounded-xl border border-gray-700 bg-gray-900/40 p-4">
+                    <div class="text-xs uppercase tracking-[0.2em] text-gray-500">Libraries</div>
+                    <div class="mt-2 text-3xl font-black text-white">{{ diagnostics.counts.libraries }}</div>
+                </div>
+                <div class="rounded-xl border border-gray-700 bg-gray-900/40 p-4">
+                    <div class="text-xs uppercase tracking-[0.2em] text-gray-500">Series</div>
+                    <div class="mt-2 text-3xl font-black text-white">{{ diagnostics.counts.series }}</div>
+                </div>
+                <div class="rounded-xl border border-gray-700 bg-gray-900/40 p-4">
+                    <div class="text-xs uppercase tracking-[0.2em] text-gray-500">Comics</div>
+                    <div class="mt-2 text-3xl font-black text-white">{{ diagnostics.counts.comics }}</div>
+                </div>
+            </div>
+            <p class="text-sm text-gray-400">
+                Default seeded admin present:
+                <span class="font-bold text-gray-200">{{ diagnostics.default_admin_present }}</span>
+            </p>
+        </section>
+    </div>
+
+    <div class="grid gap-6 lg:grid-cols-2">
+        <section class="rounded-2xl border border-gray-700 bg-gray-800/60 p-6 shadow-xl space-y-4">
+            <h2 class="text-lg font-bold text-white">Configured Libraries</h2>
+            {% if diagnostics.library_sample %}
+            <ul class="space-y-3 text-sm text-gray-300">
+                {% for library in diagnostics.library_sample %}
+                <li class="rounded-lg border border-gray-700 bg-gray-900/40 px-4 py-3">
+                    <div class="font-bold text-white">{{ library.name }}</div>
+                    <div class="mt-1 break-all text-gray-400">{{ library.path }}</div>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="text-sm text-gray-400">No libraries are configured in the active database.</p>
+            {% endif %}
+        </section>
+
+        <section class="rounded-2xl border border-gray-700 bg-gray-800/60 p-6 shadow-xl space-y-4">
+            <h2 class="text-lg font-bold text-white">
+                {% if diagnostics.runtime.mode == 'container_like' %}
+                Container Comics Mount
+                {% else %}
+                Local Comics Probe
+                {% endif %}
+            </h2>
+            <p class="text-sm text-gray-300 break-all">{{ diagnostics.comics_root.path }}</p>
+            <p class="text-sm text-gray-400">Exists: {{ diagnostics.comics_root.exists }}</p>
+
+            {% if diagnostics.comics_root.sample %}
+            <ul class="space-y-2 text-sm text-gray-300">
+                {% for entry in diagnostics.comics_root.sample %}
+                <li class="rounded-lg border border-gray-700 bg-gray-900/40 px-4 py-3">{{ entry }}</li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            {% if diagnostics.runtime.mode == 'container_like' %}
+            <p class="text-sm text-gray-400">No sample entries were found in the container comics mount.</p>
+            {% else %}
+            <p class="text-sm text-gray-400">Not present in this runtime, which is normal for local or non-Docker setups using library paths outside `/comics`.</p>
+            {% endif %}
+            {% endif %}
+        </section>
+    </div>
+
+    <div x-data='supportSnapshotPanel({{ support_snapshot|tojson }})' class="rounded-2xl border border-gray-700 bg-gray-800/60 p-6 shadow-xl space-y-4">
+        <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div class="space-y-2">
+                <h2 class="text-lg font-bold text-white">Support Snapshot</h2>
+                <p class="text-sm text-gray-300">Copy or download a structured diagnostics bundle for issue reports and support requests.</p>
+            </div>
+            <div class="flex flex-wrap gap-3">
+                <button
+                    @click="copySnapshot()"
+                    class="rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-2 text-sm font-bold text-blue-200 transition-colors hover:border-blue-400/50 hover:bg-blue-500/20"
+                >
+                    Copy Support Snapshot
+                </button>
+                <button
+                    @click="downloadSnapshot()"
+                    class="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm font-bold text-emerald-200 transition-colors hover:border-emerald-400/50 hover:bg-emerald-500/20"
+                >
+                    Download JSON
+                </button>
+                <a
+                    :href="window.parker.route('stats.startup_support_snapshot')"
+                    class="rounded-lg border border-gray-600 bg-gray-900/40 px-4 py-2 text-sm font-bold text-gray-200 transition-colors hover:border-gray-500 hover:bg-gray-900/70"
+                >
+                    Open Raw JSON
+                </a>
+            </div>
+        </div>
+
+        <p class="text-xs uppercase tracking-[0.2em] text-gray-500" x-text="feedback"></p>
+
+        <div class="rounded-xl border border-gray-700 bg-gray-950/70 p-4">
+            <pre class="max-h-72 overflow-auto whitespace-pre-wrap break-words text-xs leading-6 text-gray-200" x-text="formattedSnapshot"></pre>
+        </div>
+    </div>
+</div>
+
+<script>
+function supportSnapshotPanel(snapshot) {
+    return {
+        snapshot,
+        feedback: 'Structured JSON payload for GitHub issues, Reddit replies, and direct support requests.',
+
+        get formattedSnapshot() {
+            return JSON.stringify(this.snapshot, null, 2);
+        },
+
+        async copySnapshot() {
+            const text = this.formattedSnapshot;
+            try {
+                await navigator.clipboard.writeText(text);
+                this.feedback = 'Support snapshot copied to clipboard.';
+                if (window.parker?.showToast) {
+                    window.parker.showToast('Support snapshot copied.', 'success');
+                }
+            } catch (error) {
+                this.feedback = 'Copy failed. You can still download the JSON below.';
+                if (window.parker?.showToast) {
+                    window.parker.showToast('Unable to copy support snapshot.', 'error');
+                }
+            }
+        },
+
+        downloadSnapshot() {
+            const blob = new Blob([this.formattedSnapshot], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            const timestamp = (this.snapshot.generated_at_utc || 'snapshot')
+                .replace(/[:]/g, '-')
+                .replace(/\.\d+/, '')
+                .replace('+00:00', 'Z');
+
+            anchor.href = url;
+            anchor.download = `parker-support-snapshot-${timestamp}.json`;
+            document.body.appendChild(anchor);
+            anchor.click();
+            document.body.removeChild(anchor);
+            URL.revokeObjectURL(url);
+
+            this.feedback = 'Support snapshot downloaded as JSON.';
+        },
+    };
+}
+</script>
+{% endblock %}

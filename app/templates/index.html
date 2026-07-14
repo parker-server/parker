@@ -3,9 +3,9 @@
 {% block title %}Home - Parker{% endblock %}
 
 {% block content %}
-<div class="space-y-12" x-data="homePage()">
+<div class="space-y-12" x-data='homePage({{ {"startupNotice": startup_notice}|tojson }})'>
 
-    <div x-show="!isLoading && !isLibraryEmpty" class="space-y-16 pb-12" x-cloak>
+    <div x-show="!isLoading && !showStartupNotice && !isLibraryEmpty" class="space-y-16 pb-12" x-cloak>
 
         <div x-show="!loading.resume && resumeComics.length > 0">
             <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
@@ -173,7 +173,52 @@
 
     </div>
 
-    <template x-if="!isLoading && isLibraryEmpty">
+    <template x-if="!isLoading && showStartupNotice">
+        <div class="max-w-4xl mx-auto py-12 px-6">
+            <div class="bg-amber-950/30 border border-amber-500/30 rounded-2xl p-8 md:p-12 text-center space-y-8 shadow-2xl">
+                <div class="inline-flex items-center justify-center w-20 h-20 bg-amber-500/10 rounded-full mb-4">
+                    <span class="text-5xl">⚠</span>
+                </div>
+
+                <div class="space-y-3">
+                    <h1 class="text-3xl md:text-4xl font-black text-white tracking-tight" x-text="startupNotice.title"></h1>
+                    <p class="text-amber-100/80 text-lg max-w-2xl mx-auto" x-text="startupNotice.summary"></p>
+                </div>
+
+                <div class="max-w-3xl mx-auto text-left space-y-3" x-show="startupNotice.recommended_actions?.length">
+                    <template x-for="action in startupNotice.recommended_actions" :key="action">
+                        <div class="rounded-xl border border-amber-500/20 bg-black/20 px-4 py-3 text-sm text-gray-200" x-text="action"></div>
+                    </template>
+                </div>
+
+                <div class="grid md:grid-cols-2 gap-6 text-left max-w-2xl mx-auto" x-show="startupNotice.is_admin">
+                    <a :href="startupNotice.diagnostics_url" class="group p-6 bg-gray-900/50 border border-amber-500/20 rounded-xl hover:border-amber-400/50 transition-all">
+                        <div class="flex items-start gap-4">
+                            <div class="text-2xl">🩺</div>
+                            <div>
+                                <h3 class="font-bold text-white group-hover:text-amber-200 transition-colors">Open Diagnostics</h3>
+                                <p class="text-sm text-gray-400 mt-1">Inspect the active database path, counts, and comics mount sample.</p>
+                            </div>
+                        </div>
+                    </a>
+
+                    <a :href="window.parker.url('/admin/libraries')" class="group p-6 bg-gray-900/50 border border-amber-500/20 rounded-xl hover:border-amber-400/50 transition-all">
+                        <div class="flex items-start gap-4">
+                            <div class="text-2xl">📁</div>
+                            <div>
+                                <h3 class="font-bold text-white group-hover:text-amber-200 transition-colors">Library Admin</h3>
+                                <p class="text-sm text-gray-400 mt-1">Avoid adding new libraries until you've verified the current storage path.</p>
+                            </div>
+                        </div>
+                    </a>
+                </div>
+
+                <p class="text-xs text-amber-200/60 uppercase tracking-widest pt-4" x-show="!startupNotice.is_admin">Please contact your Parker administrator before changing anything.</p>
+            </div>
+        </div>
+    </template>
+
+    <template x-if="!isLoading && !showStartupNotice && isLibraryEmpty">
 
         <div class="max-w-4xl mx-auto py-12 px-6">
             <div class="bg-gray-800/50 border border-gray-700 rounded-2xl p-8 md:p-12 text-center space-y-8 shadow-2xl">
@@ -223,8 +268,9 @@
 </div>
 
 <script>
-function homePage() {
+function homePage(bootstrap = {}) {
     return {
+        startupNotice: bootstrap.startupNotice || null,
         recentSeries: [],
         updatedSeries: [],
         starredSeries: [],
@@ -264,7 +310,18 @@ function homePage() {
                 && this.starredSeries.length === 0;
         },
 
+        get showStartupNotice() {
+            return !!this.startupNotice;
+        },
+
         init() {
+            if (this.showStartupNotice) {
+                Object.keys(this.loading).forEach(key => {
+                    this.loading[key] = false;
+                });
+                return;
+            }
+
             this.fetchStarred();
             this.fetchRecent();
             this.fetchUpdated();

@@ -3,20 +3,45 @@ from fastapi.responses import HTMLResponse
 
 from app.core.comic_helpers import get_smart_cover
 from app.api.deps import SessionDep, ComicDep, VolumeDep, SeriesDep, LibraryDep, CurrentUser
+from app.config import settings
 from app.core.templates import templates
 from app.models.comic import Comic, Volume
 from app.core.login_effects import get_active_effect
 from app.core.login_backgrounds import SOLID_COLORS, STATIC_COVERS
 from app.services.settings_service import SettingsService
+from app.services.startup_diagnostics import (
+    build_home_startup_notice,
+    collect_startup_diagnostics,
+)
 
 router = APIRouter()
 
 
 # Frontend routes
 @router.get("/", response_class=HTMLResponse, name="home")
-async def home(request: Request, user: CurrentUser):
+async def home(request: Request, db: SessionDep, user: CurrentUser):
     """Home page - Library browser"""
-    return templates.TemplateResponse(request=request, name="index.html")
+    startup_notice = None
+
+    try:
+        diagnostics = collect_startup_diagnostics(
+            db,
+            database_url=settings.database_url,
+        )
+    except Exception:
+        diagnostics = None
+
+    if diagnostics is not None:
+        startup_notice = build_home_startup_notice(
+            diagnostics,
+            is_admin=bool(user.is_superuser),
+        )
+
+    return templates.TemplateResponse(
+        request=request,
+        name="index.html",
+        context={"startup_notice": startup_notice},
+    )
 
 
 @router.get("/reader/{comic_id}", response_class=HTMLResponse, name="reader")
