@@ -5,7 +5,7 @@ def test_home_page_shows_storage_warning_for_admin_when_startup_looks_suspicious
             "status": "storage_mismatch_suspected",
             "status_title": "Storage Mismatch Suspected",
             "status_summary": "Parker can see comics but the database has no libraries configured.",
-            "recommended_actions": ["Verify /app/storage"],
+            "recommended_actions": ["Verify the active storage directory"],
         },
     )
 
@@ -15,6 +15,8 @@ def test_home_page_shows_storage_warning_for_admin_when_startup_looks_suspicious
     body = response.text
     assert "Storage Mismatch Suspected" in body
     assert "Open Diagnostics" in body
+    assert "Back to Admin" in body
+    assert "Manage Libraries Anyway" in body
     assert "storage_mismatch_suspected" in body
 
 

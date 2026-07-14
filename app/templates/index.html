@@ -191,26 +191,19 @@
                     </template>
                 </div>
 
-                <div class="grid md:grid-cols-2 gap-6 text-left max-w-2xl mx-auto" x-show="startupNotice.is_admin">
-                    <a :href="startupNotice.diagnostics_url" class="group p-6 bg-gray-900/50 border border-amber-500/20 rounded-xl hover:border-amber-400/50 transition-all">
-                        <div class="flex items-start gap-4">
-                            <div class="text-2xl">🩺</div>
-                            <div>
-                                <h3 class="font-bold text-white group-hover:text-amber-200 transition-colors">Open Diagnostics</h3>
-                                <p class="text-sm text-gray-400 mt-1">Inspect the active database path, counts, and comics mount sample.</p>
-                            </div>
+                <div class="max-w-2xl mx-auto space-y-4" x-show="startupNotice.is_admin">
+                    <a :href="startupNotice.diagnostics_url" class="group flex items-start gap-4 rounded-xl border border-amber-400/40 bg-amber-500/10 px-6 py-5 text-left shadow-lg transition-all hover:border-amber-300/60 hover:bg-amber-500/15">
+                        <div class="text-2xl">🩺</div>
+                        <div>
+                            <h3 class="font-bold text-white group-hover:text-amber-100 transition-colors">Open Diagnostics</h3>
+                            <p class="text-sm text-amber-100/70 mt-1">Inspect the active database path, counts, configured libraries, and comics probe before making any changes.</p>
                         </div>
                     </a>
 
-                    <a :href="window.parker.url('/admin/libraries')" class="group p-6 bg-gray-900/50 border border-amber-500/20 rounded-xl hover:border-amber-400/50 transition-all">
-                        <div class="flex items-start gap-4">
-                            <div class="text-2xl">📁</div>
-                            <div>
-                                <h3 class="font-bold text-white group-hover:text-amber-200 transition-colors">Library Admin</h3>
-                                <p class="text-sm text-gray-400 mt-1">Avoid adding new libraries until you've verified the current storage path.</p>
-                            </div>
-                        </div>
-                    </a>
+                    <div class="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm">
+                        <a :href="window.parker.url('/admin')" class="text-gray-300 hover:text-white transition-colors">Back to Admin</a>
+                        <a :href="window.parker.url('/admin/libraries')" class="text-amber-200/75 hover:text-amber-100 transition-colors">Manage Libraries Anyway</a>
+                    </div>
                 </div>
 
                 <p class="text-xs text-amber-200/60 uppercase tracking-widest pt-4" x-show="!startupNotice.is_admin">Please contact your Parker administrator before changing anything.</p>

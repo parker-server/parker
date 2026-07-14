@@ -153,7 +153,7 @@ def _status_summary(status: str, comics_root: str) -> str:
     if status == STARTUP_STATUS_STORAGE_MISMATCH:
         return (
             f"Parker can see entries under {comics_root}, but the active database has no libraries configured. "
-            "This usually means the server started against a different or newly initialized /app/storage directory."
+            "This usually means the server started against a different or newly initialized storage directory."
         )
     if status == STARTUP_STATUS_FRESH_INSTALL:
         return (
@@ -170,7 +170,7 @@ def _status_summary(status: str, comics_root: str) -> str:
 def _build_recommended_actions(status: str) -> list[str]:
     if status == STARTUP_STATUS_STORAGE_MISMATCH:
         return [
-            "Verify that /app/storage points to the same host folder or volume used before the upgrade.",
+            "Verify that Parker is using the same host folder or volume it used before the upgrade.",
             "Compare the active comics.db file with the previous deployment and confirm the expected libraries exist there.",
             "If this was an upgrade, avoid adding new libraries until the original storage path has been verified.",
         ]
