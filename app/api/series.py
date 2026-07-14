@@ -24,6 +24,7 @@ from app.models.tags import Character, Team, Location, Genre, comic_genres
 from app.models.interactions import UserSeries
 from app.models.reading_progress import ReadingProgress
 
+from app.services.social_insights import get_visible_series_reader_count
 from app.services.thumbnailer import ThumbnailService
 
 router = APIRouter()
@@ -168,7 +169,8 @@ async def get_series_detail(series: SeriesDep, db: SessionDep, current_user: Cur
         # (Return empty structure - kept same as original)
         return {
             "id": series.id, "name": series.name, "library_id": series.library_id,
-            "volume_count": 0, "total_issues": 0, "volumes": [], "collections": [], "reading_lists": [], "details": {}
+            "volume_count": 0, "total_issues": 0, "volumes": [], "collections": [], "reading_lists": [], "details": {},
+            "parker_readers_count": None,
         }
 
     # Get centralized filters
@@ -396,6 +398,8 @@ async def get_series_detail(series: SeriesDep, db: SessionDep, current_user: Cur
                                            UserSeries.series_id == series.id).first()
         is_starred = pref.is_starred if pref else False
 
+    parker_readers_count = get_visible_series_reader_count(db, series.id)
+
     return {
         "id": series.id,
         "name": series.name,
@@ -425,6 +429,7 @@ async def get_series_detail(series: SeriesDep, db: SessionDep, current_user: Cur
         "is_admin": current_user.is_superuser,
         "is_reverse_numbering": is_reverse_series,
         "thumbnail_hash": get_thumbnail_hash(first_issue.updated_at),
+        "parker_readers_count": parker_readers_count,
     }
 
 

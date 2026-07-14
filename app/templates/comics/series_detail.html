@@ -184,6 +184,14 @@
                                 </div>
                             </div>
                         </div>
+
+                        <template x-if="series?.parker_readers_count">
+                            <div class="mt-4 rounded-xl border border-blue-500/20 bg-blue-950/20 px-4 py-3">
+                                <div class="text-[10px] uppercase tracking-[0.2em] text-blue-300/80 font-bold">Parker Activity</div>
+                                <div class="mt-1 text-base font-semibold text-white" x-text="`${series.parker_readers_count} Parker users are reading or have read this series`"></div>
+                                <p class="text-sm text-gray-400 mt-1">Based on opted-in Parker activity across issues in this series.</p>
+                            </div>
+                        </template>
                     </div>
                 </div>
             </div>

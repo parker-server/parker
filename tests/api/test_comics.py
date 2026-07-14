@@ -175,6 +175,7 @@ def test_get_comic_detail_returns_metadata_and_in_progress_status(auth_client, d
         number="7",
         title="Detail Issue",
         summary="Issue summary",
+        web="https://comicvine.gamespot.com/detail-issue/4000-7/",
         page_count=20,
         publisher="Detail Pub",
         imprint="Detail Imprint",
@@ -236,10 +237,99 @@ def test_get_comic_detail_returns_metadata_and_in_progress_status(auth_client, d
     assert payload["locations"] == ["Detail City"]
     assert payload["genres"] == ["Detail Genre"]
     assert payload["read_status"] == "in_progress"
+    assert payload["web"] == "https://comicvine.gamespot.com/detail-issue/4000-7/"
+    assert payload["web_label"] == "ComicVine"
+    assert payload["web_title"] == "View on ComicVine"
     assert payload["source_rating"] == 3.8
     assert payload["parker_rating_average"] is None
     assert payload["parker_rating_count"] == 0
     assert payload["user_rating"] is None
+    assert payload["parker_readers_count"] is None
+
+
+def test_get_comic_detail_uses_generic_label_for_non_comicvine_web_links(auth_client, db, normal_user):
+    library, _, volume = _create_graph(db, lib_name="comic-web-link", series_name="Alt Link Saga")
+
+    comic = Comic(
+        volume_id=volume.id,
+        number="11",
+        title="Alt Link Issue",
+        web="https://leagueofcomicgeeks.com/comic/123456/alt-link-issue",
+        filename="alt-link-11.cbz",
+        file_path="/tmp/alt-link-11.cbz",
+    )
+    db.add(comic)
+
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    response = auth_client.get(f"/api/comics/{comic.id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["web"] == "https://leagueofcomicgeeks.com/comic/123456/alt-link-issue"
+    assert payload["web_label"] == "Web Link"
+    assert payload["web_title"] == "Open web link"
+
+
+def test_get_comic_detail_exposes_opted_in_completed_reader_count(auth_client, db, normal_user):
+    library, _, volume = _create_graph(db, lib_name="comic-social", series_name="Social Saga")
+
+    comic = Comic(
+        volume_id=volume.id,
+        number="3",
+        title="Social Issue",
+        filename="social-3.cbz",
+        file_path="/tmp/social-3.cbz",
+        page_count=24,
+    )
+    db.add(comic)
+    db.flush()
+
+    reader_a = User(
+        username="social-reader-a",
+        email="social-reader-a@example.com",
+        hashed_password="fakehash",
+        share_progress_enabled=True,
+        is_active=True,
+    )
+    reader_b = User(
+        username="social-reader-b",
+        email="social-reader-b@example.com",
+        hashed_password="fakehash",
+        share_progress_enabled=True,
+        is_active=True,
+    )
+    hidden_reader = User(
+        username="social-reader-hidden",
+        email="social-reader-hidden@example.com",
+        hashed_password="fakehash",
+        share_progress_enabled=False,
+        is_active=True,
+    )
+    in_progress_only = User(
+        username="social-reader-progress",
+        email="social-reader-progress@example.com",
+        hashed_password="fakehash",
+        share_progress_enabled=True,
+        is_active=True,
+    )
+    db.add_all([reader_a, reader_b, hidden_reader, in_progress_only])
+    normal_user.accessible_libraries.append(library)
+    db.flush()
+
+    db.add_all([
+        ReadingProgress(user_id=reader_a.id, comic_id=comic.id, current_page=24, total_pages=24, completed=True),
+        ReadingProgress(user_id=reader_b.id, comic_id=comic.id, current_page=24, total_pages=24, completed=True),
+        ReadingProgress(user_id=hidden_reader.id, comic_id=comic.id, current_page=24, total_pages=24, completed=True),
+        ReadingProgress(user_id=in_progress_only.id, comic_id=comic.id, current_page=8, total_pages=24, completed=False),
+    ])
+    db.commit()
+
+    response = auth_client.get(f"/api/comics/{comic.id}")
+
+    assert response.status_code == 200
+    assert response.json()["parker_readers_count"] == 2
 
 
 def test_set_comic_rating_creates_and_updates_single_user_row(auth_client, db, normal_user):
