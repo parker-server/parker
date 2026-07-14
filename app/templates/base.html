@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Parker{% endblock %}</title>
+    {% set configured_instance_name = (get_system_setting("general.app_name", "Parker Comic Server") or "")|trim %}
+    {% set instance_name = configured_instance_name or "Parker Comic Server" %}
 
     {# Used for including context-sensitive path data #}
     {% from "partials/config_context.html" import config_context %}
@@ -61,8 +63,10 @@
             <div class="flex items-center justify-between h-16">
 
                 <div class="flex items-center gap-8">
-                    <a href="{{ url('/') }}" class="text-2xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent hover:from-blue-300 hover:to-indigo-300 transition-all">
-                        Parker
+                    <a href="{{ url('/') }}" class="min-w-0 text-2xl font-bold text-white transition-all hover:text-blue-200">
+                        <span class="truncate bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent hover:from-blue-300 hover:to-indigo-300" title="{{ instance_name }}">
+                            {{ instance_name }}
+                        </span>
                     </a>
 
                     <div class="hidden lg:flex items-center space-x-1">
@@ -93,6 +97,9 @@
                         <template x-if="isAdmin">
                             <a href="{{ url('/admin') }}" class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors">Admin</a>
                         </template>
+                        <span class="ml-2 rounded-full border border-gray-700 bg-gray-800 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.18em] text-gray-300">
+                            Parker
+                        </span>
                     </div>
                 </div>
 

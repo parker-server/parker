@@ -25,6 +25,7 @@ from app.models.interactions import UserComicRating
 from app.schemas.search import SearchRequest, SearchResponse
 from app.services.search import SearchService
 from app.services.comic_ratings import build_parker_rating_state
+from app.services.social_insights import get_visible_comic_reader_count
 
 
 
@@ -65,6 +66,17 @@ def _ensure_user_can_view_comic(current_user: CurrentUser, comic: Comic):
         if not current_user.allow_unknown_age_ratings:
             if not comic.age_rating or comic.age_rating == "" or comic.age_rating.lower() == "unknown":
                 raise HTTPException(status_code=403, detail="Content restricted by age rating")
+
+
+def _get_web_link_presentation(web_url: str | None) -> tuple[str | None, str | None]:
+    """Returns the label and tooltip copy for a comic metadata web link."""
+    if not web_url:
+        return None, None
+
+    if "comicvine" in web_url.lower():
+        return "ComicVine", "View on ComicVine"
+
+    return "Web Link", "Open web link"
 
 @router.post("/search", response_model=SearchResponse, name="search")
 async def search_comics(request: SearchRequest, db: SessionDep, current_user: CurrentUser):
@@ -152,6 +164,9 @@ async def get_comic(comic_id: int, db: SessionDep, current_user: CurrentUser):
         read_status = "in_progress"
 
     parker_rating = build_parker_rating_state(db, comic.id, current_user.id)
+    parker_readers_count = get_visible_comic_reader_count(db, comic.id)
+
+    web_label, web_title = _get_web_link_presentation(comic.web)
 
     return {
         "id": comic.id,
@@ -172,6 +187,8 @@ async def get_comic(comic_id: int, db: SessionDep, current_user: CurrentUser):
         "title": comic.title,
         "summary": comic.summary,
         "web": comic.web,
+        "web_label": web_label,
+        "web_title": web_title,
         "notes": comic.notes,
 
         # Date
@@ -222,6 +239,9 @@ async def get_comic(comic_id: int, db: SessionDep, current_user: CurrentUser):
 
         # Parker rating
         **parker_rating,
+
+        # Parker social activity
+        "parker_readers_count": parker_readers_count,
     }
 
 

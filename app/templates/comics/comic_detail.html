@@ -137,8 +137,8 @@
                         </template>
 
                         <template x-if="comic?.web">
-                            <a :href="comic.web" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1 text-green-400 hover:text-green-300 transition-colors border border-green-500/30 px-2 py-1 rounded hover:bg-green-500/10" title="View on ComicVine">
-                                <span>ComicVine</span>
+                            <a :href="comic.web" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1 text-green-400 hover:text-green-300 transition-colors border border-green-500/30 px-2 py-1 rounded hover:bg-green-500/10" :title="comic.web_title || 'Open web link'">
+                                <span x-text="comic.web_label || 'Web Link'"></span>
                                 <span class="text-xs">↗</span>
                             </a>
                         </template>
@@ -200,6 +200,14 @@
                         </div>
                     </div>
                 </div>
+
+                <template x-if="comic?.parker_readers_count">
+                    <div class="bg-blue-950/20 border border-blue-500/20 rounded-xl p-4 shadow-lg">
+                        <div class="text-[10px] uppercase tracking-[0.2em] text-blue-300/80 font-bold">Parker Activity</div>
+                        <div class="mt-1 text-lg font-semibold text-white" x-text="`Read by ${comic.parker_readers_count} Parker users`"></div>
+                        <p class="text-sm text-gray-400 mt-1">Based on opted-in completed reads on this server.</p>
+                    </div>
+                </template>
 
                 <div x-show="comic?.summary" x-data="{ expanded: false, maxLength: 400 }">
                     <h3 class="text-lg font-bold text-gray-200 mb-2">Summary</h3>

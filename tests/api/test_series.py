@@ -9,6 +9,7 @@ from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.reading_progress import ReadingProgress
 from app.models.series import Series
 from app.models.tags import Character, Location, Team
+from app.models.user import User
 
 
 def _create_series_with_volume(db, *, lib_name: str, series_name: str):
@@ -349,6 +350,7 @@ def test_series_detail_returns_enriched_payload(auth_client, db, normal_user):
     assert payload["details"]["teams"] == ["Series Team"]
     assert payload["details"]["locations"] == ["Series Location"]
     assert [arc["name"] for arc in payload["story_arcs"]] == ["Arc Prime", "Arc Side"]
+    assert payload["parker_readers_count"] is None
 
     assert payload["collections"] == [
         {
@@ -370,6 +372,88 @@ def test_series_detail_returns_enriched_payload(auth_client, db, normal_user):
     assert by_vol[data["vol1"].id]["read"] is True
     assert by_vol[data["vol2"].id]["first_issue_id"] == data["issue_two"].id
     assert by_vol[data["vol2"].id]["read"] is False
+
+
+def test_series_detail_exposes_distinct_opted_in_reader_count(auth_client, db, normal_user):
+    data = _create_series_detail_fixture(db)
+
+    normal_user.accessible_libraries.append(data["library"])
+    db.flush()
+
+    reader_a = User(
+        username="series-reader-a",
+        email="series-reader-a@example.com",
+        hashed_password="fakehash",
+        share_progress_enabled=True,
+        is_active=True,
+    )
+    reader_b = User(
+        username="series-reader-b",
+        email="series-reader-b@example.com",
+        hashed_password="fakehash",
+        share_progress_enabled=True,
+        is_active=True,
+    )
+    hidden_reader = User(
+        username="series-reader-hidden",
+        email="series-reader-hidden@example.com",
+        hashed_password="fakehash",
+        share_progress_enabled=False,
+        is_active=True,
+    )
+    zero_progress_reader = User(
+        username="series-reader-zero",
+        email="series-reader-zero@example.com",
+        hashed_password="fakehash",
+        share_progress_enabled=True,
+        is_active=True,
+    )
+    db.add_all([reader_a, reader_b, hidden_reader, zero_progress_reader])
+    db.flush()
+
+    db.add_all([
+        ReadingProgress(
+            user_id=reader_a.id,
+            comic_id=data["issue_one"].id,
+            current_page=20,
+            total_pages=20,
+            completed=True,
+        ),
+        ReadingProgress(
+            user_id=reader_a.id,
+            comic_id=data["issue_two"].id,
+            current_page=5,
+            total_pages=18,
+            completed=False,
+        ),
+        ReadingProgress(
+            user_id=reader_b.id,
+            comic_id=data["issue_four"].id,
+            current_page=4,
+            total_pages=22,
+            completed=False,
+        ),
+        ReadingProgress(
+            user_id=hidden_reader.id,
+            comic_id=data["annual"].id,
+            current_page=28,
+            total_pages=28,
+            completed=True,
+        ),
+        ReadingProgress(
+            user_id=zero_progress_reader.id,
+            comic_id=data["issue_one"].id,
+            current_page=0,
+            total_pages=20,
+            completed=False,
+        ),
+    ])
+    db.commit()
+
+    response = auth_client.get(f"/api/series/{data['series'].id}")
+
+    assert response.status_code == 200
+    assert response.json()["parker_readers_count"] == 2
 
 
 def test_series_detail_hides_story_arcs_and_related_containers_when_parsing_disabled(auth_client, db, normal_user):

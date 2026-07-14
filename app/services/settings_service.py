@@ -7,6 +7,12 @@ from app.api.deps import SessionDep
 from app.core.settings_loader import invalidate_settings_cache
 from app.core.login_backgrounds import SOLID_COLORS, STATIC_COVERS
 
+SERVER_DISPLAY_NAME_MAX_LENGTH = 32
+
+
+class SettingValidationError(ValueError):
+    """Raised when a setting value is syntactically invalid."""
+
 
 def generate_worker_options():
     """Generate CPU worker options based on available cores"""
@@ -55,9 +61,9 @@ class SettingsService:
     DEFAULTS = [
         {
             "key": "general.app_name", "value": "Parker Comic Server",
-            "description": "Add a prefix to the server name",
+            "description": f"Display name shown across the server UI. Parker branding remains visible. Max {SERVER_DISPLAY_NAME_MAX_LENGTH} characters.",
             "category": "general", "data_type": "string",
-            "label": "Application Name"
+            "label": "Server Display Name"
         },
         {
             "key": "scanning.batch_window", "value": "600",
@@ -319,7 +325,14 @@ class SettingsService:
         if setting.data_type == "bool":
             setting.value = str(value).lower()  # "true"/"false"
         else:
-            setting.value = str(value)
+            normalized_value = str(value).strip()
+
+            if key == "general.app_name" and len(normalized_value) > SERVER_DISPLAY_NAME_MAX_LENGTH:
+                raise SettingValidationError(
+                    f"Server display name must be {SERVER_DISPLAY_NAME_MAX_LENGTH} characters or fewer"
+                )
+
+            setting.value = normalized_value
 
         self.db.commit()
         self.db.refresh(setting)
