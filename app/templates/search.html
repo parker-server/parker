@@ -131,9 +131,13 @@
                         </optgroup>
                     </select>
 
-                    <select x-model="rule.operator" class="w-full md:w-40 bg-gray-700 text-white rounded px-3 py-2 border border-gray-600 outline-none">
+                    <select
+                        x-model="rule.operator"
+                        x-effect="$el.value = rule.operator"
+                        class="w-full md:w-40 bg-gray-700 text-white rounded px-3 py-2 border border-gray-600 outline-none"
+                    >
                         <template x-for="option in operatorOptions(rule.field)" :key="`${rule.id}-${option.value}`">
-                            <option :value="option.value" x-text="option.label"></option>
+                            <option :value="option.value" :selected="rule.operator === option.value" x-text="option.label"></option>
                         </template>
                     </select>
 
