@@ -174,11 +174,11 @@ function userSettings() {
             this.loading = true;
 
             try {
-                const res = await fetch(window.parker.route('users.update_password', {
+                const res = await fetch(window.parker.route('users.update_password'), {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(this.form)
-                }));
+                });
 
                 const data = await res.json();
 

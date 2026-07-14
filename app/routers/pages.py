@@ -113,7 +113,7 @@ async def continue_reading(request: Request, user: CurrentUser):
 
 @router.get("/libraries", response_class=HTMLResponse, name="libraries")
 async def libraries_page(request: Request):
-    return templates.TemplateResponse("libraries/index.html", {"request": request})
+    return templates.TemplateResponse(request=request, name="libraries/index.html")
 
 @router.get("/libraries/{library_id}", response_class=HTMLResponse, name="library_detail")
 async def library_view(request: Request, library: LibraryDep, user: CurrentUser):
@@ -206,11 +206,11 @@ async def dashboard(request: Request, user: CurrentUser):
 
 @router.get("/user/settings", response_class=HTMLResponse, name="user_settings")
 async def settings_page(request: Request, user: CurrentUser):
-    return templates.TemplateResponse("user/settings.html", {"request": request})
+    return templates.TemplateResponse(request=request, name="user/settings.html")
 
 @router.get("/user/year-in-review", response_class=HTMLResponse, name="user_year_in_review")
 async def year_in_review_page(request: Request, user: CurrentUser):
-    return templates.TemplateResponse("user/year_in_review.html", {"request": request})
+    return templates.TemplateResponse(request=request, name="user/year_in_review.html")
 
 
 

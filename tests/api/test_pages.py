@@ -57,3 +57,16 @@ def test_admin_diagnostics_page_exposes_support_snapshot_actions(admin_client):
     assert "Download JSON" in body
     assert "Open Raw JSON" in body
     assert "parker_startup_diagnostics" in body
+
+
+def test_user_settings_page_renders_for_authenticated_user(auth_client):
+    response = auth_client.get("/user/settings")
+
+    assert response.status_code == 200
+    assert "Account Settings" in response.text
+
+
+def test_user_year_in_review_page_renders_for_authenticated_user(auth_client):
+    response = auth_client.get("/user/year-in-review")
+
+    assert response.status_code == 200
