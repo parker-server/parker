@@ -1,5 +1,5 @@
 import logging
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import Optional, Dict
 from app.models import ReadingList, ReadingListItem, Comic, Volume, Series
 from app.services.enrichment import EnrichmentService
@@ -76,16 +76,50 @@ class ReadingListService:
             ReadingListItem.comic_id.in_(comic_ids_query)
         ).delete(synchronize_session=False)
 
+    def _get_list_items_for_comic(self, comic_id: int) -> list[ReadingListItem]:
+        return (
+            self.db.query(ReadingListItem)
+            .options(joinedload(ReadingListItem.reading_list))
+            .filter(ReadingListItem.comic_id == comic_id)
+            .all()
+        )
+
     def update_comic_reading_lists(self, comic: Comic, alternate_series: Optional[str],
                                    alternate_number: Optional[str]):
-        self.remove_comic_from_all_lists(comic.id)
+        target_name = alternate_series.strip() if alternate_series and alternate_series.strip() else None
+        target_position = None
 
-        if alternate_series and alternate_number:
+        if target_name and alternate_number:
             try:
-                position = float(alternate_number)
-                self.add_comic_to_list(comic, alternate_series, position)
-            except ValueError:
-                pass
+                target_position = float(alternate_number)
+            except (TypeError, ValueError):
+                target_name = None
+        else:
+            target_name = None
+
+        current_items = self._get_list_items_for_comic(comic.id)
+
+        if not current_items:
+            if target_name and target_position is not None:
+                self.add_comic_to_list(comic, target_name, target_position)
+            return
+
+        if (
+            target_name
+            and target_position is not None
+            and len(current_items) == 1
+            and current_items[0].reading_list
+            and current_items[0].reading_list.name == target_name
+        ):
+            if current_items[0].position != target_position:
+                current_items[0].position = target_position
+            return
+
+        for item in current_items:
+            self.db.delete(item)
+
+        if target_name and target_position is not None:
+            self.add_comic_to_list(comic, target_name, target_position)
 
     def cleanup_empty_lists(self):
         # This usually runs at the end of the scan, safe to run logic here

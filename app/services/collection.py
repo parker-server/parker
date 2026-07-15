@@ -1,5 +1,5 @@
 import logging
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import Optional, Dict
 
 from app.models import Collection, CollectionItem, Comic, Volume, Series
@@ -61,10 +61,36 @@ class CollectionService:
             CollectionItem.comic_id.in_(comic_ids_query)
         ).delete(synchronize_session=False)
 
+    def _get_collection_items_for_comic(self, comic_id: int) -> list[CollectionItem]:
+        return (
+            self.db.query(CollectionItem)
+            .options(joinedload(CollectionItem.collection))
+            .filter(CollectionItem.comic_id == comic_id)
+            .all()
+        )
+
     def update_comic_collections(self, comic: Comic, series_group: Optional[str]):
-        self.remove_comic_from_all_collections(comic.id)
-        if series_group:
-            self.add_comic_to_collection(comic, series_group)
+        target_name = series_group.strip() if series_group and series_group.strip() else None
+        current_items = self._get_collection_items_for_comic(comic.id)
+
+        if not current_items:
+            if target_name:
+                self.add_comic_to_collection(comic, target_name)
+            return
+
+        if (
+            target_name
+            and len(current_items) == 1
+            and current_items[0].collection
+            and current_items[0].collection.name == target_name
+        ):
+            return
+
+        for item in current_items:
+            self.db.delete(item)
+
+        if target_name:
+            self.add_comic_to_collection(comic, target_name)
 
     def cleanup_empty_collections(self):
         empty_collections = self.db.query(Collection).filter(~Collection.items.any()).all()
