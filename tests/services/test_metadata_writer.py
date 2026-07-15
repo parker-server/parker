@@ -57,6 +57,9 @@ class _FakeDB:
         self.library_obj = SimpleNamespace(path=library_path)
         self.closed = False
 
+    def get(self, _model, _library_id):
+        return self.library_obj
+
     def query(self, model):
         return _FakeQuery(model, self.library_obj)
 

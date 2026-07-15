@@ -546,9 +546,9 @@ class ScanManager:
     @staticmethod
     def update_library_last_scanned(library_id: int):
         db = SessionLocal()
-        lib = db.query(Library).get(library_id)
+        lib = db.get(Library, library_id)
         if lib:
-            lib.last_scanned = datetime.utcnow()
+            lib.last_scanned = datetime.now(timezone.utc)
             db.commit()
         db.close()
 
