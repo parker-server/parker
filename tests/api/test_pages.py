@@ -60,6 +60,7 @@ def test_admin_diagnostics_page_exposes_support_snapshot_actions(admin_client):
     assert "Download JSON" in body
     assert "Open Raw JSON" in body
     assert "parker_startup_diagnostics" in body
+    assert "document.execCommand('copy')" in body
 
 
 def test_login_page_uses_server_display_name_but_keeps_parker_branding(client, monkeypatch):
