@@ -441,7 +441,7 @@ def get_popular(
         limit: int = 10
 ):
     """
-    Get 'Trending' Series based on other users' reading activity.
+    Get "Popular with Others" series based on other users' reading activity.
     Respects the 'share_progress_enabled' privacy setting.
     Secured for age rating
     """
