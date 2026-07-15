@@ -65,7 +65,12 @@ def get_opds_acquisition_type(comic: Comic) -> str:
 def get_opds_download_filename(comic: Comic) -> str:
     """Return a stable export filename that keeps the comic's real extension."""
     suffix = get_comic_archive_suffix(comic) or ".cbz"
-    safe_title = comic.title or comic.filename or f"comic-{comic.id}"
+    if comic.title:
+        safe_title = comic.title
+    elif comic.filename:
+        safe_title = Path(comic.filename).stem or comic.filename
+    else:
+        safe_title = f"comic-{comic.id}"
     return f"{comic.series_group or 'Comic'} - {safe_title}{suffix}"
 
 
