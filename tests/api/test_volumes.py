@@ -339,6 +339,66 @@ def test_volume_detail_marks_standalone_without_plain_issues(auth_client, db, no
     assert payload["expected_count"] is None
 
 
+def test_volume_detail_advances_to_next_issue_when_latest_progress_is_completed(auth_client, db, normal_user):
+    library = Library(name="volume-next-lib", path="/tmp/volume-next-lib")
+    series = Series(name="Volume Next Logic", library=library)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([library, series, volume])
+    db.flush()
+
+    issue_one = Comic(
+        volume_id=volume.id,
+        number="1",
+        title="Volume Next #1",
+        filename="volume-next-1.cbz",
+        file_path="/tmp/volume-next-1.cbz",
+    )
+    issue_two = Comic(
+        volume_id=volume.id,
+        number="2",
+        title="Volume Next #2",
+        filename="volume-next-2.cbz",
+        file_path="/tmp/volume-next-2.cbz",
+    )
+    issue_three = Comic(
+        volume_id=volume.id,
+        number="3",
+        title="Volume Next #3",
+        filename="volume-next-3.cbz",
+        file_path="/tmp/volume-next-3.cbz",
+    )
+    db.add_all([issue_one, issue_two, issue_three])
+
+    normal_user.accessible_libraries.append(library)
+    db.flush()
+
+    db.add_all([
+        ReadingProgress(
+            user_id=normal_user.id,
+            comic_id=issue_one.id,
+            current_page=20,
+            total_pages=20,
+            completed=True,
+            last_read_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        ),
+        ReadingProgress(
+            user_id=normal_user.id,
+            comic_id=issue_two.id,
+            current_page=22,
+            total_pages=22,
+            completed=True,
+            last_read_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
+        ),
+    ])
+    db.commit()
+
+    response = auth_client.get(f"/api/volumes/{volume.id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["resume_to"] == {"comic_id": issue_three.id, "status": "continue"}
+
+
 def test_volume_issues_returns_404_without_access(auth_client, db):
     data = _create_volume_fixture(db, lib_name="hidden-issues-lib", series_name="Hidden Issues")
 

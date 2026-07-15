@@ -731,6 +731,66 @@ def test_series_detail_non_reverse_cover_logic_and_resume_default(auth_client, d
     assert payload["resume_to"]["comic_id"] == payload["first_issue_id"]
 
 
+def test_series_detail_advances_to_next_issue_when_latest_progress_is_completed(auth_client, db, normal_user):
+    library = Library(name="series-detail-next-lib", path="/tmp/series-detail-next-lib")
+    series = Series(name="Series Next Logic", library=library)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([library, series, volume])
+    db.flush()
+
+    issue_one = Comic(
+        volume_id=volume.id,
+        number="1",
+        title="Series Next #1",
+        filename="series-next-1.cbz",
+        file_path="/tmp/series-next-1.cbz",
+    )
+    issue_two = Comic(
+        volume_id=volume.id,
+        number="2",
+        title="Series Next #2",
+        filename="series-next-2.cbz",
+        file_path="/tmp/series-next-2.cbz",
+    )
+    issue_three = Comic(
+        volume_id=volume.id,
+        number="3",
+        title="Series Next #3",
+        filename="series-next-3.cbz",
+        file_path="/tmp/series-next-3.cbz",
+    )
+    db.add_all([issue_one, issue_two, issue_three])
+
+    normal_user.accessible_libraries.append(library)
+    db.flush()
+
+    db.add_all([
+        ReadingProgress(
+            user_id=normal_user.id,
+            comic_id=issue_one.id,
+            current_page=20,
+            total_pages=20,
+            completed=True,
+            last_read_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        ),
+        ReadingProgress(
+            user_id=normal_user.id,
+            comic_id=issue_two.id,
+            current_page=22,
+            total_pages=22,
+            completed=True,
+            last_read_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
+        ),
+    ])
+    db.commit()
+
+    response = auth_client.get(f"/api/series/{series.id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["resume_to"] == {"comic_id": issue_three.id, "status": "continue"}
+
+
 def test_series_detail_filters_related_containers_with_banned_content(auth_client, db, normal_user):
     library = Library(name="series-detail-ban-lib", path="/tmp/series-detail-ban-lib")
 

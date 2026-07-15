@@ -3,13 +3,13 @@ from datetime import datetime, timezone
 from functools import lru_cache
 from sqlalchemy import func, or_, not_, case, cast, Float
 from fastapi import HTTPException
-from sqlalchemy import func, or_, not_, case
 
 from app.api.deps import SessionDep
 from app.models.comic import Comic, Volume
 from app.models.series import Series
 from app.models.tags import Character, Team, Location, Genre
 from app.models.credits import Person, ComicCredit
+from app.models.reading_progress import ReadingProgress
 
 logger = logging.getLogger(__name__)
 
@@ -286,6 +286,91 @@ def get_reading_time(total_pages):
         read_time = f"{total_minutes}m"
 
     return read_time
+
+
+def get_resume_target(
+        db: SessionDep,
+        *,
+        user_id: int,
+        series_name: str | None,
+        first_issue_id: int | None,
+        series_id: int | None = None,
+        volume_id: int | None = None,
+) -> tuple[int | None, str]:
+    """
+    Resolve the best "read next" target for a series or volume detail page.
+
+    Semantics:
+    - If the latest touched comic is still in progress, keep "Continue" behavior.
+    - If the latest touched comic is completed, advance to the next unread comic
+      but keep the container-level "Continue" behavior.
+    - Fall back to the first issue when no progress exists or the run is exhausted.
+    """
+    if (series_id is None) == (volume_id is None):
+        raise ValueError("Exactly one of series_id or volume_id must be provided")
+
+    progress_query = db.query(ReadingProgress).join(Comic)
+    comics_query = db.query(Comic)
+
+    if series_id is not None:
+        progress_query = progress_query.join(Volume).filter(Volume.series_id == series_id)
+        comics_query = comics_query.join(Volume).filter(Volume.series_id == series_id)
+    else:
+        progress_query = progress_query.filter(Comic.volume_id == volume_id)
+        comics_query = comics_query.filter(Comic.volume_id == volume_id)
+
+    latest_progress = (
+        progress_query
+        .filter(ReadingProgress.user_id == user_id)
+        .order_by(ReadingProgress.last_read_at.desc())
+        .first()
+    )
+
+    if not latest_progress:
+        return first_issue_id, "new"
+
+    if not latest_progress.completed and (latest_progress.current_page or 0) > 0:
+        return latest_progress.comic_id, "in_progress"
+
+    completed_ids = {
+        row[0]
+        for row in (
+            progress_query
+            .with_entities(ReadingProgress.comic_id)
+            .filter(
+                ReadingProgress.user_id == user_id,
+                ReadingProgress.completed == True,
+            )
+            .all()
+        )
+    }
+
+    number_direction = cast(Comic.number, Float).desc() if series_name and series_name.lower() in REVERSE_NUMBERING_SERIES else cast(Comic.number, Float).asc()
+    string_direction = Comic.number.desc() if series_name and series_name.lower() in REVERSE_NUMBERING_SERIES else Comic.number.asc()
+
+    if series_id is not None:
+        ordered_comics = comics_query.order_by(
+            Volume.volume_number.asc(),
+            number_direction,
+            string_direction,
+        ).all()
+    else:
+        ordered_comics = comics_query.order_by(
+            number_direction,
+            string_direction,
+        ).all()
+
+    ordered_ids = [comic.id for comic in ordered_comics]
+    try:
+        start_index = ordered_ids.index(latest_progress.comic_id) + 1
+    except ValueError:
+        return first_issue_id, "new"
+
+    for comic_id in ordered_ids[start_index:]:
+        if comic_id not in completed_ids:
+            return comic_id, "continue"
+
+    return first_issue_id, "new"
 
 
 # Helper for SQL Order By
