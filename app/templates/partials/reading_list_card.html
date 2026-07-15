@@ -8,6 +8,10 @@
 
         <p class="text-sm text-gray-400 line-clamp-2 flex-grow" x-show="list.description" x-text="list.description"></p>
 
+        <div class="mt-4 text-sm text-gray-400">
+            <span x-text="`${list.comic_count || 0} comic${(list.comic_count || 0) === 1 ? '' : 's'}`"></span>
+        </div>
+
         <div class="mt-4 flex items-center text-xs text-gray-500 font-medium uppercase tracking-wider">
             <span>Start Reading</span>
             <span class="ml-2 transform group-hover:translate-x-1 transition-transform">→</span>

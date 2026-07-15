@@ -110,6 +110,17 @@ def test_advanced_search_page_exposes_full_creator_filter_set(auth_client):
     assert '<option value="cover_artist">Cover Artist</option>' in body
 
 
+def test_collection_and_reading_list_pages_expose_comic_count_labels(auth_client):
+    collections_response = auth_client.get("/collections")
+    reading_lists_response = auth_client.get("/reading-lists")
+
+    assert collections_response.status_code == 200
+    assert "col.comic_count || 0" in collections_response.text
+
+    assert reading_lists_response.status_code == 200
+    assert "list.comic_count || 0" in reading_lists_response.text
+
+
 def test_user_settings_page_renders_for_authenticated_user(auth_client):
     response = auth_client.get("/user/settings")
 
