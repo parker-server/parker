@@ -85,7 +85,7 @@
 
     {# 5. Download Link with File Size #}
     <link rel="http://opds-spec.org/acquisition"
-          type="application/zip"
+          type="{{ get_opds_acquisition_type(book) }}"
           length="{{ book.file_size }}"
           href="/opds/download/{{ book.id }}"/>
   </entry>

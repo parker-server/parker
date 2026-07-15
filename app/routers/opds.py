@@ -3,6 +3,7 @@ from fastapi.responses import Response, FileResponse
 from sqlalchemy.orm import joinedload
 from datetime import datetime, timezone
 from collections import defaultdict
+from pathlib import Path
 
 from app.api.opds_deps import OPDSUser, SessionDep
 from app.models import ComicCredit
@@ -17,6 +18,17 @@ from app.core.comic_helpers import (
 )
 
 router = APIRouter(prefix="/opds", tags=["opds"])
+
+
+OPDS_ACQUISITION_TYPES = {
+    ".cbz": "application/vnd.comicbook+zip",
+    ".zip": "application/vnd.comicbook+zip",
+    ".cbr": "application/vnd.comicbook-rar",
+    ".rar": "application/vnd.comicbook-rar",
+    ".cb7": "application/x-7z-compressed",
+    ".7z": "application/x-7z-compressed",
+    ".pdf": "application/pdf",
+}
 
 
 def format_opds_datetime(value: datetime | None) -> str:
@@ -37,6 +49,24 @@ def format_opds_issued(year: int | None, month: int | None, day: int | None) -> 
     safe_month = month or 1
     safe_day = day or 1
     return f"{year:04d}-{safe_month:02d}-{safe_day:02d}"
+
+
+def get_comic_archive_suffix(comic: Comic) -> str:
+    """Return the normalized archive suffix for OPDS/download metadata."""
+    filename = comic.filename or str(comic.file_path or "")
+    return Path(filename).suffix.lower()
+
+
+def get_opds_acquisition_type(comic: Comic) -> str:
+    """Return the best OPDS acquisition MIME type for a comic file."""
+    return OPDS_ACQUISITION_TYPES.get(get_comic_archive_suffix(comic), "application/octet-stream")
+
+
+def get_opds_download_filename(comic: Comic) -> str:
+    """Return a stable export filename that keeps the comic's real extension."""
+    suffix = get_comic_archive_suffix(comic) or ".cbz"
+    safe_title = comic.title or comic.filename or f"comic-{comic.id}"
+    return f"{comic.series_group or 'Comic'} - {safe_title}{suffix}"
 
 
 # Helper to render XML
@@ -216,6 +246,7 @@ async def opds_series(series_id: int, request: Request, user: OPDSUser, db: Sess
 
 templates.env.globals["format_opds_datetime"] = format_opds_datetime
 templates.env.globals["format_opds_issued"] = format_opds_issued
+templates.env.globals["get_opds_acquisition_type"] = get_opds_acquisition_type
 
 
 # 4. DOWNLOAD: Serve the file
@@ -250,12 +281,11 @@ async def opds_download(comic_id: int, user: OPDSUser, db: SessionDep):
             raise HTTPException(status_code=403, detail="Age Restricted")
 
 
-    # Clean filename for headers (remove non-ascii if necessary, but modern browsers/apps handle utf-8)
-    export_name = f"{comic.series_group or 'Comic'} - {comic.title}.cbz"
+    export_name = get_opds_download_filename(comic)
 
     return FileResponse(
         path=str(comic.file_path),
         filename=export_name,
-        media_type="application/vnd.comicbook+zip",
+        media_type=get_opds_acquisition_type(comic),
         headers={"Content-Disposition": f'attachment; filename="{export_name}"'}
     )

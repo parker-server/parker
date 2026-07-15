@@ -201,3 +201,39 @@ def test_opds_series_feed_handles_missing_month_and_day(client, db, normal_user)
     entry = root.find("atom:entry", ns)
     assert entry is not None
     assert entry.findtext("dcterms:issued", namespaces=ns) == "2024-01-01"
+    acquisition = entry.find("atom:link[@rel='http://opds-spec.org/acquisition']", ns)
+    assert acquisition is not None
+    assert acquisition.get("type") == "application/vnd.comicbook+zip"
+
+
+def test_opds_download_uses_real_archive_type_and_extension(client, db, normal_user, tmp_path):
+    _enable_opds(db)
+
+    archive_path = tmp_path / "gamma-ray-001.cbr"
+    archive_path.write_bytes(b"fake-rar")
+
+    library = Library(name="Download Library", path=str(tmp_path / "download-library"))
+    series = Series(name="Gamma Ray", library=library)
+    volume = Volume(series=series, volume_number=1)
+    comic = Comic(
+        volume=volume,
+        number="1",
+        title="First Blast",
+        filename="gamma-ray-001.cbr",
+        file_path=str(archive_path),
+    )
+    db.add_all([library, series, volume, comic])
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    from unittest.mock import patch
+
+    with patch("app.api.opds_deps.verify_password", return_value=True):
+        response = client.get(
+            f"/opds/download/{comic.id}",
+            auth=(normal_user.username, "any_password")
+        )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/vnd.comicbook-rar")
+    assert 'filename="Comic - First Blast.cbr"' in response.headers["content-disposition"]
