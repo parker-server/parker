@@ -106,6 +106,52 @@ def _pick_best_cover(series_obj, comics_list):
         return pool[0]   # Lowest Number (e.g. Spider-Man #10)
 
 
+def _serialize_series_rail_items(db: Session, series_list):
+    if not series_list:
+        return []
+
+    series_ids = [s.id for s in series_list]
+
+    raw_comics = (
+        db.query(
+            Comic.id,
+            Comic.number,
+            Comic.year,
+            Comic.format,
+            Comic.publisher,
+            Comic.updated_at,
+            Volume.series_id
+        )
+        .join(Volume)
+        .filter(Volume.series_id.in_(series_ids))
+        .all()
+    )
+
+    series_map = defaultdict(list)
+    for rc in raw_comics:
+        series_map[rc.series_id].append(rc)
+
+    results = []
+    for s in series_list:
+        s_comics = series_map.get(s.id, [])
+        first_issue = _pick_best_cover(s, s_comics)
+
+        if not first_issue:
+            continue
+
+        results.append({
+            "id": s.id,
+            "name": s.name,
+            "start_year": first_issue.year,
+            "thumbnail_path": get_thumbnail_url(first_issue.id, first_issue.updated_at),
+            "publisher": first_issue.publisher,
+            "volume_count": len(s.volumes) if s.volumes else 0,
+            "starred": False
+        })
+
+    return results
+
+
 
 @router.get("/random", response_model=List[dict], name="random_gems")
 def get_random_gems(
@@ -320,6 +366,53 @@ def get_resume_reading(
     return [format_home_item(c, p) for c, p in results]
 
 
+@router.get("/trending", response_model=List[dict], name="trending")
+def get_trending(
+        db: SessionDep,
+        current_user: CurrentUser,
+        limit: int = 10
+):
+    """
+    Get time-sensitive trending series based on recent opted-in reading activity.
+    Ranked by recent activity volume, then distinct readers, then freshest activity.
+    """
+    cutoff_date = datetime.now(timezone.utc) - timedelta(days=30)
+
+    trending_series_query = (
+        db.query(Series)
+        .join(Volume).join(Comic).join(ReadingProgress)
+        .join(User)
+        .filter(User.share_progress_enabled == True)
+        .filter(ReadingProgress.user_id != current_user.id)
+        .filter(ReadingProgress.last_read_at >= cutoff_date)
+    )
+
+    age_filter = get_series_age_restriction(current_user)
+    if age_filter is not None:
+        trending_series_query = trending_series_query.filter(age_filter)
+
+    trending_series = (
+        trending_series_query.group_by(Series.id)
+        .order_by(
+            desc(func.count(ReadingProgress.id)),
+            desc(func.count(func.distinct(ReadingProgress.user_id))),
+            desc(func.max(ReadingProgress.last_read_at)),
+        )
+        .limit(limit)
+        .all()
+    )
+
+    if len(trending_series) < 4:
+        return []
+
+    results = _serialize_series_rail_items(db, trending_series)
+
+    if len(results) < 4:
+        return []
+
+    return results
+
+
 @router.get("/up-next", response_model=List[ComicSearchItem], name="up_next")
 def get_up_next(
         db: SessionDep,
@@ -474,47 +567,7 @@ def get_popular(
     if len(popular_series) < 4:
         return []
 
-    # 2. Batch Fetch Covers (SQLite Compatible)
-    series_ids = [s.id for s in popular_series]
-
-    raw_comics = (
-        db.query(
-            Comic.id,
-            Comic.number,
-            Comic.year,
-            Comic.format,
-            Comic.publisher,
-            Comic.updated_at,
-            Volume.series_id
-        )
-        .join(Volume)
-        .filter(Volume.series_id.in_(series_ids))
-        .all()
-    )
-
-    series_map = defaultdict(list)
-    for rc in raw_comics:
-        series_map[rc.series_id].append(rc)
-
-
-    # 3. Format Results
-    results = []
-    for s in popular_series:
-        s_comics = series_map.get(s.id, [])
-        first_issue = _pick_best_cover(s, s_comics)
-
-        if not first_issue:
-            continue
-
-        results.append({
-            "id": s.id,
-            "name": s.name,
-            "start_year": first_issue.year,
-            "thumbnail_path": get_thumbnail_url(first_issue.id, first_issue.updated_at),
-            "publisher": first_issue.publisher,
-            "volume_count": len(s.volumes) if s.volumes else 0,
-            "starred": False
-        })
+    results = _serialize_series_rail_items(db, popular_series)
 
     # Secondary Guard: Ensure we still have enough items after cover validation
     if len(results) < 4:
