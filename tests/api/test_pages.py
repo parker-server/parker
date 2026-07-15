@@ -89,6 +89,7 @@ def test_admin_settings_page_exposes_quick_navigation(admin_client):
     assert "Jump To" in body
     assert "Expand All" in body
     assert "Collapse All" in body
+    assert 'x-text="setting.key"' not in body
 
 
 def test_search_widget_people_results_use_generic_creator_handoff(auth_client):
