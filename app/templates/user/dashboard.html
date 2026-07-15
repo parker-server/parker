@@ -689,12 +689,56 @@ function dashboard() {
             }
         },
 
+        fallbackCopyText(text) {
+            const textarea = document.createElement('textarea');
+            const selection = document.getSelection();
+            const originalRange = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+
+            textarea.value = text;
+            textarea.setAttribute('readonly', '');
+            textarea.style.position = 'fixed';
+            textarea.style.top = '0';
+            textarea.style.left = '-9999px';
+            textarea.style.opacity = '0';
+
+            document.body.appendChild(textarea);
+            textarea.focus();
+            textarea.select();
+            textarea.setSelectionRange(0, textarea.value.length);
+
+            let copied = false;
+
+            try {
+                copied = document.execCommand('copy');
+            } finally {
+                document.body.removeChild(textarea);
+
+                if (originalRange && selection) {
+                    selection.removeAllRanges();
+                    selection.addRange(originalRange);
+                }
+            }
+
+            return copied;
+        },
+
         async copyToClipboard(text) {
             try {
-                await navigator.clipboard.writeText(text);
+                if (navigator.clipboard?.writeText && window.isSecureContext) {
+                    await navigator.clipboard.writeText(text);
+                } else if (!this.fallbackCopyText(text)) {
+                    throw new Error('Clipboard unavailable');
+                }
+
                 window.parker.showToast("Feed URL copied!", "success");
             } catch (err) {
+                if (this.fallbackCopyText(text)) {
+                    window.parker.showToast("Feed URL copied!", "success");
+                    return;
+                }
+
                 console.error('Failed to copy!', err);
+                window.parker.showToast("Unable to copy feed URL.", "error");
             }
         },
 

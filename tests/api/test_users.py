@@ -65,6 +65,7 @@ def test_user_dashboard_page_shows_base_aware_opds_url(auth_client):
     assert response.status_code == 200
     assert "window.parker.url('/opds/')" in response.text
     assert "/api/opds/" not in response.text
+    assert "document.execCommand('copy')" in response.text
 
 
 def test_get_and_update_preferences(auth_client):
