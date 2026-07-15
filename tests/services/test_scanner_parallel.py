@@ -1,9 +1,15 @@
+import multiprocessing
+import zipfile
 from queue import Empty
 from types import SimpleNamespace
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 import app.services.scanner as scanner_module
+from app.database import Base
+from app.models import Collection, CollectionItem, Comic, Library, ReadingList, ReadingListItem
 from app.services.scanner import LibraryScanner
 
 
@@ -115,6 +121,40 @@ def _create_file(path):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(b"x")
     return path
+
+
+def _create_cbz_with_comicinfo(
+    path,
+    *,
+    series: str,
+    number: str,
+    title: str,
+    series_group: str | None = None,
+    alternate_series: str | None = None,
+    alternate_number: str | None = None,
+):
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    parts = [
+        "<ComicInfo>",
+        f"<Series>{series}</Series>",
+        f"<Number>{number}</Number>",
+        f"<Title>{title}</Title>",
+    ]
+
+    if series_group:
+        parts.append(f"<SeriesGroup>{series_group}</SeriesGroup>")
+    if alternate_series:
+        parts.append(f"<AlternateSeries>{alternate_series}</AlternateSeries>")
+    if alternate_number:
+        parts.append(f"<AlternateNumber>{alternate_number}</AlternateNumber>")
+
+    parts.append("</ComicInfo>")
+    xml = "".join(parts)
+
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("001.jpg", b"not-a-real-image-but-good-enough-for-page-detection")
+        archive.writestr("ComicInfo.xml", xml.encode("utf-8"))
 
 
 def _disable_container_cleanup(scanner):
@@ -443,3 +483,73 @@ def test_scan_parallel_passes_library_metadata_flags_to_writer(monkeypatch, tmp_
     assert writer_kwargs["parse_reading_lists"] is False
     assert writer_kwargs["parse_collections"] is False
     assert writer_kwargs["parse_story_arcs"] is False
+
+
+def test_scan_parallel_real_pool_and_writer_smoke(monkeypatch, tmp_path):
+    library_path = tmp_path / "library"
+    _create_cbz_with_comicinfo(
+        library_path / "alpha.cbz",
+        series="Smoke Series",
+        number="1",
+        title="Alpha",
+        series_group="Smoke Collection",
+        alternate_series="Smoke Event",
+        alternate_number="1",
+    )
+    _create_cbz_with_comicinfo(
+        library_path / "beta.cbz",
+        series="Smoke Series",
+        number="2",
+        title="Beta",
+        series_group="Smoke Collection",
+        alternate_series="Smoke Event",
+        alternate_number="2",
+    )
+
+    db_path = tmp_path / "parallel-smoke.db"
+    db_url = f"sqlite:///{db_path.as_posix()}"
+    monkeypatch.setenv("DATABASE_URL", db_url)
+
+    # Force a fresh-import spawn context so the real writer process resolves the
+    # temp DATABASE_URL consistently on both Windows and Linux.
+    spawn_ctx = multiprocessing.get_context("spawn")
+    monkeypatch.setattr(scanner_module, "Queue", spawn_ctx.Queue)
+    monkeypatch.setattr(scanner_module.multiprocessing, "Process", spawn_ctx.Process)
+    monkeypatch.setattr(scanner_module.multiprocessing, "Pool", spawn_ctx.Pool)
+
+    engine = create_engine(
+        db_url,
+        connect_args={"check_same_thread": False, "timeout": 60},
+    )
+    SessionLocal = sessionmaker(autoflush=False, bind=engine)
+    Base.metadata.create_all(bind=engine)
+
+    db = SessionLocal()
+    try:
+        library = Library(name="Parallel Smoke", path=str(library_path))
+        db.add(library)
+        db.commit()
+        db.refresh(library)
+
+        scanner = LibraryScanner(library, db)
+        result = scanner.scan_parallel(force=False, worker_limit=2)
+
+        assert result["imported"] == 2
+        assert result["updated"] == 0
+        assert result["deleted"] == 0
+        assert result["errors"] == 0
+    finally:
+        db.close()
+
+    verify_db = SessionLocal()
+    try:
+        assert verify_db.query(Comic).count() == 2
+
+        collection = verify_db.query(Collection).filter(Collection.name == "Smoke Collection").one()
+        reading_list = verify_db.query(ReadingList).filter(ReadingList.name == "Smoke Event").one()
+
+        assert verify_db.query(CollectionItem).filter(CollectionItem.collection_id == collection.id).count() == 2
+        assert verify_db.query(ReadingListItem).filter(ReadingListItem.reading_list_id == reading_list.id).count() == 2
+    finally:
+        verify_db.close()
+        engine.dispose()
