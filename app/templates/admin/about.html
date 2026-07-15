@@ -3,8 +3,8 @@
 {% block title %}About - Parker{% endblock %}
 
 {% block content %}
-{% set configured_instance_name = (get_system_setting("general.app_name", "Parker Comic Server") or "")|trim %}
-{% set instance_name = configured_instance_name or "Parker Comic Server" %}
+{% set configured_instance_name = (get_system_setting("general.app_name", "Parker") or "")|trim %}
+{% set instance_name = configured_instance_name or "Parker" %}
 <div class="max-w-4xl mx-auto">
 
     {% from "partials/admin_header.html" import admin_header %}

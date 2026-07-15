@@ -1,5 +1,6 @@
 from unittest.mock import patch
 
+from app.models.setting import SystemSetting
 from app.services.settings_service import SettingsService, SERVER_DISPLAY_NAME_MAX_LENGTH
 from app.api.deps import get_current_user_optional
 from app.main import app
@@ -97,3 +98,33 @@ def test_update_setting_rejects_server_display_name_that_is_too_long(admin_clien
 
     assert response.status_code == 422
     assert f"{SERVER_DISPLAY_NAME_MAX_LENGTH} characters or fewer" in response.json()["detail"]
+
+
+def test_initialize_defaults_seeds_short_server_display_name(db):
+    service = SettingsService(db)
+
+    service.initialize_defaults()
+
+    assert service.get("general.app_name") == "Parker"
+
+
+def test_initialize_defaults_preserves_existing_custom_server_display_name(db):
+    db.add(
+        SystemSetting(
+            key="general.app_name",
+            value="Fortress Comics",
+            category="general",
+            data_type="string",
+            label="Old Label",
+            description="Old description",
+        )
+    )
+    db.commit()
+
+    service = SettingsService(db)
+    service.initialize_defaults()
+
+    setting = db.query(SystemSetting).filter(SystemSetting.key == "general.app_name").first()
+    assert setting is not None
+    assert setting.value == "Fortress Comics"
+    assert setting.label == "Server Display Name"
