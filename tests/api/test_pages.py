@@ -121,6 +121,18 @@ def test_collection_and_reading_list_pages_expose_comic_count_labels(auth_client
     assert "list.comic_count || 0" in reading_lists_response.text
 
 
+def test_continue_reading_page_exposes_pagination_controls(auth_client):
+    response = auth_client.get("/continue-reading")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "window.parker.paginationMixin(" in body
+    assert "'progress.recent_progress'" in body
+    assert "mode: 'infinite'" in body
+    assert "x-ref=\"loadSentinel\"" in body
+    assert "Page <span class=\"text-white font-bold\" x-text=\"page\"></span> of" in body
+
+
 def test_user_settings_page_renders_for_authenticated_user(auth_client):
     response = auth_client.get("/user/settings")
 

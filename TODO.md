@@ -10,6 +10,17 @@ This file captures follow-up work that should not get lost between releases.
   Follow-up goal: Refactor the reader into a thinner shared shell plus modular paged/scroll-oriented partials or components so future reader work does not keep accumulating in one template.
   Candidate direction: Keep the existing `/reader/{comic_id}` route, preserve shared archive/progress plumbing where possible, and split the template/JS by interaction model rather than forcing additional conditional branches into the current monolith.
 
+- Keep an eye on pull list detail page scale before it becomes a usability problem.
+  Context: `app/templates/pull_lists/detail.html` currently renders a full list in one view, which is fine for normal pull-list sizes and likely more important to watch than the pull-list index page.
+  Follow-up goal: If real users start building unusually large pull lists, consider pagination, filtering, or virtualization for list contents before the detail view becomes heavy to use.
+  Guardrail: Treat this as a usage-driven optimization, not a default roadmap item, unless real list sizes or UX complaints justify it.
+
+- Keep an eye on smart filter scale before the search load menu gets crowded.
+  Context: Smart filters currently surface mainly in the dashboard management table and the shared "Load" dropdown on `app/templates/search.html`, where they sit alongside saved searches.
+  Follow-up goal: If users start accumulating enough smart filters that discovery or loading becomes awkward, improve those surfaces before adding heavier API pagination.
+  Candidate direction: Start with a bounded scroll area and/or lightweight client-side filtering in the search load menu, then revisit whether the dashboard table needs search, sorting, or pagination based on real usage.
+  Guardrail: Treat this as a usage-driven UX refinement, not a release-blocking task, unless real list counts or complaints show the current UI is straining.
+
 - Revisit frontend route-map generation in `app/core/utils.py`.
   Context: FastAPI `0.137.0` changed `router.routes` from a flat list into a tree of intermediate objects, and the release notes explicitly warn that code iterating `router.routes` directly will be affected.
   Current state: Parker ships a compatibility fix that walks the newer wrapped route structure and is covered by focused regression tests.
