@@ -231,6 +231,25 @@ Possible future auto-detection signals:
 
 For MVP, a user-controlled toggle is safer.
 
+## Possible Follow-Up: Per-Comic Reader Overrides
+
+If Parker eventually adds a manual vertical-scroll mode, it may be worth remembering that choice per comic instead of making it a global reader default.
+
+Why this could help:
+
+- a user may want normal paged reading for most comics
+- a specific archived webcomic may always work better in scroll mode
+- restoring that choice on return would reduce repeated mode switching without forcing scroll mode onto unrelated comics
+
+Recommended shape if this is ever explored:
+
+- keep global reader settings as the default behavior
+- allow sparse per-comic overrides only for content-specific settings such as `readingMode`
+- possibly extend that to a very small set of additional settings like `readDirection` or `fitMode` if real use cases justify it
+- prefer a single local-storage map of overrides over one key per comic to avoid unnecessary key sprawl
+
+This should be treated as a later refinement, not an MVP requirement.
+
 ## Open Questions To Validate With Real Samples
 
 - Are repackaged webcomics usually one huge image per episode, or many medium-height/mobile-height slices?
