@@ -1,0 +1,38 @@
+<div x-show="showGoto" x-cloak
+     class="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+     x-transition:enter="transition ease-out duration-200"
+     x-transition:enter-start="opacity-0"
+     x-transition:enter-end="opacity-100"
+     x-transition:leave="transition ease-in duration-100"
+     x-transition:leave-start="opacity-100"
+     x-transition:leave-end="opacity-0"
+     x-on:click.self="closeGoto()">
+
+    <div class="bg-gray-900 border border-gray-700 p-6 rounded-lg shadow-2xl w-80 text-center transform transition-all"
+         x-transition:enter="scale-95"
+         x-transition:enter-end="scale-100">
+
+        <h3 class="text-white font-bold text-lg mb-4">Go to Page</h3>
+
+        <div class="flex items-center justify-center space-x-2 mb-6">
+            <input x-ref="gotoInput"
+                   type="number"
+                   x-model="gotoInputValue"
+                   x-on:keydown.enter="submitGoto()"
+                   x-on:keydown.escape="closeGoto()"
+                   min="1"
+                   :max="meta.page_count"
+                   class="bg-gray-800 text-white text-2xl font-bold w-24 text-center border-b-2 border-blue-500 focus:outline-none focus:border-blue-400 py-2 rounded-t">
+            <span class="text-gray-500 text-xl">/ <span x-text="meta.page_count"></span></span>
+        </div>
+
+        <div class="flex justify-between space-x-3">
+            <button x-on:click="closeGoto()" class="flex-1 px-4 py-2 text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors">
+                Cancel
+            </button>
+            <button x-on:click="submitGoto()" class="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded transition-colors">
+                Go
+            </button>
+        </div>
+    </div>
+</div>

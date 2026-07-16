@@ -5,7 +5,7 @@
             type="search"
             x-model="query"
             @input.debounce.300ms="fetchResults()"
-            @keydown.escape="close()"
+            @keydown.escape.prevent.stop="close(true)"
             x-on:click.away="close()"
             x-on:focus="isOpen = query.length > 1"
             placeholder="Search library... (Ctrl+K)"

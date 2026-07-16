@@ -1,0 +1,102 @@
+<div class="reader-content">
+
+    <div class="nav-zone left" x-on:click="handleZoneClick('left')"></div>
+    <div class="nav-zone center" x-on:click="handleZoneClick('center')"></div>
+    <div class="nav-zone right" x-on:click="handleZoneClick('right')"></div>
+
+    <div class="flex items-center justify-center h-full w-full"
+         :class="{
+            'flex-row': readDirection === 'ltr',
+            'flex-row-reverse': readDirection === 'rtl',
+            'gap-0': true
+         }">
+
+        <template x-for="(page, idx) in pagesToDisplay" :key="page.index">
+            <img
+                :src="getPageUrl(page.index)"
+                :class="imageClasses"
+                class="reader-page"
+                :class="{
+                    'object-right': viewMode === 'double' && pagesToDisplay.length > 1 && (
+                        (readDirection === 'ltr' && idx === 0) ||
+                        (readDirection === 'rtl' && idx === 1)
+                    ),
+                    'object-left': viewMode === 'double' && pagesToDisplay.length > 1 && (
+                        (readDirection === 'ltr' && idx === 1) ||
+                        (readDirection === 'rtl' && idx === 0)
+                    )
+                }"
+                :style="imageStyles"
+                alt="Page"
+            >
+        </template>
+
+        <div class="absolute inset-y-0 left-1/2 w-24 -translate-x-1/2 pointer-events-none z-20"
+             x-show="viewMode === 'double' && pagesToDisplay.length === 2 && showSpineShadow"
+             x-transition:enter="transition-opacity duration-200"
+             x-transition:enter-start="opacity-0"
+             x-transition:enter-end="opacity-100"
+             style="background: linear-gradient(90deg,
+                    transparent 0%,
+                    rgba(0,0,0,0.05) 30%,
+                    rgba(0,0,0,0.4) 50%,
+                    rgba(0,0,0,0.05) 70%,
+                    transparent 100%);">
+        </div>
+    </div>
+
+    <div class="fixed bottom-0 left-0 right-0 z-50 flex flex-col items-center pb-8"
+         x-on:mouseenter="isHoveringZone = true"
+         x-on:mouseleave="isHoveringZone = false"
+         :class="{'pointer-events-none': !shouldShowUI && !isHoveringZone}">
+
+        <div class="scrubber-wrapper relative mb-6"
+             :class="{'controls-visible': shouldShowUI}"
+             x-show="meta.page_count > 0">
+
+            <div class="scrubber-tooltip"
+                 x-show="isScrubbing || isHoveringScrubber"
+                 :style="`left: ${(scrubberValue / (meta.page_count - 1)) * 100}%`"
+                 x-text="parseInt(scrubberValue) + 1">
+            </div>
+
+            <input type="range"
+                   class="scrubber"
+                   min="0"
+                   :max="meta.page_count - 1"
+                   x-model="scrubberValue"
+                   x-on:mouseenter="isHoveringScrubber = true"
+                   x-on:mouseleave="isHoveringScrubber = false"
+                   x-on:mousedown="isScrubbing = true"
+                   x-on:touchstart="isScrubbing = true"
+                   x-on:change="finishScrub()"
+                   x-on:input="updateScrubberUI()">
+        </div>
+
+        <div class="reader-controls relative shadow-2xl"
+             :class="{'controls-visible': shouldShowUI}"
+             x-on:mouseenter="isHoveringBar = true"
+             x-on:mouseleave="isHoveringBar = false">
+
+            <button x-on:click="goToBook(meta.prev_comic_id)" :disabled="!meta.prev_comic_id" class="text-gray-400 hover:text-white disabled:opacity-30">&#9198;</button>
+            <button x-on:click="prevPage()" class="text-white hover:text-blue-400 text-2xl px-2">&#9664;</button>
+
+            <div class="flex items-center space-x-2 text-sm font-mono text-gray-300 mx-2">
+                <span x-text="currentPage + 1" class="text-white font-bold"></span>
+                <span class="text-gray-500">/</span>
+                <span x-text="meta.page_count"></span>
+            </div>
+
+            <button x-on:click="nextPage()" class="text-white hover:text-blue-400 text-2xl px-2">&#9654;</button>
+            <button x-on:click="goToBook(meta.next_comic_id)" :disabled="!meta.next_comic_id" class="text-gray-400 hover:text-white disabled:opacity-30">&#9197;</button>
+
+            <div class="w-px h-6 bg-gray-700 mx-2"></div>
+
+            <select x-model="fitMode" class="bg-transparent text-xs text-gray-400 focus:outline-none cursor-pointer">
+                <option value="contain">Fit Screen</option>
+                <option value="width">Fit Width</option>
+                <option value="height">Fit Height</option>
+            </select>
+        </div>
+    </div>
+</div>
