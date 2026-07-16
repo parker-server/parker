@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    {% set configured_instance_name = (get_system_setting("general.app_name", "Parker Comic Server") or "")|trim %}
-    {% set instance_name = configured_instance_name or "Parker Comic Server" %}
+    {% set configured_instance_name = (get_system_setting("general.app_name", "Parker") or "")|trim %}
+    {% set instance_name = configured_instance_name or "Parker" %}
     <title>Login - {{ instance_name }} | Parker</title>
 
     {# Used for including context-sensitive path data #}

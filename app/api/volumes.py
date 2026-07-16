@@ -5,7 +5,8 @@ from sqlalchemy.orm import joinedload
 from typing import List, Annotated
 
 from app.core.comic_helpers import (get_format_filters, get_smart_cover, get_reading_time,
-                                    REVERSE_NUMBERING_SERIES, get_age_rating_config, get_thumbnail_url)
+                                    REVERSE_NUMBERING_SERIES, get_age_rating_config, get_thumbnail_url,
+                                    get_resume_target)
 
 from app.api.deps import SessionDep, CurrentUser, VolumeDep
 from app.api.deps import PaginationParams, PaginatedResponse
@@ -130,21 +131,13 @@ async def get_volume_detail(volume: VolumeDep, db: SessionDep, current_user: Cur
         colors["primary"] = first_issue.color_primary or "#000000"
         colors["secondary"] = first_issue.color_secondary or "#222222"
 
-    # Resume Logic
-    resume_comic_id = None
-    read_status = "new"
-
-    last_read = db.query(ReadingProgress).join(Comic) \
-        .filter(Comic.volume_id == volume.id) \
-        .filter(ReadingProgress.user_id == current_user.id) \
-        .order_by(ReadingProgress.last_read_at.desc()) \
-        .first()
-
-    if last_read:
-        resume_comic_id = last_read.comic_id
-        read_status = "in_progress"
-    elif first_issue:
-        resume_comic_id = first_issue.id
+    resume_comic_id, read_status = get_resume_target(
+        db,
+        user_id=current_user.id,
+        volume_id=volume.id,
+        series_name=volume.series.name,
+        first_issue_id=first_issue.id if first_issue else None,
+    )
 
     # 5. Status & Missing Issues Logic
     status = "ongoing"

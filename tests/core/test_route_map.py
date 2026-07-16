@@ -31,7 +31,7 @@ def test_get_route_map_uses_flattened_routes():
     route_map = get_route_map(app)
     admin_route_map = get_route_map(app, with_admin_routes=True)
 
-    assert route_map["libraries"]["list"] == "/api/libraries/"
+    assert route_map["libraries"]["list"] == "/api/libraries"
     assert route_map["pages"]["login"] == "/login"
     assert route_map["login"] == "/login"
     assert "admin" not in route_map
@@ -49,6 +49,10 @@ def test_get_route_map_supports_included_router_wrappers():
     def top_parker_rated():
         return []
 
+    @router.get("/trending", name="trending")
+    def trending():
+        return []
+
     wrapped_router = SimpleNamespace(
         original_router=router,
         include_context=SimpleNamespace(prefix="/api/home", tags=["home"]),
@@ -60,6 +64,7 @@ def test_get_route_map_supports_included_router_wrappers():
 
     assert route_map["home"]["random_gems"] == "/api/home/random"
     assert route_map["home"]["top_parker_rated"] == "/api/home/parker-rated"
+    assert route_map["home"]["trending"] == "/api/home/trending"
 
 
 def test_flat_alias_does_not_override_namespace():
@@ -81,5 +86,5 @@ def test_flat_alias_does_not_override_namespace():
 
     route_map = get_route_map(app)
 
-    assert route_map["series"]["list"] == "/api/series/"
+    assert route_map["series"]["list"] == "/api/series"
     assert route_map["libraries"]["series"] == "/api/libraries/{library_id}/series"

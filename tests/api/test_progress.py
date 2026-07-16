@@ -291,6 +291,64 @@ def test_recent_progress_filters_completed_and_in_progress(auth_client, db, norm
     assert in_progress_payload["results"][0]["comic_id"] == data["second"].id
 
 
+def test_recent_progress_paginates_results(auth_client, db, normal_user):
+    data = _seed_progress_data(db, lib_name="progress-pagination", series_name="Pagination Progress")
+
+    third = Comic(
+        volume_id=data["volume"].id,
+        number="3",
+        title="Pagination Progress #3",
+        year=2026,
+        filename="Pagination-3.cbz",
+        file_path="/tmp/Pagination-3-progress-pagination.cbz",
+        page_count=14,
+    )
+    db.add(third)
+    db.flush()
+
+    now = datetime.now(timezone.utc)
+    db.add_all([
+        ReadingProgress(
+            user_id=normal_user.id,
+            comic_id=data["first"].id,
+            current_page=9,
+            total_pages=10,
+            completed=True,
+            last_read_at=now - timedelta(minutes=3),
+        ),
+        ReadingProgress(
+            user_id=normal_user.id,
+            comic_id=data["second"].id,
+            current_page=8,
+            total_pages=12,
+            completed=True,
+            last_read_at=now - timedelta(minutes=2),
+        ),
+        ReadingProgress(
+            user_id=normal_user.id,
+            comic_id=third.id,
+            current_page=13,
+            total_pages=14,
+            completed=True,
+            last_read_at=now - timedelta(minutes=1),
+        ),
+    ])
+    db.commit()
+
+    response = auth_client.get("/api/progress/?filter=completed&page=2&size=2")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["filter"] == "completed"
+    assert payload["page"] == 2
+    assert payload["size"] == 2
+    assert payload["total"] == 3
+    assert len(payload["items"]) == 1
+    assert len(payload["results"]) == 1
+    assert payload["results"][0]["comic_id"] == data["first"].id
+    assert payload["items"][0]["comic_id"] == data["first"].id
+
+
 def test_on_deck_only_returns_started_unfinished_items(auth_client, db, normal_user):
     data = _seed_progress_data(db, lib_name="progress-deck", series_name="Deck Progress")
 

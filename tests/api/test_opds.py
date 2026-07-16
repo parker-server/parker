@@ -237,3 +237,35 @@ def test_opds_download_uses_real_archive_type_and_extension(client, db, normal_u
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/vnd.comicbook-rar")
     assert 'filename="Comic - First Blast.cbr"' in response.headers["content-disposition"]
+
+
+def test_opds_download_uses_filename_stem_when_title_missing(client, db, normal_user, tmp_path):
+    _enable_opds(db)
+
+    archive_path = tmp_path / "titleless-special.cbz"
+    archive_path.write_bytes(b"fake-zip")
+
+    library = Library(name="Titleless Library", path=str(tmp_path / "titleless-library"))
+    series = Series(name="Titleless Series", library=library)
+    volume = Volume(series=series, volume_number=1)
+    comic = Comic(
+        volume=volume,
+        number="2",
+        title=None,
+        filename="titleless-special.cbz",
+        file_path=str(archive_path),
+    )
+    db.add_all([library, series, volume, comic])
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    from unittest.mock import patch
+
+    with patch("app.api.opds_deps.verify_password", return_value=True):
+        response = client.get(
+            f"/opds/download/{comic.id}",
+            auth=(normal_user.username, "any_password")
+        )
+
+    assert response.status_code == 200
+    assert 'filename="Comic - titleless-special.cbz"' in response.headers["content-disposition"]

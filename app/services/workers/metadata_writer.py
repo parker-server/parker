@@ -202,7 +202,7 @@ def metadata_writer(
         db = SessionLocal()
 
         # Get library path for sidecars
-        library = db.query(Library).get(library_id)
+        library = db.get(Library, library_id)
         lib_path = Path(library.path)
 
         # Preload existing comics

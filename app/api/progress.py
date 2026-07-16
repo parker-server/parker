@@ -5,7 +5,7 @@ from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import joinedload
 
 from app.core.settings_loader import get_cached_setting
-from app.api.deps import SessionDep, CurrentUser
+from app.api.deps import SessionDep, CurrentUser, PaginationParams
 from app.models.reading_progress import ReadingProgress
 # Need to import these for joinedload to work
 from app.models.comic import Comic, Volume
@@ -224,7 +224,7 @@ async def get_recent_progress(
         current_user: CurrentUser,
         service: Annotated[ReadingProgressService, Depends(get_progress_service)],
         filter: Annotated[str, Query(pattern="^(recent|in_progress|completed)$")] = "recent",
-        limit: Annotated[int, Query(ge=1, le=100)] = 20
+        params: Annotated[PaginationParams, Depends()] = None
 
 ):
     """
@@ -253,7 +253,14 @@ async def get_recent_progress(
         query = query.filter(ReadingProgress.completed == True)
     # else: "recent" implies all/any status, just sorted by time
 
-    progress_list = query.order_by(ReadingProgress.last_read_at.desc()).limit(limit).all()
+    total = query.count()
+
+    progress_list = (
+        query.order_by(ReadingProgress.last_read_at.desc())
+        .offset(params.skip)
+        .limit(params.size)
+        .all()
+    )
 
     results = []
     for progress in progress_list:
@@ -277,7 +284,10 @@ async def get_recent_progress(
 
     return {
         "filter": filter,
-        "total": len(results),
+        "total": total,
+        "page": params.page,
+        "size": params.size,
+        "items": results,
         "results": results
     }
 

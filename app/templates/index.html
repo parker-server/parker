@@ -110,10 +110,24 @@
             </div>
         </div>
 
+        <div x-show="!loading.trending && trendingSeries.length > 0">
+            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                    <span>⚡</span> Trending
+                </h2>
+            </div>
+
+            <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                <template x-for="series in trendingSeries" :key="series.id">
+                        {% include "partials/series_card.html" %}
+                </template>
+            </div>
+        </div>
+
         <div x-show="!loading.popular && popularSeries.length > 0">
             <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
                 <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                    <span>🔥</span> Trending
+                    <span>🔥</span> Popular with Others
                 </h2>
             </div>
 
@@ -271,6 +285,7 @@ function homePage(bootstrap = {}) {
         randomSeries: [],
         topRatedComics: [],
         parkerTopRatedComics: [],
+        trendingSeries: [],
         resumeComics: [],
         smartLists: [],
         popularSeries: [],
@@ -283,6 +298,7 @@ function homePage(bootstrap = {}) {
             random: true,
             topRated: true,
             parkerTopRated: true,
+            trending: true,
             resume: true,
             popular: true,
         },
@@ -323,6 +339,7 @@ function homePage(bootstrap = {}) {
             this.fetchRandom();
             this.fetchTopRated();
             this.fetchTopParkerRated();
+            this.fetchTrending();
             this.fetchSmartLists();
             this.fetchPopular();
         },
@@ -403,6 +420,14 @@ function homePage(bootstrap = {}) {
                 if (res.ok) this.parkerTopRatedComics = await res.json();
             } catch(e) { console.error(e); }
             finally { this.loading.parkerTopRated = false; }
+        },
+
+        async fetchTrending() {
+            try {
+                const res = await fetch(window.parker.route('home.trending', {}, 'limit=12'));
+                if (res.ok) this.trendingSeries = await res.json();
+            } catch(e) { console.error(e); }
+            finally { this.loading.trending = false; }
         },
 
         async fetchSmartLists() {

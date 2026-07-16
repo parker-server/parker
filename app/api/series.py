@@ -8,7 +8,8 @@ from collections import defaultdict
 from app.core.comic_helpers import (get_format_filters, get_smart_cover, get_reading_time,
                                     get_thumbnail_url, get_thumbnail_hash,
                                     NON_PLAIN_FORMATS, REVERSE_NUMBERING_SERIES,
-                                    get_series_age_restriction, get_banned_comic_condition)
+                                    get_series_age_restriction, get_banned_comic_condition,
+                                    get_resume_target)
 from app.api.deps import SessionDep, CurrentUser, AdminUser, SeriesDep
 from app.api.deps import PaginationParams, PaginatedResponse
 
@@ -292,19 +293,13 @@ async def get_series_detail(series: SeriesDep, db: SessionDep, current_user: Cur
     first_issue = get_smart_cover(base_query, series_name=series.name)
     colors = first_issue.color_palette or {} if first_issue else {}
 
-    resume_comic_id = None
-    read_status = "new"
-
-    # Check for last read comic in this series
-    last_read = db.query(ReadingProgress).join(Comic).join(Volume) \
-        .filter(Volume.series_id == series.id, ReadingProgress.user_id == current_user.id) \
-        .order_by(ReadingProgress.last_read_at.desc()).first()
-
-    if last_read:
-        resume_comic_id = last_read.comic_id
-        read_status = "in_progress"
-    elif first_issue:
-        resume_comic_id = first_issue.id
+    resume_comic_id, read_status = get_resume_target(
+        db,
+        user_id=current_user.id,
+        series_id=series.id,
+        series_name=series.name,
+        first_issue_id=first_issue.id if first_issue else None,
+    )
 
     # 7. Volumes Data (Batch Fetch)
     vol_stats = (

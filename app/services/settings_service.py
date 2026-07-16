@@ -60,7 +60,7 @@ class SettingsService:
     # Define defaults here. The app will ensure these exist on startup.
     DEFAULTS = [
         {
-            "key": "general.app_name", "value": "Parker Comic Server",
+            "key": "general.app_name", "value": "Parker",
             "description": f"Display name shown across the server UI. Parker branding remains visible. Max {SERVER_DISPLAY_NAME_MAX_LENGTH} characters.",
             "category": "general", "data_type": "string",
             "label": "Server Display Name"

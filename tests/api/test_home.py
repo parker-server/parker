@@ -278,6 +278,208 @@ def test_home_top_parker_rated_applies_age_filter(auth_client, db, normal_user):
     assert {item["id"] for item in payload} == {safe.id, safe_two.id, safe_three.id, safe_four.id}
 
 
+def test_home_trending_returns_empty_below_threshold(auth_client, db):
+    sharer = _add_user(
+        db,
+        username="trending-threshold-sharer",
+        email="trending-threshold-sharer@example.com",
+        share_progress_enabled=True,
+    )
+
+    now = datetime.now(timezone.utc)
+    comics = []
+    for idx in range(1, 4):
+        _, _, volume = _create_series_graph(
+            db,
+            lib_name=f"home-trending-threshold-lib-{idx}",
+            series_name=f"Home Trending Threshold {idx}",
+        )
+        comics.append(_add_comic(db, volume, number="1", title=f"Trending Threshold #{idx}"))
+
+    for comic in comics:
+        db.add(
+            ReadingProgress(
+                user_id=sharer.id,
+                comic_id=comic.id,
+                current_page=5,
+                total_pages=10,
+                completed=False,
+                last_read_at=now - timedelta(days=2),
+            )
+        )
+
+    db.commit()
+
+    response = auth_client.get("/api/home/trending?limit=10")
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_home_trending_orders_by_recent_activity_then_readers_then_latest(auth_client, db, normal_user):
+    now = datetime.now(timezone.utc)
+
+    sharer_a = _add_user(
+        db,
+        username="trending-sharer-a",
+        email="trending-sharer-a@example.com",
+        share_progress_enabled=True,
+    )
+    sharer_b = _add_user(
+        db,
+        username="trending-sharer-b",
+        email="trending-sharer-b@example.com",
+        share_progress_enabled=True,
+    )
+    sharer_c = _add_user(
+        db,
+        username="trending-sharer-c",
+        email="trending-sharer-c@example.com",
+        share_progress_enabled=True,
+    )
+    hidden = _add_user(
+        db,
+        username="trending-hidden",
+        email="trending-hidden@example.com",
+        share_progress_enabled=False,
+    )
+
+    _, top_series, top_volume = _create_series_graph(db, lib_name="home-trending-top-lib", series_name="Trending Top")
+    top_comics = [
+        _add_comic(db, top_volume, number="1", title="Trending Top #1", year=2024, publisher="Trending Pub"),
+        _add_comic(db, top_volume, number="2", title="Trending Top #2", year=2024, publisher="Trending Pub"),
+        _add_comic(db, top_volume, number="3", title="Trending Top #3", year=2024, publisher="Trending Pub"),
+    ]
+
+    _, tiebreak_series, tiebreak_volume = _create_series_graph(db, lib_name="home-trending-tiebreak-lib", series_name="Trending Tiebreak")
+    tiebreak_comics = [
+        _add_comic(db, tiebreak_volume, number="1", title="Trending Tiebreak #1", year=2024, publisher="Trending Pub"),
+        _add_comic(db, tiebreak_volume, number="2", title="Trending Tiebreak #2", year=2024, publisher="Trending Pub"),
+        _add_comic(db, tiebreak_volume, number="3", title="Trending Tiebreak #3", year=2024, publisher="Trending Pub"),
+    ]
+
+    _, fresh_series, fresh_volume = _create_series_graph(db, lib_name="home-trending-fresh-lib", series_name="Trending Fresh")
+    fresh_comics = [
+        _add_comic(db, fresh_volume, number="1", title="Trending Fresh #1", year=2024, publisher="Trending Pub"),
+        _add_comic(db, fresh_volume, number="2", title="Trending Fresh #2", year=2024, publisher="Trending Pub"),
+    ]
+
+    _, minimal_series, minimal_volume = _create_series_graph(db, lib_name="home-trending-minimal-lib", series_name="Trending Minimal")
+    minimal_comic = _add_comic(db, minimal_volume, number="1", title="Trending Minimal #1", year=2024, publisher="Trending Pub")
+
+    _, stale_series, stale_volume = _create_series_graph(db, lib_name="home-trending-stale-lib", series_name="Trending Stale")
+    stale_comics = [
+        _add_comic(db, stale_volume, number="1", title="Trending Stale #1", year=2024, publisher="Trending Pub"),
+        _add_comic(db, stale_volume, number="2", title="Trending Stale #2", year=2024, publisher="Trending Pub"),
+        _add_comic(db, stale_volume, number="3", title="Trending Stale #3", year=2024, publisher="Trending Pub"),
+    ]
+
+    db.add_all([
+        ReadingProgress(user_id=sharer_a.id, comic_id=top_comics[0].id, current_page=6, total_pages=10, completed=False, last_read_at=now - timedelta(hours=3)),
+        ReadingProgress(user_id=sharer_b.id, comic_id=top_comics[1].id, current_page=10, total_pages=10, completed=True, last_read_at=now - timedelta(hours=2)),
+        ReadingProgress(user_id=sharer_a.id, comic_id=top_comics[2].id, current_page=8, total_pages=10, completed=False, last_read_at=now - timedelta(hours=1)),
+
+        ReadingProgress(user_id=sharer_c.id, comic_id=tiebreak_comics[0].id, current_page=4, total_pages=10, completed=False, last_read_at=now - timedelta(minutes=20)),
+        ReadingProgress(user_id=sharer_c.id, comic_id=tiebreak_comics[1].id, current_page=5, total_pages=10, completed=False, last_read_at=now - timedelta(minutes=10)),
+        ReadingProgress(user_id=sharer_c.id, comic_id=tiebreak_comics[2].id, current_page=10, total_pages=10, completed=True, last_read_at=now - timedelta(minutes=5)),
+
+        ReadingProgress(user_id=sharer_a.id, comic_id=fresh_comics[0].id, current_page=6, total_pages=10, completed=False, last_read_at=now - timedelta(minutes=3)),
+        ReadingProgress(user_id=sharer_b.id, comic_id=fresh_comics[1].id, current_page=10, total_pages=10, completed=True, last_read_at=now - timedelta(minutes=2)),
+
+        ReadingProgress(user_id=sharer_b.id, comic_id=minimal_comic.id, current_page=5, total_pages=10, completed=False, last_read_at=now - timedelta(minutes=1)),
+
+        ReadingProgress(user_id=sharer_a.id, comic_id=stale_comics[0].id, current_page=5, total_pages=10, completed=False, last_read_at=now - timedelta(days=45)),
+        ReadingProgress(user_id=sharer_b.id, comic_id=stale_comics[1].id, current_page=5, total_pages=10, completed=False, last_read_at=now - timedelta(days=44)),
+        ReadingProgress(user_id=sharer_c.id, comic_id=stale_comics[2].id, current_page=5, total_pages=10, completed=False, last_read_at=now - timedelta(days=43)),
+        ReadingProgress(user_id=hidden.id, comic_id=top_comics[0].id, current_page=10, total_pages=10, completed=True, last_read_at=now),
+        ReadingProgress(user_id=normal_user.id, comic_id=fresh_comics[0].id, current_page=9, total_pages=10, completed=False, last_read_at=now),
+    ])
+    db.commit()
+
+    response = auth_client.get("/api/home/trending?limit=10")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [item["id"] for item in payload] == [
+        top_series.id,
+        tiebreak_series.id,
+        fresh_series.id,
+        minimal_series.id,
+    ]
+    assert stale_series.id not in [item["id"] for item in payload]
+
+
+def test_home_trending_applies_age_filter(auth_client, db, normal_user):
+    now = datetime.now(timezone.utc)
+    sharer_a = _add_user(
+        db,
+        username="trending-age-a",
+        email="trending-age-a@example.com",
+        share_progress_enabled=True,
+    )
+    sharer_b = _add_user(
+        db,
+        username="trending-age-b",
+        email="trending-age-b@example.com",
+        share_progress_enabled=True,
+    )
+
+    safe_ids = set()
+    safe_comics = []
+    for idx in range(1, 5):
+        _, series, volume = _create_series_graph(
+            db,
+            lib_name=f"home-trending-age-safe-lib-{idx}",
+            series_name=f"Home Trending Age Safe {idx}",
+        )
+        comic = _add_comic(
+            db,
+            volume,
+            number="1",
+            title=f"Trending Age Safe #{idx}",
+            age_rating="Teen",
+            year=2024,
+            publisher="Trending Pub",
+        )
+        safe_ids.add(series.id)
+        safe_comics.append(comic)
+
+    _, banned_series, banned_volume = _create_series_graph(
+        db,
+        lib_name="home-trending-age-banned-lib",
+        series_name="Home Trending Age Banned",
+    )
+    banned_comics = [
+        _add_comic(db, banned_volume, number="1", title="Trending Age Banned #1", age_rating="Mature 17+", year=2024, publisher="Trending Pub"),
+        _add_comic(db, banned_volume, number="2", title="Trending Age Banned #2", age_rating="Mature 17+", year=2024, publisher="Trending Pub"),
+    ]
+
+    db.add_all([
+        ReadingProgress(user_id=sharer_a.id, comic_id=safe_comics[0].id, current_page=6, total_pages=10, completed=False, last_read_at=now - timedelta(days=1)),
+        ReadingProgress(user_id=sharer_b.id, comic_id=safe_comics[0].id, current_page=10, total_pages=10, completed=True, last_read_at=now - timedelta(hours=20)),
+        ReadingProgress(user_id=sharer_a.id, comic_id=safe_comics[1].id, current_page=6, total_pages=10, completed=False, last_read_at=now - timedelta(days=2)),
+        ReadingProgress(user_id=sharer_b.id, comic_id=safe_comics[1].id, current_page=10, total_pages=10, completed=True, last_read_at=now - timedelta(days=2, hours=1)),
+        ReadingProgress(user_id=sharer_a.id, comic_id=safe_comics[2].id, current_page=6, total_pages=10, completed=False, last_read_at=now - timedelta(days=3)),
+        ReadingProgress(user_id=sharer_b.id, comic_id=safe_comics[2].id, current_page=10, total_pages=10, completed=True, last_read_at=now - timedelta(days=3, hours=1)),
+        ReadingProgress(user_id=sharer_a.id, comic_id=safe_comics[3].id, current_page=6, total_pages=10, completed=False, last_read_at=now - timedelta(days=4)),
+        ReadingProgress(user_id=sharer_b.id, comic_id=safe_comics[3].id, current_page=10, total_pages=10, completed=True, last_read_at=now - timedelta(days=4, hours=1)),
+        ReadingProgress(user_id=sharer_a.id, comic_id=banned_comics[0].id, current_page=8, total_pages=10, completed=False, last_read_at=now - timedelta(minutes=2)),
+        ReadingProgress(user_id=sharer_b.id, comic_id=banned_comics[1].id, current_page=10, total_pages=10, completed=True, last_read_at=now - timedelta(minutes=1)),
+    ])
+
+    normal_user.max_age_rating = "Teen"
+    normal_user.allow_unknown_age_ratings = False
+    db.commit()
+
+    response = auth_client.get("/api/home/trending?limit=10")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 4
+    assert {item["id"] for item in payload} == safe_ids
+    assert banned_series.id not in {item["id"] for item in payload}
+
+
 def test_home_resume_applies_staleness_and_progress_percentage(auth_client, db, normal_user):
     _, _, volume = _create_series_graph(db, lib_name="home-resume-lib", series_name="Home Resume")
 
