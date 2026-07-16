@@ -19,6 +19,7 @@ Those files may still scan and open today, but the reader is currently optimized
 - optional spread logic for wide pages
 
 That works well for conventional western issues and manga, but it is likely to be awkward for very tall pages or long-strip episodes.
+It is also likely to be awkward for archived "slice" releases where adjacent image files together form a continuous vertical reading flow.
 
 ## Non-Goals
 
@@ -35,10 +36,28 @@ Out of scope for this work:
 The most realistic near-term target is:
 
 - archived files that still contain sequential image assets
-- some or many of those images are unusually tall
 - users want to scroll vertically through the content instead of paging through it screen-by-screen
+- some archives may contain unusually tall pages
+- some archives may instead contain many mobile-sized image slices that reconstruct a vertical-scroll episode when stacked in order
 
 We should validate this assumption against real sample archives before implementation.
+
+### Updated Sample Finding
+
+A real-world gray-area sample reported by the user:
+
+- `Peter Parker Spider-Man - Queens Finest - Infinity Comic 001 (2026) (digital-mobile-Empire).cbz`
+
+Observed behavior:
+
+- the archive is chopped into separate sequential images
+- some panels are intentionally cut across image boundaries and continue in the next image
+
+Implication:
+
+- not all archived vertical-scroll material will appear as one or a few extremely tall images
+- some repackaged releases are better understood as "slice archives"
+- Parker's main need is likely a stacked vertical reading mode for ordered archive images, not only special handling for extreme aspect ratios
 
 ## Current System Constraints
 
@@ -101,12 +120,14 @@ Relevant files:
 - `app/services/reading_progress.py`
 
 This may still be usable for archived vertical-scroll files if progress is mapped to the topmost visible image index rather than a pixel offset.
+For slice archives, this means stored progress would effectively track the last reached image slice rather than a true comic "page," which is probably acceptable for an MVP.
 
 ### Image Processing
 
 The image service optionally transcodes and resizes large images for data savings.
 
 Current behavior uses a maximum dimension cap during WebP transcode. That may be too aggressive for extremely tall pages and could damage readability for archived webtoon-style content.
+This risk may matter less for pre-sliced mobile releases, but still needs validation against real samples.
 
 Relevant file:
 
@@ -130,7 +151,7 @@ The smallest useful implementation would likely be a new reader mode, not a rewr
 
 ### MVP User Story
 
-As a user opening a `.cbz` or `.cbr` archive containing very tall sequential images, I can switch into a vertical-scroll reading mode that makes the content readable without adding support for loose images or new file formats.
+As a user opening a `.cbz` or `.cbr` archive containing either very tall images or many sequential mobile-style slices, I can switch into a vertical-scroll reading mode that makes the content readable without adding support for loose images or new file formats.
 
 ### MVP Behaviors
 
@@ -138,6 +159,7 @@ As a user opening a `.cbz` or `.cbr` archive containing very tall sequential ima
 - render pages in a vertical column instead of a fixed page-turn viewport
 - allow native vertical scrolling
 - preserve existing archive-backed image loading
+- treat archive image boundaries as rendering boundaries, not necessarily meaningful comic page boundaries
 - disable double-page mode and spread pairing while in scroll mode
 - keep LTR / RTL paging concepts out of scroll mode unless sample files prove a need
 - update progress using the topmost visible page index or last meaningfully viewed page index
@@ -203,18 +225,22 @@ Possible future auto-detection signals:
 
 - high proportion of pages exceeding a tall aspect-ratio threshold
 - issue with a very small number of extremely tall pages
+- ComicInfo / metadata hints such as `<Format>WebComic</Format>` or `<Format>Web Comic</Format>`, if real libraries show that those values are used consistently enough to trust
+- issue metadata or filename hints such as `digital-mobile` or known release conventions, if those patterns prove reliable enough to justify using them
 - metadata hints if any appear in real sample archives
 
 For MVP, a user-controlled toggle is safer.
 
 ## Open Questions To Validate With Real Samples
 
-- Are repackaged webcomics usually one huge image per episode, or many medium-height slices?
+- Are repackaged webcomics usually one huge image per episode, or many medium-height/mobile-height slices?
 - Do users expect seamless continuous scrolling, or page-by-page vertical reading?
 - Are sample files mostly JPEG, PNG, or mixed assets?
 - How often are there decorative spacer images that should not affect progress too aggressively?
+- How often do panels intentionally continue across adjacent image files?
 - Does current archive page ordering already match intended reading order?
 - Does data-saver resizing make text unreadable on tall images?
+- How often do real libraries actually populate ComicInfo `<Format>` with values like `WebComic` or `Web Comic`, and how trustworthy are those tags in mixed collections?
 
 ## Recommendation
 
