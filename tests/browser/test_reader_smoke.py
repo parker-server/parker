@@ -489,6 +489,50 @@ def test_reader_long_view_mode_persists_per_comic_without_leaking_to_other_books
 
 
 @pytest.mark.browser
+def test_reader_incognito_mode_does_not_persist_per_book_overrides(page, browser_server):
+    seed = browser_server["seed"]
+    active_reader_url = f"{browser_server['base_url']}/reader/{seed['active_comic_id']}"
+    incognito_reader_url = f"{active_reader_url}?incognito=true"
+
+    page.goto(incognito_reader_url, wait_until="networkidle")
+
+    page.wait_for_selector(".reader-container")
+    page.locator(".nav-zone.center").click()
+    page.locator("button[title='Settings']").click()
+    page.get_by_role("button", name="Long View").click()
+
+    page.wait_for_function(
+        """
+        () => {
+            const reader = document.querySelector('.reader-container');
+            const state = reader?._x_dataStack?.[0];
+            return reader?.classList.contains('scroll-mode')
+                && state?.readingMode === 'scroll'
+                && state?.isIncognito === true
+                && document.querySelectorAll('[data-scroll-page-index]').length > 0;
+        }
+        """
+    )
+
+    stored_overrides = page.evaluate("() => window.localStorage.getItem('reader_comicOverrides')")
+    assert stored_overrides is None
+
+    page.goto(active_reader_url, wait_until="networkidle")
+    page.wait_for_selector(".reader-container")
+    page.wait_for_function(
+        """
+        () => {
+            const reader = document.querySelector('.reader-container');
+            const state = reader?._x_dataStack?.[0];
+            return !reader?.classList.contains('scroll-mode')
+                && state?.readingMode === 'paged'
+                && document.querySelectorAll('img.reader-page').length > 0;
+        }
+        """
+    )
+
+
+@pytest.mark.browser
 def test_reader_long_view_navigation_arrows_snap_between_archive_pages(page, browser_server, monkeypatch):
     monkeypatch.setattr(
         "app.api.reader.ImageService.get_page_image",

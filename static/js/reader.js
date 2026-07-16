@@ -101,6 +101,10 @@
     }
 
     function persistComicOverridePreference(reader, settingName, value) {
+        if (reader.isIncognito) {
+            return;
+        }
+
         const defaultValue = getGlobalReaderPreference(settingName);
         const comicOverrides = loadComicOverrides();
         const comicKey = String(reader.comicId);
