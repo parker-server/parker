@@ -22,7 +22,7 @@
     <div class="flex items-center space-x-2">
         <span class="text-gray-400 text-xs font-mono font-bold mr-3 hidden md:block" x-text="currentTime"></span>
 
-        <button x-on:click="toggleUiLock()" class="p-2 rounded hover:bg-white/10 transition-colors"
+        <button x-show="readingMode === 'paged'" x-on:click="toggleUiLock()" class="p-2 rounded hover:bg-white/10 transition-colors"
                 :class="uiLocked ? 'text-blue-400' : 'text-gray-300'"
                 title="Toggle UI Lock (h)">
             <svg x-show="uiLocked" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">

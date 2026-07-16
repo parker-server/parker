@@ -1,0 +1,18 @@
+<template x-if="readingMode === 'scroll'">
+    <div class="reader-content reader-scroll-content">
+        <div class="reader-scroll-stack">
+            <template x-for="page in Array.from({ length: meta.page_count }, (_, index) => ({ index }))" :key="`scroll-${page.index}`">
+                <div class="reader-scroll-page" :data-scroll-page-index="page.index">
+                    <img
+                        :src="getPageUrl(page.index)"
+                        class="reader-page reader-scroll-image"
+                        :style="scrollImageStyles"
+                        alt="Page"
+                    >
+                </div>
+            </template>
+        </div>
+
+        {% include "reader/partials/_reader_controls.html" %}
+    </div>
+</template>

@@ -76,7 +76,10 @@
             contextType: null,
             contextId: null,
             pageMeta: {},
-            filters: cloneDefaultFilters()
+            filters: cloneDefaultFilters(),
+            scrollTicking: false,
+            restoringScroll: false,
+            scrollRestoreTimeout: null
         };
     }
 
@@ -103,7 +106,18 @@
         });
 
         reader.$watch('filters', (value) => persistJsonPreference(STORAGE_KEYS.filters, value));
-        reader.$watch('readingMode', (value) => localStorage.setItem(STORAGE_KEYS.readingMode, value));
+        reader.$watch('readingMode', (value) => {
+            localStorage.setItem(STORAGE_KEYS.readingMode, value);
+
+            reader.$nextTick(() => {
+                if (value === 'scroll') {
+                    reader.syncScrollPage(reader.currentPage, { behavior: 'auto', persist: false });
+                    return;
+                }
+
+                reader.focusReader();
+            });
+        });
         reader.$watch('viewMode', (value) => localStorage.setItem(STORAGE_KEYS.viewMode, value));
         reader.$watch('readDirection', (value) => localStorage.setItem(STORAGE_KEYS.readDirection, value));
         reader.$watch('fitMode', (value) => localStorage.setItem(STORAGE_KEYS.fitMode, value));
@@ -114,9 +128,19 @@
 
     function buildComputedProperties() {
         return {
+            isScrollMode: {
+                enumerable: true,
+                get() {
+                    return this.readingMode === 'scroll';
+                }
+            },
             shouldShowUI: {
                 enumerable: true,
                 get() {
+                    if (this.isScrollMode) {
+                        return true;
+                    }
+
                     return this.uiLocked
                         || this.tapVisible
                         || this.isHoveringZone
@@ -153,6 +177,24 @@
                     }
 
                     styles.filter = `brightness(${this.filters.brightness}%) contrast(${this.filters.contrast}%)`;
+                    return styles;
+                }
+            },
+            scrollImageStyles: {
+                enumerable: true,
+                get() {
+                    const styles = {
+                        filter: `brightness(${this.filters.brightness}%) contrast(${this.filters.contrast}%)`
+                    };
+
+                    if (this.fitMode === 'contain') {
+                        styles.width = 'auto';
+                        styles.maxWidth = '100%';
+                    } else {
+                        styles.width = '100%';
+                        styles.maxWidth = '100%';
+                    }
+
                     return styles;
                 }
             },
@@ -230,6 +272,12 @@
                     }
 
                     this.preloadContext();
+
+                    if (this.isScrollMode) {
+                        this.$nextTick(() => {
+                            this.syncScrollPage(this.currentPage, { behavior: 'auto', persist: false });
+                        });
+                    }
                 } catch (error) {
                     console.error(error);
                 }
@@ -296,12 +344,140 @@
                 return !!(this.pageMeta[index] && this.pageMeta[index].isLandscape);
             },
 
+            focusReader() {
+                this.$el.focus();
+            },
+
+            setReadingMode(mode) {
+                if (!['paged', 'scroll'].includes(mode) || mode === this.readingMode) {
+                    return;
+                }
+
+                this.showSettings = false;
+                this.readingMode = mode;
+                window.parker.showToast(mode === 'scroll' ? 'Long View enabled' : 'Paged View enabled');
+            },
+
+            getScrollPageElements() {
+                return Array.from(this.$el.querySelectorAll('[data-scroll-page-index]'));
+            },
+
+            getScrollPageElement(index) {
+                return this.$el.querySelector(`[data-scroll-page-index="${index}"]`);
+            },
+
+            scrollToPage(index, { behavior = 'auto', suppressObserver = false } = {}) {
+                const target = this.getScrollPageElement(index);
+                if (!this.isScrollMode || !target) {
+                    return;
+                }
+
+                if (suppressObserver) {
+                    this.restoringScroll = true;
+                    if (this.scrollRestoreTimeout) {
+                        window.clearTimeout(this.scrollRestoreTimeout);
+                    }
+                }
+
+                target.scrollIntoView({ behavior, block: 'start' });
+
+                if (suppressObserver) {
+                    this.scrollRestoreTimeout = window.setTimeout(() => {
+                        this.restoringScroll = false;
+                        this.syncCurrentPageFromScroll();
+                    }, behavior === 'smooth' ? 350 : 50);
+                }
+            },
+
+            syncScrollPage(index, { behavior = 'auto', persist = true } = {}) {
+                if (!this.isScrollMode || this.meta.page_count <= 0) {
+                    return;
+                }
+
+                const boundedIndex = Math.max(0, Math.min(index, this.meta.page_count - 1));
+                const changed = boundedIndex !== this.currentPage;
+                this.currentPage = boundedIndex;
+
+                if (persist && changed) {
+                    this.updateProgress();
+                }
+
+                this.$nextTick(() => {
+                    this.scrollToPage(boundedIndex, { behavior, suppressObserver: true });
+                });
+            },
+
+            handleScroll() {
+                if (!this.isScrollMode || this.restoringScroll) {
+                    return;
+                }
+
+                if (this.scrollTicking) {
+                    return;
+                }
+
+                this.scrollTicking = true;
+                requestAnimationFrame(() => {
+                    this.scrollTicking = false;
+                    this.syncCurrentPageFromScroll();
+                });
+            },
+
+            syncCurrentPageFromScroll(persist = true) {
+                if (!this.isScrollMode) {
+                    return;
+                }
+
+                const pageElements = this.getScrollPageElements();
+                if (pageElements.length === 0) {
+                    return;
+                }
+
+                const containerRect = this.$el.getBoundingClientRect();
+                const threshold = containerRect.top + 96;
+                let activeIndex = Number.parseInt(
+                    pageElements[pageElements.length - 1].dataset.scrollPageIndex,
+                    10,
+                );
+
+                for (const pageElement of pageElements) {
+                    const rect = pageElement.getBoundingClientRect();
+                    if (rect.bottom > threshold) {
+                        activeIndex = Number.parseInt(pageElement.dataset.scrollPageIndex, 10);
+                        break;
+                    }
+                }
+
+                if (Number.isNaN(activeIndex) || activeIndex === this.currentPage) {
+                    return;
+                }
+
+                this.currentPage = activeIndex;
+                if (persist) {
+                    this.updateProgress();
+                }
+            },
+
             toggleViewMode() {
+                if (this.isScrollMode) {
+                    return;
+                }
+
                 this.viewMode = this.viewMode === 'single' ? 'double' : 'single';
                 window.parker.showToast(this.viewMode === 'double' ? 'Double Page Mode' : 'Single Page Mode');
             },
 
             nextPage() {
+                if (this.isScrollMode) {
+                    const nextPageIndex = Math.min(this.currentPage + 1, this.meta.page_count - 1);
+                    if (nextPageIndex !== this.currentPage) {
+                        this.syncScrollPage(nextPageIndex, { behavior: 'smooth' });
+                    } else if (this.meta.next_comic_id) {
+                        window.parker.showToast('End of Book. Press ] for next issue.');
+                    }
+                    return;
+                }
+
                 const step = this.pagesToDisplay.length;
 
                 if (this.currentPage + step < this.meta.page_count) {
@@ -313,6 +489,14 @@
             },
 
             prevPage() {
+                if (this.isScrollMode) {
+                    const previousPageIndex = Math.max(this.currentPage - 1, 0);
+                    if (previousPageIndex !== this.currentPage) {
+                        this.syncScrollPage(previousPageIndex, { behavior: 'smooth' });
+                    }
+                    return;
+                }
+
                 if (this.viewMode === 'single') {
                     if (this.currentPage > 0) {
                         this.currentPage -= 1;
@@ -520,8 +704,12 @@
                 if (page < 1) page = 1;
                 if (page > this.meta.page_count) page = this.meta.page_count;
 
-                this.currentPage = page - 1;
-                this.updateProgress();
+                if (this.isScrollMode) {
+                    this.syncScrollPage(page - 1, { behavior: 'auto' });
+                } else {
+                    this.currentPage = page - 1;
+                    this.updateProgress();
+                }
                 this.closeGoto();
             },
 
@@ -533,6 +721,15 @@
                 this.isScrubbing = false;
 
                 const targetPage = Number.parseInt(this.scrubberValue, 10);
+                if (Number.isNaN(targetPage)) {
+                    return;
+                }
+
+                if (this.isScrollMode) {
+                    this.syncScrollPage(targetPage, { behavior: 'auto' });
+                    return;
+                }
+
                 if (targetPage !== this.currentPage) {
                     this.currentPage = targetPage;
                     this.updateProgress();
@@ -574,17 +771,29 @@
             },
 
             toggleMangaMode() {
+                if (this.isScrollMode) {
+                    return;
+                }
+
                 this.readDirection = this.readDirection === 'ltr' ? 'rtl' : 'ltr';
                 window.parker.showToast(this.readDirection === 'rtl' ? 'Manga Mode (RTL)' : 'Western Mode (LTR)');
             },
 
             handleTouchStart(event) {
+                if (this.isScrollMode) {
+                    return;
+                }
+
                 this.touchStartX = event.changedTouches[0].screenX;
                 this.touchStartY = event.changedTouches[0].screenY;
                 this.startTime = new Date().getTime();
             },
 
             handleTouchEnd(event) {
+                if (this.isScrollMode) {
+                    return;
+                }
+
                 const touchEndX = event.changedTouches[0].screenX;
                 const touchEndY = event.changedTouches[0].screenY;
                 const elapsedTime = new Date().getTime() - this.startTime;
