@@ -4,6 +4,12 @@ This file captures follow-up work that should not get lost between releases.
 
 ## Technical Debt
 
+- Modularize the reader before adding materially different reading modes.
+  Context: `app/templates/reader.html` has grown into a large all-in-one template that currently mixes paged layout, RTL/LTR behavior, spread logic, swipe handling, controls, and progress wiring in one place.
+  Impetus: The archived vertical-scroll compatibility investigation in `docs/archived-vertical-scroll-scope.md` highlighted that a future tall-page / long-strip reader mode would be much cleaner if the reader were split into shared and mode-specific pieces first.
+  Follow-up goal: Refactor the reader into a thinner shared shell plus modular paged/scroll-oriented partials or components so future reader work does not keep accumulating in one template.
+  Candidate direction: Keep the existing `/reader/{comic_id}` route, preserve shared archive/progress plumbing where possible, and split the template/JS by interaction model rather than forcing additional conditional branches into the current monolith.
+
 - Revisit frontend route-map generation in `app/core/utils.py`.
   Context: FastAPI `0.137.0` changed `router.routes` from a flat list into a tree of intermediate objects, and the release notes explicitly warn that code iterating `router.routes` directly will be affected.
   Current state: Parker ships a compatibility fix that walks the newer wrapped route structure and is covered by focused regression tests.
