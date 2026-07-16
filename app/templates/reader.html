@@ -8,7 +8,9 @@
 
 {% block content %}
 <div class="reader-container" x-data="window.createReader({ comicId: {{ comic_id }} })" tabindex="0"
+     :class="{ 'scroll-mode': isScrollMode }"
      x-on:keydown.window="handleKey($event)"
+     x-on:scroll.passive="handleScroll()"
      x-on:touchstart="handleTouchStart($event)"
      x-on:touchend="handleTouchEnd($event)">
 
@@ -16,12 +18,14 @@
     {% include "reader/partials/_settings_panel.html" %}
 
     <div class="hover-zone"
+         x-show="readingMode === 'paged'"
          x-on:mouseenter="isHoveringZone = true"
          x-on:mouseleave="isHoveringZone = false">
     </div>
 
     {# Keep the current paged experience isolated so future scroll mode can slot in beside it. #}
     {% include "reader/partials/_paged_content.html" %}
+    {% include "reader/partials/_scroll_content.html" %}
     {% include "reader/partials/_goto_modal.html" %}
 </div>
 {% endblock %}
