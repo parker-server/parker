@@ -126,6 +126,18 @@
         reader.$watch('uiLocked', (value) => persistJsonPreference(STORAGE_KEYS.uiLocked, value));
     }
 
+    function bindReaderMethods(reader) {
+        for (const [key, value] of Object.entries(reader)) {
+            if (typeof value !== 'function' || value.__readerBound) {
+                continue;
+            }
+
+            const boundMethod = value.bind(reader);
+            boundMethod.__readerBound = true;
+            reader[key] = boundMethod;
+        }
+    }
+
     function buildComputedProperties() {
         return {
             isScrollMode: {
@@ -229,6 +241,7 @@
     function buildReaderMethods() {
         return {
             init() {
+                bindReaderMethods(this);
                 this.updateClock();
                 setInterval(() => { this.updateClock(); }, 1000);
 
@@ -348,6 +361,15 @@
                 this.$el.focus();
             },
 
+            resetControlFocus() {
+                const activeElement = document.activeElement;
+                if (activeElement instanceof HTMLElement && activeElement !== this.$el && this.$el.contains(activeElement)) {
+                    activeElement.blur();
+                }
+
+                this.focusReader();
+            },
+
             setReadingMode(mode) {
                 if (!['paged', 'scroll'].includes(mode) || mode === this.readingMode) {
                     return;
@@ -366,33 +388,80 @@
                 return this.$el.querySelector(`[data-scroll-page-index="${index}"]`);
             },
 
-            scrollToPage(index, { behavior = 'auto', suppressObserver = false } = {}) {
+            getScrollViewportTargetTop() {
+                const containerRect = this.$el.getBoundingClientRect();
+                const toolbar = this.$el.querySelector('.reader-toolbar');
+                const toolbarHeight = toolbar ? toolbar.getBoundingClientRect().height : 0;
+
+                return {
+                    containerTop: containerRect.top,
+                    targetTop: containerRect.top + toolbarHeight + 8
+                };
+            },
+
+            getScrollTopForPage(index) {
                 const target = this.getScrollPageElement(index);
-                if (!this.isScrollMode || !target) {
+                if (!target) {
+                    return null;
+                }
+
+                const targetRect = target.getBoundingClientRect();
+                if (targetRect.height < 8) {
+                    return null;
+                }
+
+                const { targetTop } = this.getScrollViewportTargetTop();
+                const scrollTop = this.$el.scrollTop + (targetRect.top - targetTop);
+                return Math.max(0, scrollTop);
+            },
+
+            applyScrollPagePosition(index, { retries = 40 } = {}) {
+                const scrollTop = this.getScrollTopForPage(index);
+                if (scrollTop === null) {
+                    if (retries > 0) {
+                        window.setTimeout(() => {
+                            this.applyScrollPagePosition(index, { retries: retries - 1 });
+                        }, 75);
+                    }
                     return;
                 }
 
-                if (suppressObserver) {
-                    this.restoringScroll = true;
-                    if (this.scrollRestoreTimeout) {
-                        window.clearTimeout(this.scrollRestoreTimeout);
-                    }
+                this.restoringScroll = true;
+                if (this.scrollRestoreTimeout) {
+                    window.clearTimeout(this.scrollRestoreTimeout);
                 }
 
-                target.scrollIntoView({ behavior, block: 'start' });
+                const targetScrollTop = Math.round(scrollTop);
+                this.$el.scrollTop = targetScrollTop;
 
-                if (suppressObserver) {
+                window.requestAnimationFrame(() => {
+                    const target = this.getScrollPageElement(index);
+                    const expectedTop = this.getScrollViewportTargetTop().targetTop;
+                    const targetTopDelta = target
+                        ? Math.abs(target.getBoundingClientRect().top - expectedTop)
+                        : Number.POSITIVE_INFINITY;
+                    const scrollDelta = Math.abs(this.$el.scrollTop - targetScrollTop);
+
+                    if ((scrollDelta > 4 || targetTopDelta > 12) && retries > 0) {
+                        window.setTimeout(() => {
+                            this.applyScrollPagePosition(index, { retries: retries - 1 });
+                        }, 75);
+                        return;
+                    }
+
                     this.scrollRestoreTimeout = window.setTimeout(() => {
                         this.restoringScroll = false;
-                        this.syncCurrentPageFromScroll();
-                    }, behavior === 'smooth' ? 350 : 50);
-                }
+                        this.syncCurrentPageFromScroll(false);
+                    }, 120);
+                });
             },
 
-            syncScrollPage(index, { behavior = 'auto', persist = true } = {}) {
+            jumpToScrollPage(index, { persist = true, retries = 40 } = {}) {
                 if (!this.isScrollMode || this.meta.page_count <= 0) {
                     return;
                 }
+
+                this.resetControlFocus();
 
                 const boundedIndex = Math.max(0, Math.min(index, this.meta.page_count - 1));
                 const changed = boundedIndex !== this.currentPage;
@@ -402,9 +471,17 @@
                     this.updateProgress();
                 }
 
+                this.applyScrollPagePosition(boundedIndex, { retries });
                 this.$nextTick(() => {
-                    this.scrollToPage(boundedIndex, { behavior, suppressObserver: true });
+                    window.requestAnimationFrame(() => {
+                        this.applyScrollPagePosition(boundedIndex, { retries });
+                    });
                 });
+            },
+
+            syncScrollPage(index, { behavior = 'auto', persist = true } = {}) {
+                void behavior;
+                this.jumpToScrollPage(index, { persist });
             },
 
             handleScroll() {
@@ -471,7 +548,7 @@
                 if (this.isScrollMode) {
                     const nextPageIndex = Math.min(this.currentPage + 1, this.meta.page_count - 1);
                     if (nextPageIndex !== this.currentPage) {
-                        this.syncScrollPage(nextPageIndex, { behavior: 'smooth' });
+                        this.jumpToScrollPage(nextPageIndex);
                     } else if (this.meta.next_comic_id) {
                         window.parker.showToast('End of Book. Press ] for next issue.');
                     }
@@ -492,7 +569,7 @@
                 if (this.isScrollMode) {
                     const previousPageIndex = Math.max(this.currentPage - 1, 0);
                     if (previousPageIndex !== this.currentPage) {
-                        this.syncScrollPage(previousPageIndex, { behavior: 'smooth' });
+                        this.jumpToScrollPage(previousPageIndex);
                     }
                     return;
                 }
