@@ -10,12 +10,28 @@
     const STORAGE_KEYS = Object.freeze({
         filters: 'readerFilters',
         readingMode: 'reader_readingMode',
+        comicOverrides: 'reader_comicOverrides',
         viewMode: 'reader_viewMode',
         readDirection: 'reader_readDirection',
         fitMode: 'reader_fitMode',
         doublePageOffset: 'reader_doublePageOffset',
         showSpineShadow: 'reader_showSpineShadow',
         uiLocked: 'reader_uiLocked'
+    });
+
+    const COMIC_OVERRIDE_SETTINGS = Object.freeze({
+        readingMode: {
+            storageKey: STORAGE_KEYS.readingMode,
+            fallback: 'paged'
+        },
+        viewMode: {
+            storageKey: STORAGE_KEYS.viewMode,
+            fallback: 'single'
+        },
+        readDirection: {
+            storageKey: STORAGE_KEYS.readDirection,
+            fallback: 'ltr'
+        }
     });
 
     function cloneDefaultFilters() {
@@ -43,6 +59,66 @@
             console.error('Failed to parse stored reader filters:', error);
             return cloneDefaultFilters();
         }
+    }
+
+    function loadComicOverrides() {
+        const savedOverrides = localStorage.getItem(STORAGE_KEYS.comicOverrides);
+        if (!savedOverrides) {
+            return {};
+        }
+
+        try {
+            const parsedOverrides = JSON.parse(savedOverrides);
+            if (!parsedOverrides || typeof parsedOverrides !== 'object' || Array.isArray(parsedOverrides)) {
+                return {};
+            }
+
+            return parsedOverrides;
+        } catch (error) {
+            console.error('Failed to parse stored reader comic overrides:', error);
+            return {};
+        }
+    }
+
+    function getGlobalReaderPreference(settingName) {
+        const config = COMIC_OVERRIDE_SETTINGS[settingName];
+        if (!config) {
+            throw new Error(`Unsupported comic override setting: ${settingName}`);
+        }
+
+        return localStorage.getItem(config.storageKey) || config.fallback;
+    }
+
+    function getStoredReaderPreference(reader, settingName) {
+        const comicOverrides = loadComicOverrides();
+        const comicOverride = comicOverrides[String(reader.comicId)];
+
+        if (comicOverride && typeof comicOverride === 'object' && comicOverride[settingName]) {
+            return comicOverride[settingName];
+        }
+
+        return getGlobalReaderPreference(settingName);
+    }
+
+    function persistComicOverridePreference(reader, settingName, value) {
+        const defaultValue = getGlobalReaderPreference(settingName);
+        const comicOverrides = loadComicOverrides();
+        const comicKey = String(reader.comicId);
+        const nextComicOverride = { ...(comicOverrides[comicKey] || {}) };
+
+        if (value === defaultValue) {
+            delete nextComicOverride[settingName];
+        } else {
+            nextComicOverride[settingName] = value;
+        }
+
+        if (Object.keys(nextComicOverride).length === 0) {
+            delete comicOverrides[comicKey];
+        } else {
+            comicOverrides[comicKey] = nextComicOverride;
+        }
+
+        persistJsonPreference(STORAGE_KEYS.comicOverrides, comicOverrides);
     }
 
     function buildReaderState(comicId) {
@@ -84,9 +160,9 @@
     }
 
     function applyStoredReaderSettings(reader) {
-        reader.readingMode = localStorage.getItem(STORAGE_KEYS.readingMode) || 'paged';
-        reader.viewMode = localStorage.getItem(STORAGE_KEYS.viewMode) || 'single';
-        reader.readDirection = localStorage.getItem(STORAGE_KEYS.readDirection) || 'ltr';
+        reader.readingMode = getStoredReaderPreference(reader, 'readingMode');
+        reader.viewMode = getStoredReaderPreference(reader, 'viewMode');
+        reader.readDirection = getStoredReaderPreference(reader, 'readDirection');
         reader.fitMode = localStorage.getItem(STORAGE_KEYS.fitMode) || 'contain';
         reader.doublePageOffset = loadBooleanPreference(STORAGE_KEYS.doublePageOffset, true);
         reader.showSpineShadow = loadBooleanPreference(STORAGE_KEYS.showSpineShadow, true);
@@ -107,7 +183,7 @@
 
         reader.$watch('filters', (value) => persistJsonPreference(STORAGE_KEYS.filters, value));
         reader.$watch('readingMode', (value) => {
-            localStorage.setItem(STORAGE_KEYS.readingMode, value);
+            persistComicOverridePreference(reader, 'readingMode', value);
 
             reader.$nextTick(() => {
                 if (value === 'scroll') {
@@ -118,8 +194,8 @@
                 reader.focusReader();
             });
         });
-        reader.$watch('viewMode', (value) => localStorage.setItem(STORAGE_KEYS.viewMode, value));
-        reader.$watch('readDirection', (value) => localStorage.setItem(STORAGE_KEYS.readDirection, value));
+        reader.$watch('viewMode', (value) => persistComicOverridePreference(reader, 'viewMode', value));
+        reader.$watch('readDirection', (value) => persistComicOverridePreference(reader, 'readDirection', value));
         reader.$watch('fitMode', (value) => localStorage.setItem(STORAGE_KEYS.fitMode, value));
         reader.$watch('doublePageOffset', (value) => persistJsonPreference(STORAGE_KEYS.doublePageOffset, value));
         reader.$watch('showSpineShadow', (value) => persistJsonPreference(STORAGE_KEYS.showSpineShadow, value));

@@ -162,6 +162,60 @@ def test_reader_double_page_mode_advances_as_spreads(page, browser_server):
 
 
 @pytest.mark.browser
+def test_reader_double_page_mode_persists_per_comic_without_leaking_to_other_books(page, browser_server):
+    seed = browser_server["seed"]
+    active_reader_url = f"{browser_server['base_url']}/reader/{seed['active_comic_id']}"
+    in_progress_reader_url = f"{browser_server['base_url']}/reader/{seed['in_progress_comic_id']}"
+
+    page.goto(active_reader_url, wait_until="networkidle")
+
+    page.wait_for_selector(".reader-container")
+    page.locator(".nav-zone.center").click()
+    page.locator("button[title='Settings']").click()
+    page.locator("label:text('Double Page (d)')").locator("..").get_by_role("button").click()
+    page.wait_for_timeout(250)
+
+    page.wait_for_function(
+        """
+        () => {
+            const reader = document.querySelector('.reader-container');
+            const state = reader?._x_dataStack?.[0];
+            return state?.viewMode === 'double'
+                && !reader?.classList.contains('scroll-mode')
+                && document.querySelectorAll('img.reader-page').length === 1;
+        }
+        """
+    )
+
+    page.reload(wait_until="networkidle")
+    page.wait_for_function(
+        """
+        () => {
+            const reader = document.querySelector('.reader-container');
+            const state = reader?._x_dataStack?.[0];
+            return state?.viewMode === 'double'
+                && !reader?.classList.contains('scroll-mode')
+                && document.querySelectorAll('img.reader-page').length === 1;
+        }
+        """
+    )
+
+    page.goto(in_progress_reader_url, wait_until="networkidle")
+    page.wait_for_selector(".reader-container")
+    page.wait_for_function(
+        """
+        () => {
+            const reader = document.querySelector('.reader-container');
+            const state = reader?._x_dataStack?.[0];
+            return state?.viewMode === 'single'
+                && !reader?.classList.contains('scroll-mode')
+                && document.querySelectorAll('img.reader-page').length > 0;
+        }
+        """
+    )
+
+
+@pytest.mark.browser
 def test_reader_manga_mode_inverts_zone_navigation(page, browser_server):
     seed = browser_server["seed"]
     page.goto(f"{browser_server['base_url']}/reader/{seed['active_comic_id']}", wait_until="networkidle")
@@ -190,6 +244,58 @@ def test_reader_manga_mode_inverts_zone_navigation(page, browser_server):
     page.wait_for_timeout(300)
     current_page_text = page.locator(".reader-controls .text-white.font-bold").first.text_content()
     assert current_page_text == "1"
+
+
+@pytest.mark.browser
+def test_reader_manga_mode_persists_per_comic_without_leaking_to_other_books(page, browser_server):
+    seed = browser_server["seed"]
+    active_reader_url = f"{browser_server['base_url']}/reader/{seed['active_comic_id']}"
+    in_progress_reader_url = f"{browser_server['base_url']}/reader/{seed['in_progress_comic_id']}"
+
+    page.goto(active_reader_url, wait_until="networkidle")
+
+    page.wait_for_selector(".reader-container")
+    page.locator(".nav-zone.center").click()
+    page.locator("button[title='Settings']").click()
+    page.locator("label:text('Manga Mode (m)')").locator("..").get_by_role("button").click()
+    page.wait_for_timeout(250)
+
+    page.wait_for_function(
+        """
+        () => {
+            const reader = document.querySelector('.reader-container');
+            const state = reader?._x_dataStack?.[0];
+            return state?.readDirection === 'rtl' && !reader?.classList.contains('scroll-mode');
+        }
+        """
+    )
+
+    page.reload(wait_until="networkidle")
+    page.wait_for_function(
+        """
+        () => {
+            const reader = document.querySelector('.reader-container');
+            const state = reader?._x_dataStack?.[0];
+            return state?.readDirection === 'rtl'
+                && !reader?.classList.contains('scroll-mode')
+                && document.querySelectorAll('img.reader-page').length > 0;
+        }
+        """
+    )
+
+    page.goto(in_progress_reader_url, wait_until="networkidle")
+    page.wait_for_selector(".reader-container")
+    page.wait_for_function(
+        """
+        () => {
+            const reader = document.querySelector('.reader-container');
+            const state = reader?._x_dataStack?.[0];
+            return state?.readDirection === 'ltr'
+                && !reader?.classList.contains('scroll-mode')
+                && document.querySelectorAll('img.reader-page').length > 0;
+        }
+        """
+    )
 
 
 @pytest.mark.browser
@@ -322,6 +428,61 @@ def test_reader_long_view_toggle_tracks_scroll_progress_and_persists_mode(page, 
                 && state?.readingMode === 'scroll'
                 && state?.meta?.page_count > 0
                 && document.querySelectorAll('[data-scroll-page-index]').length > 0;
+        }
+        """
+    )
+
+
+@pytest.mark.browser
+def test_reader_long_view_mode_persists_per_comic_without_leaking_to_other_books(page, browser_server):
+    seed = browser_server["seed"]
+    active_reader_url = f"{browser_server['base_url']}/reader/{seed['active_comic_id']}"
+    in_progress_reader_url = f"{browser_server['base_url']}/reader/{seed['in_progress_comic_id']}"
+
+    page.goto(active_reader_url, wait_until="networkidle")
+
+    page.wait_for_selector(".reader-container")
+    page.locator(".nav-zone.center").click()
+    page.locator("button[title='Settings']").click()
+    page.get_by_role("button", name="Long View").click()
+
+    page.wait_for_function(
+        """
+        () => {
+            const reader = document.querySelector('.reader-container');
+            const state = reader?._x_dataStack?.[0];
+            return reader?.classList.contains('scroll-mode')
+                && state?.readingMode === 'scroll'
+                && state?.meta?.page_count > 0
+                && document.querySelectorAll('[data-scroll-page-index]').length > 0;
+        }
+        """
+    )
+
+    page.reload(wait_until="networkidle")
+    page.wait_for_function(
+        """
+        () => {
+            const reader = document.querySelector('.reader-container');
+            const state = reader?._x_dataStack?.[0];
+            return reader?.classList.contains('scroll-mode')
+                && state?.readingMode === 'scroll'
+                && state?.meta?.page_count > 0
+                && document.querySelectorAll('[data-scroll-page-index]').length > 0;
+        }
+        """
+    )
+
+    page.goto(in_progress_reader_url, wait_until="networkidle")
+    page.wait_for_selector(".reader-container")
+    page.wait_for_function(
+        """
+        () => {
+            const reader = document.querySelector('.reader-container');
+            const state = reader?._x_dataStack?.[0];
+            return !reader?.classList.contains('scroll-mode')
+                && state?.readingMode === 'paged'
+                && document.querySelectorAll('img.reader-page').length > 0;
         }
         """
     )
