@@ -71,7 +71,7 @@ class ComicArchive:
     def get_pages(self) -> List[str]:
         """Get sorted list of image files (pages) - filter out non-images"""
         # Valid image extensions
-        image_extensions = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff', '.jxl'}
+        image_extensions = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff', '.jxl', '.avif'}
 
         # Files to explicitly ignore (common in comic archives)
         ignore_patterns = {'thumbs.db', '.ds_store', 'comicinfo.xml', '__macosx'}

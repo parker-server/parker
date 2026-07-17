@@ -354,6 +354,7 @@ def get_comic_page(
     if not webp and mime_type == "image/png": extension = "png"
     if not webp and mime_type == "image/gif": extension = "gif"
     if not webp and mime_type == "image/jxl": extension = "jxl"
+    if not webp and mime_type == "image/avif": extension = "avif"
 
     # CACHE LOGIC
     headers = {
