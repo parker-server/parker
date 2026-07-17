@@ -46,6 +46,15 @@ def _write_jxl_page(path: Path, accent: tuple[int, int, int]) -> None:
     image.save(path, format="JXL")
 
 
+def _write_avif_page(path: Path, accent: tuple[int, int, int]) -> None:
+    image = Image.new("RGB", (48, 72), (245, 245, 245))
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((0, 0, 47, 23), fill=accent)
+    draw.rectangle((0, 24, 47, 47), fill=(48, 84, 160))
+    draw.rectangle((0, 48, 47, 71), fill=(200, 64, 112))
+    image.save(path, format="AVIF")
+
+
 def _build_jxl_cbz(tmp_path: Path) -> Path:
     first_page = tmp_path / "01_cover.jxl"
     second_page = tmp_path / "02_story.jxl"
@@ -53,6 +62,21 @@ def _build_jxl_cbz(tmp_path: Path) -> Path:
 
     _write_jxl_page(first_page, (24, 160, 96))
     _write_jxl_page(second_page, (192, 120, 32))
+
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.write(first_page, arcname=first_page.name)
+        archive.write(second_page, arcname=second_page.name)
+
+    return archive_path
+
+
+def _build_avif_cbz(tmp_path: Path) -> Path:
+    first_page = tmp_path / "01_cover.avif"
+    second_page = tmp_path / "02_story.avif"
+    archive_path = tmp_path / "sample-avif.cbz"
+
+    _write_avif_page(first_page, (16, 148, 92))
+    _write_avif_page(second_page, (176, 112, 40))
 
     with zipfile.ZipFile(archive_path, "w") as archive:
         archive.write(first_page, arcname=first_page.name)
@@ -294,6 +318,13 @@ def test_reader_page_endpoint_headers_and_errors(client, db):
     assert jxl.headers["content-disposition"] == 'inline; filename="page_6.jxl"'
     assert jxl.headers["content-type"].startswith("image/jxl")
 
+    with patch("app.api.reader.ImageService.get_page_image", return_value=(b"avif-bytes", True, "image/avif")):
+        avif = client.get(f"/api/reader/{comic.id}/page/7")
+
+    assert avif.status_code == 200
+    assert avif.headers["content-disposition"] == 'inline; filename="page_7.avif"'
+    assert avif.headers["content-type"].startswith("image/avif")
+
     with patch("app.api.reader.ImageService.get_page_image", return_value=(None, False, "image/jpeg")):
         no_page = client.get(f"/api/reader/{comic.id}/page/5")
 
@@ -319,4 +350,25 @@ def test_reader_page_endpoint_serves_real_jxl_archive_page(client, db, tmp_path)
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("image/jxl")
     assert response.headers["content-disposition"] == 'inline; filename="page_0.jxl"'
+    assert len(response.content) > 0
+
+
+def test_reader_page_endpoint_serves_real_avif_archive_page(client, db, tmp_path):
+    library, _, volume = _create_graph(db, lib_name="reader-avif-lib", series_name="Reader AVIF")
+    archive_path = _build_avif_cbz(tmp_path)
+    comic = _add_comic(
+        db,
+        volume,
+        number="1",
+        title="AVIF Archive Comic",
+        file_path=str(archive_path),
+    )
+    db.add(library)
+    db.commit()
+
+    response = client.get(f"/api/reader/{comic.id}/page/0")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("image/avif")
+    assert response.headers["content-disposition"] == 'inline; filename="page_0.avif"'
     assert len(response.content) > 0

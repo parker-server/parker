@@ -127,6 +127,7 @@ class ImageService:
                 elif filename.endswith(".webp"): mime_type = "image/webp"
                 elif filename.endswith(".gif"): mime_type = "image/gif"
                 elif filename.endswith(".jxl"): mime_type = "image/jxl"
+                elif filename.endswith(".avif"): mime_type = "image/avif"
 
                 # Logic: Should we Transcode?
                 # Only if requested AND image is large (>500KB) AND not already WebP
