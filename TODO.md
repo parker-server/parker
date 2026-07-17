@@ -15,12 +15,6 @@ This file captures follow-up work that should not get lost between releases.
   Candidate direction: Start with a bounded scroll area and/or lightweight client-side filtering in the search load menu, then revisit whether the dashboard table needs search, sorting, or pagination based on real usage.
   Guardrail: Treat this as a usage-driven UX refinement, not a release-blocking task, unless real list counts or complaints show the current UI is straining.
 
-- Revisit frontend route-map generation in `app/core/utils.py`.
-  Context: FastAPI `0.137.0` changed `router.routes` from a flat list into a tree of intermediate objects, and the release notes explicitly warn that code iterating `router.routes` directly will be affected.
-  Current state: Parker ships a compatibility fix that walks the newer wrapped route structure and is covered by focused regression tests.
-  Follow-up goal: Refactor the route-map helper to rely on the most stable/public FastAPI mechanism available instead of depending on wrapper internals like `original_router` and `include_context`.
-  Candidate direction: Evaluate newer FastAPI route-context helpers such as `iter_route_contexts()` and confirm the best supported approach for nested routers and frontend route discovery.
-
 - Expand the admin diagnostics support snapshot after it has seen a few real support incidents.
   Context: The current snapshot is intentionally lean and already covers startup status, runtime mode, database path/sizes, counts, configured-library samples, and the comics-path probe.
   Follow-up goal: Only add more fields if they repeatedly save support back-and-forth in real reports.
