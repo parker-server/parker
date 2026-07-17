@@ -205,7 +205,12 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
-        close() {
+        close(immediate = false) {
+            if (immediate) {
+                this.isOpen = false;
+                return;
+            }
+
             setTimeout(() => { this.isOpen = false; }, 200);
         }
     }));

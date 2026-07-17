@@ -577,14 +577,14 @@
             </div>
         </div>
 
-        <!-- Right Sidebar: OPDS + Pull Lists -->
+        <!-- Right Sidebar: OPDS + Stacks -->
         <div class="space-y-6">
 
-            <!-- Pull Lists -->
+            <!-- Stacks -->
             <div>
                 <div class="flex justify-between items-center mb-4">
                     <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                        <span>🗃️</span> My Pull Lists
+                        <span>🗃️</span> My Stacks
                     </h2>
                     <a :href="window.parker.route('pages.pull_lists')" class="text-xs text-blue-400 hover:text-white">View All</a>
                 </div>
@@ -600,7 +600,7 @@
                     </template>
 
                     <button x-on:click="window.location.href=window.parker.route('pages.pull_lists')" class="w-full py-3 border border-gray-700 border-dashed rounded-lg text-gray-500 hover:text-white hover:border-gray-500 hover:bg-gray-800/50 transition-all text-sm">
-                        + Create New List
+                        + Create New Stack
                     </button>
                 </div>
             </div>

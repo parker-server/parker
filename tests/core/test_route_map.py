@@ -1,5 +1,3 @@
-from types import SimpleNamespace
-
 from fastapi import APIRouter, FastAPI
 
 from app.core.utils import get_route_map
@@ -38,27 +36,25 @@ def test_get_route_map_uses_flattened_routes():
     assert admin_route_map["admin"]["reports"] == "/admin/reports"
 
 
-def test_get_route_map_supports_included_router_wrappers():
-    router = APIRouter()
+def test_get_route_map_supports_nested_included_routers():
+    home_router = APIRouter()
+    discovery_router = APIRouter()
 
-    @router.get("/random", name="random_gems")
+    @discovery_router.get("/random", name="random_gems")
     def random_gems():
         return []
 
-    @router.get("/parker-rated", name="top_parker_rated")
+    @discovery_router.get("/parker-rated", name="top_parker_rated")
     def top_parker_rated():
         return []
 
-    @router.get("/trending", name="trending")
+    @discovery_router.get("/trending", name="trending")
     def trending():
         return []
 
-    wrapped_router = SimpleNamespace(
-        original_router=router,
-        include_context=SimpleNamespace(prefix="/api/home", tags=["home"]),
-    )
-
-    app = SimpleNamespace(routes=[wrapped_router])
+    home_router.include_router(discovery_router)
+    app = FastAPI()
+    app.include_router(home_router, prefix="/api/home", tags=["home"])
 
     route_map = get_route_map(app)
 

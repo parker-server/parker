@@ -5,7 +5,7 @@
             type="search"
             x-model="query"
             @input.debounce.300ms="fetchResults()"
-            @keydown.escape="close()"
+            @keydown.escape.prevent.stop="close(true)"
             x-on:click.away="close()"
             x-on:focus="isOpen = query.length > 1"
             placeholder="Search library... (Ctrl+K)"
@@ -117,7 +117,7 @@
 
         <template x-if="results.pull_lists?.length > 0">
             <div>
-                <div class="px-4 py-2 bg-gray-900/50 text-xs font-bold text-gray-400 uppercase tracking-wider sticky top-0 backdrop-blur-sm">Pull Lists</div>
+                <div class="px-4 py-2 bg-gray-900/50 text-xs font-bold text-gray-400 uppercase tracking-wider sticky top-0 backdrop-blur-sm">Stacks</div>
                 <template x-for="item in results.pull_lists" :key="item.id">
                     <a :href="window.parker.route('pages.pull_list_detail', { list_id: item.id })" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
                         <span class="text-xl group-hover:scale-110 transition-transform">🗃️</span>

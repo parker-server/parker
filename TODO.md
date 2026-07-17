@@ -4,12 +4,6 @@ This file captures follow-up work that should not get lost between releases.
 
 ## Technical Debt
 
-- Modularize the reader before adding materially different reading modes.
-  Context: `app/templates/reader.html` has grown into a large all-in-one template that currently mixes paged layout, RTL/LTR behavior, spread logic, swipe handling, controls, and progress wiring in one place.
-  Impetus: The archived vertical-scroll compatibility investigation in `docs/archived-vertical-scroll-scope.md` highlighted that a future tall-page / long-strip reader mode would be much cleaner if the reader were split into shared and mode-specific pieces first.
-  Follow-up goal: Refactor the reader into a thinner shared shell plus modular paged/scroll-oriented partials or components so future reader work does not keep accumulating in one template.
-  Candidate direction: Keep the existing `/reader/{comic_id}` route, preserve shared archive/progress plumbing where possible, and split the template/JS by interaction model rather than forcing additional conditional branches into the current monolith.
-
 - Keep an eye on pull list detail page scale before it becomes a usability problem.
   Context: `app/templates/pull_lists/detail.html` currently renders a full list in one view, which is fine for normal pull-list sizes and likely more important to watch than the pull-list index page.
   Follow-up goal: If real users start building unusually large pull lists, consider pagination, filtering, or virtualization for list contents before the detail view becomes heavy to use.
@@ -20,12 +14,6 @@ This file captures follow-up work that should not get lost between releases.
   Follow-up goal: If users start accumulating enough smart filters that discovery or loading becomes awkward, improve those surfaces before adding heavier API pagination.
   Candidate direction: Start with a bounded scroll area and/or lightweight client-side filtering in the search load menu, then revisit whether the dashboard table needs search, sorting, or pagination based on real usage.
   Guardrail: Treat this as a usage-driven UX refinement, not a release-blocking task, unless real list counts or complaints show the current UI is straining.
-
-- Revisit frontend route-map generation in `app/core/utils.py`.
-  Context: FastAPI `0.137.0` changed `router.routes` from a flat list into a tree of intermediate objects, and the release notes explicitly warn that code iterating `router.routes` directly will be affected.
-  Current state: Parker ships a compatibility fix that walks the newer wrapped route structure and is covered by focused regression tests.
-  Follow-up goal: Refactor the route-map helper to rely on the most stable/public FastAPI mechanism available instead of depending on wrapper internals like `original_router` and `include_context`.
-  Candidate direction: Evaluate newer FastAPI route-context helpers such as `iter_route_contexts()` and confirm the best supported approach for nested routers and frontend route discovery.
 
 - Expand the admin diagnostics support snapshot after it has seen a few real support incidents.
   Context: The current snapshot is intentionally lean and already covers startup status, runtime mode, database path/sizes, counts, configured-library samples, and the comics-path probe.

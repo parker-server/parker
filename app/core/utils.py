@@ -1,38 +1,19 @@
-from fastapi.routing import APIRoute
+from fastapi.routing import iter_route_contexts
 
 
 def _normalize_route_key(value: str) -> str:
     return value.replace("-", "_")
 
 
-def _join_paths(prefix: str, path: str) -> str:
-    if not prefix:
-        return path or "/"
-    if not path or path == "/":
-        return prefix
-    return f"{prefix.rstrip('/')}/{path.lstrip('/')}"
+def _normalize_route_path(path: str | None) -> str:
+    if not path:
+        return "/"
+    if path != "/":
+        return path.rstrip("/")
+    return path
 
 
-def _iter_api_routes(routes, inherited_prefix: str = "", inherited_tags=None):
-    inherited_tags = list(inherited_tags or [])
-
-    for route in routes:
-        if isinstance(route, APIRoute):
-            yield route, inherited_prefix, inherited_tags + list(getattr(route, "tags", []) or [])
-            continue
-
-        original_router = getattr(route, "original_router", None)
-        include_context = getattr(route, "include_context", None)
-        if original_router is None or include_context is None:
-            continue
-
-        child_prefix = _join_paths(inherited_prefix, getattr(include_context, "prefix", "") or "")
-        child_tags = inherited_tags + list(getattr(include_context, "tags", []) or [])
-
-        yield from _iter_api_routes(original_router.routes, child_prefix, child_tags)
-
-
-def _get_route_namespace(route: APIRoute, tags: list[str], route_path: str) -> str:
+def _get_route_namespace(route, tags: list[str], route_path: str) -> str:
     non_admin_tags = [tag for tag in tags if tag != "admin"]
     if non_admin_tags:
         return non_admin_tags[0]
@@ -63,17 +44,19 @@ def get_route_map(app, with_admin_routes: bool = False):
     route_map = {}
     flat_candidates = {}
 
-    for route, prefix, tags in _iter_api_routes(app.routes):
-        if not route.name:
+    for route_context in iter_route_contexts(app.routes):
+        if not route_context.name:
             continue
 
-        normalized_tags = [_normalize_route_key(tag) for tag in tags if tag]
+        normalized_tags = [
+            _normalize_route_key(tag) for tag in (getattr(route_context, "tags", []) or []) if tag
+        ]
         if not with_admin_routes and "admin" in normalized_tags:
             continue
 
-        route_name = _normalize_route_key(route.name)
-        route_path = _join_paths(prefix, route.path)
-        namespace = _get_route_namespace(route, normalized_tags, route_path)
+        route_name = _normalize_route_key(route_context.name)
+        route_path = _normalize_route_path(route_context.path)
+        namespace = _get_route_namespace(route_context, normalized_tags, route_path)
 
         route_map.setdefault(namespace, {})[route_name] = route_path
 

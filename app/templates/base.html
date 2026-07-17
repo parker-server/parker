@@ -126,7 +126,7 @@
                     <div class="flex items-center border-l border-gray-700 pl-3 ml-1">
                         <template x-if="localStorage.getItem('token')">
                             <button
-                                x-on:click="localStorage.removeItem('token'); window.location.href = window.parker.route('pages.login');"
+                                x-on:click="localStorage.removeItem('token'); localStorage.removeItem('refresh_token'); document.cookie = 'access_token=; path=/; max-age=0; SameSite=Lax'; window.location.href = window.parker.route('pages.login');"
                                 class="text-sm font-medium text-gray-400 hover:text-white transition-colors"
                             >
                                 Logout

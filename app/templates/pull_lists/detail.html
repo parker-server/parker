@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Pull List Details - Parker{% endblock %}
+{% block title %}Stack Details - Parker{% endblock %}
 
 {% block extra_head %}
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
@@ -16,7 +16,7 @@
     
     <div class="mb-8">
         <div class="flex items-center space-x-2 text-gray-400 mb-4 text-sm">
-            <a :href="window.parker.route('pages.pull_lists')" class="hover:text-white">Pull Lists</a>
+            <a :href="window.parker.route('pages.pull_lists')" class="hover:text-white">Stacks</a>
             <span>/</span>
             <span class="text-white" x-text="list?.name"></span>
         </div>
@@ -24,7 +24,7 @@
         <div class="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 bg-gray-800 p-6 rounded-lg border border-gray-700 shadow-lg">
             <div>
                 <h1 class="text-4xl font-bold text-white mb-2" x-text="list?.name"></h1>
-                <p class="text-gray-400" x-text="list?.description || 'Curated reading list'"></p>
+                <p class="text-gray-400" x-text="list?.description || 'Curated reading stack'"></p>
                 <div class="mt-4 text-sm text-gray-500">
                     <span x-text="list?.items?.length || 0"></span> items
                 </div>
@@ -46,7 +46,7 @@
                     </svg>
                 </a>
 
-                <button x-on:click="openEditModal()" class="bg-gray-700 hover:bg-gray-600 text-white p-3 rounded-full transition-colors" title="Edit List Details">
+                <button x-on:click="openEditModal()" class="bg-gray-700 hover:bg-gray-600 text-white p-3 rounded-full transition-colors" title="Edit Stack Details">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                     </svg>
@@ -115,7 +115,7 @@
         </template>
 
         <div x-show="list?.items?.length === 0" class="text-center py-12 text-gray-500 bg-gray-800 rounded border border-gray-700 border-dashed">
-            List is empty. Go browse and add some comics!
+            Stack is empty. Go browse and add some comics!
         </div>
     </div>
     </div>
@@ -141,7 +141,7 @@
          x-transition:leave="transition ease-in duration-100" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"
          @click.self="showEditModal = false">
          <div class="bg-gray-800 border border-gray-700 p-6 rounded-lg shadow-2xl w-full max-w-md">
-            <h3 class="text-white font-bold text-xl mb-6">Edit List</h3>
+            <h3 class="text-white font-bold text-xl mb-6">Edit Stack</h3>
             <div class="space-y-4">
                 <input x-ref="editNameInput" type="text" x-model="editName" class="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" @keydown.enter="submitEdit()">
                 <input type="text" x-model="editDesc" class="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" @keydown.enter="submitEdit()">
@@ -227,7 +227,7 @@ function pullListDetail() {
         async askRemoveItem(comicId) {
             const confirmed = await window.parker.dialog.confirm(
                 'Remove Item?',
-                'Are you sure you want to remove this comic from the list?',
+                'Are you sure you want to remove this comic from the stack?',
                 { isDestructive: true, confirmText: 'Remove' }
             );
 
@@ -275,7 +275,7 @@ function pullListDetail() {
                     this.list.description = updated.description;
                     this.showEditModal = false;
 
-                    if(window.parker) window.parker.showToast('List updated', 'success');
+                    if(window.parker) window.parker.showToast('Stack updated', 'success');
                 }
             } catch(e) { console.error(e); }
         }

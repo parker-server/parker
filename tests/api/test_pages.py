@@ -133,6 +133,16 @@ def test_continue_reading_page_exposes_pagination_controls(auth_client):
     assert "Page <span class=\"text-white font-bold\" x-text=\"page\"></span> of" in body
 
 
+def test_reader_page_uses_modular_reader_shell(auth_client):
+    response = auth_client.get("/reader/123")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "window.createReader({ comicId: 123 })" in body
+    assert "/static/js/reader.js" in body
+    assert 'x-on:click="toggleViewMode()"' in body
+
+
 def test_user_settings_page_renders_for_authenticated_user(auth_client):
     response = auth_client.get("/user/settings")
 

@@ -1,6 +1,6 @@
 # Parker Comic Server
 
-Parker is a self‑hosted media server for comic books (CBZ/CBR). It follows a **“Filesystem is Truth”** philosophy, parsing metadata directly from `ComicInfo.xml` inside archives. Parker is currently at **Version 0.1.20 (Stable)**.
+Parker is a self‑hosted media server for comic books (CBZ/CBR). It follows a **“Filesystem is Truth”** philosophy, parsing metadata directly from `ComicInfo.xml` inside archives. Parker is currently at **Version 0.1.21 (Stable)**.
 
 https://github.com/parker-server/parker/wiki/Getting-Started
 
@@ -11,7 +11,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
 - **Library Management**
   - Hierarchy: `Library → Series → Volume → Comic`
   - Rich metadata (credits, tags, page counts, colors)
-  - Reading Lists, Collections, Story Arcs, Pull Lists, Smart Lists
+  - Reading Lists, Collections, Story Arcs, Stacks, Smart Lists
 
 - **User System**
   - Multi‑library access with row‑level security
@@ -96,7 +96,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
 ## 📊 Data Model
 
 - Libraries, Series, Volumes, Comics
-- Collections, Reading Lists, Pull Lists, Smart Lists
+- Collections, Reading Lists, Stacks, Smart Lists
 - User access control
 - Batch operations (mark read/unread, add to lists)
 
@@ -156,3 +156,4 @@ Please check the issues list for open tasks, or propose new features via pull re
 
 ## 📜 License
 MIT License
+
