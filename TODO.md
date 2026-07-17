@@ -34,3 +34,9 @@ This file captures follow-up work that should not get lost between releases.
   Context: `user_volume_follows` rows currently remain persisted even if a user's library access or age-rating settings later hide that volume from all user-facing follow surfaces.
   Current behavior: The follow is filtered out of the `Following` page, the `New from Following` home rail, and direct volume access checks, but the row is not pruned automatically.
   Follow-up goal: Confirm whether Parker should keep this hidden-and-persisted behavior, surface inaccessible follows in a disabled state, or automatically prune them after some explicit rule.
+
+- Design support for multi-root libraries.
+  Context: Parker currently assumes one configured filesystem root per library, but some users may want a single logical library to aggregate comics from multiple folder locations across disks, shares, or staged/import storage.
+  Scope risk: This is likely a medium-to-large architectural change rather than a simple admin-form enhancement because it would affect the data model, scanning, file watching, duplicate handling, library stats, and background-job fairness assumptions.
+  Follow-up goal: Define whether Parker should support multiple roots under one library, how root-level failures and duplicate files should be handled, and what scanner/watcher changes would be required before implementation work begins.
+  Design note: `docs/multi-root-library-scope.md`
