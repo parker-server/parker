@@ -1,4 +1,40 @@
 import pytest
+from datetime import timedelta
+from sqlalchemy import select
+
+from app.models.comic import Comic
+from app.models.interactions import UserVolumeFollow
+
+
+def _insert_following_arrival(browser_server):
+    seed = browser_server["seed"]
+    session = browser_server["db_factory"]()
+    try:
+        follow = session.scalar(
+            select(UserVolumeFollow).where(
+                UserVolumeFollow.user_id == seed["user_id"],
+                UserVolumeFollow.volume_id == seed["volume_id"],
+            )
+        )
+        assert follow is not None
+
+        new_issue = Comic(
+            volume_id=seed["volume_id"],
+            number="4",
+            title="Smoke Future Shock",
+            year=2026,
+            page_count=3,
+            created_at=follow.followed_at + timedelta(minutes=1),
+            updated_at=follow.followed_at + timedelta(minutes=1),
+            filename="smoke-future-shock.cbz",
+            file_path="/tmp/smoke-future-shock.cbz",
+        )
+        session.add(new_issue)
+        session.commit()
+        session.refresh(new_issue)
+        return new_issue.id, new_issue.title
+    finally:
+        session.close()
 
 
 @pytest.mark.browser
@@ -73,3 +109,35 @@ def test_dashboard_following_page_can_unfollow_volume(page, browser_server):
 
     page.wait_for_selector("text=Nothing followed yet")
     assert page.locator(f"text={seed['series_name']}").count() == 0
+
+
+@pytest.mark.browser
+def test_home_following_arrival_appears_after_import_and_clears_after_reading(page, browser_server):
+    seed = browser_server["seed"]
+
+    page.goto(f"{browser_server['base_url']}/volumes/{seed['volume_id']}", wait_until="networkidle")
+    page.get_by_role("button", name="Follow").click()
+    page.get_by_role("button", name="Following").wait_for()
+
+    page.goto(f"{browser_server['base_url']}/", wait_until="networkidle")
+    assert page.get_by_role("heading", name="New from Following").count() == 0
+
+    new_issue_id, new_issue_title = _insert_following_arrival(browser_server)
+
+    page.reload(wait_until="networkidle")
+    rail = page.locator("div").filter(has=page.get_by_role("heading", name="New from Following")).first
+    page.get_by_role("heading", name="New from Following").wait_for()
+    rail.locator(f"text={new_issue_title}").first.wait_for()
+
+    rail.locator(f'a[href*="/reader/{new_issue_id}"]').first.click()
+    page.wait_for_url(f"**/reader/{new_issue_id}")
+    page.locator(".reader-container").wait_for()
+    page.keyboard.press("ArrowRight")
+    page.wait_for_timeout(300)
+
+    page.goto(f"{browser_server['base_url']}/", wait_until="networkidle")
+    assert page.get_by_role("heading", name="New from Following").count() == 0
+
+    resume_rail = page.locator("div").filter(has=page.get_by_role("heading", name="Jump Back In")).first
+    page.get_by_role("heading", name="Jump Back In").wait_for()
+    resume_rail.locator(f"text={new_issue_title}").first.wait_for()
