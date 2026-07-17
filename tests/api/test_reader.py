@@ -1,4 +1,9 @@
+import zipfile
+from pathlib import Path
 from unittest.mock import patch
+
+import app  # noqa: F401  # Ensure optional Pillow codecs register before creating fixtures.
+from PIL import Image, ImageDraw
 
 from app.api.reader import natural_sort_key
 from app.models.collection import Collection, CollectionItem
@@ -19,17 +24,41 @@ def _create_graph(db, *, lib_name: str, series_name: str, volume_number: int = 1
 
 
 def _add_comic(db, volume: Volume, *, number: str, title: str, **kwargs):
+    kwargs.setdefault("filename", f"{title.replace(' ', '-')}.cbz")
+    kwargs.setdefault("file_path", f"/tmp/{title.replace(' ', '-')}-{volume.id}-{number}.cbz")
     comic = Comic(
         volume_id=volume.id,
         number=number,
         title=title,
-        filename=f"{title.replace(' ', '-')}.cbz",
-        file_path=f"/tmp/{title.replace(' ', '-')}-{volume.id}-{number}.cbz",
         **kwargs,
     )
     db.add(comic)
     db.flush()
     return comic
+
+
+def _write_jxl_page(path: Path, accent: tuple[int, int, int]) -> None:
+    image = Image.new("RGB", (48, 72), (245, 245, 245))
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((0, 0, 47, 23), fill=accent)
+    draw.rectangle((0, 24, 47, 47), fill=(32, 64, 128))
+    draw.rectangle((0, 48, 47, 71), fill=(220, 80, 80))
+    image.save(path, format="JXL")
+
+
+def _build_jxl_cbz(tmp_path: Path) -> Path:
+    first_page = tmp_path / "01_cover.jxl"
+    second_page = tmp_path / "02_story.jxl"
+    archive_path = tmp_path / "sample-jxl.cbz"
+
+    _write_jxl_page(first_page, (24, 160, 96))
+    _write_jxl_page(second_page, (192, 120, 32))
+
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.write(first_page, arcname=first_page.name)
+        archive.write(second_page, arcname=second_page.name)
+
+    return archive_path
 
 
 def test_reader_natural_sort_key():
@@ -256,9 +285,38 @@ def test_reader_page_endpoint_headers_and_errors(client, db):
 
     assert webp.status_code == 200
     assert webp.headers["content-disposition"] == 'inline; filename="page_4.webp"'
+    assert webp.headers["content-type"].startswith("image/webp")
+
+    with patch("app.api.reader.ImageService.get_page_image", return_value=(b"jxl-bytes", True, "image/jxl")):
+        jxl = client.get(f"/api/reader/{comic.id}/page/6")
+
+    assert jxl.status_code == 200
+    assert jxl.headers["content-disposition"] == 'inline; filename="page_6.jxl"'
+    assert jxl.headers["content-type"].startswith("image/jxl")
 
     with patch("app.api.reader.ImageService.get_page_image", return_value=(None, False, "image/jpeg")):
         no_page = client.get(f"/api/reader/{comic.id}/page/5")
 
     assert no_page.status_code == 404
     assert no_page.json() == {"detail": "Page not found"}
+
+
+def test_reader_page_endpoint_serves_real_jxl_archive_page(client, db, tmp_path):
+    library, _, volume = _create_graph(db, lib_name="reader-jxl-lib", series_name="Reader JXL")
+    archive_path = _build_jxl_cbz(tmp_path)
+    comic = _add_comic(
+        db,
+        volume,
+        number="1",
+        title="JXL Archive Comic",
+        file_path=str(archive_path),
+    )
+    db.add(library)
+    db.commit()
+
+    response = client.get(f"/api/reader/{comic.id}/page/0")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("image/jxl")
+    assert response.headers["content-disposition"] == 'inline; filename="page_0.jxl"'
+    assert len(response.content) > 0

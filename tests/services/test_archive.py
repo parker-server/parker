@@ -12,6 +12,7 @@ def test_comic_archive_get_pages_filtering():
             "01.jpg",
             "02.PNG",
             "03.WEBP",
+            "04.jxl",
             "thumbs.db",
             "Thumbs.db",
             "ComicInfo.xml",
@@ -24,7 +25,7 @@ def test_comic_archive_get_pages_filtering():
         pages = archive.get_pages()
         
         # Only valid images should remain, sorted naturally
-        assert pages == ["01.jpg", "02.PNG", "03.WEBP"]
+        assert pages == ["01.jpg", "02.PNG", "03.WEBP", "04.jxl"]
 
 def test_comic_archive_sort_pages_priority():
     """Test the priority bucketing (covers first, z-pages last)."""
