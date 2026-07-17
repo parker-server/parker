@@ -32,7 +32,7 @@ from app.models.user import User
 from app.services.watcher import library_watcher
 
 # API Routes
-from app.api import libraries, comics, reader, progress, series, volumes, search
+from app.api import libraries, comics, reader, progress, series, volumes, search, bookmarks
 from app.api import reading_lists, collections
 from app.api import auth, users, saved_searches, smart_lists
 from app.api import tasks, jobs, stats, settings as settings_api
@@ -234,6 +234,7 @@ app.include_router(series.router, prefix="/api/series", tags=["series"])
 app.include_router(volumes.router, prefix="/api/volumes", tags=["volumes"])
 app.include_router(comics.router, prefix="/api/comics", tags=["comics"])
 app.include_router(reader.router, prefix="/api/reader", tags=["reader"])
+app.include_router(bookmarks.router, prefix="/api/bookmarks", tags=["bookmarks"])
 app.include_router(reading_lists.router, prefix="/api/reading-lists", tags=["reading-lists"])
 app.include_router(collections.router, prefix="/api/collections", tags=["collections"])
 app.include_router(progress.router, prefix="/api/progress", tags=["progress"])

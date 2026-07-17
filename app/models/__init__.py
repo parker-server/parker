@@ -7,6 +7,7 @@ from app.models.credits import Person, ComicCredit
 from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.collection import Collection, CollectionItem
 from app.models.reading_progress import ReadingProgress
+from app.models.bookmark import Bookmark
 from app.models.job import ScanJob
 from app.models.user import User
 from app.models.interactions import UserSeries, UserVolumeFollow, UserComicRating
@@ -23,7 +24,7 @@ __all__ = [
     'Person', 'ComicCredit',
     'ReadingList', 'ReadingListItem',
     'Collection', 'CollectionItem',
-    'ReadingProgress', 'ActivityLog',
+    'ReadingProgress', 'ActivityLog', 'Bookmark',
     'ScanJob',
     'User',
     'UserSeries', 'UserVolumeFollow', 'UserComicRating',
