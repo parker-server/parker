@@ -29,3 +29,8 @@ This file captures follow-up work that should not get lost between releases.
   Context: The current warning logic is much more useful than before, but we lost the original reporter's environment after they rebuilt from scratch, so we no longer have a live repro to interrogate.
   Current risk: A fresh install with a valid comics mount and no configured libraries can still look superficially similar to a "wrong storage directory" situation.
   Follow-up goal: Reassess the signals used for `storage_mismatch_suspected` once we have another real-world report or a better synthetic repro, and tune the messaging so first-run onboarding is not mistaken for a broken upgrade.
+
+- Decide the long-term policy for inaccessible followed volumes.
+  Context: `user_volume_follows` rows currently remain persisted even if a user's library access or age-rating settings later hide that volume from all user-facing follow surfaces.
+  Current behavior: The follow is filtered out of the `Following` page, the `New from Following` home rail, and direct volume access checks, but the row is not pruned automatically.
+  Follow-up goal: Confirm whether Parker should keep this hidden-and-persisted behavior, surface inaccessible follows in a disabled state, or automatically prune them after some explicit rule.

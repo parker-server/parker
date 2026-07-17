@@ -214,6 +214,10 @@ async def pull_list_detail_legacy_redirect(request: Request, list_id: int, user:
 async def dashboard(request: Request, user: CurrentUser):
     return templates.TemplateResponse(request=request, name="user/dashboard.html")
 
+@router.get("/user/following", response_class=HTMLResponse, name="user_following")
+async def following_page(request: Request, user: CurrentUser):
+    return templates.TemplateResponse(request=request, name="user/following.html")
+
 @router.get("/user/settings", response_class=HTMLResponse, name="user_settings")
 async def settings_page(request: Request, user: CurrentUser):
     return templates.TemplateResponse(request=request, name="user/settings.html")

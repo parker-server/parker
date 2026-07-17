@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 from app.api.home import _pick_best_cover, format_home_item
 from app.models.comic import Comic, Volume
-from app.models.interactions import UserComicRating
+from app.models.interactions import UserComicRating, UserVolumeFollow
 from app.models.library import Library
 from app.models.reading_progress import ReadingProgress
 from app.models.series import Series
@@ -514,6 +514,101 @@ def test_home_resume_applies_staleness_and_progress_percentage(auth_client, db, 
     assert len(payload) == 1
     assert payload[0]["id"] == recent.id
     assert payload[0]["progress_percentage"] == 100.0
+
+
+def test_home_following_arrivals_respects_baseline_formats_and_progress(auth_client, db, normal_user):
+    library, _, volume = _create_series_graph(
+        db,
+        lib_name="home-follow-lib",
+        series_name="Home Follow",
+    )
+    _, _, second_volume = _create_series_graph(
+        db,
+        lib_name="home-follow-lib-two",
+        series_name="Home Follow Two",
+    )
+
+    normal_user.accessible_libraries.extend([library, second_volume.series.library])
+    baseline = datetime(2026, 7, 1, tzinfo=timezone.utc)
+
+    old_plain = _add_comic(
+        db,
+        volume,
+        number="1",
+        title="Follow Old Plain",
+        created_at=baseline - timedelta(days=1),
+        format=None,
+    )
+    new_plain = _add_comic(
+        db,
+        volume,
+        number="2",
+        title="Follow New Plain",
+        created_at=baseline + timedelta(hours=1),
+        format=None,
+    )
+    annual = _add_comic(
+        db,
+        volume,
+        number="1",
+        title="Follow Annual",
+        created_at=baseline + timedelta(hours=2),
+        format="annual",
+    )
+    started_plain = _add_comic(
+        db,
+        volume,
+        number="3",
+        title="Follow Started Plain",
+        created_at=baseline + timedelta(hours=3),
+        format=None,
+    )
+    completed_plain = _add_comic(
+        db,
+        volume,
+        number="4",
+        title="Follow Completed Plain",
+        created_at=baseline + timedelta(hours=4),
+        format=None,
+    )
+    newest_plain = _add_comic(
+        db,
+        second_volume,
+        number="5",
+        title="Follow Newest Plain",
+        created_at=baseline + timedelta(hours=5),
+        format=None,
+    )
+
+    db.add_all([
+        UserVolumeFollow(user_id=normal_user.id, volume_id=volume.id, followed_at=baseline),
+        UserVolumeFollow(user_id=normal_user.id, volume_id=second_volume.id, followed_at=baseline),
+        ReadingProgress(
+            user_id=normal_user.id,
+            comic_id=started_plain.id,
+            current_page=3,
+            total_pages=20,
+            completed=False,
+        ),
+        ReadingProgress(
+            user_id=normal_user.id,
+            comic_id=completed_plain.id,
+            current_page=20,
+            total_pages=20,
+            completed=True,
+        ),
+    ])
+    db.commit()
+
+    response = auth_client.get("/api/home/following-arrivals?limit=10")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [item["id"] for item in payload] == [newest_plain.id, new_plain.id]
+    assert old_plain.id not in [item["id"] for item in payload]
+    assert annual.id not in [item["id"] for item in payload]
+    assert started_plain.id not in [item["id"] for item in payload]
+    assert completed_plain.id not in [item["id"] for item in payload]
 
 
 def test_home_up_next_handles_duplicates_reverse_and_non_numeric(auth_client, db, normal_user):

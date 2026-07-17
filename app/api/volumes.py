@@ -1,11 +1,14 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, case, Float, Integer, literal, or_
+from sqlalchemy import func, case, Float, Integer, literal, or_, and_, cast, desc
 from sqlalchemy.orm import joinedload
 
 from typing import List, Annotated
 
 from app.core.comic_helpers import (get_format_filters, get_smart_cover, get_reading_time,
                                     REVERSE_NUMBERING_SERIES, get_age_rating_config, get_thumbnail_url,
+                                    get_series_age_restriction,
                                     get_resume_target)
 
 from app.api.deps import SessionDep, CurrentUser, VolumeDep
@@ -14,6 +17,7 @@ from app.api.deps import PaginationParams, PaginatedResponse
 from app.models.comic import Comic, Volume
 from app.models.series import Series
 from app.models.credits import Person, ComicCredit
+from app.models.interactions import UserVolumeFollow
 from app.models.tags import Character, Team, Location
 from app.models.reading_progress import ReadingProgress
 
@@ -32,6 +36,214 @@ def comic_to_simple_dict(comic: Comic):
     }
 
 
+def _assert_volume_allowed_for_user(volume_id: int, db, current_user) -> None:
+    if current_user.is_superuser or not current_user.max_age_rating:
+        return
+
+    allowed_ratings, banned_ratings = get_age_rating_config(current_user)
+
+    # Build the "Banned" filter
+    ban_conditions = [Comic.age_rating.in_(banned_ratings)]
+
+    # If user explicitly disallows Unknowns, treat them as banned
+    if not current_user.allow_unknown_age_ratings:
+        ban_conditions.append(or_(
+            Comic.age_rating == None,
+            Comic.age_rating == "",
+            func.lower(Comic.age_rating) == "unknown"
+        ))
+
+    # Run the check: Does a banned comic exist in this volume?
+    has_banned_content = db.query(Comic.id).filter(
+        Comic.volume_id == volume_id,
+        or_(*ban_conditions)
+    ).first()
+
+    if has_banned_content:
+        raise HTTPException(status_code=403, detail="Volume contains age-restricted content")
+
+
+@router.get("/following", name="following_list")
+def get_followed_volumes(
+        db: SessionDep,
+        current_user: CurrentUser,
+):
+    """List followed volumes the user can still access, with lightweight arrival context."""
+
+    is_plain, _, _ = get_format_filters()
+    not_started_or_read = or_(
+        ReadingProgress.id == None,
+        and_(
+            ReadingProgress.completed == False,
+            or_(ReadingProgress.current_page == None, ReadingProgress.current_page <= 0),
+        ),
+    )
+
+    new_arrivals_count_sq = (
+        db.query(func.count(Comic.id))
+        .outerjoin(
+            ReadingProgress,
+            and_(
+                ReadingProgress.comic_id == Comic.id,
+                ReadingProgress.user_id == current_user.id,
+            ),
+        )
+        .filter(Comic.volume_id == Volume.id)
+        .filter(Comic.created_at > UserVolumeFollow.followed_at)
+        .filter(is_plain)
+        .filter(not_started_or_read)
+        .correlate(Volume, UserVolumeFollow)
+        .scalar_subquery()
+    )
+
+    latest_arrival_created_at_sq = (
+        db.query(func.max(Comic.created_at))
+        .outerjoin(
+            ReadingProgress,
+            and_(
+                ReadingProgress.comic_id == Comic.id,
+                ReadingProgress.user_id == current_user.id,
+            ),
+        )
+        .filter(Comic.volume_id == Volume.id)
+        .filter(Comic.created_at > UserVolumeFollow.followed_at)
+        .filter(is_plain)
+        .filter(not_started_or_read)
+        .correlate(Volume, UserVolumeFollow)
+        .scalar_subquery()
+    )
+
+    latest_arrival_id_sq = (
+        db.query(Comic.id)
+        .outerjoin(
+            ReadingProgress,
+            and_(
+                ReadingProgress.comic_id == Comic.id,
+                ReadingProgress.user_id == current_user.id,
+            ),
+        )
+        .filter(Comic.volume_id == Volume.id)
+        .filter(Comic.created_at > UserVolumeFollow.followed_at)
+        .filter(is_plain)
+        .filter(not_started_or_read)
+        .order_by(
+            desc(Comic.created_at),
+            desc(cast(Comic.number, Float)),
+            desc(Comic.number),
+        )
+        .limit(1)
+        .correlate(Volume, UserVolumeFollow)
+        .scalar_subquery()
+    )
+
+    latest_arrival_title_sq = (
+        db.query(Comic.title)
+        .outerjoin(
+            ReadingProgress,
+            and_(
+                ReadingProgress.comic_id == Comic.id,
+                ReadingProgress.user_id == current_user.id,
+            ),
+        )
+        .filter(Comic.volume_id == Volume.id)
+        .filter(Comic.created_at > UserVolumeFollow.followed_at)
+        .filter(is_plain)
+        .filter(not_started_or_read)
+        .order_by(
+            desc(Comic.created_at),
+            desc(cast(Comic.number, Float)),
+            desc(Comic.number),
+        )
+        .limit(1)
+        .correlate(Volume, UserVolumeFollow)
+        .scalar_subquery()
+    )
+
+    latest_arrival_number_sq = (
+        db.query(Comic.number)
+        .outerjoin(
+            ReadingProgress,
+            and_(
+                ReadingProgress.comic_id == Comic.id,
+                ReadingProgress.user_id == current_user.id,
+            ),
+        )
+        .filter(Comic.volume_id == Volume.id)
+        .filter(Comic.created_at > UserVolumeFollow.followed_at)
+        .filter(is_plain)
+        .filter(not_started_or_read)
+        .order_by(
+            desc(Comic.created_at),
+            desc(cast(Comic.number, Float)),
+            desc(Comic.number),
+        )
+        .limit(1)
+        .correlate(Volume, UserVolumeFollow)
+        .scalar_subquery()
+    )
+
+    query = (
+        db.query(
+            UserVolumeFollow,
+            new_arrivals_count_sq.label("new_arrivals_count"),
+            latest_arrival_created_at_sq.label("latest_arrival_created_at"),
+            latest_arrival_id_sq.label("latest_arrival_id"),
+            latest_arrival_title_sq.label("latest_arrival_title"),
+            latest_arrival_number_sq.label("latest_arrival_number"),
+        )
+        .join(Volume, Volume.id == UserVolumeFollow.volume_id)
+        .join(Series, Series.id == Volume.series_id)
+        .options(
+            joinedload(UserVolumeFollow.volume)
+            .joinedload(Volume.series)
+            .joinedload(Series.library)
+        )
+        .filter(UserVolumeFollow.user_id == current_user.id)
+    )
+
+    if not current_user.is_superuser:
+        allowed_ids = [lib.id for lib in current_user.accessible_libraries]
+        query = query.filter(Series.library_id.in_(allowed_ids))
+
+    series_age_filter = get_series_age_restriction(current_user)
+    if series_age_filter is not None:
+        query = query.filter(series_age_filter)
+
+    rows = query.order_by(
+        desc(new_arrivals_count_sq),
+        desc(latest_arrival_created_at_sq),
+        desc(UserVolumeFollow.followed_at),
+        Series.name.asc(),
+        Volume.volume_number.asc(),
+    ).all()
+
+    payload = []
+    for follow, new_arrivals_count, latest_arrival_created_at, latest_arrival_id, latest_arrival_title, latest_arrival_number in rows:
+        payload.append(
+            {
+                "volume_id": follow.volume_id,
+                "volume_number": follow.volume.volume_number,
+                "series_id": follow.volume.series_id,
+                "series_name": follow.volume.series.name,
+                "library_id": follow.volume.series.library_id,
+                "library_name": follow.volume.series.library.name,
+                "followed_at": follow.followed_at,
+                "new_arrivals_count": int(new_arrivals_count or 0),
+                "latest_arrival": (
+                    {
+                        "comic_id": latest_arrival_id,
+                        "title": latest_arrival_title,
+                        "number": latest_arrival_number,
+                        "created_at": latest_arrival_created_at,
+                    }
+                    if latest_arrival_id is not None else None
+                ),
+            }
+        )
+
+    return payload
+
+
 @router.get("/{volume_id}", name="detail")
 async def get_volume_detail(volume: VolumeDep, db: SessionDep, current_user: CurrentUser):
     """
@@ -42,30 +254,7 @@ async def get_volume_detail(volume: VolumeDep, db: SessionDep, current_user: Cur
     # Note: VolumeDep handles 404, but we need to check restrictions.
     # 0. Check Age Restriction: Poison Pill check
     # If the user has restrictions, we check if this volume contains ANY banned content.
-    if not current_user.is_superuser and current_user.max_age_rating:
-
-        allowed_ratings, banned_ratings = get_age_rating_config(current_user)
-
-        # Build the "Banned" filter
-        ban_conditions = [Comic.age_rating.in_(banned_ratings)]
-
-        # If user explicitly disallows Unknowns, treat them as banned
-        if not current_user.allow_unknown_age_ratings:
-            ban_conditions.append(or_(
-                Comic.age_rating == None,
-                Comic.age_rating == "",
-                func.lower(Comic.age_rating) == "unknown"
-            ))
-
-        # Run the check: Does a banned comic exist in this volume?
-        has_banned_content = db.query(Comic.id).filter(
-            Comic.volume_id == volume.id,
-            or_(*ban_conditions)
-        ).first()
-
-        if has_banned_content:
-            raise HTTPException(status_code=403, detail="Volume contains age-restricted content")
-    # --------------------------------------
+    _assert_volume_allowed_for_user(volume.id, db, current_user)
 
 
 
@@ -252,6 +441,11 @@ async def get_volume_detail(volume: VolumeDep, db: SessionDep, current_user: Cur
     if volume.series:
         is_reverse_series = volume.series.name.lower() in REVERSE_NUMBERING_SERIES
 
+    follow = db.query(UserVolumeFollow).filter(
+        UserVolumeFollow.user_id == current_user.id,
+        UserVolumeFollow.volume_id == volume.id,
+    ).first()
+
     return {
         "id": volume.id,
         "volume_number": volume.volume_number,
@@ -287,9 +481,47 @@ async def get_volume_detail(volume: VolumeDep, db: SessionDep, current_user: Cur
             "comic_id": resume_comic_id,
             "status": read_status
         },
+        "is_following": bool(follow),
         "colors": colors,
         "is_reverse_numbering": is_reverse_series,
     }
+
+
+@router.post("/{volume_id}/follow", name="follow")
+async def follow_volume(volume: VolumeDep, db: SessionDep, current_user: CurrentUser):
+    _assert_volume_allowed_for_user(volume.id, db, current_user)
+
+    follow = db.query(UserVolumeFollow).filter(
+        UserVolumeFollow.user_id == current_user.id,
+        UserVolumeFollow.volume_id == volume.id,
+    ).first()
+
+    if not follow:
+        follow = UserVolumeFollow(
+            user_id=current_user.id,
+            volume_id=volume.id,
+            followed_at=datetime.now(timezone.utc),
+        )
+        db.add(follow)
+        db.commit()
+
+    return {"following": True}
+
+
+@router.delete("/{volume_id}/follow", name="unfollow")
+async def unfollow_volume(volume: VolumeDep, db: SessionDep, current_user: CurrentUser):
+    _assert_volume_allowed_for_user(volume.id, db, current_user)
+
+    follow = db.query(UserVolumeFollow).filter(
+        UserVolumeFollow.user_id == current_user.id,
+        UserVolumeFollow.volume_id == volume.id,
+    ).first()
+
+    if follow:
+        db.delete(follow)
+        db.commit()
+
+    return {"following": False}
 
 
 @router.get("/{volume_id}/issues", response_model=PaginatedResponse, name="issues")

@@ -19,6 +19,7 @@ from app.database import Base
 from app.main import app
 from app.models.comic import Comic, Volume
 from app.models.credits import ComicCredit, Person
+from app.models.interactions import UserVolumeFollow
 from app.models.library import Library
 from app.models.reading_progress import ReadingProgress
 from app.models.reading_list import ReadingList, ReadingListItem
@@ -144,6 +145,7 @@ def browser_seed_data(browser_db_factory):
     data = {
         "user_id": user.id,
         "series_id": series.id,
+        "volume_id": volume.id,
         "series_name": series.name,
         "reading_list_id": reading_list.id,
         "reading_list_name": reading_list.name,
@@ -166,6 +168,7 @@ def browser_seed_data(browser_db_factory):
 def reset_browser_state(browser_db_factory, browser_seed_data):
     session = browser_db_factory()
     try:
+        session.query(UserVolumeFollow).delete()
         session.query(PullListItem).delete()
         session.query(PullList).delete()
         session.query(SavedSearch).delete()

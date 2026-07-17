@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+
+{% block title %}Following - Parker{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto space-y-8" x-data="followingPage()">
+    <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div class="space-y-2">
+            <a :href="window.parker.route('pages.user_dashboard')" class="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors">
+                <span>&larr;</span>
+                <span>Back to Dashboard</span>
+            </a>
+            <h1 class="text-3xl md:text-4xl font-black text-white tracking-tight">Following</h1>
+            <p class="max-w-2xl text-gray-400">
+                Manage the volumes Parker is watching for you. New mainline issues still surface on the home page, and you can unfollow here without drilling back through each book.
+            </p>
+        </div>
+        <a :href="window.parker.route('pages.home')" class="inline-flex items-center justify-center rounded-full border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-200 hover:border-blue-400 hover:text-white transition-colors">
+            Browse Library
+        </a>
+    </div>
+
+    <div x-show="loading" class="rounded-2xl border border-gray-800 bg-gray-900/70 p-10 text-center text-gray-400" x-cloak>
+        Loading followed volumes...
+    </div>
+
+    <div x-show="!loading && items.length === 0" class="rounded-3xl border border-dashed border-gray-700 bg-gray-900/60 p-10 text-center space-y-4" x-cloak>
+        <div class="text-5xl">+</div>
+        <h2 class="text-2xl font-bold text-white">Nothing followed yet</h2>
+        <p class="max-w-xl mx-auto text-gray-400">
+            Follow a volume from its detail page and Parker will keep an eye on future mainline arrivals for you.
+        </p>
+        <a :href="window.parker.route('pages.home')" class="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-blue-700 transition-colors">
+            Explore Your Library
+        </a>
+    </div>
+
+    <div x-show="!loading && items.length > 0" class="space-y-4" x-cloak>
+        <template x-for="item in items" :key="item.volume_id">
+            <div class="rounded-2xl border border-gray-800 bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 p-5 shadow-xl">
+                <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div class="space-y-3 min-w-0">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <a :href="window.parker.route('pages.series_detail', { series_id: item.series_id })"
+                               class="text-xl font-bold text-white hover:text-blue-300 transition-colors"
+                               x-text="item.series_name"></a>
+                            <span class="rounded-full border border-gray-700 bg-gray-800 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-gray-300"
+                                  x-text="`Vol. ${item.volume_number}`"></span>
+                            <span x-show="item.new_arrivals_count > 0"
+                                  class="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-300"
+                                  x-text="item.new_arrivals_count === 1 ? '1 new issue' : `${item.new_arrivals_count} new issues`"></span>
+                        </div>
+
+                        <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-400">
+                            <span x-text="item.library_name"></span>
+                            <span>&bull;</span>
+                            <span x-text="`Following since ${formatFollowedAt(item.followed_at)}`"></span>
+                        </div>
+
+                        <template x-if="item.latest_arrival">
+                            <div class="rounded-xl border border-blue-500/20 bg-blue-500/5 px-4 py-3 text-sm">
+                                <div class="text-xs font-semibold uppercase tracking-[0.18em] text-blue-300">Latest arrival</div>
+                                <div class="mt-1 text-gray-100">
+                                    <span class="font-semibold" x-text="item.latest_arrival.number ? `#${item.latest_arrival.number}` : 'New issue'"></span>
+                                    <span x-show="item.latest_arrival.title" x-text="` - ${item.latest_arrival.title}`"></span>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+
+                    <div class="flex flex-wrap gap-2 lg:justify-end">
+                        <a :href="window.parker.route('pages.series_detail', { series_id: item.series_id })"
+                           class="inline-flex items-center justify-center rounded-full border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-200 hover:border-gray-500 hover:text-white transition-colors">
+                            Series
+                        </a>
+                        <a :href="window.parker.route('pages.volume_detail', { volume_id: item.volume_id })"
+                           class="inline-flex items-center justify-center rounded-full border border-blue-500/40 bg-blue-500/10 px-4 py-2 text-sm font-semibold text-blue-200 hover:border-blue-400 hover:bg-blue-500/20 hover:text-white transition-colors">
+                            Open Volume
+                        </a>
+                        <button x-on:click="unfollow(item)"
+                                class="inline-flex items-center justify-center rounded-full border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-200 hover:border-red-400 hover:bg-red-500/20 hover:text-white transition-colors">
+                            Unfollow
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </template>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function followingPage() {
+    return {
+        loading: true,
+        items: [],
+
+        async init() {
+            await this.load();
+        },
+
+        async load() {
+            this.loading = true;
+
+            try {
+                const res = await fetch(window.parker.route('volumes.following_list'));
+                if (!res.ok) throw new Error('Failed to load followed volumes');
+                this.items = await res.json();
+            } catch (error) {
+                console.error(error);
+                window.parker.showToast('Unable to load followed volumes.', 'error');
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        formatFollowedAt(value) {
+            if (!value) return 'recently';
+            return new Date(value).toLocaleDateString(undefined, {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+            });
+        },
+
+        async unfollow(item) {
+            try {
+                const res = await fetch(
+                    window.parker.route('volumes.unfollow', { volume_id: item.volume_id }),
+                    { method: 'DELETE' }
+                );
+
+                if (!res.ok) throw new Error('Failed to unfollow volume');
+
+                this.items = this.items.filter((entry) => entry.volume_id !== item.volume_id);
+                window.parker.showToast('Volume unfollowed', 'success');
+            } catch (error) {
+                console.error(error);
+                window.parker.showToast('Unable to unfollow volume.', 'error');
+            }
+        },
+    };
+}
+</script>
+{% endblock %}

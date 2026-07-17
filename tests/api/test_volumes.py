@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from app.models.comic import Comic, Volume
 from app.models.credits import ComicCredit, Person
+from app.models.interactions import UserVolumeFollow
 from app.models.library import Library
 from app.models.reading_progress import ReadingProgress
 from app.models.series import Series
@@ -399,6 +400,122 @@ def test_volume_detail_advances_to_next_issue_when_latest_progress_is_completed(
     assert payload["resume_to"] == {"comic_id": issue_three.id, "status": "continue"}
 
 
+def test_volume_follow_toggle_and_detail_state(auth_client, db, normal_user):
+    data = _create_volume_fixture(db, lib_name="follow-lib", series_name="Follow Volume")
+    normal_user.accessible_libraries.append(data["library"])
+    db.commit()
+
+    detail_before = auth_client.get(f"/api/volumes/{data['volume'].id}")
+    assert detail_before.status_code == 200
+    assert detail_before.json()["is_following"] is False
+
+    follow_response = auth_client.post(f"/api/volumes/{data['volume'].id}/follow")
+    assert follow_response.status_code == 200
+    assert follow_response.json() == {"following": True}
+
+    follow = db.query(UserVolumeFollow).filter_by(
+        user_id=normal_user.id,
+        volume_id=data["volume"].id,
+    ).first()
+    assert follow is not None
+    assert follow.followed_at is not None
+
+    detail_after_follow = auth_client.get(f"/api/volumes/{data['volume'].id}")
+    assert detail_after_follow.status_code == 200
+    assert detail_after_follow.json()["is_following"] is True
+
+    unfollow_response = auth_client.delete(f"/api/volumes/{data['volume'].id}/follow")
+    assert unfollow_response.status_code == 200
+    assert unfollow_response.json() == {"following": False}
+
+    assert db.query(UserVolumeFollow).filter_by(
+        user_id=normal_user.id,
+        volume_id=data["volume"].id,
+    ).first() is None
+
+    detail_after_unfollow = auth_client.get(f"/api/volumes/{data['volume'].id}")
+    assert detail_after_unfollow.status_code == 200
+    assert detail_after_unfollow.json()["is_following"] is False
+
+
+def test_following_list_reports_new_arrivals_and_filters_hidden_volumes(auth_client, db, normal_user):
+    visible = _create_volume_fixture(db, lib_name="following-visible-lib", series_name="Visible Follow")
+    hidden = _create_volume_fixture(db, lib_name="following-hidden-lib", series_name="Hidden Follow")
+
+    normal_user.accessible_libraries.append(visible["library"])
+
+    for comic in visible["comics"]:
+        comic.created_at = datetime(2026, 6, 20, 12, 0, tzinfo=timezone.utc)
+    for comic in hidden["comics"]:
+        comic.created_at = datetime(2026, 6, 20, 12, 0, tzinfo=timezone.utc)
+
+    db.flush()
+
+    baseline = datetime(2026, 7, 1, 12, 0, tzinfo=timezone.utc)
+    db.add_all([
+        UserVolumeFollow(user_id=normal_user.id, volume_id=visible["volume"].id, followed_at=baseline),
+        UserVolumeFollow(user_id=normal_user.id, volume_id=hidden["volume"].id, followed_at=baseline),
+    ])
+    db.flush()
+
+    new_issue = Comic(
+        volume_id=visible["volume"].id,
+        number="11",
+        title="Visible Follow #11",
+        year=2026,
+        created_at=datetime(2026, 7, 2, 12, 0, tzinfo=timezone.utc),
+        filename="visible-follow-11.cbz",
+        file_path="/tmp/visible-follow-11.cbz",
+    )
+    started_issue = Comic(
+        volume_id=visible["volume"].id,
+        number="12",
+        title="Visible Follow #12",
+        year=2026,
+        created_at=datetime(2026, 7, 3, 12, 0, tzinfo=timezone.utc),
+        filename="visible-follow-12.cbz",
+        file_path="/tmp/visible-follow-12.cbz",
+    )
+    annual = Comic(
+        volume_id=visible["volume"].id,
+        number="1",
+        title="Visible Follow Annual",
+        format="annual",
+        year=2026,
+        created_at=datetime(2026, 7, 4, 12, 0, tzinfo=timezone.utc),
+        filename="visible-follow-annual.cbz",
+        file_path="/tmp/visible-follow-annual.cbz",
+    )
+    db.add_all([new_issue, started_issue, annual])
+    db.flush()
+
+    db.add(
+        ReadingProgress(
+            user_id=normal_user.id,
+            comic_id=started_issue.id,
+            current_page=1,
+            total_pages=20,
+            completed=False,
+            last_read_at=datetime(2026, 7, 5, 12, 0, tzinfo=timezone.utc),
+        )
+    )
+    db.commit()
+
+    response = auth_client.get("/api/volumes/following")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 1
+
+    item = payload[0]
+    assert item["series_name"] == "Visible Follow"
+    assert item["volume_id"] == visible["volume"].id
+    assert item["new_arrivals_count"] == 1
+    assert item["latest_arrival"]["comic_id"] == new_issue.id
+    assert item["latest_arrival"]["title"] == "Visible Follow #11"
+    assert item["latest_arrival"]["number"] == "11"
+
+
 def test_volume_issues_returns_404_without_access(auth_client, db):
     data = _create_volume_fixture(db, lib_name="hidden-issues-lib", series_name="Hidden Issues")
 
@@ -406,6 +523,18 @@ def test_volume_issues_returns_404_without_access(auth_client, db):
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Volume not found"}
+
+
+def test_volume_follow_returns_404_without_access(auth_client, db):
+    data = _create_volume_fixture(db, lib_name="hidden-follow-lib", series_name="Hidden Follow")
+
+    follow_response = auth_client.post(f"/api/volumes/{data['volume'].id}/follow")
+    assert follow_response.status_code == 404
+    assert follow_response.json() == {"detail": "Volume not found"}
+
+    unfollow_response = auth_client.delete(f"/api/volumes/{data['volume'].id}/follow")
+    assert unfollow_response.status_code == 404
+    assert unfollow_response.json() == {"detail": "Volume not found"}
 
 
 def test_volume_issues_annual_unread_desc_filter(auth_client, db, normal_user):

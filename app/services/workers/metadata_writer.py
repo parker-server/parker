@@ -32,6 +32,16 @@ def _apply_metadata_batch(
 
         return number
 
+    def _normalize_volume_number(raw_volume) -> int:
+        """Normalize volume metadata, falling back to volume 1 on invalid input."""
+        if raw_volume in (None, ""):
+            return 1
+
+        try:
+            return int(str(raw_volume).strip())
+        except (TypeError, ValueError):
+            return 1
+
     imported = 0
     updated = 0
     errors = 0
@@ -71,7 +81,7 @@ def _apply_metadata_batch(
         series = get_or_create_series(series_name)
 
         # Get or create volume (Uses Cache)
-        volume_num = int(metadata.get("volume", 1)) if metadata.get("volume") else 1
+        volume_num = _normalize_volume_number(metadata.get("volume"))
         volume = get_or_create_volume(series, volume_num, file_path)
         comic.volume_id = volume.id
 

@@ -72,6 +72,17 @@
                                     <template x-if="volume?.resume_to?.comic_id">
                                         {%  include "partials/read_volume_button.html" %}
                                     </template>
+                                    <button
+                                        x-on:click="toggleFollow()"
+                                        :disabled="followSaving"
+                                        class="inline-flex items-center gap-2 px-4 py-2 rounded-lg border transition-colors text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed"
+                                        :class="volume?.is_following
+                                            ? 'bg-green-900/30 border-green-700 text-green-200 hover:bg-green-900/40'
+                                            : 'bg-gray-700 border-gray-600 text-gray-200 hover:bg-gray-600 hover:text-white'"
+                                        :title="volume?.is_following ? 'Unfollow this volume' : 'Follow this volume'"
+                                    >
+                                        <span x-text="volume?.is_following ? 'Following' : 'Follow'"></span>
+                                    </button>
                                 </div>
 
                                 <div class="mb-4 text-gray-300 flex flex-wrap items-center justify-center md:justify-start gap-2">
@@ -431,6 +442,7 @@ function volumeDetail() {
         paginationMode: '{{ get_system_setting("ui.pagination_mode", "infinite") }}',
 
         error: null,
+        followSaving: false,
 
         async init() {
             await this.loadVolumeSummary();
@@ -514,6 +526,39 @@ function volumeDetail() {
             this.sortOrder = this.sortOrder === 'asc' ? 'desc' : 'asc';
             this.page = 1;
             this.loadItems();
+        },
+
+        async toggleFollow() {
+            if (!this.volume || this.followSaving) return;
+
+            const method = this.volume.is_following ? 'DELETE' : 'POST';
+            this.followSaving = true;
+
+            try {
+                const res = await fetch(
+                    window.parker.route('volumes.follow', { volume_id: this.volumeId }),
+                    { method }
+                );
+
+                if (res.ok) {
+                    this.volume.is_following = !this.volume.is_following;
+                    if (window.parker) {
+                        window.parker.showToast(
+                            this.volume.is_following ? 'Now following volume' : 'Volume unfollowed',
+                            'success'
+                        );
+                    }
+                } else if (window.parker) {
+                    window.parker.showToast('Unable to update follow state', 'error');
+                }
+            } catch (e) {
+                console.error(e);
+                if (window.parker) {
+                    window.parker.showToast('Unable to update follow state', 'error');
+                }
+            } finally {
+                this.followSaving = false;
+            }
         },
 
         formatMissing(issues) {
