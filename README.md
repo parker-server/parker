@@ -11,7 +11,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
 - **Library Management**
   - Hierarchy: `Library → Series → Volume → Comic`
   - Rich metadata (credits, tags, page counts, colors)
-  - Reading Lists, Collections, Story Arcs, Pull Lists, Smart Lists
+  - Reading Lists, Collections, Story Arcs, Stacks, Smart Lists
 
 - **User System**
   - Multi‑library access with row‑level security
@@ -96,7 +96,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
 ## 📊 Data Model
 
 - Libraries, Series, Volumes, Comics
-- Collections, Reading Lists, Pull Lists, Smart Lists
+- Collections, Reading Lists, Stacks, Smart Lists
 - User access control
 - Batch operations (mark read/unread, add to lists)
 

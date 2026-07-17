@@ -116,10 +116,10 @@ def test_saved_search_can_be_created_and_deleted(page, browser_server):
 def test_pull_list_create_modal_focuses_name_and_delete_confirms_with_keyboard(page, browser_server):
     page.goto(f"{browser_server['base_url']}/pull-lists", wait_until="networkidle")
 
-    page.get_by_role("heading", name="My Pull Lists").wait_for()
-    page.get_by_role("button", name="New List").click()
+    page.get_by_role("heading", name="My Stacks").wait_for()
+    page.get_by_role("button", name="New Stack").click()
 
-    page.get_by_role("heading", name="Create New List").wait_for()
+    page.get_by_role("heading", name="Create New Stack").wait_for()
     page.wait_for_function(
         """
         () => {
@@ -131,18 +131,18 @@ def test_pull_list_create_modal_focuses_name_and_delete_confirms_with_keyboard(p
 
     name_input = page.locator('input[placeholder="e.g. Saturday Morning Reading"]').first
     desc_input = page.locator('input[placeholder="Brief description..."]')
-    name_input.fill("Browser Pull List")
+    name_input.fill("Browser Stack")
     desc_input.fill("Keyboard-created browser test list")
     desc_input.press("Enter")
 
-    page.wait_for_selector("text=Browser Pull List")
+    page.wait_for_selector("text=Browser Stack")
 
-    list_card = page.locator("div.group").filter(has_text="Browser Pull List").first
+    list_card = page.locator("div.group").filter(has_text="Browser Stack").first
     menu_button = list_card.locator("button").first
     menu_button.click()
     page.get_by_role("button", name="Delete").click()
 
-    page.get_by_role("heading", name="Delete Pull List?").wait_for()
+    page.get_by_role("heading", name="Delete Stack?").wait_for()
     page.wait_for_function(
         """
         () => {
@@ -154,5 +154,5 @@ def test_pull_list_create_modal_focuses_name_and_delete_confirms_with_keyboard(p
     page.keyboard.press("Enter")
 
     page.wait_for_timeout(300)
-    page.wait_for_selector("text=You haven't created any lists yet.")
-    assert page.locator("text=Browser Pull List").count() == 0
+    page.wait_for_selector("text=You haven't created any stacks yet.")
+    assert page.locator("text=Browser Stack").count() == 0

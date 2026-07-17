@@ -899,7 +899,7 @@
             },
 
             getContextLabel(contextType) {
-                if (contextType === 'pull_list') return 'Pull List';
+                if (contextType === 'pull_list') return 'Stack';
                 if (contextType === 'reading_list') return 'Reading List';
                 if (contextType === 'collection') return 'Collection';
                 if (contextType === 'series') return 'Series';

@@ -130,12 +130,12 @@ def test_comic_detail_add_to_existing_pull_list_then_edit_and_remove_item(page, 
     page.goto(f"{browser_server['base_url']}/comics/{seed['active_comic_id']}", wait_until="networkidle")
 
     page.get_by_role("heading", name=f"{seed['series_name']} #{seed['active_comic_number']}").wait_for()
-    page.get_by_role("button", name="Add to Pull List").click()
+    page.get_by_role("button", name="Add to Stack").click()
 
-    page.get_by_role("heading", name="Add to Pull List").wait_for()
+    page.get_by_role("heading", name="Add to Stack").wait_for()
     page.get_by_role("button", name=list_name).click()
 
-    page.wait_for_selector("text=Added to list!")
+    page.wait_for_selector("text=Added to stack!")
 
     created_list = _get_pull_list_snapshot(browser_server["db_factory"], list_name)
     assert created_list is not None
@@ -146,15 +146,15 @@ def test_comic_detail_add_to_existing_pull_list_then_edit_and_remove_item(page, 
     page.get_by_role("heading", name=list_name).wait_for()
     page.wait_for_selector(f"text={seed['active_comic_title']}")
 
-    page.locator("button[title='Edit List Details']").click()
-    page.get_by_role("heading", name="Edit List").wait_for()
+    page.locator("button[title='Edit Stack Details']").click()
+    page.get_by_role("heading", name="Edit Stack").wait_for()
     edit_name_input = page.locator(".fixed.inset-0.z-50 input[x-ref='editNameInput']").first
     edit_name_input.fill(updated_name)
     edit_desc_input = page.locator(".fixed.inset-0.z-50 input").nth(1)
     edit_desc_input.fill(updated_description)
     page.locator(".fixed.inset-0.z-50").get_by_role("button", name="Save").click()
 
-    page.wait_for_selector("text=List updated")
+    page.wait_for_selector("text=Stack updated")
     page.get_by_role("heading", name=updated_name).wait_for()
     updated_list = _get_pull_list_snapshot(browser_server["db_factory"], updated_name)
     assert updated_list is not None
@@ -172,7 +172,7 @@ def test_comic_detail_add_to_existing_pull_list_then_edit_and_remove_item(page, 
     )
     page.keyboard.press("Enter")
 
-    page.wait_for_selector("text=List is empty. Go browse and add some comics!")
+    page.wait_for_selector("text=Stack is empty. Go browse and add some comics!")
     cleared_list = _get_pull_list_snapshot(browser_server["db_factory"], updated_name)
     assert cleared_list is not None
     assert cleared_list["comic_ids"] == []
