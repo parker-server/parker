@@ -1,6 +1,6 @@
 # Parker Comic Server
 
-Parker is a self‑hosted media server for comic books (CBZ/CBR). It follows a **“Filesystem is Truth”** philosophy, parsing metadata directly from `ComicInfo.xml` inside archives. Parker is currently at **Version 0.1.21 (Stable)**.
+Parker is a self‑hosted media server for comic books (CBZ/CBR). It follows a **“Filesystem is Truth”** philosophy, parsing metadata directly from `ComicInfo.xml` inside archives. Parker is currently at **Version 0.1.22 (Stable)**.
 
 https://github.com/parker-server/parker/wiki/Getting-Started
 
@@ -12,20 +12,25 @@ https://github.com/parker-server/parker/wiki/Getting-Started
   - Hierarchy: `Library → Series → Volume → Comic`
   - Rich metadata (credits, tags, page counts, colors)
   - Reading Lists, Collections, Story Arcs, Stacks, Smart Lists
+  - Volume-level `Following` for future issue tracking by run
 
 - **User System**
   - Multi‑library access with row‑level security
+  - Age-rating-aware access control
   - Avatar uploads
   - Hybrid authentication (JWT + secure cookies)
 
 - **Reader**
   - Context‑aware navigation (series, volume, lists)
-  - Manga mode (RTL), double‑page spreads
+  - Manga mode (RTL), double‑page spreads, `Long View`
+  - Per-book reader overrides for view mode, double-page, and reading direction
+  - Incognito reading sessions that avoid persisting per-book overrides
   - Zero‑latency engine with preloading and swipe navigation
   - Image inspection tools
 
 - **Discovery**
   - Netflix‑style home page with content rails
+  - `Continue Reading`, `Jump Back In`, `Trending`, and `New from Following`
   - Recommendations by creator or metadata
   - Random gems, recently updated series
 
@@ -50,6 +55,11 @@ https://github.com/parker-server/parker/wiki/Getting-Started
 - **Visuals**
   - Dynamic backgrounds from cover colors
   - Cover Browser gallery mode
+
+- **Format Support**
+  - Native archive support for `CBZ` and `CBR`
+  - Backend image-pipeline compatibility for `AVIF`
+  - Experimental backend support for `JPEG XL` (`JXL`), with browser-dependent native reading support
 
 - **Enrichment**
   - Auto‑populated event descriptions
@@ -144,7 +154,6 @@ virtualenv from these pinned requirements.
 - Enhanced WebP transcoding pipeline
 - Additional unit test coverage
 - Migration tooling improvements
-- Add support to leverage the Age restriction attribute against a user
 - Pin libraries to front page
 - Improve admin Add Library dialog to be able to browse to a folder rather than type it in
 - Support multiple folder locations per library
