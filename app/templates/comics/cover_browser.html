@@ -253,7 +253,7 @@ function coverBrowser() {
             else if(this.contextType === 'volume') window.location.href = window.parker.route('pages.volume_detail', { volume_id: this.contextId });
             else if(this.contextType === 'reading_list') window.location.href = window.parker.route('pages.reading_list_detail', { reading_list_id: this.contextId });
             else if(this.contextType === 'collection') window.location.href = window.parker.route('pages.collection_detail', { collection_id: this.contextId });
-            else if(this.contextType === 'pull_list') window.location.href = window.parker.route('pages.pull_list_detail', { list_id: this.contextId });
+            else if(this.contextType === 'pull_list') window.location.href = window.parker.route('pages.stack_detail', { list_id: this.contextId });
             else window.location.href = window.parker.route('pages.home');
         },
 

@@ -142,6 +142,7 @@ def test_comic_detail_add_to_existing_pull_list_then_edit_and_remove_item(page, 
     assert seed["active_comic_id"] in created_list["comic_ids"]
 
     page.goto(f"{browser_server['base_url']}/pull-lists/{pull_list_id}", wait_until="networkidle")
+    page.wait_for_url(f"**/stacks/{pull_list_id}")
 
     page.get_by_role("heading", name=list_name).wait_for()
     page.wait_for_selector(f"text={seed['active_comic_title']}")

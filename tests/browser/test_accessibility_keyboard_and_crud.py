@@ -114,7 +114,7 @@ def test_saved_search_can_be_created_and_deleted(page, browser_server):
 
 @pytest.mark.browser
 def test_pull_list_create_modal_focuses_name_and_delete_confirms_with_keyboard(page, browser_server):
-    page.goto(f"{browser_server['base_url']}/pull-lists", wait_until="networkidle")
+    page.goto(f"{browser_server['base_url']}/stacks", wait_until="networkidle")
 
     page.get_by_role("heading", name="My Stacks").wait_for()
     page.get_by_role("button", name="New Stack").click()
@@ -156,3 +156,11 @@ def test_pull_list_create_modal_focuses_name_and_delete_confirms_with_keyboard(p
     page.wait_for_timeout(300)
     page.wait_for_selector("text=You haven't created any stacks yet.")
     assert page.locator("text=Browser Stack").count() == 0
+
+
+@pytest.mark.browser
+def test_legacy_pull_lists_index_redirects_to_stacks(page, browser_server):
+    page.goto(f"{browser_server['base_url']}/pull-lists", wait_until="networkidle")
+
+    page.wait_for_url("**/stacks")
+    page.get_by_role("heading", name="My Stacks").wait_for()

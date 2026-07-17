@@ -741,7 +741,7 @@
                 }
 
                 if (this.contextType === 'pull_list' && this.contextId) {
-                    window.location.href = window.parker.route('pages.pull_list_detail', { list_id: this.contextId });
+                    window.location.href = window.parker.route('pages.stack_detail', { list_id: this.contextId });
                     return;
                 }
 

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.core.comic_helpers import get_smart_cover
 from app.api.deps import SessionDep, ComicDep, VolumeDep, SeriesDep, LibraryDep, CurrentUser
@@ -189,16 +189,26 @@ async def login_page(request: Request, db: SessionDep):
 
     return templates.TemplateResponse(request=request, name="login_full.html", context=context)
 
-@router.get("/pull-lists", response_class=HTMLResponse, name="pull_lists")
-async def pull_lists_index(request: Request, user: CurrentUser):
+@router.get("/stacks", response_class=HTMLResponse, name="stacks")
+async def stacks_index(request: Request, user: CurrentUser):
     return templates.TemplateResponse(request=request, name="pull_lists/index.html")
 
-@router.get("/pull-lists/{list_id}", response_class=HTMLResponse, name="pull_list_detail")
-async def pull_list_detail(request: Request, list_id: int, user: CurrentUser):
+@router.get("/stacks/{list_id}", response_class=HTMLResponse, name="stack_detail")
+async def stack_detail(request: Request, list_id: int, user: CurrentUser):
     # We pass the ID to the template; Alpine handles the data fetching
     return templates.TemplateResponse(request=request, name="pull_lists/detail.html", context={
         "list_id": list_id
     })
+
+
+@router.get("/pull-lists", name="pull_lists_legacy")
+async def pull_lists_legacy_redirect(request: Request, user: CurrentUser):
+    return RedirectResponse(url=request.url_for("stacks"), status_code=307)
+
+
+@router.get("/pull-lists/{list_id}", name="pull_list_detail_legacy")
+async def pull_list_detail_legacy_redirect(request: Request, list_id: int, user: CurrentUser):
+    return RedirectResponse(url=request.url_for("stack_detail", list_id=list_id), status_code=307)
 
 @router.get("/user/dashboard", response_class=HTMLResponse, name="user_dashboard")
 async def dashboard(request: Request, user: CurrentUser):
