@@ -11,7 +11,7 @@ def _split_comma_list(value: str) -> list[str]:
 
 class Settings(BaseSettings):
     app_name: ClassVar[str] = "Parker"
-    version: ClassVar[str] = "0.1.20"
+    version: ClassVar[str] = "0.1.21"
     
     database_url: str = "sqlite:///./storage/database/comics.db"
     #database_url: str = "sqlite:///./storage/database/temp.db"

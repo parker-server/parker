@@ -159,7 +159,8 @@
             filters: cloneDefaultFilters(),
             scrollTicking: false,
             restoringScroll: false,
-            scrollRestoreTimeout: null
+            scrollRestoreTimeout: null,
+            scrollPositionRequestId: 0
         };
     }
 
@@ -438,7 +439,11 @@
             },
 
             focusReader() {
-                this.$el.focus();
+                try {
+                    this.$el.focus({ preventScroll: true });
+                } catch {
+                    this.$el.focus();
+                }
             },
 
             resetControlFocus() {
@@ -495,12 +500,16 @@
                 return Math.max(0, scrollTop);
             },
 
-            applyScrollPagePosition(index, { retries = 40 } = {}) {
+            applyScrollPagePosition(index, { retries = 40, requestId = this.scrollPositionRequestId } = {}) {
+                if (requestId !== this.scrollPositionRequestId) {
+                    return;
+                }
+
                 const scrollTop = this.getScrollTopForPage(index);
                 if (scrollTop === null) {
                     if (retries > 0) {
                         window.setTimeout(() => {
-                            this.applyScrollPagePosition(index, { retries: retries - 1 });
+                            this.applyScrollPagePosition(index, { retries: retries - 1, requestId });
                         }, 75);
                     }
                     return;
@@ -515,6 +524,10 @@
                 this.$el.scrollTop = targetScrollTop;
 
                 window.requestAnimationFrame(() => {
+                    if (requestId !== this.scrollPositionRequestId) {
+                        return;
+                    }
+
                     const target = this.getScrollPageElement(index);
                     const expectedTop = this.getScrollViewportTargetTop().targetTop;
                     const targetTopDelta = target
@@ -524,12 +537,16 @@
 
                     if ((scrollDelta > 4 || targetTopDelta > 12) && retries > 0) {
                         window.setTimeout(() => {
-                            this.applyScrollPagePosition(index, { retries: retries - 1 });
+                            this.applyScrollPagePosition(index, { retries: retries - 1, requestId });
                         }, 75);
                         return;
                     }
 
                     this.scrollRestoreTimeout = window.setTimeout(() => {
+                        if (requestId !== this.scrollPositionRequestId) {
+                            return;
+                        }
+
                         this.restoringScroll = false;
                         this.syncCurrentPageFromScroll(false);
                     }, 120);
@@ -545,16 +562,18 @@
 
                 const boundedIndex = Math.max(0, Math.min(index, this.meta.page_count - 1));
                 const changed = boundedIndex !== this.currentPage;
+                const requestId = this.scrollPositionRequestId + 1;
+                this.scrollPositionRequestId = requestId;
                 this.currentPage = boundedIndex;
 
                 if (persist && changed) {
                     this.updateProgress();
                 }
 
-                this.applyScrollPagePosition(boundedIndex, { retries });
+                this.applyScrollPagePosition(boundedIndex, { retries, requestId });
                 this.$nextTick(() => {
                     window.requestAnimationFrame(() => {
-                        this.applyScrollPagePosition(boundedIndex, { retries });
+                        this.applyScrollPagePosition(boundedIndex, { retries, requestId });
                     });
                 });
             },
