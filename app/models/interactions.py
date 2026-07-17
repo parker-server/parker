@@ -22,6 +22,25 @@ class UserSeries(Base):
     series = relationship("Series", backref="user_preferences")
 
 
+class UserVolumeFollow(Base):
+    """
+    Junction table for User <-> Volume follow subscriptions.
+    Stores the baseline timestamp used to determine future arrivals.
+    """
+    __tablename__ = "user_volume_follows"
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    volume_id = Column(Integer, ForeignKey("volumes.id", ondelete="CASCADE"), primary_key=True)
+    followed_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    user = relationship("User", backref="volume_follows")
+    volume = relationship("Volume", backref="user_follows")
+
+
 class UserComicRating(Base):
     """
     Junction table for User <-> Comic rating interactions.

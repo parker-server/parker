@@ -23,6 +23,24 @@
             </div>
         </div>
 
+        <div x-show="!loading.following && followingArrivals.length > 0">
+            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                    <span>+</span> New from Following
+                </h2>
+                <a :href="window.parker.route('pages.user_following')" class="text-xs text-blue-400 hover:text-white transition-colors">
+                    Manage Following
+                </a>
+            </div>
+
+            <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                <template x-for="comic in followingArrivals" :key="comic.id">
+                    <div class="w-40 flex-shrink-0">
+                        {% include "partials/comic_card.html" %}
+                    </div>
+                </template>
+            </div>
+        </div>
 
         <div x-show="!loading.onDeck && onDeckSeries.length > 0">
             <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
@@ -287,6 +305,7 @@ function homePage(bootstrap = {}) {
         parkerTopRatedComics: [],
         trendingSeries: [],
         resumeComics: [],
+        followingArrivals: [],
         smartLists: [],
         popularSeries: [],
 
@@ -300,6 +319,7 @@ function homePage(bootstrap = {}) {
             parkerTopRated: true,
             trending: true,
             resume: true,
+            following: true,
             popular: true,
         },
 
@@ -309,6 +329,7 @@ function homePage(bootstrap = {}) {
                 || this.loading.onDeck || this.loading.random
                 || this.loading.topRated || this.loading.resume
                 || this.loading.parkerTopRated
+                || this.loading.following
                 ;
         },
 
@@ -316,7 +337,8 @@ function homePage(bootstrap = {}) {
             // Check all main categories to see if anything exists
             return this.recentSeries.length === 0
                 && this.resumeComics.length === 0
-                && this.starredSeries.length === 0;
+                && this.starredSeries.length === 0
+                && this.followingArrivals.length === 0;
         },
 
         get showStartupNotice() {
@@ -336,6 +358,7 @@ function homePage(bootstrap = {}) {
             this.fetchUpdated();
             this.fetchOnDeck();
             this.fetchResume();
+            this.fetchFollowingArrivals();
             this.fetchRandom();
             this.fetchTopRated();
             this.fetchTopParkerRated();
@@ -396,6 +419,14 @@ function homePage(bootstrap = {}) {
                 if (res.ok) this.resumeComics = await res.json();
             } catch(e) { console.error(e); }
             finally { this.loading.resume = false; }
+        },
+
+        async fetchFollowingArrivals() {
+            try {
+                const res = await fetch(window.parker.route('home.following_arrivals', {}, 'limit=12'));
+                if (res.ok) this.followingArrivals = await res.json();
+            } catch(e) { console.error(e); }
+            finally { this.loading.following = false; }
         },
 
         async fetchRandom() {

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy import Float
+from sqlalchemy import Float, and_, or_
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.sql.expression import func, desc, cast
 from typing import List
@@ -8,9 +8,10 @@ from collections import defaultdict
 
 from app.core.settings_loader import get_cached_setting
 from app.api.deps import SessionDep, CurrentUser
-from app.core.comic_helpers import get_smart_cover, get_series_age_restriction, get_thumbnail_url
+from app.core.comic_helpers import get_format_filters, get_smart_cover, get_series_age_restriction, get_thumbnail_url
 from app.models.comic import Comic, Volume
 from app.models.interactions import UserComicRating
+from app.models.interactions import UserVolumeFollow
 from app.models.series import Series
 from app.models.user import User
 from app.models.reading_progress import ReadingProgress
@@ -364,6 +365,67 @@ def get_resume_reading(
         .all()
 
     return [format_home_item(c, p) for c, p in results]
+
+
+@router.get("/following-arrivals", response_model=List[ComicSearchItem], name="following_arrivals")
+def get_following_arrivals(
+        db: SessionDep,
+        current_user: CurrentUser,
+        limit: int = 10,
+):
+    """
+    Get newly arrived plain issues from followed volumes.
+    Uses the follow timestamp as the baseline and excludes comics the user has
+    already started or completed.
+    """
+
+    is_plain, _, _ = get_format_filters()
+
+    not_started_or_read = or_(
+        ReadingProgress.id == None,
+        and_(
+            ReadingProgress.completed == False,
+            or_(ReadingProgress.current_page == None, ReadingProgress.current_page <= 0),
+        ),
+    )
+
+    query = (
+        db.query(Comic)
+        .join(UserVolumeFollow, UserVolumeFollow.volume_id == Comic.volume_id)
+        .join(Volume).join(Series)
+        .outerjoin(
+            ReadingProgress,
+            and_(
+                ReadingProgress.comic_id == Comic.id,
+                ReadingProgress.user_id == current_user.id,
+            ),
+        )
+        .options(joinedload(Comic.volume).joinedload(Volume.series))
+        .filter(UserVolumeFollow.user_id == current_user.id)
+        .filter(Comic.created_at > UserVolumeFollow.followed_at)
+        .filter(is_plain)
+        .filter(not_started_or_read)
+    )
+
+    if not current_user.is_superuser:
+        allowed_ids = [lib.id for lib in current_user.accessible_libraries]
+        query = query.filter(Series.library_id.in_(allowed_ids))
+
+    age_filter = get_series_age_restriction(current_user)
+    if age_filter is not None:
+        query = query.filter(age_filter)
+
+    results = (
+        query.order_by(
+            desc(Comic.created_at),
+            desc(cast(Comic.number, Float)),
+            desc(Comic.number),
+        )
+        .limit(limit)
+        .all()
+    )
+
+    return [format_home_item(comic) for comic in results]
 
 
 @router.get("/trending", response_model=List[dict], name="trending")

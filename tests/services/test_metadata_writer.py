@@ -293,6 +293,64 @@ def test_apply_metadata_batch_disables_optional_metadata_flows(db):
     collection_service.update_comic_collections.assert_not_called()
 
 
+def test_apply_metadata_batch_falls_back_to_volume_one_for_invalid_volume_metadata(db):
+    library = Library(name="writer-invalid-volume-lib", path="/tmp/writer-invalid-volume-lib")
+    db.add(library)
+    db.flush()
+
+    def get_or_create_series(name: str):
+        series = db.query(Series).filter_by(name=name, library_id=library.id).first()
+        if not series:
+            series = Series(name=name, library_id=library.id)
+            db.add(series)
+            db.flush()
+        return series
+
+    def get_or_create_volume(series, volume_num: int, _file_path: str):
+        volume = db.query(Volume).filter_by(series_id=series.id, volume_number=volume_num).first()
+        if not volume:
+            volume = Volume(series_id=series.id, volume_number=volume_num)
+            db.add(volume)
+            db.flush()
+        return volume
+
+    tag_service = SimpleNamespace(
+        get_or_create_characters=MagicMock(return_value=[]),
+        get_or_create_teams=MagicMock(return_value=[]),
+        get_or_create_locations=MagicMock(return_value=[]),
+        get_or_create_genres=MagicMock(return_value=[]),
+    )
+    credit_service = SimpleNamespace(add_credits_to_comic=MagicMock())
+    reading_list_service = SimpleNamespace(update_comic_reading_lists=MagicMock())
+    collection_service = SimpleNamespace(update_comic_collections=MagicMock())
+
+    batch = [{
+        "file_path": "/tmp/invalid-volume.cbz",
+        "mtime": 123.0,
+        "size": 456,
+        "metadata": _metadata(volume="3bbbb", title="Invalid Volume"),
+        "error": False,
+    }]
+
+    stats = metadata_writer_module._apply_metadata_batch(
+        db,
+        batch,
+        {},
+        get_or_create_series,
+        get_or_create_volume,
+        tag_service,
+        credit_service,
+        reading_list_service,
+        collection_service,
+    )
+
+    imported = db.query(Comic).filter_by(file_path="/tmp/invalid-volume.cbz").first()
+    assert stats["imported"] == 1
+    assert stats["errors"] == 0
+    assert imported is not None
+    assert imported.volume.volume_number == 1
+
+
 def test_metadata_writer_batches_and_emits_summary(monkeypatch, tmp_path):
     fake_db = _FakeDB(str(tmp_path / "lib"))
     applied_batches = []

@@ -580,6 +580,23 @@
         <!-- Right Sidebar: OPDS + Stacks -->
         <div class="space-y-6">
 
+            <div class="rounded-2xl border border-gray-700 bg-gradient-to-br from-blue-950/40 via-gray-900 to-gray-900 p-5 shadow-xl">
+                <div class="space-y-2">
+                    <div class="flex items-center gap-2">
+                        <span class="text-2xl">+</span>
+                        <h2 class="text-xl font-bold text-white">Following</h2>
+                    </div>
+                    <p class="text-sm text-gray-400">
+                        Review every followed volume in one place and quickly unfollow books that no longer belong in your incoming queue.
+                    </p>
+                </div>
+
+                <a :href="window.parker.route('pages.user_following')"
+                   class="mt-4 inline-flex w-full items-center justify-center rounded-full bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700 transition-colors">
+                    Manage Following
+                </a>
+            </div>
+
             <!-- Stacks -->
             <div>
                 <div class="flex justify-between items-center mb-4">
