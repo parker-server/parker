@@ -26,6 +26,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
   - Per-book reader overrides for view mode, double-page, and reading direction
   - Incognito reading sessions that avoid persisting per-book overrides
   - Zero‑latency engine with preloading and swipe navigation
+  - Separate per-comic bookmarks with detour-safe resume handling
   - Image inspection tools
 
 - **Discovery**
