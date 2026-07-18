@@ -54,6 +54,11 @@ def natural_sort_key(s):
             for text in re.split('([0-9]+)', str(s))]
 
 
+def alpha_sort_key(value: str) -> str:
+    """Case-insensitive alphabetical sort key for detail metadata."""
+    return value.casefold() if isinstance(value, str) else str(value).casefold()
+
+
 def _ensure_user_can_view_comic(current_user: CurrentUser, comic: Comic):
     """
     Applies the same age restriction logic used by the detail endpoint.
@@ -229,10 +234,10 @@ async def get_comic(comic_id: int, db: SessionDep, current_user: CurrentUser):
         "source_rating": comic.community_rating,
 
         # Tags
-        "characters": [c.name for c in comic.characters],
-        "teams": [t.name for t in comic.teams],
-        "locations": [l.name for l in comic.locations],
-        "genres": [g.name for g in comic.genres],
+        "characters": sorted((c.name for c in comic.characters), key=alpha_sort_key),
+        "teams": sorted((t.name for t in comic.teams), key=alpha_sort_key),
+        "locations": sorted((l.name for l in comic.locations), key=alpha_sort_key),
+        "genres": sorted((g.name for g in comic.genres), key=alpha_sort_key),
 
         # Reading lists
         "alternate_series": comic.alternate_series,

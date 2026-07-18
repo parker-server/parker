@@ -257,6 +257,48 @@ def test_get_comic_detail_returns_metadata_and_in_progress_status(auth_client, d
     assert payload["parker_readers_count"] is None
 
 
+def test_get_comic_detail_sorts_tag_metadata_alphabetically(auth_client, db, normal_user):
+    library, _, volume = _create_graph(db, lib_name="comic-detail-tags", series_name="Sorted Detail Saga")
+
+    comic = Comic(
+        volume_id=volume.id,
+        number="12",
+        title="Sorted Tags Issue",
+        filename="sorted-tags-12.cbz",
+        file_path="/tmp/sorted-tags-12.cbz",
+    )
+    db.add(comic)
+    db.flush()
+
+    hero_z = Character(name="Zeta Hero")
+    hero_a = Character(name="Alpha Hero")
+    team_z = Team(name="Zeta Team")
+    team_a = Team(name="Alpha Team")
+    location_z = Location(name="Zeta City")
+    location_a = Location(name="Alpha City")
+    genre_z = Genre(name="Zeta Genre")
+    genre_a = Genre(name="Alpha Genre")
+    db.add_all([hero_z, hero_a, team_z, team_a, location_z, location_a, genre_z, genre_a])
+    db.flush()
+
+    comic.characters.extend([hero_z, hero_a])
+    comic.teams.extend([team_z, team_a])
+    comic.locations.extend([location_z, location_a])
+    comic.genres.extend([genre_z, genre_a])
+
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    response = auth_client.get(f"/api/comics/{comic.id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["characters"] == ["Alpha Hero", "Zeta Hero"]
+    assert payload["teams"] == ["Alpha Team", "Zeta Team"]
+    assert payload["locations"] == ["Alpha City", "Zeta City"]
+    assert payload["genres"] == ["Alpha Genre", "Zeta Genre"]
+
+
 def test_get_comic_detail_uses_generic_label_for_non_comicvine_web_links(auth_client, db, normal_user):
     library, _, volume = _create_graph(db, lib_name="comic-web-link", series_name="Alt Link Saga")
 
