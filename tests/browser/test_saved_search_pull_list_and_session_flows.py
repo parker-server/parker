@@ -1,7 +1,9 @@
 import pytest
 from sqlalchemy import select
 
+from app.models.bookmark import Bookmark
 from app.models.pull_list import PullList, PullListItem
+from app.models.reading_progress import ReadingProgress
 
 
 def _create_pull_list(db_factory, user_id, name, description=None):
@@ -177,6 +179,55 @@ def test_comic_detail_add_to_existing_pull_list_then_edit_and_remove_item(page, 
     cleared_list = _get_pull_list_snapshot(browser_server["db_factory"], updated_name)
     assert cleared_list is not None
     assert cleared_list["comic_ids"] == []
+
+
+@pytest.mark.browser
+def test_comic_detail_bookmarks_launch_reader_detour(page, browser_server):
+    seed = browser_server["seed"]
+    session = browser_server["db_factory"]()
+    try:
+        session.add(
+            Bookmark(
+                user_id=seed["user_id"],
+                comic_id=seed["in_progress_comic_id"],
+                page_index=0,
+                label="Opening beat",
+            )
+        )
+        session.commit()
+    finally:
+        session.close()
+
+    page.goto(f"{browser_server['base_url']}/comics/{seed['in_progress_comic_id']}", wait_until="networkidle")
+
+    page.get_by_role("heading", name=f"{seed['series_name']} #{seed['in_progress_comic_number']}").wait_for()
+    page.get_by_role("heading", name="Bookmarks").wait_for()
+    page.locator("[data-detail-bookmark-link]").first.click()
+
+    page.wait_for_url(f"**/reader/{seed['in_progress_comic_id']}**")
+    page.wait_for_selector("[data-bookmark-detour]")
+    assert page.locator(".reader-controls .text-white.font-bold").first.text_content() == "1"
+    assert page.locator("[data-bookmark-detour-return]").text_content().strip() == "Return to page 2"
+
+    page.keyboard.press("ArrowRight")
+    page.wait_for_timeout(300)
+    page.keyboard.press("ArrowRight")
+    page.wait_for_timeout(300)
+    assert page.locator(".reader-controls .text-white.font-bold").first.text_content() == "3"
+
+    session = browser_server["db_factory"]()
+    try:
+        progress = session.scalar(
+            select(ReadingProgress).where(
+                ReadingProgress.user_id == seed["user_id"],
+                ReadingProgress.comic_id == seed["in_progress_comic_id"],
+            )
+        )
+    finally:
+        session.close()
+
+    assert progress is not None
+    assert progress.current_page == 1
 
 
 @pytest.mark.browser

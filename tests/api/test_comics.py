@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 from app.api.comics import filter_by_user_access, natural_sort_key
 from app.models.collection import Collection, CollectionItem
+from app.models.bookmark import Bookmark
 from app.models.comic import Comic, Volume
 from app.models.credits import ComicCredit, Person
 from app.models.interactions import UserComicRating
@@ -219,6 +220,10 @@ def test_get_comic_detail_returns_metadata_and_in_progress_status(auth_client, d
             completed=False,
         )
     )
+    db.add_all([
+        Bookmark(user_id=normal_user.id, comic_id=comic.id, page_index=7, label="Later"),
+        Bookmark(user_id=normal_user.id, comic_id=comic.id, page_index=2, label="Earlier"),
+    ])
     db.commit()
 
     response = auth_client.get(f"/api/comics/{comic.id}")
@@ -237,6 +242,11 @@ def test_get_comic_detail_returns_metadata_and_in_progress_status(auth_client, d
     assert payload["locations"] == ["Detail City"]
     assert payload["genres"] == ["Detail Genre"]
     assert payload["read_status"] == "in_progress"
+    assert payload["resume_page"] == 5
+    assert payload["bookmarks"] == [
+        {"id": payload["bookmarks"][0]["id"], "page_index": 2, "label": "Earlier"},
+        {"id": payload["bookmarks"][1]["id"], "page_index": 7, "label": "Later"},
+    ]
     assert payload["web"] == "https://comicvine.gamespot.com/detail-issue/4000-7/"
     assert payload["web_label"] == "ComicVine"
     assert payload["web_title"] == "View on ComicVine"
