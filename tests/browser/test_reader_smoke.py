@@ -1,6 +1,7 @@
 import pytest
 from sqlalchemy import select
 
+from app.models.bookmark import Bookmark
 from app.models.reading_progress import ReadingProgress
 
 TALL_SCROLL_PAGE_BYTES = b"""
@@ -121,6 +122,86 @@ def test_reader_paged_scrubber_moves_to_selected_page_and_updates_progress(page,
     assert progress is not None
     assert progress.current_page == 2
     assert progress.completed is True
+
+
+@pytest.mark.browser
+def test_reader_bookmarks_save_jump_and_delete(page, browser_server):
+    seed = browser_server["seed"]
+    page.goto(f"{browser_server['base_url']}/reader/{seed['active_comic_id']}", wait_until="networkidle")
+
+    page.wait_for_selector(".reader-container")
+    page.locator(".nav-zone.center").click()
+    page.locator("[data-bookmarks-toggle]").click()
+    page.wait_for_selector("[data-bookmarks-modal]")
+
+    label_input = page.locator("[data-bookmarks-modal] input[type='text']")
+    label_input.fill("Intro beat")
+    page.locator("[data-save-bookmark]").click()
+    page.wait_for_selector("[data-bookmark-item]")
+
+    bookmark_item = page.locator("[data-bookmark-item]").first
+    assert bookmark_item.locator("text=Page 1").is_visible()
+    assert bookmark_item.locator("text=Intro beat").is_visible()
+
+    page.locator("[data-close-bookmarks]").click()
+    page.locator(".reader-controls button").nth(2).click()
+    page.wait_for_timeout(300)
+    assert page.locator(".reader-controls .text-white.font-bold").first.text_content() == "2"
+    page.locator(".reader-controls button").nth(2).click()
+    page.wait_for_timeout(300)
+    assert page.locator(".reader-controls .text-white.font-bold").first.text_content() == "3"
+
+    page.locator("[data-bookmarks-toggle]").click()
+    page.wait_for_selector("[data-bookmarks-modal]")
+    page.locator("[data-bookmark-item]").first.locator("button").first.click()
+    page.wait_for_timeout(300)
+    assert page.locator(".reader-controls .text-white.font-bold").first.text_content() == "1"
+    assert page.locator("[data-bookmark-detour]").is_visible()
+
+    session = browser_server["db_factory"]()
+    try:
+        bookmark = session.scalar(
+            select(Bookmark).where(
+                Bookmark.user_id == seed["user_id"],
+                Bookmark.comic_id == seed["active_comic_id"],
+            )
+        )
+    finally:
+        session.close()
+
+    assert bookmark is not None
+    assert bookmark.page_index == 0
+    assert bookmark.label == "Intro beat"
+
+    page.locator(".reader-controls button").nth(2).click()
+    page.wait_for_timeout(300)
+    assert page.locator(".reader-controls .text-white.font-bold").first.text_content() == "2"
+
+    session = browser_server["db_factory"]()
+    try:
+        progress = session.scalar(
+            select(ReadingProgress).where(
+                ReadingProgress.user_id == seed["user_id"],
+                ReadingProgress.comic_id == seed["active_comic_id"],
+            )
+        )
+    finally:
+        session.close()
+
+    assert progress is not None
+    assert progress.current_page == 2
+    assert progress.completed is True
+
+    page.locator("[data-bookmark-detour-return]").click()
+    page.wait_for_timeout(300)
+    assert page.locator(".reader-controls .text-white.font-bold").first.text_content() == "3"
+    assert page.locator("[data-bookmark-detour]").is_hidden()
+
+    page.locator("[data-bookmarks-toggle]").click()
+    page.wait_for_selector("[data-bookmarks-modal]")
+    page.locator("[data-delete-bookmark]").click()
+    page.wait_for_timeout(300)
+    assert page.locator("[data-bookmark-item]").count() == 0
 
 
 @pytest.mark.browser

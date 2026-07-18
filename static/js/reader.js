@@ -144,7 +144,13 @@
             doublePageOffset: true,
             showSpineShadow: false,
             showGoto: false,
+            showBookmarks: false,
             gotoInputValue: 1,
+            bookmarkLabelValue: '',
+            bookmarks: [],
+            bookmarksLoaded: false,
+            isBookmarkBusy: false,
+            bookmarkDetourOriginPage: null,
             scrubberValue: 0,
             isScrubbing: false,
             isHoveringScrubber: false,
@@ -238,6 +244,7 @@
                         || this.tapVisible
                         || this.isHoveringZone
                         || this.showSettings
+                        || this.showBookmarks
                         || this.showGoto
                         || this.isScrubbing
                         || this.isHoveringScrubber
@@ -315,6 +322,18 @@
 
                     return [{ index: firstPage }, { index: secondPage }];
                 }
+            },
+            currentBookmark: {
+                enumerable: true,
+                get() {
+                    return this.bookmarks.find((bookmark) => bookmark.page_index === this.currentPage) || null;
+                }
+            },
+            isBookmarkDetourActive: {
+                enumerable: true,
+                get() {
+                    return Number.isInteger(this.bookmarkDetourOriginPage);
+                }
             }
         };
     }
@@ -334,7 +353,7 @@
                 this.contextId = params.get('context_id');
 
                 if (this.isIncognito) {
-                    window.parker.showToast('Incognito Mode: Progress will not be saved.');
+                    window.parker.showToast('Incognito Mode: Progress and bookmark changes will not be saved.');
                 }
 
                 this.loadInitData();
@@ -365,6 +384,7 @@
                         }
                     }
 
+                    await this.loadBookmarks();
                     this.preloadContext();
 
                     if (this.isScrollMode) {
@@ -762,8 +782,206 @@
                 this.filters = cloneDefaultFilters();
             },
 
-            async updateProgress() {
+            async loadBookmarks() {
+                try {
+                    const response = await fetch(window.parker.route('bookmarks.comic_bookmarks', { comic_id: this.comicId }));
+                    if (!response.ok) {
+                        throw new Error('Failed to load bookmarks');
+                    }
+
+                    this.bookmarks = await response.json();
+                    this.bookmarksLoaded = true;
+                    this.bookmarkLabelValue = this.currentBookmark?.label || '';
+                } catch (error) {
+                    console.error(error);
+                }
+            },
+
+            async openBookmarks() {
+                this.showGoto = false;
+                this.showSettings = false;
+                this.showBookmarks = true;
+
+                if (!this.bookmarksLoaded) {
+                    await this.loadBookmarks();
+                } else {
+                    this.bookmarkLabelValue = this.currentBookmark?.label || '';
+                }
+
+                this.$nextTick(() => {
+                    if (this.$refs.bookmarkLabelInput) {
+                        this.$refs.bookmarkLabelInput.focus();
+                        this.$refs.bookmarkLabelInput.select();
+                    }
+                });
+            },
+
+            closeBookmarks() {
+                this.showBookmarks = false;
+                this.resetControlFocus();
+            },
+
+            sortBookmarks(bookmarks) {
+                return [...bookmarks].sort((left, right) => {
+                    if (left.page_index !== right.page_index) {
+                        return left.page_index - right.page_index;
+                    }
+
+                    return new Date(left.created_at) - new Date(right.created_at);
+                });
+            },
+
+            applyBookmarkUpdate(bookmark) {
+                const existingIndex = this.bookmarks.findIndex((item) => item.id === bookmark.id);
+                const nextBookmarks = [...this.bookmarks];
+
+                if (existingIndex >= 0) {
+                    nextBookmarks.splice(existingIndex, 1, bookmark);
+                } else {
+                    nextBookmarks.push(bookmark);
+                }
+
+                this.bookmarks = this.sortBookmarks(nextBookmarks);
+                this.bookmarksLoaded = true;
+                this.bookmarkLabelValue = this.currentBookmark?.label || '';
+            },
+
+            beginBookmarkDetour(targetPage) {
+                if (!this.isBookmarkDetourActive) {
+                    this.bookmarkDetourOriginPage = this.currentPage;
+                }
+
+                this.navigateToPage(targetPage, { persist: false });
+                this.closeBookmarks();
+                window.parker.showToast(`Bookmark detour started from page ${this.bookmarkDetourOriginPage + 1}`);
+            },
+
+            clearBookmarkDetour() {
+                this.bookmarkDetourOriginPage = null;
+            },
+
+            returnFromBookmarkDetour() {
+                if (!this.isBookmarkDetourActive) {
+                    return;
+                }
+
+                const originPage = this.bookmarkDetourOriginPage;
+                this.clearBookmarkDetour();
+                this.navigateToPage(originPage, { persist: false });
+                window.parker.showToast(`Returned to page ${originPage + 1}`);
+            },
+
+            resumeProgressFromHere() {
+                if (!this.isBookmarkDetourActive) {
+                    return;
+                }
+
+                this.clearBookmarkDetour();
+                this.updateProgress(true);
+                window.parker.showToast(`Resume point moved to page ${this.currentPage + 1}`);
+            },
+
+            async saveBookmark() {
                 if (this.isIncognito) {
+                    window.parker.showToast('Incognito Mode: Bookmark changes are disabled.');
+                    return;
+                }
+
+                if (this.meta.page_count <= 0 || this.isBookmarkBusy) {
+                    return;
+                }
+
+                this.isBookmarkBusy = true;
+
+                try {
+                    const response = await fetch(window.parker.route('bookmarks.save_comic_bookmark', { comic_id: this.comicId }), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            page_index: this.currentPage,
+                            label: this.bookmarkLabelValue
+                        })
+                    });
+
+                    const payload = await response.json();
+                    if (!response.ok) {
+                        throw new Error(payload.detail || 'Failed to save bookmark');
+                    }
+
+                    this.applyBookmarkUpdate(payload.bookmark);
+                    window.parker.showToast(payload.created ? 'Bookmark saved' : 'Bookmark updated');
+                } catch (error) {
+                    console.error(error);
+                    window.parker.showToast(error.message || 'Failed to save bookmark', 'error');
+                } finally {
+                    this.isBookmarkBusy = false;
+                }
+            },
+
+            async deleteBookmark(bookmarkId) {
+                if (this.isIncognito) {
+                    window.parker.showToast('Incognito Mode: Bookmark changes are disabled.');
+                    return;
+                }
+
+                if (this.isBookmarkBusy) {
+                    return;
+                }
+
+                this.isBookmarkBusy = true;
+
+                try {
+                    const response = await fetch(window.parker.route('bookmarks.delete_bookmark', { bookmark_id: bookmarkId }), {
+                        method: 'DELETE'
+                    });
+                    const payload = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(payload.detail || 'Failed to delete bookmark');
+                    }
+
+                    this.bookmarks = this.bookmarks.filter((bookmark) => bookmark.id !== bookmarkId);
+                    this.bookmarkLabelValue = this.currentBookmark?.label || '';
+                    window.parker.showToast('Bookmark deleted');
+                } catch (error) {
+                    console.error(error);
+                    window.parker.showToast(error.message || 'Failed to delete bookmark', 'error');
+                } finally {
+                    this.isBookmarkBusy = false;
+                }
+            },
+
+            navigateToPage(pageIndex, { persist = true } = {}) {
+                if (this.meta.page_count <= 0) {
+                    return;
+                }
+
+                const boundedPage = Math.max(0, Math.min(pageIndex, this.meta.page_count - 1));
+
+                if (this.isScrollMode) {
+                    this.syncScrollPage(boundedPage, { behavior: 'auto', persist });
+                    return;
+                }
+
+                const changed = boundedPage !== this.currentPage;
+                this.currentPage = boundedPage;
+
+                if (persist && changed) {
+                    this.updateProgress();
+                }
+            },
+
+            jumpToBookmark(pageIndex) {
+                if (pageIndex === this.currentPage) {
+                    this.closeBookmarks();
+                    return;
+                }
+
+                this.beginBookmarkDetour(pageIndex);
+            },
+
+            async updateProgress(force = false) {
+                if (this.isIncognito || (this.isBookmarkDetourActive && !force)) {
                     return;
                 }
 
@@ -796,6 +1014,13 @@
                 if (this.showGoto) {
                     if (event.key === 'Escape') {
                         this.closeGoto();
+                    }
+                    return;
+                }
+
+                if (this.showBookmarks) {
+                    if (event.key === 'Escape') {
+                        this.closeBookmarks();
                     }
                     return;
                 }
@@ -836,6 +1061,16 @@
                         event.preventDefault();
                         this.openGoto();
                         break;
+                    case 'b':
+                    case 'B':
+                        event.preventDefault();
+                        if (this.showBookmarks) {
+                            this.closeBookmarks();
+                            break;
+                        }
+
+                        this.openBookmarks();
+                        break;
                     case 'h':
                     case 'H':
                         this.toggleUiLock();
@@ -856,6 +1091,7 @@
             },
 
             openGoto() {
+                this.showBookmarks = false;
                 this.showGoto = true;
                 this.gotoInputValue = this.currentPage + 1;
 
@@ -880,12 +1116,7 @@
                 if (page < 1) page = 1;
                 if (page > this.meta.page_count) page = this.meta.page_count;
 
-                if (this.isScrollMode) {
-                    this.syncScrollPage(page - 1, { behavior: 'auto' });
-                } else {
-                    this.currentPage = page - 1;
-                    this.updateProgress();
-                }
+                this.navigateToPage(page - 1);
                 this.closeGoto();
             },
 
@@ -901,15 +1132,7 @@
                     return;
                 }
 
-                if (this.isScrollMode) {
-                    this.syncScrollPage(targetPage, { behavior: 'auto' });
-                    return;
-                }
-
-                if (targetPage !== this.currentPage) {
-                    this.currentPage = targetPage;
-                    this.updateProgress();
-                }
+                this.navigateToPage(targetPage);
             },
 
             toggleUiLock() {

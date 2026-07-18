@@ -31,6 +31,15 @@
 
     .reader-toolbar.hidden { transform: translateY(-100%); }
 
+    .bookmark-detour-banner {
+        position: sticky;
+        top: 4.25rem;
+        z-index: 45;
+        backdrop-filter: blur(14px);
+        background: linear-gradient(180deg, rgba(8, 12, 20, 0.96), rgba(11, 17, 28, 0.92));
+        border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+    }
+
     .reader-content {
         flex: 1; display: flex; align-items: center; justify-content: center;
         overflow: hidden; position: relative;

@@ -1,0 +1,97 @@
+<div x-show="showBookmarks" x-cloak
+     data-bookmarks-modal
+     class="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm px-4"
+     x-transition:enter="transition ease-out duration-200"
+     x-transition:enter-start="opacity-0"
+     x-transition:enter-end="opacity-100"
+     x-transition:leave="transition ease-in duration-100"
+     x-transition:leave-start="opacity-100"
+     x-transition:leave-end="opacity-0"
+     x-on:click.self="closeBookmarks()">
+
+    <div class="w-full max-w-xl rounded-xl border border-gray-700 bg-gray-950/95 shadow-2xl"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="scale-95 opacity-0"
+         x-transition:enter-end="scale-100 opacity-100">
+
+        <div class="flex items-start justify-between gap-4 border-b border-gray-800 px-6 py-5">
+            <div>
+                <h3 class="text-lg font-bold text-white">Bookmarks</h3>
+                <p class="mt-1 text-sm text-gray-400">Save intentional page markers without affecting Continue progress.</p>
+            </div>
+            <button x-on:click="closeBookmarks()" data-close-bookmarks class="rounded p-2 text-gray-400 transition-colors hover:bg-white/10 hover:text-white" title="Close Bookmarks">
+                <span class="sr-only">Close bookmarks</span>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+        </div>
+
+        <div class="border-b border-gray-800 px-6 py-5">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <div class="flex-1">
+                    <label class="mb-2 block text-xs font-semibold uppercase tracking-wide text-gray-400">Label (Optional)</label>
+                    <input x-ref="bookmarkLabelInput"
+                           type="text"
+                           maxlength="120"
+                           x-model="bookmarkLabelValue"
+                           placeholder="Favorite splash page"
+                           class="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-white placeholder:text-gray-500 focus:border-blue-500 focus:outline-none">
+                </div>
+                <div class="flex items-center justify-between gap-3 sm:flex-col sm:items-end">
+                    <span class="rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1 text-sm font-semibold text-blue-300">
+                        Page <span x-text="currentPage + 1"></span>
+                    </span>
+                    <button x-on:click="saveBookmark()"
+                            data-save-bookmark
+                            class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+                            :disabled="isIncognito || isBookmarkBusy || meta.page_count <= 0"
+                            x-text="currentBookmark ? 'Update Bookmark' : 'Save Bookmark'">
+                    </button>
+                </div>
+            </div>
+
+            <p x-show="isIncognito" class="mt-3 text-xs text-amber-300">
+                Incognito mode is read-only for bookmarks.
+            </p>
+        </div>
+
+        <div class="max-h-[22rem] overflow-y-auto px-6 py-5">
+            <template x-if="bookmarks.length === 0">
+                <div class="rounded-xl border border-dashed border-gray-700 px-5 py-10 text-center">
+                    <p class="text-sm font-medium text-white">No bookmarks yet.</p>
+                    <p class="mt-1 text-sm text-gray-400">Save the current page to keep a reusable jump point.</p>
+                </div>
+            </template>
+
+            <div class="space-y-3" x-show="bookmarks.length > 0">
+                <template x-for="bookmark in bookmarks" :key="bookmark.id">
+                    <div data-bookmark-item
+                         :data-page-index="bookmark.page_index"
+                         class="flex items-center gap-3 rounded-xl border border-gray-800 bg-gray-900/80 p-3">
+
+                        <button x-on:click="jumpToBookmark(bookmark.page_index)"
+                                class="flex-1 text-left transition-colors hover:text-white">
+                            <div class="flex items-center gap-2">
+                                <span class="text-sm font-bold text-blue-300" x-text="`Page ${bookmark.page_index + 1}`"></span>
+                                <span x-show="bookmark.page_index === currentPage"
+                                      class="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-300">
+                                    Current
+                                </span>
+                            </div>
+                            <p x-show="bookmark.label" x-text="bookmark.label" class="mt-1 text-sm text-gray-300"></p>
+                            <p x-show="!bookmark.label" class="mt-1 text-sm text-gray-500">Saved page marker</p>
+                        </button>
+
+                        <button x-on:click.stop="deleteBookmark(bookmark.id)"
+                                data-delete-bookmark
+                                class="rounded-lg px-3 py-2 text-sm font-medium text-gray-400 transition-colors hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                                :disabled="isIncognito || isBookmarkBusy">
+                            Delete
+                        </button>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+</div>
