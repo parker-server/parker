@@ -1,0 +1,26 @@
+<div x-show="isBookmarkDetourActive"
+     x-cloak
+     data-bookmark-detour
+     class="bookmark-detour-banner px-4 py-3 text-amber-50 shadow-lg shadow-black/35">
+    <div class="mx-auto flex max-w-5xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+            <p class="text-sm font-semibold">Bookmark detour active</p>
+            <p class="text-sm text-amber-100/90">
+                Resume progress is still saved at page <span x-text="bookmarkDetourOriginPage + 1"></span>.
+            </p>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+            <button x-on:click="returnFromBookmarkDetour()"
+                    data-bookmark-detour-return
+                    class="rounded-lg border border-amber-300/50 bg-gray-950/80 px-3 py-2 text-sm font-semibold text-amber-100 shadow-lg shadow-black/35 backdrop-blur-md transition-colors hover:bg-gray-950">
+                Return to page <span x-text="bookmarkDetourOriginPage + 1"></span>
+            </button>
+            <button x-on:click="resumeProgressFromHere()"
+                    data-bookmark-detour-resume
+                    class="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-lg shadow-black/30 transition-colors hover:bg-blue-500">
+                Resume from here
+            </button>
+        </div>
+    </div>
+</div>

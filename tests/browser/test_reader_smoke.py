@@ -147,12 +147,16 @@ def test_reader_bookmarks_save_jump_and_delete(page, browser_server):
     page.locator(".reader-controls button").nth(2).click()
     page.wait_for_timeout(300)
     assert page.locator(".reader-controls .text-white.font-bold").first.text_content() == "2"
+    page.locator(".reader-controls button").nth(2).click()
+    page.wait_for_timeout(300)
+    assert page.locator(".reader-controls .text-white.font-bold").first.text_content() == "3"
 
     page.locator("[data-bookmarks-toggle]").click()
     page.wait_for_selector("[data-bookmarks-modal]")
     page.locator("[data-bookmark-item]").first.locator("button").first.click()
     page.wait_for_timeout(300)
     assert page.locator(".reader-controls .text-white.font-bold").first.text_content() == "1"
+    assert page.locator("[data-bookmark-detour]").is_visible()
 
     session = browser_server["db_factory"]()
     try:
@@ -169,6 +173,10 @@ def test_reader_bookmarks_save_jump_and_delete(page, browser_server):
     assert bookmark.page_index == 0
     assert bookmark.label == "Intro beat"
 
+    page.locator(".reader-controls button").nth(2).click()
+    page.wait_for_timeout(300)
+    assert page.locator(".reader-controls .text-white.font-bold").first.text_content() == "2"
+
     session = browser_server["db_factory"]()
     try:
         progress = session.scalar(
@@ -181,8 +189,13 @@ def test_reader_bookmarks_save_jump_and_delete(page, browser_server):
         session.close()
 
     assert progress is not None
-    assert progress.current_page == 1
-    assert progress.completed is False
+    assert progress.current_page == 2
+    assert progress.completed is True
+
+    page.locator("[data-bookmark-detour-return]").click()
+    page.wait_for_timeout(300)
+    assert page.locator(".reader-controls .text-white.font-bold").first.text_content() == "3"
+    assert page.locator("[data-bookmark-detour]").is_hidden()
 
     page.locator("[data-bookmarks-toggle]").click()
     page.wait_for_selector("[data-bookmarks-modal]")

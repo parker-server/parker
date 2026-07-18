@@ -150,6 +150,7 @@
             bookmarks: [],
             bookmarksLoaded: false,
             isBookmarkBusy: false,
+            bookmarkDetourOriginPage: null,
             scrubberValue: 0,
             isScrubbing: false,
             isHoveringScrubber: false,
@@ -326,6 +327,12 @@
                 enumerable: true,
                 get() {
                     return this.bookmarks.find((bookmark) => bookmark.page_index === this.currentPage) || null;
+                }
+            },
+            isBookmarkDetourActive: {
+                enumerable: true,
+                get() {
+                    return Number.isInteger(this.bookmarkDetourOriginPage);
                 }
             }
         };
@@ -839,6 +846,41 @@
                 this.bookmarkLabelValue = this.currentBookmark?.label || '';
             },
 
+            beginBookmarkDetour(targetPage) {
+                if (!this.isBookmarkDetourActive) {
+                    this.bookmarkDetourOriginPage = this.currentPage;
+                }
+
+                this.navigateToPage(targetPage, { persist: false });
+                this.closeBookmarks();
+                window.parker.showToast(`Bookmark detour started from page ${this.bookmarkDetourOriginPage + 1}`);
+            },
+
+            clearBookmarkDetour() {
+                this.bookmarkDetourOriginPage = null;
+            },
+
+            returnFromBookmarkDetour() {
+                if (!this.isBookmarkDetourActive) {
+                    return;
+                }
+
+                const originPage = this.bookmarkDetourOriginPage;
+                this.clearBookmarkDetour();
+                this.navigateToPage(originPage, { persist: false });
+                window.parker.showToast(`Returned to page ${originPage + 1}`);
+            },
+
+            resumeProgressFromHere() {
+                if (!this.isBookmarkDetourActive) {
+                    return;
+                }
+
+                this.clearBookmarkDetour();
+                this.updateProgress(true);
+                window.parker.showToast(`Resume point moved to page ${this.currentPage + 1}`);
+            },
+
             async saveBookmark() {
                 if (this.isIncognito) {
                     window.parker.showToast('Incognito Mode: Bookmark changes are disabled.');
@@ -930,12 +972,16 @@
             },
 
             jumpToBookmark(pageIndex) {
-                this.navigateToPage(pageIndex, { persist: false });
-                this.closeBookmarks();
+                if (pageIndex === this.currentPage) {
+                    this.closeBookmarks();
+                    return;
+                }
+
+                this.beginBookmarkDetour(pageIndex);
             },
 
-            async updateProgress() {
-                if (this.isIncognito) {
+            async updateProgress(force = false) {
+                if (this.isIncognito || (this.isBookmarkDetourActive && !force)) {
                     return;
                 }
 
