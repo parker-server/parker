@@ -217,7 +217,7 @@ function collectionDetail() {
             if (this.collection?.comics?.length > 0) {
                 let qs = `context_type=collection&context_id=${this.collection.id}`;
                 if (incognito) qs += '&incognito=true';
-                window.location.href = window.parker.route('pages.reader', { comic_id: this.collection.comics[0].id }, qs);
+                window.location.href = window.parker.readerRoute(this.collection.comics[0].id, qs, { includeReturnTo: false });
             }
         }
     }

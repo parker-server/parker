@@ -215,7 +215,7 @@ function readingListDetail() {
             if (this.readingList?.comics?.length > 0) {
                 let qs = `context_type=reading_list&context_id=${this.readingList.id}`;
                 if (incognito) qs += '&incognito=true';
-                window.location.href = window.parker.route('pages.reader', { comic_id: this.readingList.comics[0].id }, qs);
+                window.location.href = window.parker.readerRoute(this.readingList.comics[0].id, qs, { includeReturnTo: false });
             }
         }
     }

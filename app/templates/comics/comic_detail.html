@@ -460,7 +460,7 @@ function comicDetail() {
                 params.set('bookmark_origin_page', this.comic.resume_page);
             }
 
-            return window.parker.route('pages.reader', { comic_id: this.comicId }, params.toString());
+            return window.parker.readerRoute(this.comicId, params.toString());
         },
 
         applyRatingState(data) {

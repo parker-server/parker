@@ -154,6 +154,7 @@
             bookmarkDetourOriginPage: null,
             launchPageIndex: null,
             launchBookmarkOriginPage: null,
+            returnTo: null,
             editingBookmarkId: null,
             editingBookmarkLabelValue: '',
             scrubberValue: 0,
@@ -373,6 +374,7 @@
                 this.contextId = params.get('context_id');
                 this.launchPageIndex = Number.parseInt(params.get('page'), 10);
                 this.launchBookmarkOriginPage = Number.parseInt(params.get('bookmark_origin_page'), 10);
+                this.returnTo = params.get('return_to');
 
                 if (Number.isNaN(this.launchPageIndex)) {
                     this.launchPageIndex = null;
@@ -380,6 +382,10 @@
 
                 if (Number.isNaN(this.launchBookmarkOriginPage)) {
                     this.launchBookmarkOriginPage = null;
+                }
+
+                if (!this.isSafeReturnTo(this.returnTo)) {
+                    this.returnTo = null;
                 }
 
                 if (this.isIncognito) {
@@ -780,6 +786,7 @@
                 if (this.contextType) params.append('context_type', this.contextType);
                 if (this.contextId) params.append('context_id', this.contextId);
                 if (this.isIncognito) params.append('incognito', 'true');
+                if (this.returnTo) params.append('return_to', this.returnTo);
 
                 const queryString = params.toString();
                 if (queryString) {
@@ -790,6 +797,11 @@
             },
 
             exitReader() {
+                if (this.isSafeReturnTo(this.returnTo)) {
+                    window.location.href = this.returnTo;
+                    return;
+                }
+
                 if (this.contextType === 'reading_list' && this.contextId) {
                     window.location.href = window.parker.route('pages.reading_list_detail', { reading_list_id: this.contextId });
                     return;
@@ -816,6 +828,10 @@
                 }
 
                 window.location.href = window.parker.route('pages.comic_detail', { comic_id: this.comicId });
+            },
+
+            isSafeReturnTo(value) {
+                return typeof value === 'string' && value.startsWith('/') && !value.startsWith('//');
             },
 
             resetFilters() {
