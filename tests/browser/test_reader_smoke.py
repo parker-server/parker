@@ -134,7 +134,7 @@ def test_reader_bookmarks_save_jump_and_delete(page, browser_server):
     page.locator("[data-bookmarks-toggle]").click()
     page.wait_for_selector("[data-bookmarks-modal]")
 
-    label_input = page.locator("[data-bookmarks-modal] input[type='text']")
+    label_input = page.locator("[data-bookmark-label-input]")
     label_input.fill("Intro beat")
     page.locator("[data-save-bookmark]").click()
     page.wait_for_selector("[data-bookmark-item]")
@@ -142,6 +142,13 @@ def test_reader_bookmarks_save_jump_and_delete(page, browser_server):
     bookmark_item = page.locator("[data-bookmark-item]").first
     assert bookmark_item.locator("text=Page 1").is_visible()
     assert bookmark_item.locator("text=Intro beat").is_visible()
+
+    page.locator("[data-bookmark-edit]").click()
+    edit_input = page.locator("[data-bookmark-edit-input]")
+    edit_input.fill("Renamed beat")
+    page.locator("[data-bookmark-save-edit]").click()
+    page.wait_for_timeout(300)
+    assert bookmark_item.locator("text=Renamed beat").is_visible()
 
     page.locator("[data-close-bookmarks]").click()
     page.locator(".reader-controls button").nth(2).click()
@@ -153,7 +160,7 @@ def test_reader_bookmarks_save_jump_and_delete(page, browser_server):
 
     page.locator("[data-bookmarks-toggle]").click()
     page.wait_for_selector("[data-bookmarks-modal]")
-    page.locator("[data-bookmark-item]").first.locator("button").first.click()
+    page.locator("[data-bookmark-item]").first.locator("[data-jump-bookmark]").click()
     page.wait_for_timeout(300)
     assert page.locator(".reader-controls .text-white.font-bold").first.text_content() == "1"
     assert page.locator("[data-bookmark-detour]").is_visible()
@@ -171,7 +178,7 @@ def test_reader_bookmarks_save_jump_and_delete(page, browser_server):
 
     assert bookmark is not None
     assert bookmark.page_index == 0
-    assert bookmark.label == "Intro beat"
+    assert bookmark.label == "Renamed beat"
 
     page.locator(".reader-controls button").nth(2).click()
     page.wait_for_timeout(300)

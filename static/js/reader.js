@@ -147,10 +147,13 @@
             showBookmarks: false,
             gotoInputValue: 1,
             bookmarkLabelValue: '',
+            bookmarkSearchQuery: '',
             bookmarks: [],
             bookmarksLoaded: false,
             isBookmarkBusy: false,
             bookmarkDetourOriginPage: null,
+            editingBookmarkId: null,
+            editingBookmarkLabelValue: '',
             scrubberValue: 0,
             isScrubbing: false,
             isHoveringScrubber: false,
@@ -327,6 +330,21 @@
                 enumerable: true,
                 get() {
                     return this.bookmarks.find((bookmark) => bookmark.page_index === this.currentPage) || null;
+                }
+            },
+            filteredBookmarks: {
+                enumerable: true,
+                get() {
+                    const query = this.bookmarkSearchQuery.trim().toLowerCase();
+                    if (!query) {
+                        return this.bookmarks;
+                    }
+
+                    return this.bookmarks.filter((bookmark) => {
+                        const pageLabel = `page ${bookmark.page_index + 1}`;
+                        const label = (bookmark.label || '').toLowerCase();
+                        return pageLabel.includes(query) || label.includes(query) || String(bookmark.page_index + 1).includes(query);
+                    });
                 }
             },
             isBookmarkDetourActive: {
@@ -789,7 +807,7 @@
                         throw new Error('Failed to load bookmarks');
                     }
 
-                    this.bookmarks = await response.json();
+                    this.bookmarks = this.sortBookmarks(await response.json());
                     this.bookmarksLoaded = true;
                     this.bookmarkLabelValue = this.currentBookmark?.label || '';
                 } catch (error) {
@@ -801,6 +819,8 @@
                 this.showGoto = false;
                 this.showSettings = false;
                 this.showBookmarks = true;
+                this.bookmarkSearchQuery = '';
+                this.cancelBookmarkEdit();
 
                 if (!this.bookmarksLoaded) {
                     await this.loadBookmarks();
@@ -818,17 +838,13 @@
 
             closeBookmarks() {
                 this.showBookmarks = false;
+                this.bookmarkSearchQuery = '';
+                this.cancelBookmarkEdit();
                 this.resetControlFocus();
             },
 
             sortBookmarks(bookmarks) {
-                return [...bookmarks].sort((left, right) => {
-                    if (left.page_index !== right.page_index) {
-                        return left.page_index - right.page_index;
-                    }
-
-                    return new Date(left.created_at) - new Date(right.created_at);
-                });
+                return [...bookmarks].sort((left, right) => left.page_index - right.page_index);
             },
 
             applyBookmarkUpdate(bookmark) {
@@ -844,6 +860,55 @@
                 this.bookmarks = this.sortBookmarks(nextBookmarks);
                 this.bookmarksLoaded = true;
                 this.bookmarkLabelValue = this.currentBookmark?.label || '';
+            },
+
+            startBookmarkEdit(bookmark) {
+                this.editingBookmarkId = bookmark.id;
+                this.editingBookmarkLabelValue = bookmark.label || '';
+
+                this.$nextTick(() => {
+                    if (this.$refs.bookmarkEditInput) {
+                        this.$refs.bookmarkEditInput.focus();
+                        this.$refs.bookmarkEditInput.select();
+                    }
+                });
+            },
+
+            cancelBookmarkEdit() {
+                this.editingBookmarkId = null;
+                this.editingBookmarkLabelValue = '';
+            },
+
+            async saveBookmarkEdit(bookmarkId) {
+                if (this.isIncognito || this.isBookmarkBusy) {
+                    return;
+                }
+
+                this.isBookmarkBusy = true;
+
+                try {
+                    const response = await fetch(window.parker.route('bookmarks.update_bookmark', { bookmark_id: bookmarkId }), {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            label: this.editingBookmarkLabelValue
+                        })
+                    });
+                    const payload = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(payload.detail || 'Failed to update bookmark');
+                    }
+
+                    this.applyBookmarkUpdate(payload);
+                    this.cancelBookmarkEdit();
+                    window.parker.showToast('Bookmark label updated');
+                } catch (error) {
+                    console.error(error);
+                    window.parker.showToast(error.message || 'Failed to update bookmark', 'error');
+                } finally {
+                    this.isBookmarkBusy = false;
+                }
             },
 
             beginBookmarkDetour(targetPage) {
@@ -941,6 +1006,9 @@
                     }
 
                     this.bookmarks = this.bookmarks.filter((bookmark) => bookmark.id !== bookmarkId);
+                    if (this.editingBookmarkId === bookmarkId) {
+                        this.cancelBookmarkEdit();
+                    }
                     this.bookmarkLabelValue = this.currentBookmark?.label || '';
                     window.parker.showToast('Bookmark deleted');
                 } catch (error) {
