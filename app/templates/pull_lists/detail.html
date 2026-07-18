@@ -133,6 +133,60 @@
                 </div>
             </div>
         </template>
+
+        <template x-if="list?.details?.pencillers?.length > 0">
+            <div>
+                <h3 class="text-lg font-bold mb-3 text-gray-200">Pencillers</h3>
+                <div class="flex flex-wrap gap-2">
+                    <template x-for="name in list.details.pencillers" :key="name">
+                        {% with type='penciller', item='name' %}
+                            {% include "partials/tag_chip.html" %}
+                        {% endwith %}
+                    </template>
+                </div>
+            </div>
+        </template>
+
+        <div class="border-t border-gray-700 my-6"></div>
+
+        <template x-if="list?.details?.characters?.length > 0">
+            <div>
+                <h3 class="text-lg font-bold mb-3 text-gray-200">Characters</h3>
+                <div class="flex flex-wrap gap-2">
+                    <template x-for="name in list.details.characters" :key="name">
+                        {% with type='character', item='name' %}
+                            {% include "partials/tag_chip.html" %}
+                        {% endwith %}
+                    </template>
+                </div>
+            </div>
+        </template>
+
+        <template x-if="list?.details?.teams?.length > 0">
+            <div>
+                <h3 class="text-lg font-bold mb-3 text-gray-200">Teams</h3>
+                <div class="flex flex-wrap gap-2">
+                    <template x-for="name in list.details.teams" :key="name">
+                        {% with type='team', item='name' %}
+                            {% include "partials/tag_chip.html" %}
+                        {% endwith %}
+                    </template>
+                </div>
+            </div>
+        </template>
+
+        <template x-if="list?.details?.locations?.length > 0">
+            <div>
+                <h3 class="text-lg font-bold mb-3 text-gray-200">Locations</h3>
+                <div class="flex flex-wrap gap-2">
+                    <template x-for="name in list.details.locations" :key="name">
+                        {% with type='location', item='name' %}
+                            {% include "partials/tag_chip.html" %}
+                        {% endwith %}
+                    </template>
+                </div>
+            </div>
+        </template>
     </div>
 
 
