@@ -152,6 +152,8 @@
             bookmarksLoaded: false,
             isBookmarkBusy: false,
             bookmarkDetourOriginPage: null,
+            launchPageIndex: null,
+            launchBookmarkOriginPage: null,
             editingBookmarkId: null,
             editingBookmarkLabelValue: '',
             scrubberValue: 0,
@@ -369,6 +371,16 @@
                 this.isIncognito = params.get('incognito') === 'true';
                 this.contextType = params.get('context_type');
                 this.contextId = params.get('context_id');
+                this.launchPageIndex = Number.parseInt(params.get('page'), 10);
+                this.launchBookmarkOriginPage = Number.parseInt(params.get('bookmark_origin_page'), 10);
+
+                if (Number.isNaN(this.launchPageIndex)) {
+                    this.launchPageIndex = null;
+                }
+
+                if (Number.isNaN(this.launchBookmarkOriginPage)) {
+                    this.launchBookmarkOriginPage = null;
+                }
 
                 if (this.isIncognito) {
                     window.parker.showToast('Incognito Mode: Progress and bookmark changes will not be saved.');
@@ -399,6 +411,16 @@
 
                         if (progress.has_progress && !progress.completed) {
                             this.currentPage = progress.current_page;
+                        }
+                    }
+
+                    if (Number.isInteger(this.launchPageIndex) && this.meta.page_count > 0) {
+                        const boundedLaunchPage = Math.max(0, Math.min(this.launchPageIndex, this.meta.page_count - 1));
+                        this.currentPage = boundedLaunchPage;
+
+                        if (Number.isInteger(this.launchBookmarkOriginPage)) {
+                            const boundedOriginPage = Math.max(0, Math.min(this.launchBookmarkOriginPage, this.meta.page_count - 1));
+                            this.bookmarkDetourOriginPage = boundedOriginPage !== boundedLaunchPage ? boundedOriginPage : null;
                         }
                     }
 

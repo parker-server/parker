@@ -18,6 +18,7 @@ from app.models.credits import Person, ComicCredit
 from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.collection import Collection, CollectionItem
 from app.models.pull_list import PullList, PullListItem
+from app.models.bookmark import Bookmark
 from app.models.reading_progress import ReadingProgress
 from app.models.interactions import UserComicRating
 
@@ -162,6 +163,17 @@ async def get_comic(comic_id: int, db: SessionDep, current_user: CurrentUser):
     # If started but not finished, show "Continue"
     if progress and not progress.completed and progress.current_page > 0:
         read_status = "in_progress"
+    resume_page = progress.current_page if progress and not progress.completed and progress.current_page > 0 else None
+
+    bookmarks = (
+        db.query(Bookmark)
+        .filter(
+            Bookmark.user_id == current_user.id,
+            Bookmark.comic_id == comic.id,
+        )
+        .order_by(Bookmark.page_index.asc())
+        .all()
+    )
 
     parker_rating = build_parker_rating_state(db, comic.id, current_user.id)
     parker_readers_count = get_visible_comic_reader_count(db, comic.id)
@@ -233,6 +245,15 @@ async def get_comic(comic_id: int, db: SessionDep, current_user: CurrentUser):
 
         # Read status
         "read_status": read_status,
+        "resume_page": resume_page,
+        "bookmarks": [
+            {
+                "id": bookmark.id,
+                "page_index": bookmark.page_index,
+                "label": bookmark.label,
+            }
+            for bookmark in bookmarks
+        ],
 
         # ColorScape data
         "color_palette": comic.color_palette,

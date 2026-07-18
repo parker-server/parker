@@ -77,6 +77,45 @@
                     </div>
                 </div>
 
+                <template x-if="comic?.bookmarks?.length">
+                    <div class="overflow-hidden rounded-lg border border-gray-700 bg-gray-800 shadow-lg">
+                        <div class="flex items-start justify-between gap-4 border-b border-gray-700 px-4 py-4">
+                            <div class="min-w-0">
+                                <h3 class="font-bold text-gray-200">Bookmarks</h3>
+                                <p class="mt-1 text-xs text-gray-400">Jump directly to saved pages from here.</p>
+                            </div>
+                            <span class="whitespace-nowrap rounded-full border border-gray-600 bg-gray-900 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-300">
+                                <span x-text="comic.bookmarks.length"></span> saved
+                            </span>
+                        </div>
+
+                        <div class="max-h-72 overflow-y-auto">
+                            <template x-for="bookmark in comic.bookmarks" :key="bookmark.id">
+                                <a :href="bookmarkReaderHref(bookmark)"
+                                   data-detail-bookmark-link
+                                   class="group block border-b border-gray-700/80 px-4 py-3 transition-colors hover:bg-gray-700/40 last:border-b-0">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div class="min-w-0">
+                                            <p class="truncate text-sm font-semibold text-white" x-text="bookmark.label || `Page ${bookmark.page_index + 1}`"></p>
+                                            <p class="mt-1 text-xs text-gray-400">
+                                                <span class="font-semibold text-blue-300" x-text="`Page ${bookmark.page_index + 1}`"></span>
+                                                <span x-show="bookmark.label">saved jump point</span>
+                                            </p>
+                                        </div>
+                                        <span class="shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-500 transition-colors group-hover:text-blue-300">
+                                            Open
+                                        </span>
+                                    </div>
+                                </a>
+                            </template>
+                        </div>
+
+                        <p x-show="hasResumePage()" class="border-t border-gray-700 px-4 py-3 text-xs text-gray-400">
+                            Bookmark launches preserve your current resume page until you choose otherwise in the reader.
+                        </p>
+                    </div>
+                </template>
+
                 <div class="bg-gray-800 rounded-lg p-4 space-y-4 border border-gray-700">
                     <h3 class="font-bold text-gray-300 border-b border-gray-700 pb-2">File Info</h3>
 
@@ -397,11 +436,31 @@ function comicDetail() {
 
         async markRead() {
             await fetch(window.parker.route('progress.mark_comic_as_read',{ comic_id: this.comicId }), { method: 'POST' });
-            // You could show a toast here
+            if (this.comic) {
+                this.comic = { ...this.comic, read_status: 'new', resume_page: null };
+            }
         },
 
         async markUnread() {
             await fetch(window.parker.route('progress.mark_comic_as_unread', { comic_id: this.comicId }), { method: 'DELETE' });
+            if (this.comic) {
+                this.comic = { ...this.comic, read_status: 'new', resume_page: null };
+            }
+        },
+
+        hasResumePage() {
+            return Number.isInteger(this.comic?.resume_page) && this.comic.resume_page > 0;
+        },
+
+        bookmarkReaderHref(bookmark) {
+            const params = new URLSearchParams();
+            params.set('page', bookmark.page_index);
+
+            if (this.hasResumePage() && this.comic.resume_page !== bookmark.page_index) {
+                params.set('bookmark_origin_page', this.comic.resume_page);
+            }
+
+            return window.parker.route('pages.reader', { comic_id: this.comicId }, params.toString());
         },
 
         applyRatingState(data) {
