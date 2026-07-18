@@ -148,17 +148,16 @@ virtualenv from these pinned requirements.
 
 
 ## 📌 Roadmap
-- Documentation
-- Remaining UI polish (remove the remaining native JS dialogs with custom modals)
+- Improve Documentation
 - Expanded OPDS support
 - Localization
-- Enhanced WebP transcoding pipeline
+- Enhanced WebP transcoding pipeline (JXL, AVIF to WebP)
 - Additional unit test coverage
 - Migration tooling improvements
 - Pin libraries to front page
 - Improve admin Add Library dialog to be able to browse to a folder rather than type it in
 - Support multiple folder locations per library
-- Light metadata editing with file writeback
+- Light metadata editing with file writeback (Tentative)
 
 ## 🤝 Contributing
 Parker is early‑stage but stable. Contributions are welcome!
