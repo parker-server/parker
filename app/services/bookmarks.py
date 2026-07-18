@@ -20,7 +20,7 @@ class BookmarkService:
                 Bookmark.user_id == self.user_id,
                 Bookmark.comic_id == comic_id,
             )
-            .order_by(Bookmark.page_index.asc(), Bookmark.created_at.asc())
+            .order_by(Bookmark.page_index.asc())
             .all()
         )
 
