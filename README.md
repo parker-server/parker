@@ -27,6 +27,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
   - Incognito reading sessions that avoid persisting per-book overrides
   - Zero‑latency engine with preloading and swipe navigation
   - Separate per-comic bookmarks with detour-safe resume handling
+  - Smart close behavior that returns readers to the page they launched from
   - Image inspection tools
 
 - **Discovery**

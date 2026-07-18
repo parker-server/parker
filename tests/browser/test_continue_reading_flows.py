@@ -36,6 +36,24 @@ def test_continue_reading_tabs_show_expected_items(page, browser_server):
 
 
 @pytest.mark.browser
+def test_continue_reading_launch_returns_to_list_on_reader_close(page, browser_server):
+    seed = browser_server["seed"]
+    page.goto(f"{browser_server['base_url']}/continue-reading", wait_until="networkidle")
+
+    page.get_by_role("heading", name="Continue Reading").wait_for()
+    card = page.locator("div.border.border-gray-700").filter(has_text=seed["in_progress_comic_title"]).first
+    card.get_by_role("link", name="Continue").click()
+
+    page.wait_for_url(f"**/reader/{seed['in_progress_comic_id']}**")
+    page.locator(".reader-container").wait_for()
+    page.keyboard.press("Escape")
+
+    page.wait_for_url("**/continue-reading")
+    page.get_by_role("heading", name="Continue Reading").wait_for()
+    page.wait_for_selector(f"text={seed['in_progress_comic_title']}")
+
+
+@pytest.mark.browser
 def test_continue_reading_mark_read_moves_issue_to_completed(page, browser_server):
     seed = browser_server["seed"]
     page.goto(f"{browser_server['base_url']}/continue-reading", wait_until="networkidle")

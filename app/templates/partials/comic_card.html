@@ -6,6 +6,9 @@
             else if(typeof collection !== 'undefined') { return `context_type=collection&context_id=${this.collection.id}`; }
             else { return ''; }
         },
+        get includeReaderReturnTo() {
+            return !(typeof readingList !== 'undefined' || typeof collection !== 'undefined');
+        },
         get isSelected() { return $store.batch && $store.batch.has(comic.id, 'comic'); },
         updateStatus(e) {
             // Check if my ID was included in the batch
@@ -19,7 +22,7 @@
 
      }" @comics-updated.window="updateStatus($event)">
 
-    <a :href="window.parker.route('pages.reader', { comic_id: comic.id }, readerQueryParams)" class="block group relative cursor-pointer">
+    <a :href="window.parker.readerRoute(comic.id, readerQueryParams, { includeReturnTo: includeReaderReturnTo })" class="block group relative cursor-pointer">
 
         <div class="aspect-[2/3] bg-gray-700 rounded-lg overflow-hidden relative shadow-md transition-all duration-200 group-hover:scale-[1.02]"
              :class="isSelected ? 'ring-4 ring-blue-500/80 scale-[0.98]' : ''">

@@ -491,7 +491,7 @@
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <template x-for="item in data?.continue_reading" :key="item.comic_id">
-                        <a :href="window.parker.route('pages.reader', { comic_id: item.comic_id})" class="flex bg-gray-800 rounded-lg overflow-hidden border border-gray-700 hover:border-blue-500 transition-colors group h-32 relative">
+                        <a :href="window.parker.readerRoute(item.comic_id)" class="flex bg-gray-800 rounded-lg overflow-hidden border border-gray-700 hover:border-blue-500 transition-colors group h-32 relative">
                             <img :src="item.thumbnail" class="w-24 h-full object-cover">
 
                             <div class="p-4 flex flex-col justify-center min-w-0 flex-1">

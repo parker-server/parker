@@ -84,5 +84,25 @@
 
     window.parker = {...(window.parker || {}), route: get_route };
 
+    get_current_relative_url = function() {
+        return `${window.location.pathname}${window.location.search}`;
+    };
+
+    window.parker = {...(window.parker || {}), currentRelativeUrl: get_current_relative_url };
+
+    build_reader_route = function(comicId, rawQuery = '', options = {}) {
+        const query = new URLSearchParams(rawQuery ? rawQuery.toString().replace(/^[?&]/, '') : '');
+        const includeReturnTo = options.includeReturnTo !== false;
+        const returnTo = typeof options.returnTo === 'string' ? options.returnTo : get_current_relative_url();
+
+        if (includeReturnTo && returnTo && !query.has('return_to')) {
+            query.set('return_to', returnTo);
+        }
+
+        return get_route('pages.reader', { comic_id: comicId }, query.toString());
+    };
+
+    window.parker = {...(window.parker || {}), readerRoute: build_reader_route };
+
 </script>
 {% endmacro %}
