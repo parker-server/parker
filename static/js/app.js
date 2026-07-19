@@ -6,7 +6,12 @@
 
     const originalFetch = window.fetch;
     let isRefreshing = false;
+    let refreshPromise = null;
+    let refreshTimer = null;
     let failedQueue = [];
+    const REFRESH_SKEW_SECONDS = 90;
+    const IDLE_TIMEOUT_SECONDS = 2 * 60 * 60;
+    const LAST_ACTIVITY_KEY = 'parker.lastActivityAt';
 
     const processQueue = (error, token = null) => {
         failedQueue.forEach(prom => {
@@ -17,6 +22,185 @@
             }
         });
         failedQueue = [];
+    };
+
+    const appUrl = (path) => {
+        if (window.parker && typeof window.parker.url === 'function') {
+            return window.parker.url(path);
+        }
+        return path;
+    };
+
+    const getJwtPayload = (token) => {
+        if (!token || token.split('.').length < 2) return null;
+
+        try {
+            const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+            const paddedPayload = payload.padEnd(payload.length + ((4 - payload.length % 4) % 4), '=');
+            return JSON.parse(atob(paddedPayload));
+        } catch (error) {
+            return null;
+        }
+    };
+
+    const getTokenSecondsRemaining = (token) => {
+        const payload = getJwtPayload(token);
+        if (!payload || !payload.exp) return 0;
+        return payload.exp - Math.floor(Date.now() / 1000);
+    };
+
+    const nowSeconds = () => Math.floor(Date.now() / 1000);
+
+    const getLastActivityAt = () => {
+        const stored = parseInt(localStorage.getItem(LAST_ACTIVITY_KEY), 10);
+        return Number.isFinite(stored) && stored > 0 ? stored : nowSeconds();
+    };
+
+    const setLastActivityAt = (timestamp = nowSeconds()) => {
+        localStorage.setItem(LAST_ACTIVITY_KEY, String(timestamp));
+    };
+
+    const isIdleExpired = () => {
+        const refreshToken = localStorage.getItem('refresh_token');
+        return !!refreshToken && (nowSeconds() - getLastActivityAt()) > IDLE_TIMEOUT_SECONDS;
+    };
+
+    const setAccessCookie = (token, lifetimeInSeconds) => {
+        document.cookie = `access_token=${token}; path=/; max-age=${lifetimeInSeconds}; SameSite=Lax`;
+    };
+
+    const clearSession = () => {
+        localStorage.removeItem('token');
+        localStorage.removeItem('refresh_token');
+        localStorage.removeItem(LAST_ACTIVITY_KEY);
+        document.cookie = 'access_token=; path=/; max-age=0; SameSite=Lax';
+    };
+
+    const markActivity = () => {
+        if (!localStorage.getItem('refresh_token') || isIdleExpired()) return;
+        const now = nowSeconds();
+        if ((now - getLastActivityAt()) < 15) return;
+        setLastActivityAt(now);
+    };
+
+    const scheduleRefresh = () => {
+        if (refreshTimer) {
+            clearTimeout(refreshTimer);
+            refreshTimer = null;
+        }
+
+        const token = localStorage.getItem('token');
+        const refreshToken = localStorage.getItem('refresh_token');
+        if (!token || !refreshToken) return;
+
+        if (isIdleExpired()) {
+            clearSession();
+            return;
+        }
+
+        const secondsRemaining = getTokenSecondsRemaining(token);
+        const refreshInMs = Math.max((secondsRemaining - REFRESH_SKEW_SECONDS) * 1000, 10 * 1000);
+        refreshTimer = window.setTimeout(() => {
+            refreshSession({ force: true }).catch(() => {});
+        }, refreshInMs);
+    };
+
+    const refreshSession = async ({ force = false } = {}) => {
+        if (isIdleExpired()) {
+            clearSession();
+            throw new Error('Session idle timeout');
+        }
+
+        const token = localStorage.getItem('token');
+        const secondsRemaining = getTokenSecondsRemaining(token);
+
+        if (!force && token && secondsRemaining > REFRESH_SKEW_SECONDS) {
+            scheduleRefresh();
+            return token;
+        }
+
+        const refreshToken = localStorage.getItem('refresh_token');
+        if (!refreshToken) {
+            return null;
+        }
+
+        if (refreshPromise) {
+            return refreshPromise;
+        }
+
+        refreshPromise = (async () => {
+            const refreshRes = await originalFetch(appUrl('/api/auth/refresh'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refresh_token: refreshToken })
+            });
+
+            if (!refreshRes.ok) {
+                clearSession();
+                throw new Error('Refresh failed');
+            }
+
+            const data = await refreshRes.json();
+            localStorage.setItem('token', data.access_token);
+            localStorage.setItem('refresh_token', data.refresh_token);
+            setAccessCookie(data.access_token, data.lifetime_in_seconds);
+            scheduleRefresh();
+
+            return data.access_token;
+        })().finally(() => {
+            refreshPromise = null;
+        });
+
+        return refreshPromise;
+    };
+
+    const shouldPrepareNavigation = (anchor) => {
+        if (!anchor || !anchor.href || anchor.target || anchor.hasAttribute('download')) {
+            return false;
+        }
+
+        const url = new URL(anchor.href, window.location.href);
+        if (url.origin !== window.location.origin) return false;
+        if (url.pathname.includes('/login')) return false;
+        if (url.pathname.startsWith(appUrl('/api/'))) return false;
+        return true;
+    };
+
+    const prepareNavigation = async (event) => {
+        if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+            return;
+        }
+
+        const anchor = event.target instanceof Element ? event.target.closest('a') : null;
+        if (!shouldPrepareNavigation(anchor)) return;
+
+        const token = localStorage.getItem('token');
+        const refreshToken = localStorage.getItem('refresh_token');
+        if (!refreshToken || getTokenSecondsRemaining(token) > REFRESH_SKEW_SECONDS) {
+            return;
+        }
+
+        event.preventDefault();
+
+        try {
+            await refreshSession({ force: true });
+            window.location.href = anchor.href;
+        } catch (error) {
+            window.location.href = appUrl('/login');
+        }
+    };
+
+    window.parker = {
+        ...(window.parker || {}),
+        auth: {
+            refreshSession,
+            scheduleRefresh,
+            clearSession,
+            setAccessCookie,
+            markActivity,
+            isIdleExpired,
+            idleTimeoutSeconds: IDLE_TIMEOUT_SECONDS
+        }
     };
 
     window.fetch = async function(url, options = {}) {
@@ -58,16 +242,16 @@
                 const refreshToken = localStorage.getItem('refresh_token');
 
                 // If no refresh token, or if we are calling the login/refresh endpoints themselves, abort
-                if (!refreshToken || url.includes('/token') || url.includes('/refresh')) {
+                const requestUrl = typeof url === 'string' ? url : (url && url.url) || String(url);
+                if (!refreshToken || requestUrl.includes('/token') || requestUrl.includes('/refresh')) {
 
                     // Actual logout logic
                     console.warn('Session expired. Redirecting to login.');
-                    localStorage.removeItem('token');
-                    localStorage.removeItem('refresh_token');
+                    clearSession();
 
                     // Avoid infinite reload loops if already on login
                     if (!window.location.pathname.includes('/login')) {
-                        window.location.href = '/login';
+                        window.location.href = appUrl('/login');
                     }
                     return response;
                 }
@@ -75,41 +259,15 @@
                 isRefreshing = true;
 
                 try {
-                    // Call Refresh Endpoint
-                    const refreshRes = await originalFetch('/api/auth/refresh', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ refresh_token: refreshToken })
-                    });
-
-                    if (refreshRes.ok) {
-
-                        const data = await refreshRes.json();
-
-                        // Save new tokens
-                        localStorage.setItem('token', data.access_token);
-                        localStorage.setItem('refresh_token', data.refresh_token); // Rotate it
-
-                        // Sync the cookie (for HTML navigation)
-                        // We set it to the same expiry logic as the login page
-                        document.cookie = `access_token=${data.access_token}; path=/; max-age=${data.lifetime_in_seconds}; SameSite=Lax`;
-
-                        // Process queued requests
-                        processQueue(null, data.access_token);
-
-                        // Retry THIS request
-                        injectToken(data.access_token);
-                        return originalFetch(url, options);
-
-                    } else {
-                        throw new Error('Refresh failed');
-                    }
+                    const newToken = await refreshSession({ force: true });
+                    processQueue(null, newToken);
+                    injectToken(newToken);
+                    return originalFetch(url, options);
                 } catch (refreshErr) {
                     // Refresh failed completely - Force Logout
                     processQueue(refreshErr, null);
-                    localStorage.removeItem('token');
-                    localStorage.removeItem('refresh_token');
-                    window.location.href = '/login';
+                    clearSession();
+                    window.location.href = appUrl('/login');
 
                     return response;
                 } finally {
@@ -123,6 +281,23 @@
             throw error;
         }
     };
+
+    document.addEventListener('click', prepareNavigation, true);
+    document.addEventListener('click', markActivity, true);
+    document.addEventListener('keydown', markActivity, true);
+    document.addEventListener('touchstart', markActivity, true);
+    document.addEventListener('scroll', markActivity, true);
+    window.addEventListener('focus', () => refreshSession().catch(() => {}));
+    window.addEventListener('pageshow', () => refreshSession().catch(() => {}));
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            refreshSession().catch(() => {});
+        }
+    });
+    if (localStorage.getItem('refresh_token') && !localStorage.getItem(LAST_ACTIVITY_KEY)) {
+        setLastActivityAt();
+    }
+    scheduleRefresh();
 })();
 
 document.addEventListener('alpine:init', () => {

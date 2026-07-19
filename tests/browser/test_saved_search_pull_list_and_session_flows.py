@@ -1,6 +1,9 @@
+from datetime import timedelta
+
 import pytest
 from sqlalchemy import select
 
+from app.core.security import create_access_token, create_refresh_token
 from app.models.bookmark import Bookmark
 from app.models.pull_list import PullList, PullListItem
 from app.models.reading_progress import ReadingProgress
@@ -87,6 +90,106 @@ def test_login_next_redirect_and_logout_clears_session(page, browser_server):
     assert cleared_state["token"] is None
     assert cleared_state["refreshToken"] is None
     assert cleared_state["hasAccessCookie"] is False
+
+
+@pytest.mark.browser
+def test_session_refresh_resyncs_access_cookie_before_navigation(page, browser_server):
+    expired_access_token = create_access_token(
+        subject="browser-user",
+        expires_delta=timedelta(seconds=-30),
+    )
+    refresh_token = create_refresh_token(subject="browser-user")
+
+    page.goto(f"{browser_server['base_url']}/search", wait_until="networkidle")
+
+    page.evaluate(
+        """
+        ({ expiredAccessToken, refreshToken }) => {
+            localStorage.setItem('token', expiredAccessToken);
+            localStorage.setItem('refresh_token', refreshToken);
+            document.cookie = 'access_token=; path=/; max-age=0; SameSite=Lax';
+        }
+        """,
+        {
+            "expiredAccessToken": expired_access_token,
+            "refreshToken": refresh_token,
+        },
+    )
+
+    refreshed_token = page.evaluate(
+        """
+        async () => {
+            await window.parker.auth.refreshSession({ force: true });
+            return localStorage.getItem('token');
+        }
+        """
+    )
+
+    session_state = page.evaluate(
+        """
+        () => ({
+            token: localStorage.getItem('token'),
+            refreshToken: localStorage.getItem('refresh_token'),
+            hasAccessCookie: document.cookie.includes('access_token=')
+        })
+        """
+    )
+    assert refreshed_token != expired_access_token
+    assert session_state["token"] == refreshed_token
+    assert session_state["refreshToken"] != refresh_token
+    assert session_state["hasAccessCookie"] is True
+
+
+@pytest.mark.browser
+def test_idle_session_clears_instead_of_refreshing(page, browser_server):
+    expired_access_token = create_access_token(
+        subject="browser-user",
+        expires_delta=timedelta(seconds=-30),
+    )
+    refresh_token = create_refresh_token(subject="browser-user")
+
+    page.goto(f"{browser_server['base_url']}/search", wait_until="networkidle")
+
+    error_message = page.evaluate(
+        """
+        async ({ expiredAccessToken, refreshToken }) => {
+            const staleActivityAt = Math.floor(Date.now() / 1000) - window.parker.auth.idleTimeoutSeconds - 10;
+            localStorage.setItem('token', expiredAccessToken);
+            localStorage.setItem('refresh_token', refreshToken);
+            localStorage.setItem('parker.lastActivityAt', String(staleActivityAt));
+            document.cookie = 'access_token=; path=/; max-age=0; SameSite=Lax';
+
+            try {
+                await window.parker.auth.refreshSession({ force: true });
+            } catch (error) {
+                return error.message;
+            }
+            return null;
+        }
+        """,
+        {
+            "expiredAccessToken": expired_access_token,
+            "refreshToken": refresh_token,
+        },
+    )
+
+    session_state = page.evaluate(
+        """
+        () => ({
+            token: localStorage.getItem('token'),
+            refreshToken: localStorage.getItem('refresh_token'),
+            lastActivityAt: localStorage.getItem('parker.lastActivityAt'),
+            hasAccessCookie: document.cookie.includes('access_token=')
+        })
+        """
+    )
+    assert error_message == "Session idle timeout"
+    assert session_state == {
+        "token": None,
+        "refreshToken": None,
+        "lastActivityAt": None,
+        "hasAccessCookie": False,
+    }
 
 
 @pytest.mark.browser
