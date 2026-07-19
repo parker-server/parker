@@ -108,6 +108,20 @@ def test_initialize_defaults_seeds_short_server_display_name(db):
     assert service.get("general.app_name") == "Parker"
 
 
+def test_initialize_defaults_seeds_single_volume_redirect_setting(db):
+    service = SettingsService(db)
+
+    service.initialize_defaults()
+
+    setting = db.query(SystemSetting).filter(
+        SystemSetting.key == "ui.auto_redirect_single_volume_series"
+    ).first()
+    assert setting is not None
+    assert service.get("ui.auto_redirect_single_volume_series") is False
+    assert setting.category == "appearance"
+    assert setting.data_type == "bool"
+
+
 def test_initialize_defaults_preserves_existing_custom_server_display_name(db):
     db.add(
         SystemSetting(

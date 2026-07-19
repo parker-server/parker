@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.core.comic_helpers import get_smart_cover
 from app.api.deps import SessionDep, ComicDep, VolumeDep, SeriesDep, LibraryDep, CurrentUser
 from app.config import settings
+from app.core.settings_loader import get_cached_setting
 from app.core.templates import templates
 from app.models.comic import Comic, Volume
 from app.core.login_effects import get_active_effect
@@ -123,8 +124,27 @@ async def library_view(request: Request, library: LibraryDep, user: CurrentUser)
     })
 
 @router.get("/series/{series_id}", response_class=HTMLResponse, name="series_detail")
-async def series_detail(request: Request, series: SeriesDep, db: SessionDep, user: CurrentUser):
+async def series_detail(
+        request: Request,
+        series: SeriesDep,
+        db: SessionDep,
+        user: CurrentUser,
+        show_series: bool = Query(False)
+):
     """Series detail page"""
+    if not show_series and get_cached_setting("ui.auto_redirect_single_volume_series", False):
+        volume_ids = (
+            db.query(Volume.id)
+            .filter(Volume.series_id == series.id)
+            .order_by(Volume.volume_number)
+            .limit(2)
+            .all()
+        )
+        if len(volume_ids) == 1:
+            return RedirectResponse(
+                url=request.url_for("volume_detail", volume_id=volume_ids[0].id),
+                status_code=307,
+            )
 
     # Find the "Smart Cover" to use for colors/background
     base_query = db.query(Comic).join(Volume).filter(Volume.series_id == series.id)

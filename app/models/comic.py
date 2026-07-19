@@ -11,7 +11,7 @@ class Volume(Base):
     __tablename__ = "volumes"
 
     id = Column(Integer, primary_key=True, index=True)
-    series_id = Column(Integer, ForeignKey("series.id"))
+    series_id = Column(Integer, ForeignKey("series.id"), index=True)
     volume_number = Column(Integer, default=1)
     summary_override = Column(Text, nullable=True)
 

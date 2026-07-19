@@ -1,4 +1,34 @@
 from app.core.templates import templates
+from app.models.comic import Comic, Volume
+from app.models.library import Library
+from app.models.series import Series
+
+
+def _seed_series_page_data(db, volume_count=1):
+    library = Library(name=f"Page Test Library {volume_count}", path=f"/tmp/page-test-library-{volume_count}")
+    series = Series(name=f"Page Test Series {volume_count}", library=library)
+    db.add(series)
+
+    volumes = []
+    for index in range(1, volume_count + 1):
+        volume = Volume(series=series, volume_number=index)
+        volumes.append(volume)
+        db.add(
+            Comic(
+                volume=volume,
+                number="1",
+                filename=f"page-test-{volume_count}-{index}.cbz",
+                file_path=f"/tmp/page-test-{volume_count}-{index}.cbz",
+                page_count=10,
+            )
+        )
+
+    db.commit()
+    db.refresh(series)
+    for volume in volumes:
+        db.refresh(volume)
+
+    return series, volumes
 
 
 def test_home_page_shows_storage_warning_for_admin_when_startup_looks_suspicious(admin_client, monkeypatch):
@@ -141,6 +171,45 @@ def test_reader_page_uses_modular_reader_shell(auth_client):
     assert "window.createReader({ comicId: 123 })" in body
     assert "/static/js/reader.js" in body
     assert 'x-on:click="toggleViewMode()"' in body
+
+
+def test_series_page_redirects_to_single_volume_when_setting_enabled(admin_client, db, monkeypatch):
+    series, volumes = _seed_series_page_data(db)
+    monkeypatch.setattr("app.routers.pages.get_cached_setting", lambda key, default=None: True)
+
+    response = admin_client.get(f"/series/{series.id}", follow_redirects=False)
+
+    assert response.status_code == 307
+    assert response.headers["location"].endswith(f"/volumes/{volumes[0].id}")
+
+
+def test_series_page_show_series_query_skips_single_volume_redirect(admin_client, db, monkeypatch):
+    series, _ = _seed_series_page_data(db)
+    monkeypatch.setattr("app.routers.pages.get_cached_setting", lambda key, default=None: True)
+
+    response = admin_client.get(f"/series/{series.id}?show_series=1", follow_redirects=False)
+
+    assert response.status_code == 200
+    assert "seriesDetail()" in response.text
+
+
+def test_series_page_keeps_multi_volume_series_when_setting_enabled(admin_client, db, monkeypatch):
+    series, _ = _seed_series_page_data(db, volume_count=2)
+    monkeypatch.setattr("app.routers.pages.get_cached_setting", lambda key, default=None: True)
+
+    response = admin_client.get(f"/series/{series.id}", follow_redirects=False)
+
+    assert response.status_code == 200
+    assert "seriesDetail()" in response.text
+
+
+def test_volume_page_series_breadcrumb_uses_series_escape_hatch(admin_client, db):
+    _, volumes = _seed_series_page_data(db)
+
+    response = admin_client.get(f"/volumes/{volumes[0].id}")
+
+    assert response.status_code == 200
+    assert "?show_series=1" in response.text
 
 
 def test_user_settings_page_renders_for_authenticated_user(auth_client):

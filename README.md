@@ -13,6 +13,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
   - Rich metadata (credits, tags, page counts, colors)
   - Reading Lists, Collections, Story Arcs, Stacks, Smart Lists
   - Volume-level `Following` for future issue tracking by run
+  - Optional single-volume series shortcut to open the volume detail page directly
 
 - **User System**
   - Multi‑library access with row‑level security
