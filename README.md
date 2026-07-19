@@ -34,6 +34,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
 - **Discovery**
   - Netflix‑style home page with content rails
   - `Continue Reading`, `Jump Back In`, `Trending`, and `New from Following`
+  - Library Timeline for character and team histories generated from embedded metadata
   - Recommendations by creator or metadata
   - Random gems, recently updated series
 

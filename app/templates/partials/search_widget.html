@@ -84,7 +84,7 @@
                 <div class="px-4 py-2 bg-gray-900/50 text-xs font-bold text-gray-400 uppercase tracking-wider sticky top-0 backdrop-blur-sm">Tags</div>
 
                 <template x-for="item in results.characters" :key="'char'+item.id">
-                    <a :href="window.parker.route('pages.search', {}, `field=character&value=${encodeURIComponent(item.name)}&operator=contains`)" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
+                    <a :href="window.parker.route('pages.timelines', {}, `type=character&name=${encodeURIComponent(item.name)}`)" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
                         <span class="text-xl group-hover:scale-110 transition-transform">🦸‍♂️</span>
                         <div class="min-w-0">
                             <div class="font-bold text-white truncate" x-text="item.name"></div>
@@ -94,7 +94,7 @@
                 </template>
 
                 <template x-for="item in results.teams" :key="'team'+item.id">
-                    <a :href="window.parker.route('pages.search', {}, `field=team&value=${encodeURIComponent(item.name)}&operator=contains`)" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
+                    <a :href="window.parker.route('pages.timelines', {}, `type=team&name=${encodeURIComponent(item.name)}`)" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
                         <span class="text-xl group-hover:scale-110 transition-transform">🛡️</span>
                         <div class="min-w-0">
                             <div class="font-bold text-white truncate" x-text="item.name"></div>
