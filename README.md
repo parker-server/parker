@@ -21,7 +21,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
   - Hybrid authentication (JWT + secure cookies)
 
 - **Reader**
-  - Context‑aware navigation (series, volume, lists)
+  - Context‑aware navigation (series, volume, lists, story arcs)
   - Manga mode (RTL), double‑page spreads, `Long View`
   - Per-book reader overrides for view mode, double-page, and reading direction
   - Incognito reading sessions that avoid persisting per-book overrides

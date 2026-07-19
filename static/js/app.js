@@ -637,6 +637,21 @@ document.addEventListener('error', function(e) {
         }
     };
 
+    const storyArcReaderUrl = (arc, contextScope, contextScopeId) => {
+        if (!arc || !arc.first_issue_id) {
+            return '#';
+        }
+
+        const params = new URLSearchParams({
+            context_type: 'story_arc',
+            story_arc: arc.name || '',
+            context_scope: contextScope,
+            context_scope_id: contextScopeId
+        });
+
+        return window.parker.readerRoute(arc.first_issue_id, params.toString());
+    };
+
 
     // Export utilities
     window.parker = { ...(window.parker || {}),
@@ -648,7 +663,8 @@ document.addEventListener('error', function(e) {
         paginationMixin,
         storage,
         prefs,
-        searchHandoff
+        searchHandoff,
+        storyArcReaderUrl
     };
 
 })();

@@ -438,6 +438,8 @@ function volumeDetail() {
         readFilter: 'all', // 'all', 'read', 'unread'
         sortOrder: 'asc',  // 'asc', 'desc'
         isReverseNumbering: false,
+        storyArcScope: 'volume',
+        storyArcScopeId: {{ volume_id }},
 
         paginationMode: '{{ get_system_setting("ui.pagination_mode", "infinite") }}',
 
