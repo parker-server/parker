@@ -19,10 +19,20 @@ TALL_SCROLL_PAGE_BYTES = b"""
 @pytest.mark.browser
 def test_reader_page_loads_and_exposes_reader_controls(page, browser_server):
     seed = browser_server["seed"]
+    library_requests = []
+
+    page.on(
+        "request",
+        lambda request: library_requests.append(request.url)
+        if "/api/libraries" in request.url
+        else None,
+    )
+
     page.goto(f"{browser_server['base_url']}/reader/{seed['active_comic_id']}", wait_until="networkidle")
 
     page.wait_for_selector(".reader-container")
     page.wait_for_selector("img.reader-page")
+    assert library_requests == []
 
     title_text = page.locator(".reader-toolbar .font-bold.text-white").first
     assert title_text.text_content() == f"{seed['series_name']} #{seed['active_comic_number']}"

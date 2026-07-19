@@ -29,7 +29,7 @@ def test_get_route_map_uses_flattened_routes():
     route_map = get_route_map(app)
     admin_route_map = get_route_map(app, with_admin_routes=True)
 
-    assert route_map["libraries"]["list"] == "/api/libraries"
+    assert route_map["libraries"]["list"] == "/api/libraries/"
     assert route_map["pages"]["login"] == "/login"
     assert route_map["login"] == "/login"
     assert "admin" not in route_map
@@ -82,5 +82,5 @@ def test_flat_alias_does_not_override_namespace():
 
     route_map = get_route_map(app)
 
-    assert route_map["series"]["list"] == "/api/series"
+    assert route_map["series"]["list"] == "/api/series/"
     assert route_map["libraries"]["series"] == "/api/libraries/{library_id}/series"

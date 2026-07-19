@@ -31,7 +31,8 @@
     {% block extra_head %}{% endblock %}
 </head>
 <body
-    class="bg-gray-900 text-gray-100 min-h-screen flex flex-col"
+    class="{% block body_class %}bg-gray-900 text-gray-100 min-h-screen flex flex-col{% endblock %}"
+    {% block body_alpine %}
     x-data="{
         mobileMenuOpen: false,
         isAdmin: false,
@@ -56,8 +57,10 @@
             }
         }
     }"
+    {% endblock %}
 >
 
+    {% block site_nav %}
     <nav class="bg-gray-900/95 backdrop-blur-md border-b border-gray-800 sticky top-0 z-[100]">
         <div class="container mx-auto px-4">
             <div class="flex items-center justify-between h-16">
@@ -179,22 +182,27 @@
             </div>
         </div>
     </nav>
+    {% endblock %}
 
-    <main class="container mx-auto px-4 py-8 flex-grow">
+    <main class="{% block main_class %}container mx-auto px-4 py-8 flex-grow{% endblock %}">
         {% block content %}{% endblock %}
     </main>
 
     <div id="toast-container" style="z-index: 2000 !important;" class="fixed bottom-4 right-4 space-y-2 pointer-events-none">
         </div>
 
+    {% block global_modals %}
     {% include "partials/add_pull_list_modal.html" %}
     {% include "partials/selection_widget.html" %}
+    {% endblock %}
 
-
+    {% block site_footer %}
     {% include "partials/footer.html" %}
+    {% endblock %}
 
     <script src="{{ url('/static/js/app.js') }}?v={{ asset_version('static/js/app.js') }}"></script>
 
+    {% block global_alpine_components %}
     <script>
         document.addEventListener('alpine:init', () => {
             Alpine.data('scannerStatus', () => ({
@@ -231,9 +239,14 @@
             }))
         })
     </script>
+    {% endblock %}
 
+    {% block event_listeners %}
     {% include "partials/event_listeners.html" %}
+    {% endblock %}
     {% block extra_scripts %}{% endblock %}
+    {% block dialogs %}
     {% include "partials/dialogs.html" %}
+    {% endblock %}
 </body>
 </html>

@@ -6,11 +6,7 @@ def _normalize_route_key(value: str) -> str:
 
 
 def _normalize_route_path(path: str | None) -> str:
-    if not path:
-        return "/"
-    if path != "/":
-        return path.rstrip("/")
-    return path
+    return path or "/"
 
 
 def _get_route_namespace(route, tags: list[str], route_path: str) -> str:
