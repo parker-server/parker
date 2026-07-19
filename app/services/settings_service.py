@@ -128,6 +128,14 @@ class SettingsService:
             ]
         },
         {
+            "key": "ui.auto_redirect_single_volume_series",
+            "value": "false",
+            "category": "appearance",
+            "data_type": "bool",
+            "label": "Open Single-Volume Series as Volume",
+            "description": "When enabled, opening a series with exactly one volume sends readers directly to that volume page."
+        },
+        {
             "key": "ui.on_deck.staleness_weeks", "value": "4",
             "category": "appearance", "data_type": "int",
             "label": "On Deck Staleness (Weeks)",

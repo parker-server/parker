@@ -16,7 +16,7 @@
         <div class="flex flex-wrap items-center gap-2 text-gray-400 mb-6 text-sm" x-show="!error" x-cloak>
             <a :href="window.parker.route('pages.library_detail', { library_id: volume?.library_id })" class="hover:text-white" x-text="volume?.library_name"></a>
             <span>/</span>
-            <a :href="window.parker.route('pages.series_detail', { series_id: volume?.series_id    })" class="hover:text-blue-400" x-text="volume?.series_name || 'Series'"></a>
+            <a :href="window.parker.route('pages.series_detail', { series_id: volume?.series_id }) + '?show_series=1'" class="hover:text-blue-400" x-text="volume?.series_name || 'Series'"></a>
             <span>/</span>
             <span class="text-white" x-text="`Vol ${volume?.volume_number}`"></span>
         </div>
