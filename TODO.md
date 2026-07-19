@@ -4,6 +4,12 @@ This file captures follow-up work that should not get lost between releases.
 
 ## Technical Debt
 
+- Explore container-level Continue behavior for reader contexts.
+  Context: Reader navigation currently preserves launch-time context for reading lists, collections, stacks, series, volumes, and story arcs, but persisted progress is comic-level. Home rails resume the comic and page only, while container "Start reading" actions begin at the first item instead of resuming the user's last position within that container.
+  Follow-up goal: Decide whether container pages should offer a context-aware Continue action that finds the best in-progress or next unread item within that specific container and launches the reader with that container context.
+  Candidate direction: Treat this as a generic reader-session/container-resume feature rather than a story-arc-specific workaround. Reading lists, collections, stacks, and possibly scoped story arcs should share the same design if the feature is worth building.
+  Guardrail: Avoid changing global home-rail resume behavior unless there is a broader product decision to persist last reader launch context; the current comic/page-only resume is simple and predictable.
+
 - Keep an eye on pull list detail page scale before it becomes a usability problem.
   Context: `app/templates/pull_lists/detail.html` currently renders a full list in one view, which is fine for normal pull-list sizes and likely more important to watch than the pull-list index page.
   Follow-up goal: If real users start building unusually large pull lists, consider pagination, filtering, or virtualization for list contents before the detail view becomes heavy to use.

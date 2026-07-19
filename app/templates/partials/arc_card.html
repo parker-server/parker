@@ -1,4 +1,4 @@
-<div class="group relative cursor-pointer" x-on:click="filterByArc(arc.name)">
+<div class="group relative cursor-pointer" x-on:click="window.location.href = window.parker.storyArcReaderUrl(arc, storyArcScope, storyArcScopeId)">
 
     <div class="aspect-[2/3] bg-gray-700 rounded-lg overflow-hidden relative shadow-md transition-transform duration-200 group-hover:scale-[1.02]">
 
@@ -6,7 +6,7 @@
              class="w-full h-full object-cover transition-opacity duration-300 group-hover:opacity-40">
 
         <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-             <a :href="window.parker.readerRoute(arc.first_issue_id)"
+             <a :href="window.parker.storyArcReaderUrl(arc, storyArcScope, storyArcScopeId)"
                 x-on:click.stop
                 class="bg-blue-600 hover:bg-blue-500 text-white rounded-full p-3 shadow-xl transform hover:scale-110 transition-transform"
                 title="Start Reading Arc">

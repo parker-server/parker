@@ -12,6 +12,7 @@ from app.core.comic_helpers import get_format_sort_index, get_format_weight, REV
 from app.api.deps import SessionDep, CurrentUser
 from app.models.comic import Comic, Volume
 from app.models.series import Series
+from app.models.library import Library
 
 from app.services.images import ImageService
 from app.models.reading_progress import ReadingProgress
@@ -34,12 +35,24 @@ async def get_comic_reader_init(comic_id: int,
                                 current_user: CurrentUser,
                                 # Context Parameters
                                 context_type: Annotated[
-                                    Optional[Literal["volume", "reading_list", "pull_list", "collection", "series"]],
+                                    Optional[Literal["volume", "reading_list", "pull_list", "collection", "series", "story_arc"]],
                                     "Specifies the type of context; defaults to 'volume'"
                                 ] = "volume",
                                 context_id: Annotated[
                                     Optional[int],
                                     "Unique identifier for the given context"
+                                ] = None,
+                                story_arc: Annotated[
+                                    Optional[str],
+                                    "Story arc name for story_arc context navigation"
+                                ] = None,
+                                context_scope: Annotated[
+                                    Optional[Literal["series", "volume"]],
+                                    "Restricts story arc navigation to the launch scope"
+                                ] = None,
+                                context_scope_id: Annotated[
+                                    Optional[int],
+                                    "Unique identifier for the story arc launch scope"
                                 ] = None):
     """
     Get initialization data for the reader.
@@ -194,8 +207,56 @@ async def get_comic_reader_init(comic_id: int,
 
         ids = [i[0] for i in items]
 
+    elif context_type == "story_arc" and story_arc and story_arc.strip():
+        # 5. Story Arc Strategy
+        # Story arcs are metadata-driven and can skip filler issues, so navigation
+        # must use exact story_arc membership instead of issue-number ranges.
+
+        arc_name = story_arc.strip()
+        context_label = arc_name
+
+        format_weight = get_format_sort_index()
+        number_direction = sort_number.asc()
+        if comic.volume.series.name.lower() in REVERSE_NUMBERING_SERIES:
+            number_direction = sort_number.desc()
+
+        query = (
+            db.query(Comic.id)
+            .join(Volume)
+            .join(Series)
+            .join(Library)
+            .filter(
+                Comic.story_arc == arc_name,
+                Library.parse_story_arcs == True,
+            )
+        )
+
+        if context_scope == "volume" and context_scope_id == comic.volume_id:
+            query = query.filter(Comic.volume_id == context_scope_id)
+        else:
+            series_scope_id = (
+                context_scope_id
+                if context_scope == "series" and context_scope_id == comic.volume.series_id
+                else comic.volume.series_id
+            )
+            query = query.filter(Volume.series_id == series_scope_id)
+
+        if safe_filter is not None:
+            query = query.filter(safe_filter)
+
+        items = query.order_by(
+            Volume.volume_number,
+            format_weight,
+            sort_year.asc(),
+            sort_month.asc(),
+            sort_day.asc(),
+            number_direction,
+        ).all()
+
+        ids = [i[0] for i in items]
+
     else:
-        # 5. Default / Volume Strategy
+        # 6. Default / Volume Strategy
         # OPTIMIZATION: Fetch lightweight Tuples instead of full Comic objects.
         # This prevents instantiating 900 objects for large series.
 

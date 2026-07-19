@@ -167,6 +167,9 @@
             isIncognito: false,
             contextType: null,
             contextId: null,
+            storyArc: null,
+            contextScope: null,
+            contextScopeId: null,
             pageMeta: {},
             filters: cloneDefaultFilters(),
             scrollTicking: false,
@@ -372,6 +375,9 @@
                 this.isIncognito = params.get('incognito') === 'true';
                 this.contextType = params.get('context_type');
                 this.contextId = params.get('context_id');
+                this.storyArc = params.get('story_arc');
+                this.contextScope = params.get('context_scope');
+                this.contextScopeId = params.get('context_scope_id');
                 this.launchPageIndex = Number.parseInt(params.get('page'), 10);
                 this.launchBookmarkOriginPage = Number.parseInt(params.get('bookmark_origin_page'), 10);
                 this.returnTo = params.get('return_to');
@@ -399,8 +405,7 @@
             async loadInitData() {
                 try {
                     const params = new URLSearchParams();
-                    if (this.contextType) params.append('context_type', this.contextType);
-                    if (this.contextId) params.append('context_id', this.contextId);
+                    this.appendReaderContextParams(params);
 
                     const response = await fetch(window.parker.route('reader.init', { comic_id: this.comicId }, params.toString()));
 
@@ -783,8 +788,7 @@
                 let url = window.parker.route('pages.reader', { comic_id: id });
                 const params = new URLSearchParams();
 
-                if (this.contextType) params.append('context_type', this.contextType);
-                if (this.contextId) params.append('context_id', this.contextId);
+                this.appendReaderContextParams(params);
                 if (this.isIncognito) params.append('incognito', 'true');
                 if (this.returnTo) params.append('return_to', this.returnTo);
 
@@ -822,8 +826,18 @@
                     return;
                 }
 
+                if (this.contextType === 'story_arc' && this.contextScope === 'series' && this.contextScopeId) {
+                    window.location.href = window.parker.route('pages.series_detail', { series_id: this.contextScopeId });
+                    return;
+                }
+
                 if (this.contextType === 'volume' && this.contextId) {
                     window.location.href = window.parker.route('pages.volume_detail', { volume_id: this.contextId });
+                    return;
+                }
+
+                if (this.contextType === 'story_arc' && this.contextScope === 'volume' && this.contextScopeId) {
+                    window.location.href = window.parker.route('pages.volume_detail', { volume_id: this.contextScopeId });
                     return;
                 }
 
@@ -1092,8 +1106,7 @@
                 }
 
                 const params = new URLSearchParams();
-                if (this.contextType) params.append('context_type', this.contextType);
-                if (this.contextId) params.append('context_id', this.contextId);
+                this.appendReaderContextParams(params, { includeProgressContext: true });
 
                 fetch(window.parker.route('progress.comic_progress', { comic_id: this.comicId }, params.toString()), {
                     method: 'POST',
@@ -1251,7 +1264,30 @@
                 if (contextType === 'reading_list') return 'Reading List';
                 if (contextType === 'collection') return 'Collection';
                 if (contextType === 'series') return 'Series';
+                if (contextType === 'story_arc') return 'Story Arc';
                 return 'Volume';
+            },
+
+            appendReaderContextParams(params, { includeProgressContext = false } = {}) {
+                if (!this.contextType) {
+                    return;
+                }
+
+                if (includeProgressContext && this.contextType === 'story_arc') {
+                    return;
+                }
+
+                params.append('context_type', this.contextType);
+
+                if (this.contextId && this.contextType !== 'story_arc') {
+                    params.append('context_id', this.contextId);
+                }
+
+                if (!includeProgressContext && this.contextType === 'story_arc') {
+                    if (this.storyArc) params.append('story_arc', this.storyArc);
+                    if (this.contextScope) params.append('context_scope', this.contextScope);
+                    if (this.contextScopeId) params.append('context_scope_id', this.contextScopeId);
+                }
             },
 
             handleZoneClick(zone) {

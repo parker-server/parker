@@ -537,6 +537,8 @@ function seriesDetail() {
         readFilter: 'all', // 'all', 'read', 'unread'
         sortOrder: 'asc',  // 'asc', 'desc'
         isReverseNumbering: false,
+        storyArcScope: 'series',
+        storyArcScopeId: {{ series_id }},
 
         paginationMode: '{{ get_system_setting("ui.pagination_mode", "infinite") }}',
 

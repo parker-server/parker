@@ -268,6 +268,72 @@ def test_reader_init_reading_list_collection_and_series_contexts(auth_client, db
     assert series_payload["next_comic_id"] == rev1.id
 
 
+def test_reader_init_story_arc_context_skips_non_member_issues(auth_client, db, normal_user):
+    library, series, volume = _create_graph(
+        db,
+        lib_name="reader-story-arc-lib",
+        series_name="Story Arc Series",
+    )
+
+    arc_start = _add_comic(db, volume, number="104", title="Arc Start", story_arc="Gap Arc", page_count=12)
+    arc_middle = _add_comic(db, volume, number="105", title="Arc Middle", story_arc="Gap Arc", page_count=12)
+    _add_comic(db, volume, number="107", title="Filler Story", page_count=12)
+    arc_end = _add_comic(db, volume, number="108", title="Arc End", story_arc="Gap Arc", page_count=12)
+
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    response = auth_client.get(
+        f"/api/reader/{arc_middle.id}/read-init"
+        f"?context_type=story_arc"
+        f"&story_arc=Gap%20Arc"
+        f"&context_scope=series"
+        f"&context_scope_id={series.id}"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["context_type"] == "story_arc"
+    assert payload["context_label"] == "Gap Arc"
+    assert payload["context_total"] == 3
+    assert payload["context_position"] == 2
+    assert payload["prev_comic_id"] == arc_start.id
+    assert payload["next_comic_id"] == arc_end.id
+
+
+def test_reader_init_story_arc_context_respects_volume_scope(auth_client, db, normal_user):
+    library, _, first_volume = _create_graph(
+        db,
+        lib_name="reader-story-arc-scope-lib",
+        series_name="Story Arc Scope",
+    )
+    second_volume = Volume(series=first_volume.series, volume_number=2)
+    db.add(second_volume)
+    db.flush()
+
+    first = _add_comic(db, first_volume, number="1", title="Scoped Arc One", story_arc="Shared Arc", page_count=12)
+    second = _add_comic(db, first_volume, number="2", title="Scoped Arc Two", story_arc="Shared Arc", page_count=12)
+    _add_comic(db, second_volume, number="3", title="Other Volume Arc", story_arc="Shared Arc", page_count=12)
+
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    response = auth_client.get(
+        f"/api/reader/{first.id}/read-init"
+        f"?context_type=story_arc"
+        f"&story_arc=Shared%20Arc"
+        f"&context_scope=volume"
+        f"&context_scope_id={first_volume.id}"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["context_total"] == 2
+    assert payload["context_position"] == 1
+    assert payload["prev_comic_id"] is None
+    assert payload["next_comic_id"] == second.id
+
+
 def test_reader_page_endpoint_headers_and_errors(client, db):
     _, _, volume = _create_graph(db, lib_name="reader-page-lib", series_name="Reader Pages")
     comic = _add_comic(db, volume, number="1", title="Page Comic")
