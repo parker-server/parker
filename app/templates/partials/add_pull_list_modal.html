@@ -161,6 +161,9 @@ function addPullListModal() {
 
                 if (res.ok) {
                     window.parker.showToast("Added to stack!", 'success');
+                    window.dispatchEvent(new CustomEvent('pull-list-item-added', {
+                        detail: { comicId: this.targetId, pullListId: listId }
+                    }));
                     this.close();
                 } else {
                     const err = await res.json();

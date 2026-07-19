@@ -179,6 +179,15 @@ async def get_comic(comic_id: int, db: SessionDep, current_user: CurrentUser):
         .order_by(Bookmark.page_index.asc())
         .all()
     )
+    stack_membership_count = (
+        db.query(PullListItem)
+        .join(PullList, PullList.id == PullListItem.pull_list_id)
+        .filter(
+            PullList.user_id == current_user.id,
+            PullListItem.comic_id == comic.id,
+        )
+        .count()
+    )
 
     parker_rating = build_parker_rating_state(db, comic.id, current_user.id)
     parker_readers_count = get_visible_comic_reader_count(db, comic.id)
@@ -251,6 +260,7 @@ async def get_comic(comic_id: int, db: SessionDep, current_user: CurrentUser):
         # Read status
         "read_status": read_status,
         "resume_page": resume_page,
+        "stack_membership_count": stack_membership_count,
         "bookmarks": [
             {
                 "id": bookmark.id,

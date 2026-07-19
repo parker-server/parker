@@ -37,6 +37,15 @@ def _get_pull_list_snapshot(db_factory, name):
         session.close()
 
 
+def _add_comic_to_pull_list(db_factory, pull_list_id, comic_id):
+    session = db_factory()
+    try:
+        session.add(PullListItem(pull_list_id=pull_list_id, comic_id=comic_id, sort_order=0))
+        session.commit()
+    finally:
+        session.close()
+
+
 @pytest.mark.browser
 def test_login_next_redirect_and_logout_clears_session(page, browser_server):
     page.goto(f"{browser_server['base_url']}/login?next=/search", wait_until="networkidle")
@@ -132,12 +141,16 @@ def test_comic_detail_add_to_existing_pull_list_then_edit_and_remove_item(page, 
     page.goto(f"{browser_server['base_url']}/comics/{seed['active_comic_id']}", wait_until="networkidle")
 
     page.get_by_role("heading", name=f"{seed['series_name']} #{seed['active_comic_number']}").wait_for()
+    assert page.locator("[data-stack-membership]").count() == 1
+    assert page.locator("[data-stack-membership]").is_hidden()
     page.get_by_role("button", name="Add to Stack").click()
 
     page.get_by_role("heading", name="Add to Stack").wait_for()
     page.get_by_role("button", name=list_name).click()
 
     page.wait_for_selector("text=Added to stack!")
+    page.locator("[data-stack-membership]").wait_for()
+    assert page.locator("[data-stack-membership]").text_content().strip() == "(in 1 stack)"
 
     created_list = _get_pull_list_snapshot(browser_server["db_factory"], list_name)
     assert created_list is not None
@@ -179,6 +192,18 @@ def test_comic_detail_add_to_existing_pull_list_then_edit_and_remove_item(page, 
     cleared_list = _get_pull_list_snapshot(browser_server["db_factory"], updated_name)
     assert cleared_list is not None
     assert cleared_list["comic_ids"] == []
+
+
+@pytest.mark.browser
+def test_comic_detail_shows_existing_stack_membership(page, browser_server):
+    seed = browser_server["seed"]
+    pull_list_id = _create_pull_list(browser_server["db_factory"], seed["user_id"], "Already Stacked")
+    _add_comic_to_pull_list(browser_server["db_factory"], pull_list_id, seed["active_comic_id"])
+
+    page.goto(f"{browser_server['base_url']}/comics/{seed['active_comic_id']}", wait_until="networkidle")
+
+    page.get_by_role("heading", name=f"{seed['series_name']} #{seed['active_comic_number']}").wait_for()
+    assert page.locator("[data-stack-membership]").text_content().strip() == "(in 1 stack)"
 
 
 @pytest.mark.browser

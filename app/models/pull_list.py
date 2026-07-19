@@ -8,7 +8,7 @@ class PullList(Base):
     __tablename__ = "pull_lists"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     name = Column(String, nullable=False)
     description = Column(Text, nullable=True)
 
@@ -32,7 +32,7 @@ class PullListItem(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     pull_list_id = Column(Integer, ForeignKey("pull_lists.id"), nullable=False)
-    comic_id = Column(Integer, ForeignKey("comics.id"), nullable=False)
+    comic_id = Column(Integer, ForeignKey("comics.id"), nullable=False, index=True)
 
     # Critical for custom ordering
     sort_order = Column(Integer, nullable=False, default=0)
