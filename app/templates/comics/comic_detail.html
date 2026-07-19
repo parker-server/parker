@@ -69,7 +69,7 @@
                                   x-cloak
                                   data-stack-membership
                                   class="text-sm font-medium text-gray-400"
-                                  x-text="`(in ${comic.stack_membership_count} stack${comic.stack_membership_count === 1 ? '' : 's'})`"></span>
+                                  x-text="stackMembershipLabel()"></span>
                         </button>
                     </div>
 
@@ -457,6 +457,15 @@ function comicDetail() {
 
         hasResumePage() {
             return Number.isInteger(this.comic?.resume_page) && this.comic.resume_page > 0;
+        },
+
+        stackMembershipLabel() {
+            const count = this.comic?.stack_membership_count;
+            if (!Number.isInteger(count) || count <= 0) {
+                return '';
+            }
+
+            return `(in ${count} stack${count === 1 ? '' : 's'})`;
         },
 
         bookmarkReaderHref(bookmark) {

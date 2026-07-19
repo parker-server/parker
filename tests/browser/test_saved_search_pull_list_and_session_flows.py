@@ -302,11 +302,21 @@ def test_comic_detail_shows_existing_stack_membership(page, browser_server):
     seed = browser_server["seed"]
     pull_list_id = _create_pull_list(browser_server["db_factory"], seed["user_id"], "Already Stacked")
     _add_comic_to_pull_list(browser_server["db_factory"], pull_list_id, seed["active_comic_id"])
+    console_errors = []
+    page_errors = []
+
+    page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
+    page.on("pageerror", lambda exc: page_errors.append(str(exc)))
 
     page.goto(f"{browser_server['base_url']}/comics/{seed['active_comic_id']}", wait_until="networkidle")
 
     page.get_by_role("heading", name=f"{seed['series_name']} #{seed['active_comic_number']}").wait_for()
     assert page.locator("[data-stack-membership]").text_content().strip() == "(in 1 stack)"
+    assert not [
+        error
+        for error in console_errors + page_errors
+        if "stack_membership_count" in error
+    ]
 
 
 @pytest.mark.browser
