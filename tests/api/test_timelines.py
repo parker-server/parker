@@ -144,6 +144,7 @@ def test_character_timeline_orders_issues_and_adds_metadata_context(auth_client,
 
     assert [group["year"] for group in payload["years"]] == [1938, 1988]
     assert payload["years"][0]["entries"][0]["id"] == data["issue_one"].id
+    assert "series_group" not in payload["years"][0]["entries"][0]
     assert payload["years"][0]["entries"][0]["collections"][0]["name"] == "Timeline Collection"
     assert payload["years"][1]["entries"][0]["id"] == data["issue_two"].id
     assert payload["years"][1]["entries"][0]["story_arc"] == "Millennium"

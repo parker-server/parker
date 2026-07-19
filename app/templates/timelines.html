@@ -205,13 +205,10 @@
                                             <template x-if="entry.story_arc">
                                                 {{ context_pill('story_arc', 'entry.story_arc') }}
                                             </template>
-                                            <template x-if="showSeriesGroup(entry)">
-                                                {{ context_pill('series_group', 'entry.series_group') }}
-                                            </template>
                                             <template x-for="readingList in entry.reading_lists" :key="`rl-${entry.id}-${readingList.id}`">
                                                 {{ context_pill('reading_list', '`${readingList.name} #${formatPosition(readingList.position)}`') }}
                                             </template>
-                                            <template x-for="collection in visibleCollections(entry)" :key="`col-${entry.id}-${collection.id}`">
+                                            <template x-for="collection in entry.collections" :key="`col-${entry.id}-${collection.id}`">
                                                 {{ context_pill('collection', 'collection.name') }}
                                             </template>
                                             </div>
@@ -290,13 +287,10 @@
                                                             <template x-if="entry.story_arc">
                                                                 {{ context_pill('story_arc', 'entry.story_arc') }}
                                                             </template>
-                                                            <template x-if="showSeriesGroup(entry)">
-                                                                {{ context_pill('series_group', 'entry.series_group') }}
-                                                            </template>
                                                             <template x-for="readingList in entry.reading_lists" :key="`decade-rl-${entry.id}-${readingList.id}`">
                                                                 {{ context_pill('reading_list', '`${readingList.name} #${formatPosition(readingList.position)}`') }}
                                                             </template>
-                                                            <template x-for="collection in visibleCollections(entry)" :key="`decade-col-${entry.id}-${collection.id}`">
+                                                            <template x-for="collection in entry.collections" :key="`decade-col-${entry.id}-${collection.id}`">
                                                                 {{ context_pill('collection', 'collection.name') }}
                                                             </template>
                                                         </div>
@@ -527,22 +521,6 @@ function libraryTimeline() {
         formatPosition(position) {
             const value = Number(position);
             return Number.isInteger(value) ? value.toString() : value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
-        },
-
-        normalizedContextName(value) {
-            return String(value || '').trim().toLowerCase();
-        },
-
-        visibleCollections(entry) {
-            return entry?.collections || [];
-        },
-
-        showSeriesGroup(entry) {
-            const seriesGroup = this.normalizedContextName(entry?.series_group);
-            if (!seriesGroup) return false;
-            return !(entry?.collections || []).some(
-                (collection) => this.normalizedContextName(collection.name) === seriesGroup
-            );
         },
 
         hasMilestones() {

@@ -186,7 +186,7 @@ def test_timeline_subject_type_toggle_clears_search_input(page, browser_server):
 
 
 @pytest.mark.browser
-def test_timeline_entry_deduplicates_matching_series_group_and_collection_badges(page, browser_server):
+def test_timeline_entry_shows_series_group_metadata_as_one_collection_badge(page, browser_server):
     seed = browser_server["seed"]
     _add_duplicate_collection_context(browser_server)
 

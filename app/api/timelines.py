@@ -113,7 +113,6 @@ def _serialize_comic(comic: Comic, annotations: dict[int, dict]) -> dict:
         "imprint": comic.imprint,
         "format": comic.format,
         "story_arc": comic.story_arc,
-        "series_group": comic.series_group,
         "thumbnail_path": get_thumbnail_url(comic.id, comic.updated_at),
         "reading_lists": comic_annotations.get("reading_lists", []),
         "collections": comic_annotations.get("collections", []),
