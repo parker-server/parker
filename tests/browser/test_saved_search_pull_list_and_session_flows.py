@@ -207,6 +207,16 @@ def test_comic_detail_shows_existing_stack_membership(page, browser_server):
 
 
 @pytest.mark.browser
+def test_comic_detail_completed_issue_shows_read_again(page, browser_server):
+    seed = browser_server["seed"]
+
+    page.goto(f"{browser_server['base_url']}/comics/{seed['completed_comic_id']}", wait_until="networkidle")
+
+    page.get_by_role("heading", name=f"{seed['series_name']} #{seed['completed_comic_number']}").wait_for()
+    page.get_by_role("link", name="Read Again").wait_for()
+
+
+@pytest.mark.browser
 def test_comic_detail_bookmarks_launch_reader_detour(page, browser_server):
     seed = browser_server["seed"]
     session = browser_server["db_factory"]()

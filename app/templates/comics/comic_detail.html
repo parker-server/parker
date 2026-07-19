@@ -444,7 +444,7 @@ function comicDetail() {
         async markRead() {
             await fetch(window.parker.route('progress.mark_comic_as_read',{ comic_id: this.comicId }), { method: 'POST' });
             if (this.comic) {
-                this.comic = { ...this.comic, read_status: 'new', resume_page: null };
+                this.comic = { ...this.comic, read_status: 'completed', resume_page: null };
             }
         },
 

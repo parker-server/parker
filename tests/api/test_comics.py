@@ -257,6 +257,40 @@ def test_get_comic_detail_returns_metadata_and_in_progress_status(auth_client, d
     assert payload["parker_readers_count"] is None
 
 
+def test_get_comic_detail_returns_completed_read_status(auth_client, db, normal_user):
+    library, _, volume = _create_graph(db, lib_name="comic-detail-completed", series_name="Completed Detail Saga")
+
+    comic = Comic(
+        volume_id=volume.id,
+        number="4",
+        title="Completed Issue",
+        page_count=18,
+        filename="completed-4.cbz",
+        file_path="/tmp/completed-4.cbz",
+    )
+    db.add(comic)
+    normal_user.accessible_libraries.append(library)
+    db.flush()
+
+    db.add(
+        ReadingProgress(
+            user_id=normal_user.id,
+            comic_id=comic.id,
+            current_page=17,
+            total_pages=18,
+            completed=True,
+        )
+    )
+    db.commit()
+
+    response = auth_client.get(f"/api/comics/{comic.id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["read_status"] == "completed"
+    assert payload["resume_page"] is None
+
+
 def test_get_comic_detail_sorts_tag_metadata_alphabetically(auth_client, db, normal_user):
     library, _, volume = _create_graph(db, lib_name="comic-detail-tags", series_name="Sorted Detail Saga")
 

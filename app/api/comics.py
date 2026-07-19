@@ -165,8 +165,10 @@ async def get_comic(comic_id: int, db: SessionDep, current_user: CurrentUser):
         ReadingProgress.user_id == current_user.id
     ).first()
 
+    if progress and progress.completed:
+        read_status = "completed"
     # If started but not finished, show "Continue"
-    if progress and not progress.completed and progress.current_page > 0:
+    elif progress and not progress.completed and progress.current_page > 0:
         read_status = "in_progress"
     resume_page = progress.current_page if progress and not progress.completed and progress.current_page > 0 else None
 
