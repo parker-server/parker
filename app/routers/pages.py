@@ -63,6 +63,12 @@ async def insights(request: Request, user: CurrentUser):
     return templates.TemplateResponse(request=request, name="insights.html")
 
 
+@router.get("/timelines", response_class=HTMLResponse, name="timelines")
+async def timelines(request: Request, user: CurrentUser):
+    """Library timeline page"""
+    return templates.TemplateResponse(request=request, name="timelines.html")
+
+
 @router.get("/insights/creator-chemistry", response_class=HTMLResponse, name="insights_creator_chemistry")
 async def insights_creator_chemistry(request: Request, user: CurrentUser):
     """Creator collaboration insights page"""

@@ -1,0 +1,19 @@
+{% macro context_pill(kind, text_expr, key_expr=None) %}
+    {% if kind == 'story_arc' %}
+        {% set classes = "border-amber-500/30 bg-amber-950/30 text-amber-200" %}
+    {% elif kind == 'reading_list' %}
+        {% set classes = "border-green-500/30 bg-green-950/30 text-green-200" %}
+    {% elif kind == 'collection' %}
+        {% set classes = "border-blue-500/30 bg-blue-950/30 text-blue-200" %}
+    {% elif kind == 'series_group' %}
+        {% set classes = "border-purple-500/30 bg-purple-950/30 text-purple-200" %}
+    {% else %}
+        {% set classes = "border-gray-600 bg-gray-800 text-gray-200" %}
+    {% endif %}
+
+    <span
+        {% if key_expr %}:key="{{ key_expr }}"{% endif %}
+        class="rounded-full border {{ classes }} px-2 py-1 text-xs font-semibold"
+        x-text="{{ text_expr }}"
+    ></span>
+{% endmacro %}

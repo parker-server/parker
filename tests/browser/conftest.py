@@ -83,6 +83,8 @@ def browser_seed_data(browser_db_factory):
         volume=volume,
         number="3",
         title="Smoke Horizon",
+        year=2024,
+        month=5,
         filename="smoke-horizon.cbz",
         file_path="/tmp/smoke-horizon.cbz",
         page_count=4,

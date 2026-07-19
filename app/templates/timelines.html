@@ -1,0 +1,573 @@
+{% extends "base.html" %}
+
+{% block title %}Library Timeline - Parker{% endblock %}
+
+{% block content %}
+{% from "partials/context_pill.html" import context_pill %}
+
+<div class="max-w-7xl mx-auto" x-data="libraryTimeline()" x-init="init()">
+    <div class="mb-8">
+        <div class="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div class="max-w-3xl">
+                <p class="text-xs font-bold uppercase tracking-[0.28em] text-blue-300">Library Timeline</p>
+                <h1 class="mt-3 text-4xl font-black tracking-tight text-white md:text-5xl">
+                    <span x-text="timeline?.subject?.name || 'Character and Team History'"></span>
+                </h1>
+                <p class="mt-3 max-w-2xl text-sm leading-6 text-gray-400">
+                    Generated from metadata embedded in your comic files.
+                </p>
+            </div>
+
+            <template x-if="timeline">
+                <a
+                    :href="matchingIssuesUrl()"
+                    class="inline-flex w-fit items-center justify-center rounded-lg border border-blue-500/60 bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-lg transition-colors hover:bg-blue-500"
+                >
+                    View Matching Issues
+                </a>
+            </template>
+        </div>
+    </div>
+
+    <section class="mb-8 rounded-lg border border-gray-700 bg-gray-800/80 p-4 shadow-xl">
+        <div class="grid gap-3 lg:grid-cols-[auto_minmax(0,1fr)] lg:items-start">
+            <div class="inline-flex w-fit rounded-lg border border-gray-700 bg-gray-900 p-1">
+                <button
+                    type="button"
+                    class="rounded-md px-3 py-2 text-sm font-bold transition-colors"
+                    :class="subjectType === 'character' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white'"
+                    @click="setSubjectType('character')"
+                >
+                    Character
+                </button>
+                <button
+                    type="button"
+                    class="rounded-md px-3 py-2 text-sm font-bold transition-colors"
+                    :class="subjectType === 'team' ? 'bg-green-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white'"
+                    @click="setSubjectType('team')"
+                >
+                    Team
+                </button>
+            </div>
+
+            <div class="relative">
+                <input
+                    type="search"
+                    x-model="query"
+                    @input.debounce.250ms="fetchSuggestions()"
+                    @keydown.enter.prevent="loadFromQuery()"
+                    @keydown.escape.prevent="suggestions = []"
+                    placeholder="Search characters or teams"
+                    class="w-full rounded-lg border border-gray-700 bg-gray-900 px-4 py-2.5 text-gray-100 outline-none transition-shadow focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30"
+                    autocomplete="off"
+                >
+
+                <div
+                    x-show="suggestions.length > 0"
+                    x-cloak
+                    class="absolute left-0 right-0 top-full z-40 mt-2 max-h-80 overflow-y-auto rounded-lg border border-gray-700 bg-gray-900 shadow-2xl"
+                >
+                    <template x-for="item in filteredSuggestions()" :key="`${item.type}:${item.name}`">
+                        <button
+                            type="button"
+                            class="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-gray-800"
+                            @click="selectSuggestion(item)"
+                        >
+                            <span class="min-w-0 truncate font-semibold text-white" x-text="item.name"></span>
+                            <span
+                                class="rounded-full border px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide"
+                                :class="item.type === 'character' ? 'border-blue-500/40 text-blue-300' : 'border-green-500/40 text-green-300'"
+                                x-text="item.type"
+                            ></span>
+                        </button>
+                    </template>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <template x-if="loading">
+        <div class="flex justify-center py-16">
+            <div class="h-12 w-12 animate-spin rounded-full border-b-2 border-blue-500"></div>
+        </div>
+    </template>
+
+    <template x-if="error && !loading">
+        <section class="rounded-lg border border-gray-700 bg-gray-800 p-8 text-center shadow-xl">
+            <h2 class="text-2xl font-black text-white">Timeline Not Found</h2>
+            <p class="mt-2 text-gray-400" x-text="error"></p>
+        </section>
+    </template>
+
+    <template x-if="!timeline && !loading && !error">
+        <section class="rounded-lg border border-gray-700 bg-gray-800 p-8 shadow-xl">
+            <h2 class="text-2xl font-black text-white">Choose a Character or Team</h2>
+            <p class="mt-2 max-w-2xl text-sm leading-6 text-gray-400">
+                Timelines are built from tagged issues in your library, with reading lists, collections, and story arcs added as context when those metadata fields are present.
+            </p>
+        </section>
+    </template>
+
+    <template x-if="timeline && !loading">
+        <div class="space-y-8">
+            <section class="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-6">
+                <div class="rounded-lg border border-gray-700 bg-gray-800 p-4">
+                    <div class="text-xs font-bold uppercase tracking-wide text-gray-500">Issues</div>
+                    <div class="mt-1 text-2xl font-black text-white" x-text="timeline.summary.total_issues"></div>
+                </div>
+                <div class="rounded-lg border border-gray-700 bg-gray-800 p-4">
+                    <div class="text-xs font-bold uppercase tracking-wide text-gray-500">Years</div>
+                    <div class="mt-1 text-2xl font-black text-white" x-text="yearRange()"></div>
+                </div>
+                <div class="rounded-lg border border-gray-700 bg-gray-800 p-4">
+                    <div class="text-xs font-bold uppercase tracking-wide text-gray-500">Series</div>
+                    <div class="mt-1 text-2xl font-black text-white" x-text="timeline.summary.series_count"></div>
+                </div>
+                <div class="rounded-lg border border-gray-700 bg-gray-800 p-4">
+                    <div class="text-xs font-bold uppercase tracking-wide text-gray-500">Story Arcs</div>
+                    <div class="mt-1 text-2xl font-black text-white" x-text="timeline.summary.story_arc_count"></div>
+                </div>
+                <div class="rounded-lg border border-gray-700 bg-gray-800 p-4">
+                    <div class="text-xs font-bold uppercase tracking-wide text-gray-500">Reading Lists</div>
+                    <div class="mt-1 text-2xl font-black text-white" x-text="timeline.summary.reading_list_count"></div>
+                </div>
+                <div class="rounded-lg border border-gray-700 bg-gray-800 p-4">
+                    <div class="text-xs font-bold uppercase tracking-wide text-gray-500">Undated</div>
+                    <div class="mt-1 text-2xl font-black text-white" x-text="timeline.summary.undated_issues"></div>
+                </div>
+            </section>
+
+            <section class="rounded-lg border border-gray-700 bg-gray-800 p-5 shadow-xl" x-show="hasMilestones()">
+                <div class="mb-4 flex items-center justify-between gap-4">
+                    <h2 class="text-xl font-black text-white">Milestones</h2>
+                    <span class="text-xs font-semibold uppercase tracking-wide text-gray-500">Derived Metadata</span>
+                </div>
+
+                <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <template x-if="timeline.milestones.first_issue">
+                        <a :href="comicUrl(timeline.milestones.first_issue)" class="rounded-lg border border-blue-500/30 bg-blue-950/20 p-4 transition-colors hover:border-blue-400/70">
+                            <div class="text-xs font-bold uppercase tracking-wide text-blue-300">First in Library</div>
+                            <div class="mt-2 font-bold text-white" x-text="issueLabel(timeline.milestones.first_issue)"></div>
+                            <div class="mt-1 text-sm text-gray-400" x-text="timeline.milestones.first_issue.date_label || 'Undated'"></div>
+                        </a>
+                    </template>
+
+                    <template x-if="timeline.milestones.latest_issue">
+                        <a :href="comicUrl(timeline.milestones.latest_issue)" class="rounded-lg border border-cyan-500/30 bg-cyan-950/20 p-4 transition-colors hover:border-cyan-400/70">
+                            <div class="text-xs font-bold uppercase tracking-wide text-cyan-300">Latest in Library</div>
+                            <div class="mt-2 font-bold text-white" x-text="issueLabel(timeline.milestones.latest_issue)"></div>
+                            <div class="mt-1 text-sm text-gray-400" x-text="timeline.milestones.latest_issue.date_label || 'Undated'"></div>
+                        </a>
+                    </template>
+
+                    <template x-for="item in spotlightMilestones()" :key="`${item.kind}:${item.name}`">
+                        <a :href="milestoneUrl(item)" class="rounded-lg border border-gray-700 bg-gray-900/70 p-4 transition-colors hover:border-blue-500/60">
+                            <div class="text-xs font-bold uppercase tracking-wide text-gray-500" x-text="item.kind"></div>
+                            <div class="mt-2 truncate font-bold text-white" x-text="item.name"></div>
+                            <div class="mt-1 text-sm text-gray-400" x-text="issueLabel(item.comic)"></div>
+                        </a>
+                    </template>
+                </div>
+            </section>
+
+            <section class="rounded-lg border border-gray-700 bg-gray-800/70 p-4 text-sm text-gray-400" x-show="timelineMode() === 'decades'">
+                This timeline spans <span class="font-semibold text-gray-200" x-text="timeline.years.length"></span> distinct years, so Parker is grouping it by decade.
+            </section>
+
+            <template x-if="timelineMode() === 'years'">
+                <section class="space-y-6">
+                    <template x-for="year in timeline.years" :key="year.year">
+                        <div class="grid gap-4 md:grid-cols-[7rem_minmax(0,1fr)]">
+                            <div class="md:text-right">
+                                <div class="sticky top-24 text-3xl font-black text-white" x-text="year.year"></div>
+                                <div class="mt-1 text-sm text-gray-500">
+                                    <span x-text="year.issue_count"></span>
+                                    <span x-text="year.issue_count === 1 ? 'issue' : 'issues'"></span>
+                                </div>
+                            </div>
+
+                            <div class="space-y-3 border-l border-gray-700 pl-4">
+                                <template x-for="entry in year.entries" :key="entry.id">
+                                    <a :href="comicUrl(entry)" data-timeline-entry-card class="group grid gap-3 rounded-lg border border-gray-700 bg-gray-800 p-3 transition-colors hover:border-blue-500/60 hover:bg-gray-800/90 sm:grid-cols-[4.5rem_minmax(0,1fr)]">
+                                        <img
+                                            :src="window.parker.url(entry.thumbnail_path)"
+                                            :alt="issueLabel(entry)"
+                                            class="aspect-[2/3] w-16 rounded-md object-cover"
+                                            loading="lazy"
+                                        >
+                                        <div class="min-w-0">
+                                            <div class="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
+                                                <h3 class="truncate font-black text-white group-hover:text-blue-200" x-text="issueLabel(entry)"></h3>
+                                                <span class="text-sm font-semibold text-gray-400" x-text="entry.date_label || year.year"></span>
+                                            </div>
+                                            <p class="mt-1 truncate text-sm text-gray-400" x-show="entry.title" x-text="entry.title"></p>
+                                            <div class="mt-3 flex flex-wrap gap-2">
+                                            <template x-if="entry.story_arc">
+                                                {{ context_pill('story_arc', 'entry.story_arc') }}
+                                            </template>
+                                            <template x-if="showSeriesGroup(entry)">
+                                                {{ context_pill('series_group', 'entry.series_group') }}
+                                            </template>
+                                            <template x-for="readingList in entry.reading_lists" :key="`rl-${entry.id}-${readingList.id}`">
+                                                {{ context_pill('reading_list', '`${readingList.name} #${formatPosition(readingList.position)}`') }}
+                                            </template>
+                                            <template x-for="collection in visibleCollections(entry)" :key="`col-${entry.id}-${collection.id}`">
+                                                {{ context_pill('collection', 'collection.name') }}
+                                            </template>
+                                            </div>
+                                        </div>
+                                    </a>
+                                </template>
+
+                                <div x-show="year.hidden_count > 0" class="rounded-lg border border-gray-700 bg-gray-900 px-4 py-3 text-sm text-gray-400">
+                                    <span x-text="year.hidden_count"></span>
+                                    more matching
+                                    <span x-text="year.hidden_count === 1 ? 'issue' : 'issues'"></span>
+                                    in <span x-text="year.year"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </section>
+            </template>
+
+            <template x-if="timelineMode() === 'decades'">
+                <section class="space-y-4">
+                    <template x-for="decade in decadeGroups()" :key="decade.key">
+                        <div class="rounded-lg border border-gray-700 bg-gray-800 shadow-xl">
+                        <button
+                            type="button"
+                            class="flex w-full flex-col gap-3 p-5 text-left transition-colors hover:bg-gray-700/40 sm:flex-row sm:items-center sm:justify-between"
+                            @click="toggleDecade(decade.key)"
+                        >
+                            <div>
+                                <div class="text-3xl font-black text-white" x-text="decade.label"></div>
+                                <div class="mt-1 text-sm text-gray-400">
+                                    <span x-text="decade.issue_count"></span>
+                                    <span x-text="decade.issue_count === 1 ? 'issue' : 'issues'"></span>
+                                    across
+                                    <span x-text="decade.year_count"></span>
+                                    <span x-text="decade.year_count === 1 ? 'year' : 'years'"></span>
+                                </div>
+                            </div>
+
+                            <div class="flex items-center gap-3">
+                                <span class="rounded-full border border-gray-600 bg-gray-900 px-3 py-1 text-xs font-bold uppercase tracking-wide text-gray-300">
+                                    <span x-text="decade.first_year"></span>-<span x-text="decade.last_year"></span>
+                                </span>
+                                <span class="text-sm font-bold text-blue-300" x-text="isDecadeExpanded(decade.key) ? 'Collapse' : 'Expand'"></span>
+                            </div>
+                        </button>
+
+                        <div x-show="isDecadeExpanded(decade.key)" x-collapse class="border-t border-gray-700 p-4">
+                            <div class="space-y-6">
+                                <template x-for="year in decade.years" :key="`${decade.key}-${year.year}`">
+                                    <div class="grid gap-4 md:grid-cols-[7rem_minmax(0,1fr)]">
+                                        <div class="md:text-right">
+                                            <div class="text-2xl font-black text-white" x-text="year.year"></div>
+                                            <div class="mt-1 text-sm text-gray-500">
+                                                <span x-text="year.issue_count"></span>
+                                                <span x-text="year.issue_count === 1 ? 'issue' : 'issues'"></span>
+                                            </div>
+                                        </div>
+
+                                        <div class="space-y-3 border-l border-gray-700 pl-4">
+                                            <template x-for="entry in year.entries" :key="entry.id">
+                                                <a :href="comicUrl(entry)" data-timeline-entry-card class="group grid gap-3 rounded-lg border border-gray-700 bg-gray-900/70 p-3 transition-colors hover:border-blue-500/60 sm:grid-cols-[4.5rem_minmax(0,1fr)]">
+                                                    <img
+                                                        :src="window.parker.url(entry.thumbnail_path)"
+                                                        :alt="issueLabel(entry)"
+                                                        class="aspect-[2/3] w-16 rounded-md object-cover"
+                                                        loading="lazy"
+                                                    >
+                                                    <div class="min-w-0">
+                                                        <div class="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
+                                                            <h3 class="truncate font-black text-white group-hover:text-blue-200" x-text="issueLabel(entry)"></h3>
+                                                            <span class="text-sm font-semibold text-gray-400" x-text="entry.date_label || year.year"></span>
+                                                        </div>
+                                                        <p class="mt-1 truncate text-sm text-gray-400" x-show="entry.title" x-text="entry.title"></p>
+                                                        <div class="mt-3 flex flex-wrap gap-2">
+                                                            <template x-if="entry.story_arc">
+                                                                {{ context_pill('story_arc', 'entry.story_arc') }}
+                                                            </template>
+                                                            <template x-if="showSeriesGroup(entry)">
+                                                                {{ context_pill('series_group', 'entry.series_group') }}
+                                                            </template>
+                                                            <template x-for="readingList in entry.reading_lists" :key="`decade-rl-${entry.id}-${readingList.id}`">
+                                                                {{ context_pill('reading_list', '`${readingList.name} #${formatPosition(readingList.position)}`') }}
+                                                            </template>
+                                                            <template x-for="collection in visibleCollections(entry)" :key="`decade-col-${entry.id}-${collection.id}`">
+                                                                {{ context_pill('collection', 'collection.name') }}
+                                                            </template>
+                                                        </div>
+                                                    </div>
+                                                </a>
+                                            </template>
+
+                                            <div x-show="year.hidden_count > 0" class="rounded-lg border border-gray-700 bg-gray-900 px-4 py-3 text-sm text-gray-400">
+                                                <span x-text="year.hidden_count"></span>
+                                                more matching
+                                                <span x-text="year.hidden_count === 1 ? 'issue' : 'issues'"></span>
+                                                in <span x-text="year.year"></span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                        </div>
+                    </template>
+                </section>
+            </template>
+
+            <section class="rounded-lg border border-gray-700 bg-gray-800 p-5 shadow-xl" x-show="timeline.undated_entries.length > 0">
+                <h2 class="text-xl font-black text-white">Undated Issues</h2>
+                <div class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    <template x-for="entry in timeline.undated_entries" :key="entry.id">
+                        <a :href="comicUrl(entry)" class="rounded-lg border border-gray-700 bg-gray-900 p-3 transition-colors hover:border-blue-500/60">
+                            <div class="font-bold text-white" x-text="issueLabel(entry)"></div>
+                            <div class="mt-1 truncate text-sm text-gray-400" x-text="entry.title || 'No title metadata'"></div>
+                        </a>
+                    </template>
+                </div>
+            </section>
+        </div>
+    </template>
+</div>
+
+<script>
+function libraryTimeline() {
+    return {
+        subjectType: 'character',
+        query: '',
+        suggestions: [],
+        timeline: null,
+        loading: false,
+        error: null,
+        expandedDecades: {},
+        yearModeThreshold: 12,
+
+        init() {
+            const params = new URLSearchParams(window.location.search);
+            const type = params.get('type');
+            const name = params.get('name');
+            if (type === 'character' || type === 'team') {
+                this.subjectType = type;
+            }
+            if (name) {
+                this.query = name;
+                this.loadTimeline(type || this.subjectType, name, false);
+            }
+        },
+
+        setSubjectType(type) {
+            if (this.subjectType === type) return;
+            this.subjectType = type;
+            this.query = '';
+            this.suggestions = [];
+            this.error = null;
+        },
+
+        filteredSuggestions() {
+            return this.suggestions.filter((item) => item.type === this.subjectType);
+        },
+
+        async fetchSuggestions() {
+            if (this.query.trim().length < 2) {
+                this.suggestions = [];
+                return;
+            }
+
+            const url = window.parker.route(
+                'timelines.suggestions',
+                {},
+                `q=${encodeURIComponent(this.query.trim())}&limit=12`
+            );
+            const res = await fetch(url);
+            this.suggestions = res.ok ? await res.json() : [];
+        },
+
+        selectSuggestion(item) {
+            this.subjectType = item.type;
+            this.query = item.name;
+            this.suggestions = [];
+            this.loadTimeline(item.type, item.name, true);
+        },
+
+        loadFromQuery() {
+            const value = this.query.trim();
+            if (!value) return;
+            this.suggestions = [];
+            this.loadTimeline(this.subjectType, value, true);
+        },
+
+        async loadTimeline(type, name, pushState = true) {
+            this.loading = true;
+            this.error = null;
+            this.timeline = null;
+            this.expandedDecades = {};
+            this.subjectType = type === 'team' ? 'team' : 'character';
+            this.query = name;
+
+            try {
+                const url = window.parker.route(
+                    'timelines.detail',
+                    {},
+                    `type=${encodeURIComponent(this.subjectType)}&name=${encodeURIComponent(name)}`
+                );
+                const res = await fetch(url);
+                if (!res.ok) {
+                    this.error = 'No visible tagged issues were found for that subject.';
+                    return;
+                }
+
+                this.timeline = await res.json();
+                document.title = `${this.timeline.subject.name} Timeline - Parker`;
+
+                if (pushState) {
+                    const pageUrl = window.parker.route(
+                        'pages.timelines',
+                        {},
+                        `type=${encodeURIComponent(this.subjectType)}&name=${encodeURIComponent(name)}`
+                    );
+                    window.history.pushState({}, '', pageUrl);
+                }
+            } catch (e) {
+                console.error(e);
+                this.error = 'Unable to load this timeline.';
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        yearRange() {
+            const start = this.timeline?.summary?.start_year;
+            const end = this.timeline?.summary?.end_year;
+            if (!start && !end) return '--';
+            if (start === end) return `${start}`;
+            return `${start}-${end}`;
+        },
+
+        timelineMode() {
+            const yearCount = this.timeline?.years?.length || 0;
+            return yearCount > this.yearModeThreshold ? 'decades' : 'years';
+        },
+
+        decadeGroups() {
+            const grouped = {};
+            for (const year of this.timeline?.years || []) {
+                const decadeStart = Math.floor(Number(year.year) / 10) * 10;
+                const key = `${decadeStart}s`;
+                if (!grouped[key]) {
+                    grouped[key] = {
+                        key,
+                        label: key,
+                        first_year: year.year,
+                        last_year: year.year,
+                        year_count: 0,
+                        issue_count: 0,
+                        years: [],
+                    };
+                }
+
+                grouped[key].years.push(year);
+                grouped[key].year_count += 1;
+                grouped[key].issue_count += year.issue_count;
+                grouped[key].first_year = Math.min(grouped[key].first_year, year.year);
+                grouped[key].last_year = Math.max(grouped[key].last_year, year.year);
+            }
+
+            return Object.values(grouped).sort((a, b) => a.first_year - b.first_year);
+        },
+
+        isDecadeExpanded(key) {
+            return !!this.expandedDecades[key];
+        },
+
+        toggleDecade(key) {
+            this.expandedDecades = {
+                ...this.expandedDecades,
+                [key]: !this.expandedDecades[key],
+            };
+        },
+
+        matchingIssuesUrl() {
+            if (!this.timeline) return window.parker.route('pages.search');
+            return window.parker.searchHandoff.buildUrl({
+                match: 'all',
+                sortBy: 'year',
+                sortOrder: 'asc',
+                filters: [{
+                    field: this.timeline.subject.type,
+                    operator: 'contains',
+                    value: [this.timeline.subject.name]
+                }]
+            });
+        },
+
+        comicUrl(entry) {
+            return window.parker.route('pages.comic_detail', { comic_id: entry.id });
+        },
+
+        milestoneUrl(item) {
+            if (item.kind === 'Reading List' && item.id) {
+                return window.parker.route('pages.reading_list_detail', { reading_list_id: item.id });
+            }
+            if (item.kind === 'Collection' && item.id) {
+                return window.parker.route('pages.collection_detail', { collection_id: item.id });
+            }
+            return this.comicUrl(item.comic);
+        },
+
+        issueLabel(entry) {
+            const number = entry.number ? ` #${entry.number}` : '';
+            return `${entry.series}${number}`;
+        },
+
+        formatPosition(position) {
+            const value = Number(position);
+            return Number.isInteger(value) ? value.toString() : value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+        },
+
+        normalizedContextName(value) {
+            return String(value || '').trim().toLowerCase();
+        },
+
+        visibleCollections(entry) {
+            return entry?.collections || [];
+        },
+
+        showSeriesGroup(entry) {
+            const seriesGroup = this.normalizedContextName(entry?.series_group);
+            if (!seriesGroup) return false;
+            return !(entry?.collections || []).some(
+                (collection) => this.normalizedContextName(collection.name) === seriesGroup
+            );
+        },
+
+        hasMilestones() {
+            return !!(
+                this.timeline?.milestones?.first_issue ||
+                this.timeline?.milestones?.latest_issue ||
+                this.spotlightMilestones().length
+            );
+        },
+
+        spotlightMilestones() {
+            if (!this.timeline) return [];
+            const rows = [];
+            for (const item of this.timeline.milestones.first_story_arcs || []) {
+                rows.push({ kind: 'Story Arc', name: item.name, comic: item.comic });
+            }
+            for (const item of this.timeline.milestones.first_reading_lists || []) {
+                rows.push({ kind: 'Reading List', id: item.id, name: item.name, comic: item.comic });
+            }
+            for (const item of this.timeline.milestones.first_collections || []) {
+                rows.push({ kind: 'Collection', id: item.id, name: item.name, comic: item.comic });
+            }
+            return rows.slice(0, 6);
+        },
+    };
+}
+</script>
+{% endblock %}
