@@ -11,7 +11,7 @@
 
 <div class="relative z-10">
 
-    <div class="max-w-6xl mx-auto" x-data="comicDetail()">
+    <div class="max-w-6xl mx-auto" x-data="comicDetail()" x-on:pull-list-item-added.window="handlePullListItemAdded($event.detail)">
 
         <div class="flex items-center space-x-2 text-gray-400 mb-6 text-sm" x-show="!error" x-cloak>
             <a :href="window.parker.route('pages.library_detail', { library_id: comic?.library_id })" class="hover:text-white" x-text="comic?.library_name"></a>
@@ -57,14 +57,21 @@
 
                     {% include "partials/read_comic_button.html" %}
 
-                    <button
-                        x-on:click="$dispatch('open-add-to-pull-list', { id: comicId, type: 'comic' })"
-                        class="w-full bg-gray-700 hover:bg-gray-600 text-gray-200 font-bold py-2 px-4 rounded-lg transition-colors border border-gray-600 flex items-center justify-center gap-2">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                            <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
-                        </svg>
-                        Add to Stack
-                    </button>
+                    <div>
+                        <button
+                            x-on:click="$dispatch('open-add-to-pull-list', { id: comicId, type: 'comic' })"
+                            class="w-full bg-gray-700 hover:bg-gray-600 text-gray-200 font-bold py-2 px-4 rounded-lg transition-colors border border-gray-600 flex items-center justify-center gap-2 flex-wrap">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
+                            </svg>
+                            <span>Add to Stack</span>
+                            <span x-show="comic?.stack_membership_count > 0"
+                                  x-cloak
+                                  data-stack-membership
+                                  class="text-sm font-medium text-gray-400"
+                                  x-text="`(in ${comic.stack_membership_count} stack${comic.stack_membership_count === 1 ? '' : 's'})`"></span>
+                        </button>
+                    </div>
 
 
                     <div class="grid grid-cols-2 gap-3">
@@ -437,7 +444,7 @@ function comicDetail() {
         async markRead() {
             await fetch(window.parker.route('progress.mark_comic_as_read',{ comic_id: this.comicId }), { method: 'POST' });
             if (this.comic) {
-                this.comic = { ...this.comic, read_status: 'new', resume_page: null };
+                this.comic = { ...this.comic, read_status: 'completed', resume_page: null };
             }
         },
 
@@ -461,6 +468,21 @@ function comicDetail() {
             }
 
             return window.parker.readerRoute(this.comicId, params.toString());
+        },
+
+        handlePullListItemAdded(detail) {
+            if (!this.comic || detail?.comicId !== this.comicId) {
+                return;
+            }
+
+            const currentCount = Number.isInteger(this.comic.stack_membership_count)
+                ? this.comic.stack_membership_count
+                : 0;
+
+            this.comic = {
+                ...this.comic,
+                stack_membership_count: currentCount + 1,
+            };
         },
 
         applyRatingState(data) {

@@ -165,8 +165,10 @@ async def get_comic(comic_id: int, db: SessionDep, current_user: CurrentUser):
         ReadingProgress.user_id == current_user.id
     ).first()
 
+    if progress and progress.completed:
+        read_status = "completed"
     # If started but not finished, show "Continue"
-    if progress and not progress.completed and progress.current_page > 0:
+    elif progress and not progress.completed and progress.current_page > 0:
         read_status = "in_progress"
     resume_page = progress.current_page if progress and not progress.completed and progress.current_page > 0 else None
 
@@ -178,6 +180,15 @@ async def get_comic(comic_id: int, db: SessionDep, current_user: CurrentUser):
         )
         .order_by(Bookmark.page_index.asc())
         .all()
+    )
+    stack_membership_count = (
+        db.query(PullListItem)
+        .join(PullList, PullList.id == PullListItem.pull_list_id)
+        .filter(
+            PullList.user_id == current_user.id,
+            PullListItem.comic_id == comic.id,
+        )
+        .count()
     )
 
     parker_rating = build_parker_rating_state(db, comic.id, current_user.id)
@@ -251,6 +262,7 @@ async def get_comic(comic_id: int, db: SessionDep, current_user: CurrentUser):
         # Read status
         "read_status": read_status,
         "resume_page": resume_page,
+        "stack_membership_count": stack_membership_count,
         "bookmarks": [
             {
                 "id": bookmark.id,

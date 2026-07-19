@@ -5,7 +5,7 @@
         :class="comic?.read_status === 'in_progress' ? 'bg-blue-600 hover:bg-blue-500' : 'bg-green-600 hover:bg-green-500'"
     >
         <span class="text-xl" x-text="comic?.read_status === 'in_progress' ? '▶' : '📖'"></span>
-        <span x-text="comic?.read_status === 'in_progress' ? 'Continue' : 'Read Now'"></span>
+        <span x-text="comic?.read_status === 'in_progress' ? 'Continue' : (comic?.read_status === 'completed' ? 'Read Again' : 'Read')"></span>
     </a>
 
     <button x-on:click="open = !open" x-on:click.away="open = false"

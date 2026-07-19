@@ -10,9 +10,9 @@ This file captures follow-up work that should not get lost between releases.
   Candidate direction: Treat this as a generic reader-session/container-resume feature rather than a story-arc-specific workaround. Reading lists, collections, stacks, and possibly scoped story arcs should share the same design if the feature is worth building.
   Guardrail: Avoid changing global home-rail resume behavior unless there is a broader product decision to persist last reader launch context; the current comic/page-only resume is simple and predictable.
 
-- Keep an eye on pull list detail page scale before it becomes a usability problem.
-  Context: `app/templates/pull_lists/detail.html` currently renders a full list in one view, which is fine for normal pull-list sizes and likely more important to watch than the pull-list index page.
-  Follow-up goal: If real users start building unusually large pull lists, consider pagination, filtering, or virtualization for list contents before the detail view becomes heavy to use.
+- Keep an eye on stack list detail page scale before it becomes a usability problem.
+  Context: `app/templates/pull_lists/detail.html` currently renders a full list in one view, which is fine for normal stack sizes and likely more important to watch than the stack index page.
+  Follow-up goal: If real users start building unusually large stacks, consider pagination, filtering, or virtualization for list contents before the detail view becomes heavy to use.
   Guardrail: Treat this as a usage-driven optimization, not a default roadmap item, unless real list sizes or UX complaints justify it.
 
 - Keep an eye on smart filter scale before the search load menu gets crowded.
