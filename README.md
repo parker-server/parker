@@ -18,6 +18,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
 - **User System**
   - Multi‑library access with row‑level security
   - Age-rating-aware access control
+  - Anonymous Social Insights participation is enabled for new users by default, with an account-level opt-out
   - Avatar uploads
   - Hybrid authentication (JWT + secure cookies)
 
@@ -33,6 +34,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
 
 - **Discovery**
   - Netflix‑style home page with content rails
+  - Anonymous aggregate social insights such as reader counts and `Popular with Others`
   - `Continue Reading`, `Jump Back In`, `Trending`, and `New from Following`
   - Library Timeline for character and team histories generated from embedded metadata
   - Recommendations by creator or metadata

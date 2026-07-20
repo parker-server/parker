@@ -81,11 +81,11 @@ class UserPasswordUpdateRequest(BaseModel):
 
 class UserPreferencesResponse(BaseModel):
     user_id: int
-    share_progress_enabled: bool
+    social_insights_enabled: bool
     monthly_reading_goal: int
 
 class UserPreferencesUpdateRequest(BaseModel):
-    share_progress_enabled: Optional[bool] = None
+    social_insights_enabled: Optional[bool] = None
     monthly_reading_goal: Optional[int] = Field(None, ge=1)
 
 
@@ -155,7 +155,8 @@ async def get_user_dashboard(db: SessionDep, current_user: CurrentUser):
         "user": {
             "username": current_user.username,
             "created_at": current_user.created_at,
-            "avatar_url": f"/api/users/{current_user.id}/avatar" if current_user.avatar_path else None
+            "avatar_url": f"/api/users/{current_user.id}/avatar" if current_user.avatar_path else None,
+            "social_insights_enabled": current_user.social_insights_enabled,
         },
         "pull_lists": [{"id": pl.id, "name": pl.name, "count": len(pl.items)} for pl in pull_lists],
         "continue_reading": continue_reading,
@@ -232,7 +233,7 @@ async def get_preferences(db: SessionDep, current_user: CurrentUser):
         raise HTTPException(status_code=404, detail="User not found")
 
     return {
-        "share_progress_enabled": user.share_progress_enabled,
+        "social_insights_enabled": user.social_insights_enabled,
         "monthly_reading_goal": current_user.monthly_reading_goal,
     }
 
@@ -242,8 +243,8 @@ async def update_preferences(payload: UserPreferencesUpdateRequest, db: SessionD
 
     have_settings_changed = False
 
-    if payload.share_progress_enabled is not None:
-        current_user.share_progress_enabled = payload.share_progress_enabled
+    if payload.social_insights_enabled is not None:
+        current_user.social_insights_enabled = payload.social_insights_enabled
         have_settings_changed = True
 
     if payload.monthly_reading_goal is not None:

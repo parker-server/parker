@@ -376,28 +376,28 @@ def test_get_comic_detail_exposes_opted_in_completed_reader_count(auth_client, d
         username="social-reader-a",
         email="social-reader-a@example.com",
         hashed_password="fakehash",
-        share_progress_enabled=True,
+        social_insights_enabled=True,
         is_active=True,
     )
     reader_b = User(
         username="social-reader-b",
         email="social-reader-b@example.com",
         hashed_password="fakehash",
-        share_progress_enabled=True,
+        social_insights_enabled=True,
         is_active=True,
     )
     hidden_reader = User(
         username="social-reader-hidden",
         email="social-reader-hidden@example.com",
         hashed_password="fakehash",
-        share_progress_enabled=False,
+        social_insights_enabled=False,
         is_active=True,
     )
     in_progress_only = User(
         username="social-reader-progress",
         email="social-reader-progress@example.com",
         hashed_password="fakehash",
-        share_progress_enabled=True,
+        social_insights_enabled=True,
         is_active=True,
     )
     db.add_all([reader_a, reader_b, hidden_reader, in_progress_only])

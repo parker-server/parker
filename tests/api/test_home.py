@@ -34,14 +34,14 @@ def _add_comic(db, volume: Volume, *, number: str, title: str, **kwargs):
     return comic
 
 
-def _add_user(db, *, username: str, email: str, share_progress_enabled: bool):
+def _add_user(db, *, username: str, email: str, social_insights_enabled: bool):
     user = User(
         username=username,
         email=email,
         hashed_password="x",
         is_superuser=False,
         is_active=True,
-        share_progress_enabled=share_progress_enabled,
+        social_insights_enabled=social_insights_enabled,
     )
     db.add(user)
     db.flush()
@@ -181,10 +181,10 @@ def test_home_top_parker_rated_orders_by_average_then_count(auth_client, db):
     lower = _add_comic(db, volume, number="1", title="Parker Lower")
     fourth = _add_comic(db, volume, number="4", title="Parker Fourth")
 
-    user_a = _add_user(db, username="parker-rater-a", email="parker-rater-a@example.com", share_progress_enabled=False)
-    user_b = _add_user(db, username="parker-rater-b", email="parker-rater-b@example.com", share_progress_enabled=False)
-    user_c = _add_user(db, username="parker-rater-c", email="parker-rater-c@example.com", share_progress_enabled=False)
-    user_d = _add_user(db, username="parker-rater-d", email="parker-rater-d@example.com", share_progress_enabled=False)
+    user_a = _add_user(db, username="parker-rater-a", email="parker-rater-a@example.com", social_insights_enabled=False)
+    user_b = _add_user(db, username="parker-rater-b", email="parker-rater-b@example.com", social_insights_enabled=False)
+    user_c = _add_user(db, username="parker-rater-c", email="parker-rater-c@example.com", social_insights_enabled=False)
+    user_d = _add_user(db, username="parker-rater-d", email="parker-rater-d@example.com", social_insights_enabled=False)
 
     db.add_all([
         UserComicRating(user_id=user_a.id, comic_id=top.id, rating=5),
@@ -220,9 +220,9 @@ def test_home_top_parker_rated_returns_empty_without_enough_qualifying_items(aut
     second = _add_comic(db, volume, number="2", title="Threshold Second")
     third = _add_comic(db, volume, number="3", title="Threshold Third")
 
-    user_a = _add_user(db, username="parker-threshold-a", email="parker-threshold-a@example.com", share_progress_enabled=False)
-    user_b = _add_user(db, username="parker-threshold-b", email="parker-threshold-b@example.com", share_progress_enabled=False)
-    user_c = _add_user(db, username="parker-threshold-c", email="parker-threshold-c@example.com", share_progress_enabled=False)
+    user_a = _add_user(db, username="parker-threshold-a", email="parker-threshold-a@example.com", social_insights_enabled=False)
+    user_b = _add_user(db, username="parker-threshold-b", email="parker-threshold-b@example.com", social_insights_enabled=False)
+    user_c = _add_user(db, username="parker-threshold-c", email="parker-threshold-c@example.com", social_insights_enabled=False)
 
     db.add_all([
         UserComicRating(user_id=user_a.id, comic_id=first.id, rating=5),
@@ -252,7 +252,7 @@ def test_home_top_parker_rated_applies_age_filter(auth_client, db, normal_user):
     safe_four = _add_comic(db, fourth_safe_volume, number="1", title="Parker Safe Four", age_rating="Teen")
     banned = _add_comic(db, banned_volume, number="1", title="Parker Banned", age_rating="Mature 17+")
 
-    rater = _add_user(db, username="parker-age-rater", email="parker-age-rater@example.com", share_progress_enabled=False)
+    rater = _add_user(db, username="parker-age-rater", email="parker-age-rater@example.com", social_insights_enabled=False)
     db.add_all([
         UserComicRating(user_id=rater.id, comic_id=safe.id, rating=4),
         UserComicRating(user_id=normal_user.id, comic_id=safe.id, rating=4),
@@ -283,7 +283,7 @@ def test_home_trending_returns_empty_below_threshold(auth_client, db):
         db,
         username="trending-threshold-sharer",
         email="trending-threshold-sharer@example.com",
-        share_progress_enabled=True,
+        social_insights_enabled=True,
     )
 
     now = datetime.now(timezone.utc)
@@ -323,25 +323,25 @@ def test_home_trending_orders_by_recent_activity_then_readers_then_latest(auth_c
         db,
         username="trending-sharer-a",
         email="trending-sharer-a@example.com",
-        share_progress_enabled=True,
+        social_insights_enabled=True,
     )
     sharer_b = _add_user(
         db,
         username="trending-sharer-b",
         email="trending-sharer-b@example.com",
-        share_progress_enabled=True,
+        social_insights_enabled=True,
     )
     sharer_c = _add_user(
         db,
         username="trending-sharer-c",
         email="trending-sharer-c@example.com",
-        share_progress_enabled=True,
+        social_insights_enabled=True,
     )
     hidden = _add_user(
         db,
         username="trending-hidden",
         email="trending-hidden@example.com",
-        share_progress_enabled=False,
+        social_insights_enabled=False,
     )
 
     _, top_series, top_volume = _create_series_graph(db, lib_name="home-trending-top-lib", series_name="Trending Top")
@@ -415,13 +415,13 @@ def test_home_trending_applies_age_filter(auth_client, db, normal_user):
         db,
         username="trending-age-a",
         email="trending-age-a@example.com",
-        share_progress_enabled=True,
+        social_insights_enabled=True,
     )
     sharer_b = _add_user(
         db,
         username="trending-age-b",
         email="trending-age-b@example.com",
-        share_progress_enabled=True,
+        social_insights_enabled=True,
     )
 
     safe_ids = set()
@@ -688,7 +688,7 @@ def test_home_popular_returns_empty_below_threshold(auth_client, db, normal_user
         db,
         username="popular-threshold-sharer",
         email="popular-threshold-sharer@example.com",
-        share_progress_enabled=True,
+        social_insights_enabled=True,
     )
 
     comics = []
@@ -724,7 +724,7 @@ def test_home_popular_secondary_guard_when_cover_picker_drops_items(auth_client,
         db,
         username="popular-cover-sharer",
         email="popular-cover-sharer@example.com",
-        share_progress_enabled=True,
+        social_insights_enabled=True,
     )
 
     for idx in range(1, 5):
@@ -758,13 +758,13 @@ def test_home_popular_returns_series_when_enough_data(auth_client, db):
         db,
         username="popular-full-sharer-a",
         email="popular-full-sharer-a@example.com",
-        share_progress_enabled=True,
+        social_insights_enabled=True,
     )
     sharer_b = _add_user(
         db,
         username="popular-full-sharer-b",
         email="popular-full-sharer-b@example.com",
-        share_progress_enabled=True,
+        social_insights_enabled=True,
     )
 
     series_ids = []

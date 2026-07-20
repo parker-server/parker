@@ -20,7 +20,7 @@ class User(Base):
     username = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     avatar_path = Column(String, nullable=True)
-    share_progress_enabled = Column(Boolean, default=False)
+    social_insights_enabled = Column("share_progress_enabled", Boolean, default=True)
 
     max_age_rating = Column(String, nullable=True, default=None)
     allow_unknown_age_ratings = Column(Boolean, default=False)

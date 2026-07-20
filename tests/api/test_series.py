@@ -384,28 +384,28 @@ def test_series_detail_exposes_distinct_opted_in_reader_count(auth_client, db, n
         username="series-reader-a",
         email="series-reader-a@example.com",
         hashed_password="fakehash",
-        share_progress_enabled=True,
+        social_insights_enabled=True,
         is_active=True,
     )
     reader_b = User(
         username="series-reader-b",
         email="series-reader-b@example.com",
         hashed_password="fakehash",
-        share_progress_enabled=True,
+        social_insights_enabled=True,
         is_active=True,
     )
     hidden_reader = User(
         username="series-reader-hidden",
         email="series-reader-hidden@example.com",
         hashed_password="fakehash",
-        share_progress_enabled=False,
+        social_insights_enabled=False,
         is_active=True,
     )
     zero_progress_reader = User(
         username="series-reader-zero",
         email="series-reader-zero@example.com",
         hashed_password="fakehash",
-        share_progress_enabled=True,
+        social_insights_enabled=True,
         is_active=True,
     )
     db.add_all([reader_a, reader_b, hidden_reader, zero_progress_reader])
