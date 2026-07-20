@@ -444,7 +444,7 @@ def get_trending(
         db.query(Series)
         .join(Volume).join(Comic).join(ReadingProgress)
         .join(User)
-        .filter(User.share_progress_enabled == True)
+        .filter(User.social_insights_enabled == True)
         .filter(ReadingProgress.user_id != current_user.id)
         .filter(ReadingProgress.last_read_at >= cutoff_date)
     )
@@ -597,7 +597,7 @@ def get_popular(
 ):
     """
     Get "Popular with Others" series based on other users' reading activity.
-    Respects the 'share_progress_enabled' privacy setting.
+    Respects the anonymous social insights preference.
     Secured for age rating
     """
 
@@ -607,7 +607,7 @@ def get_popular(
         db.query(Series)
         .join(Volume).join(Comic).join(ReadingProgress)
         .join(User)
-        .filter(User.share_progress_enabled == True)
+        .filter(User.social_insights_enabled == True)
         .filter(ReadingProgress.user_id != current_user.id) # Dont include ourselves
     )
 

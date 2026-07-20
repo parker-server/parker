@@ -24,7 +24,7 @@ def get_visible_comic_reader_count(db: Session, comic_id: int) -> int | None:
         .join(User, User.id == ReadingProgress.user_id)
         .filter(ReadingProgress.comic_id == comic_id)
         .filter(ReadingProgress.completed == True)
-        .filter(User.share_progress_enabled == True)
+        .filter(User.social_insights_enabled == True)
         .scalar()
         or 0
     )
@@ -46,7 +46,7 @@ def get_visible_series_reader_count(db: Session, series_id: int) -> int | None:
         .join(Volume, Volume.id == Comic.volume_id)
         .filter(Volume.series_id == series_id)
         .filter(or_(ReadingProgress.completed == True, ReadingProgress.current_page > 0))
-        .filter(User.share_progress_enabled == True)
+        .filter(User.social_insights_enabled == True)
         .scalar()
         or 0
     )

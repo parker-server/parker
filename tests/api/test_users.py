@@ -54,6 +54,7 @@ def test_user_dashboard_returns_expected_sections(auth_client, db, normal_user):
     payload = response.json()
     assert payload["opds_enabled"] is True
     assert payload["user"]["username"] == normal_user.username
+    assert payload["user"]["social_insights_enabled"] is True
     assert len(payload["pull_lists"]) == 1
     assert payload["pull_lists"][0]["name"] == "Weekly Pulls"
     assert len(payload["continue_reading"]) == 1
@@ -71,17 +72,17 @@ def test_user_dashboard_page_shows_base_aware_opds_url(auth_client):
 def test_get_and_update_preferences(auth_client):
     initial = auth_client.get("/api/users/me/preferences")
     assert initial.status_code == 200
-    assert initial.json()["share_progress_enabled"] is False
+    assert initial.json()["social_insights_enabled"] is True
 
     update = auth_client.patch(
         "/api/users/me/preferences",
-        json={"share_progress_enabled": True, "monthly_reading_goal": 15},
+        json={"social_insights_enabled": False, "monthly_reading_goal": 15},
     )
     assert update.status_code == 200
 
     after = auth_client.get("/api/users/me/preferences")
     assert after.status_code == 200
-    assert after.json() == {"share_progress_enabled": True, "monthly_reading_goal": 15}
+    assert after.json() == {"social_insights_enabled": False, "monthly_reading_goal": 15}
 
 
 def test_update_preferences_rejects_invalid_goal(auth_client):

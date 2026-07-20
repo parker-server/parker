@@ -18,7 +18,7 @@
                 <input
                     id="share_progress"
                     type="checkbox"
-                    x-model="preferences.share_progress_enabled"
+                    x-model="preferences.social_insights_enabled"
                     x-on:change="updatePreferences"
                     class="w-5 h-5 bg-gray-900 border-gray-600 rounded text-blue-600 focus:ring-blue-500 focus:ring-offset-gray-800"
                 >
@@ -29,6 +29,11 @@
                     Allow your reading activity to be anonymously included in community features like "Popular with Others"
                     and reader counts on comics and series. No one will see your individual reading history.
                 </p>
+                <template x-if="preferences.social_insights_enabled === false">
+                    <p class="mt-3 rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-sm text-blue-100">
+                        Parker's social rails work best when more readers contribute anonymous aggregate activity. You can turn this on or off anytime.
+                    </p>
+                </template>
             </div>
         </div>
     </div>
@@ -146,7 +151,7 @@ function userSettings() {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        share_progress_enabled: this.preferences.share_progress_enabled,
+                        social_insights_enabled: this.preferences.social_insights_enabled,
                         monthly_reading_goal: this.preferences.monthly_reading_goal
                     })
                 });
@@ -203,7 +208,7 @@ function userSettings() {
         revertValuesOnFail()
         {
             // Revert toggle if failed
-            this.preferences.share_progress_enabled = !this.preferences.share_progress_enabled;
+            this.preferences.social_insights_enabled = !this.preferences.social_insights_enabled;
         },
     }
 }
