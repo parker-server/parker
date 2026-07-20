@@ -11,6 +11,8 @@
     {% from "partials/config_context.html" import config_context %}
     {{ config_context(request, base_url) }}
 
+    <script src="{{ url('/static/js/storage.js') }}?v={{ asset_version('static/js/storage.js') }}"></script>
+
     <!-- Alpine.js Collapse plugin -->
     <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/collapse@3.x.x/dist/cdn.min.js"></script>
 
@@ -37,7 +39,7 @@
         mobileMenuOpen: false,
         isAdmin: false,
         async init() {
-            if (!localStorage.getItem('token')) {
+            if (!window.parker.storage.has('token')) {
                 this.isAdmin = false;
                 return;
             }
@@ -127,16 +129,16 @@
                     </div>
 
                     <div class="flex items-center border-l border-gray-700 pl-3 ml-1">
-                        <template x-if="localStorage.getItem('token')">
+                        <template x-if="window.parker.storage.has('token')">
                             <button
-                                x-on:click="localStorage.removeItem('token'); localStorage.removeItem('refresh_token'); document.cookie = 'access_token=; path=/; max-age=0; SameSite=Lax'; window.location.href = window.parker.route('pages.login');"
+                                x-on:click="window.parker.auth.clearSession(); window.location.href = window.parker.route('pages.login');"
                                 class="text-sm font-medium text-gray-400 hover:text-white transition-colors"
                             >
                                 Logout
                             </button>
                         </template>
 
-                        <template x-if="!localStorage.getItem('token')">
+                        <template x-if="!window.parker.storage.has('token')">
                             <a :href="window.parker.route('login')" class="text-sm font-bold text-blue-400 hover:text-blue-300 transition-colors">
                                 Login
                             </a>

@@ -612,7 +612,7 @@ def test_reader_incognito_mode_does_not_persist_per_book_overrides(page, browser
         """
     )
 
-    stored_overrides = page.evaluate("() => window.localStorage.getItem('reader_comicOverrides')")
+    stored_overrides = page.evaluate("() => window.parker.storage.getString('reader_comicOverrides')")
     assert stored_overrides is None
 
     page.goto(active_reader_url, wait_until="networkidle")

@@ -1,4 +1,6 @@
 (() => {
+    const storage = window.parker.storage;
+
     const DEFAULT_FILTERS = Object.freeze({
         transcode: false,
         grayscale: false,
@@ -39,16 +41,16 @@
     }
 
     function loadBooleanPreference(key, fallback) {
-        const rawValue = localStorage.getItem(key);
+        const rawValue = storage.getString(key);
         return rawValue === null ? fallback : JSON.parse(rawValue);
     }
 
     function persistJsonPreference(key, value) {
-        localStorage.setItem(key, JSON.stringify(value));
+        storage.set(key, value);
     }
 
     function loadFilters() {
-        const savedFilters = localStorage.getItem(STORAGE_KEYS.filters);
+        const savedFilters = storage.getString(STORAGE_KEYS.filters);
         if (!savedFilters) {
             return cloneDefaultFilters();
         }
@@ -62,7 +64,7 @@
     }
 
     function loadComicOverrides() {
-        const savedOverrides = localStorage.getItem(STORAGE_KEYS.comicOverrides);
+        const savedOverrides = storage.getString(STORAGE_KEYS.comicOverrides);
         if (!savedOverrides) {
             return {};
         }
@@ -86,7 +88,7 @@
             throw new Error(`Unsupported comic override setting: ${settingName}`);
         }
 
-        return localStorage.getItem(config.storageKey) || config.fallback;
+        return storage.getString(config.storageKey) || config.fallback;
     }
 
     function getStoredReaderPreference(reader, settingName) {
@@ -183,7 +185,7 @@
         reader.readingMode = getStoredReaderPreference(reader, 'readingMode');
         reader.viewMode = getStoredReaderPreference(reader, 'viewMode');
         reader.readDirection = getStoredReaderPreference(reader, 'readDirection');
-        reader.fitMode = localStorage.getItem(STORAGE_KEYS.fitMode) || 'contain';
+        reader.fitMode = storage.getString(STORAGE_KEYS.fitMode) || 'contain';
         reader.doublePageOffset = loadBooleanPreference(STORAGE_KEYS.doublePageOffset, true);
         reader.showSpineShadow = loadBooleanPreference(STORAGE_KEYS.showSpineShadow, true);
         reader.uiLocked = loadBooleanPreference(STORAGE_KEYS.uiLocked, false);
@@ -216,7 +218,7 @@
         });
         reader.$watch('viewMode', (value) => persistComicOverridePreference(reader, 'viewMode', value));
         reader.$watch('readDirection', (value) => persistComicOverridePreference(reader, 'readDirection', value));
-        reader.$watch('fitMode', (value) => localStorage.setItem(STORAGE_KEYS.fitMode, value));
+        reader.$watch('fitMode', (value) => storage.setString(STORAGE_KEYS.fitMode, value));
         reader.$watch('doublePageOffset', (value) => persistJsonPreference(STORAGE_KEYS.doublePageOffset, value));
         reader.$watch('showSpineShadow', (value) => persistJsonPreference(STORAGE_KEYS.showSpineShadow, value));
         reader.$watch('uiLocked', (value) => persistJsonPreference(STORAGE_KEYS.uiLocked, value));
