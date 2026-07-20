@@ -130,7 +130,7 @@ def test_home_following_arrival_appears_after_import_and_clears_after_reading(pa
     rail.locator(f"text={new_issue_title}").first.wait_for()
 
     rail.locator(f'a[href*="/reader/{new_issue_id}"]').first.click()
-    page.wait_for_url(f"**/reader/{new_issue_id}")
+    page.wait_for_url(f"**/reader/{new_issue_id}*")
     page.locator(".reader-container").wait_for()
     page.keyboard.press("ArrowRight")
     page.wait_for_timeout(300)

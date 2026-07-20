@@ -4,6 +4,7 @@
  */
 (function() {
 
+    const storage = window.parker.storage;
     const originalFetch = window.fetch;
     let isRefreshing = false;
     let refreshPromise = null;
@@ -11,7 +12,7 @@
     let failedQueue = [];
     const REFRESH_SKEW_SECONDS = 90;
     const IDLE_TIMEOUT_SECONDS = 2 * 60 * 60;
-    const LAST_ACTIVITY_KEY = 'parker.lastActivityAt';
+    const LAST_ACTIVITY_KEY = 'lastActivityAt';
 
     const processQueue = (error, token = null) => {
         failedQueue.forEach(prom => {
@@ -52,16 +53,16 @@
     const nowSeconds = () => Math.floor(Date.now() / 1000);
 
     const getLastActivityAt = () => {
-        const stored = parseInt(localStorage.getItem(LAST_ACTIVITY_KEY), 10);
+        const stored = parseInt(storage.getString(LAST_ACTIVITY_KEY), 10);
         return Number.isFinite(stored) && stored > 0 ? stored : nowSeconds();
     };
 
     const setLastActivityAt = (timestamp = nowSeconds()) => {
-        localStorage.setItem(LAST_ACTIVITY_KEY, String(timestamp));
+        storage.setString(LAST_ACTIVITY_KEY, String(timestamp));
     };
 
     const isIdleExpired = () => {
-        const refreshToken = localStorage.getItem('refresh_token');
+        const refreshToken = storage.getString('refresh_token');
         return !!refreshToken && (nowSeconds() - getLastActivityAt()) > IDLE_TIMEOUT_SECONDS;
     };
 
@@ -70,14 +71,14 @@
     };
 
     const clearSession = () => {
-        localStorage.removeItem('token');
-        localStorage.removeItem('refresh_token');
-        localStorage.removeItem(LAST_ACTIVITY_KEY);
+        storage.remove('token');
+        storage.remove('refresh_token');
+        storage.remove(LAST_ACTIVITY_KEY);
         document.cookie = 'access_token=; path=/; max-age=0; SameSite=Lax';
     };
 
     const markActivity = () => {
-        if (!localStorage.getItem('refresh_token') || isIdleExpired()) return;
+        if (!storage.getString('refresh_token') || isIdleExpired()) return;
         const now = nowSeconds();
         if ((now - getLastActivityAt()) < 15) return;
         setLastActivityAt(now);
@@ -89,8 +90,8 @@
             refreshTimer = null;
         }
 
-        const token = localStorage.getItem('token');
-        const refreshToken = localStorage.getItem('refresh_token');
+        const token = storage.getString('token');
+        const refreshToken = storage.getString('refresh_token');
         if (!token || !refreshToken) return;
 
         if (isIdleExpired()) {
@@ -111,7 +112,7 @@
             throw new Error('Session idle timeout');
         }
 
-        const token = localStorage.getItem('token');
+        const token = storage.getString('token');
         const secondsRemaining = getTokenSecondsRemaining(token);
 
         if (!force && token && secondsRemaining > REFRESH_SKEW_SECONDS) {
@@ -119,7 +120,7 @@
             return token;
         }
 
-        const refreshToken = localStorage.getItem('refresh_token');
+        const refreshToken = storage.getString('refresh_token');
         if (!refreshToken) {
             return null;
         }
@@ -141,8 +142,8 @@
             }
 
             const data = await refreshRes.json();
-            localStorage.setItem('token', data.access_token);
-            localStorage.setItem('refresh_token', data.refresh_token);
+            storage.setString('token', data.access_token);
+            storage.setString('refresh_token', data.refresh_token);
             setAccessCookie(data.access_token, data.lifetime_in_seconds);
             scheduleRefresh();
 
@@ -174,8 +175,8 @@
         const anchor = event.target instanceof Element ? event.target.closest('a') : null;
         if (!shouldPrepareNavigation(anchor)) return;
 
-        const token = localStorage.getItem('token');
-        const refreshToken = localStorage.getItem('refresh_token');
+        const token = storage.getString('token');
+        const refreshToken = storage.getString('refresh_token');
         if (!refreshToken || getTokenSecondsRemaining(token) > REFRESH_SKEW_SECONDS) {
             return;
         }
@@ -217,7 +218,7 @@
         };
 
         // Initial Token Attempt
-        const token = localStorage.getItem('token');
+        const token = storage.getString('token');
         if (token) { injectToken(token); }
 
         try {
@@ -239,7 +240,7 @@
                 }
 
                 // Start Refresh Logic
-                const refreshToken = localStorage.getItem('refresh_token');
+                const refreshToken = storage.getString('refresh_token');
 
                 // If no refresh token, or if we are calling the login/refresh endpoints themselves, abort
                 const requestUrl = typeof url === 'string' ? url : (url && url.url) || String(url);
@@ -294,7 +295,7 @@
             refreshSession().catch(() => {});
         }
     });
-    if (localStorage.getItem('refresh_token') && !localStorage.getItem(LAST_ACTIVITY_KEY)) {
+    if (storage.getString('refresh_token') && !storage.getString(LAST_ACTIVITY_KEY)) {
         setLastActivityAt();
     }
     scheduleRefresh();
@@ -558,25 +559,7 @@ document.addEventListener('error', function(e) {
     }
 
     // Storage & Prefs
-    const storage = {
-        get(key, defaultValue = null) {
-            try {
-                const item = localStorage.getItem(key);
-                return item ? JSON.parse(item) : defaultValue;
-            } catch (e) {
-                console.error('Error reading from localStorage:', e);
-                return defaultValue;
-            }
-        },
-        set(key, value) {
-            try {
-                localStorage.setItem(key, JSON.stringify(value));
-            } catch (e) { console.error('Error writing to localStorage:', e); }
-        },
-        remove(key) {
-            try { localStorage.removeItem(key); } catch (e) { }
-        }
-    };
+    const storage = window.parker.storage;
 
     /**
      * Generic Pagination Logic

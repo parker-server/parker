@@ -7,6 +7,7 @@ from app.core.security import create_access_token, create_refresh_token
 from app.models.bookmark import Bookmark
 from app.models.pull_list import PullList, PullListItem
 from app.models.reading_progress import ReadingProgress
+from app.models.user import User
 
 
 def _create_pull_list(db_factory, user_id, name, description=None):
@@ -50,6 +51,61 @@ def _add_comic_to_pull_list(db_factory, pull_list_id, comic_id):
 
 
 @pytest.mark.browser
+def test_storage_helper_namespaces_and_migrates_legacy_keys_on_login_page(page, browser_server):
+    page.goto(f"{browser_server['base_url']}/login", wait_until="networkidle")
+
+    state = page.evaluate(
+        """
+        () => {
+            localStorage.setItem('plainString', 'legacy-value');
+            localStorage.setItem('jsonValue', JSON.stringify({ enabled: true }));
+            localStorage.setItem('parker-fx-enabled', 'false');
+            localStorage.setItem('brokenJson', 'not-json');
+
+            const plainString = window.parker.storage.getString('plainString');
+            const jsonValue = window.parker.storage.get('jsonValue', {});
+            const fxEnabled = window.parker.storage.get('fx.enabled', true);
+            const brokenJson = window.parker.storage.get('brokenJson', 'fallback');
+
+            window.parker.storage.setString('plainString', 'new-value');
+            window.parker.storage.set('jsonValue', { enabled: false });
+            window.parker.storage.remove('brokenJson');
+
+            return {
+                plainString,
+                jsonValue,
+                fxEnabled,
+                brokenJson,
+                namespacedPlainString: localStorage.getItem('parker.plainString'),
+                legacyPlainString: localStorage.getItem('plainString'),
+                namespacedJsonValue: JSON.parse(localStorage.getItem('parker.jsonValue')),
+                legacyJsonValue: localStorage.getItem('jsonValue'),
+                namespacedFxEnabled: localStorage.getItem('parker.fx.enabled'),
+                legacyFxEnabled: localStorage.getItem('parker-fx-enabled'),
+                namespacedBrokenJson: localStorage.getItem('parker.brokenJson'),
+                legacyBrokenJson: localStorage.getItem('brokenJson')
+            };
+        }
+        """
+    )
+
+    assert state == {
+        "plainString": "legacy-value",
+        "jsonValue": {"enabled": True},
+        "fxEnabled": False,
+        "brokenJson": "fallback",
+        "namespacedPlainString": "new-value",
+        "legacyPlainString": None,
+        "namespacedJsonValue": {"enabled": False},
+        "legacyJsonValue": None,
+        "namespacedFxEnabled": "false",
+        "legacyFxEnabled": None,
+        "namespacedBrokenJson": None,
+        "legacyBrokenJson": None,
+    }
+
+
+@pytest.mark.browser
 def test_login_next_redirect_and_logout_clears_session(page, browser_server):
     page.goto(f"{browser_server['base_url']}/login?next=/search", wait_until="networkidle")
 
@@ -63,15 +119,42 @@ def test_login_next_redirect_and_logout_clears_session(page, browser_server):
     session_state = page.evaluate(
         """
         () => ({
-            token: localStorage.getItem('token'),
-            refreshToken: localStorage.getItem('refresh_token'),
+            token: window.parker.storage.getString('token'),
+            refreshToken: window.parker.storage.getString('refresh_token'),
+            namespacedToken: localStorage.getItem(window.parker.storage.key('token')),
+            namespacedRefreshToken: localStorage.getItem(window.parker.storage.key('refresh_token')),
+            legacyToken: localStorage.getItem('token'),
+            legacyRefreshToken: localStorage.getItem('refresh_token'),
             hasAccessCookie: document.cookie.includes('access_token=')
         })
         """
     )
     assert session_state["token"]
     assert session_state["refreshToken"]
+    assert session_state["namespacedToken"] == session_state["token"]
+    assert session_state["namespacedRefreshToken"] == session_state["refreshToken"]
+    assert session_state["legacyToken"] is None
+    assert session_state["legacyRefreshToken"] is None
     assert session_state["hasAccessCookie"] is True
+
+    migrated_legacy_state = page.evaluate(
+        """
+        () => {
+            localStorage.setItem('token', 'legacy-token');
+            const value = window.parker.storage.getString('token');
+            return {
+                value,
+                namespacedToken: localStorage.getItem(window.parker.storage.key('token')),
+                legacyToken: localStorage.getItem('token')
+            };
+        }
+        """
+    )
+    assert migrated_legacy_state == {
+        "value": session_state["token"],
+        "namespacedToken": session_state["token"],
+        "legacyToken": None,
+    }
 
     page.get_by_role("button", name="Logout").click()
 
@@ -81,15 +164,78 @@ def test_login_next_redirect_and_logout_clears_session(page, browser_server):
     cleared_state = page.evaluate(
         """
         () => ({
-            token: localStorage.getItem('token'),
-            refreshToken: localStorage.getItem('refresh_token'),
+            token: window.parker.storage.getString('token'),
+            refreshToken: window.parker.storage.getString('refresh_token'),
+            namespacedToken: localStorage.getItem(window.parker.storage.key('token')),
+            namespacedRefreshToken: localStorage.getItem(window.parker.storage.key('refresh_token')),
+            legacyToken: localStorage.getItem('token'),
+            legacyRefreshToken: localStorage.getItem('refresh_token'),
             hasAccessCookie: document.cookie.includes('access_token=')
         })
         """
     )
     assert cleared_state["token"] is None
     assert cleared_state["refreshToken"] is None
+    assert cleared_state["namespacedToken"] is None
+    assert cleared_state["namespacedRefreshToken"] is None
+    assert cleared_state["legacyToken"] is None
+    assert cleared_state["legacyRefreshToken"] is None
     assert cleared_state["hasAccessCookie"] is False
+
+    legacy_migration_state = page.evaluate(
+        """
+        () => {
+            localStorage.setItem('token', 'legacy-token');
+            const value = window.parker.storage.getString('token');
+            const state = {
+                value,
+                namespacedToken: localStorage.getItem(window.parker.storage.key('token')),
+                legacyToken: localStorage.getItem('token')
+            };
+            window.parker.storage.remove('token');
+            return state;
+        }
+        """
+    )
+    assert legacy_migration_state == {
+        "value": "legacy-token",
+        "namespacedToken": "legacy-token",
+        "legacyToken": None,
+    }
+
+
+@pytest.mark.browser
+def test_dashboard_social_insights_prompt_dismissal_uses_namespaced_storage(page, browser_server):
+    seed = browser_server["seed"]
+    session = browser_server["db_factory"]()
+    try:
+        user = session.get(User, seed["user_id"])
+        user.social_insights_enabled = False
+        session.commit()
+    finally:
+        session.close()
+
+    page.goto(f"{browser_server['base_url']}/user/dashboard", wait_until="networkidle")
+    page.get_by_role("heading", name="Help anonymous social rails feel more alive").wait_for()
+    page.get_by_role("button", name="Not Now").click()
+
+    state = page.evaluate(
+        """
+        () => ({
+            helperValue: window.parker.storage.getString('dismissed_social_insights_prompt'),
+            namespacedValue: localStorage.getItem('parker.dismissed_social_insights_prompt'),
+            legacyValue: localStorage.getItem('dismissed_social_insights_prompt')
+        })
+        """
+    )
+    assert state == {
+        "helperValue": "true",
+        "namespacedValue": "true",
+        "legacyValue": None,
+    }
+
+    page.reload(wait_until="networkidle")
+    assert page.get_by_role("heading", name="Help anonymous social rails feel more alive").count() == 0
 
 
 @pytest.mark.browser
@@ -105,8 +251,8 @@ def test_session_refresh_resyncs_access_cookie_before_navigation(page, browser_s
     page.evaluate(
         """
         ({ expiredAccessToken, refreshToken }) => {
-            localStorage.setItem('token', expiredAccessToken);
-            localStorage.setItem('refresh_token', refreshToken);
+            window.parker.storage.setString('token', expiredAccessToken);
+            window.parker.storage.setString('refresh_token', refreshToken);
             document.cookie = 'access_token=; path=/; max-age=0; SameSite=Lax';
         }
         """,
@@ -120,7 +266,7 @@ def test_session_refresh_resyncs_access_cookie_before_navigation(page, browser_s
         """
         async () => {
             await window.parker.auth.refreshSession({ force: true });
-            return localStorage.getItem('token');
+            return window.parker.storage.getString('token');
         }
         """
     )
@@ -128,8 +274,8 @@ def test_session_refresh_resyncs_access_cookie_before_navigation(page, browser_s
     session_state = page.evaluate(
         """
         () => ({
-            token: localStorage.getItem('token'),
-            refreshToken: localStorage.getItem('refresh_token'),
+            token: window.parker.storage.getString('token'),
+            refreshToken: window.parker.storage.getString('refresh_token'),
             hasAccessCookie: document.cookie.includes('access_token=')
         })
         """
@@ -154,9 +300,9 @@ def test_idle_session_clears_instead_of_refreshing(page, browser_server):
         """
         async ({ expiredAccessToken, refreshToken }) => {
             const staleActivityAt = Math.floor(Date.now() / 1000) - window.parker.auth.idleTimeoutSeconds - 10;
-            localStorage.setItem('token', expiredAccessToken);
-            localStorage.setItem('refresh_token', refreshToken);
-            localStorage.setItem('parker.lastActivityAt', String(staleActivityAt));
+            window.parker.storage.setString('token', expiredAccessToken);
+            window.parker.storage.setString('refresh_token', refreshToken);
+            window.parker.storage.setString('lastActivityAt', String(staleActivityAt));
             document.cookie = 'access_token=; path=/; max-age=0; SameSite=Lax';
 
             try {
@@ -176,9 +322,9 @@ def test_idle_session_clears_instead_of_refreshing(page, browser_server):
     session_state = page.evaluate(
         """
         () => ({
-            token: localStorage.getItem('token'),
-            refreshToken: localStorage.getItem('refresh_token'),
-            lastActivityAt: localStorage.getItem('parker.lastActivityAt'),
+            token: window.parker.storage.getString('token'),
+            refreshToken: window.parker.storage.getString('refresh_token'),
+            lastActivityAt: window.parker.storage.getString('lastActivityAt'),
             hasAccessCookie: document.cookie.includes('access_token=')
         })
         """

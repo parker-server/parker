@@ -57,7 +57,7 @@ def test_continue_reading_page_shows_in_progress_items_and_opens_reader(page, br
 
     page.get_by_role("link", name="Continue").click()
 
-    page.wait_for_url(f"**/reader/{seed['in_progress_comic_id']}")
+    page.wait_for_url(f"**/reader/{seed['in_progress_comic_id']}*")
     page.locator(".reader-container").wait_for()
     page.locator(".nav-zone.center").click()
     assert page.locator(".reader-toolbar").filter(has_text=seed["in_progress_comic_title"]).first.is_visible()

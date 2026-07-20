@@ -698,8 +698,8 @@ function dashboard() {
         reviewYear:activeReviewYear,
 
         // IMMEDIATE CHECK: Set the state synchronously during object creation
-        bannerDismissed: localStorage.getItem('dismissed_review_year') == activeReviewYear,
-        socialInsightsPromptDismissed: localStorage.getItem('dismissed_social_insights_prompt') === 'true',
+        bannerDismissed: window.parker.storage.getString('dismissed_review_year') == activeReviewYear,
+        socialInsightsPromptDismissed: window.parker.storage.getString('dismissed_social_insights_prompt') === 'true',
 
         async init() {
 
@@ -884,7 +884,7 @@ function dashboard() {
 
         dismissBanner() {
             this.bannerDismissed = true;
-            localStorage.setItem('dismissed_review_year', this.reviewYear);
+            window.parker.storage.setString('dismissed_review_year', this.reviewYear);
         },
 
         shouldShowSocialInsightsPrompt() {
@@ -903,7 +903,7 @@ function dashboard() {
 
                 this.data.user.social_insights_enabled = true;
                 this.socialInsightsPromptDismissed = true;
-                localStorage.removeItem('dismissed_social_insights_prompt');
+                window.parker.storage.remove('dismissed_social_insights_prompt');
                 window.parker.showToast("Social insights enabled", "success");
             } catch (e) {
                 console.error(e);
@@ -913,7 +913,7 @@ function dashboard() {
 
         dismissSocialInsightsPrompt() {
             this.socialInsightsPromptDismissed = true;
-            localStorage.setItem('dismissed_social_insights_prompt', 'true');
+            window.parker.storage.setString('dismissed_social_insights_prompt', 'true');
         }
 
     }

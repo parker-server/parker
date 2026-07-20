@@ -177,6 +177,9 @@ def reset_browser_state(browser_db_factory, browser_seed_data):
         session.query(SavedSearch).delete()
         session.query(Bookmark).delete()
         session.query(ReadingProgress).delete()
+        user = session.scalar(select(User).where(User.id == browser_seed_data["user_id"]))
+        if user is not None:
+            user.social_insights_enabled = True
         session.add_all(
             [
                 ReadingProgress(
