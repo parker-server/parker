@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, case, Integer, desc, or_, tuple_
+from sqlalchemy.orm import contains_eager
 from typing import List, Annotated
 
 from app.api.deps import SessionDep, AdminUser, PaginationParams, PaginatedResponse
@@ -324,6 +325,11 @@ async def get_duplicate_report(
         .join(Comic.volume)
         .join(Volume.series)
         .join(Series.library)
+        .options(
+            contains_eager(Comic.volume)
+            .contains_eager(Volume.series)
+            .contains_eager(Series.library)
+        )
         .filter(
             tuple_(Comic.volume_id, Comic.number, Comic.format).in_(dupe_keys)
         )
@@ -393,6 +399,11 @@ async def get_corrupt_files_report(
         .join(Comic.volume)
         .join(Volume.series)
         .join(Series.library)
+        .options(
+            contains_eager(Comic.volume)
+            .contains_eager(Volume.series)
+            .contains_eager(Series.library)
+        )
         .filter(criteria)
         .order_by(Comic.page_count, Comic.file_size)  # Smallest/Emptyest first
     )

@@ -134,6 +134,14 @@ def _serialize_series_rail_items(db: Session, series_list):
     for rc in raw_comics:
         series_map[rc.series_id].append(rc)
 
+    # Batch-count volumes per series instead of lazy-loading s.volumes per iteration (avoids N+1)
+    volume_counts = dict(
+        db.query(Volume.series_id, func.count(Volume.id))
+        .filter(Volume.series_id.in_(series_ids))
+        .group_by(Volume.series_id)
+        .all()
+    )
+
     results = []
     for s in series_list:
         s_comics = series_map.get(s.id, [])
@@ -148,7 +156,7 @@ def _serialize_series_rail_items(db: Session, series_list):
             "start_year": first_issue.year,
             "thumbnail_path": get_thumbnail_url(first_issue.id, first_issue.updated_at),
             "publisher": first_issue.publisher,
-            "volume_count": len(s.volumes) if s.volumes else 0,
+            "volume_count": volume_counts.get(s.id, 0),
             "starred": False
         })
 

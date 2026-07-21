@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Request, HTTPException
 from fastapi.responses import Response, FileResponse
+from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 from datetime import datetime, timezone
 from collections import defaultdict
@@ -204,6 +205,14 @@ async def opds_root(request: Request, user: OPDSUser, db: SessionDep):
         # RLS: Only show accessible libraries
         libs = user.accessible_libraries
 
+    # Batch-count series per library instead of lazy-loading lib.series per iteration (avoids N+1)
+    series_counts = dict(
+        db.query(Series.library_id, func.count(Series.id))
+        .filter(Series.library_id.in_([lib.id for lib in libs]))
+        .group_by(Series.library_id)
+        .all()
+    ) if libs else {}
+
     entries = []
     for lib in libs:
         entries.append({
@@ -211,7 +220,7 @@ async def opds_root(request: Request, user: OPDSUser, db: SessionDep):
             "title": lib.name,
             "updated": format_opds_datetime(datetime.now(timezone.utc)),  # Libraries rarely change, using now() is acceptable for root
             "link": str(request.url_for("library", library_id=lib.id)),
-            "summary": f"Library containing {len(lib.series)} series."
+            "summary": f"Library containing {series_counts.get(lib.id, 0)} series."
         })
 
     return render_xml(request, {
