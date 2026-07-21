@@ -189,52 +189,7 @@ def get_random_gems(
     if not random_series:
         return []
 
-    # 2. Batch Fetch Covers
-    # Instead of looping and querying, we grab the first comic for all these series at once.
-    series_ids = [s.id for s in random_series]
-
-    # Fetch lightweight data for ALL comics in these series
-    # This allows us to sort/filter in Python correctly
-    raw_comics = (
-        db.query(
-            Comic.id,
-            Comic.number,
-            Comic.year,
-            Comic.format,
-            Comic.publisher,  # Needed for response
-            Comic.updated_at,
-            Volume.series_id
-        )
-        .join(Volume)
-        .filter(Volume.series_id.in_(series_ids))
-        .all()
-    )
-
-    # Group by Series
-    series_map = defaultdict(list)
-    for rc in raw_comics:
-        series_map[rc.series_id].append(rc)
-
-
-    results = []
-    for s in random_series:
-        s_comics = series_map.get(s.id, [])
-        first_issue = _pick_best_cover(s, s_comics)
-
-        if not first_issue:
-            continue
-
-        results.append({
-            "id": s.id,
-            "name": s.name,
-            "start_year": first_issue.year,
-            "thumbnail_path": get_thumbnail_url(first_issue.id, first_issue.updated_at),
-            "publisher": first_issue.publisher,
-            "volume_count": len(s.volumes) if s.volumes else 0,
-            "starred": False # You can query UserSeries if you want this accurate
-        })
-
-    return results
+    return _serialize_series_rail_items(db, random_series)
 
 
 @router.get("/rated", response_model=List[ComicSearchItem], name="top_rated")

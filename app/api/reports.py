@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, case, Integer, desc, or_, tuple_
-from sqlalchemy.orm import contains_eager
+from sqlalchemy.orm import contains_eager, joinedload
 from typing import List, Annotated
 
 from app.api.deps import SessionDep, AdminUser, PaginationParams, PaginatedResponse
@@ -263,7 +263,13 @@ async def get_metadata_health_report(db: SessionDep, user: AdminUser):
 
         if count > 0:
             # Get a sample of up to 5 items for the preview
-            sample = db.query(Comic).filter(criteria).limit(5).all()
+            sample = (
+                db.query(Comic)
+                .options(joinedload(Comic.volume).joinedload(Volume.series))
+                .filter(criteria)
+                .limit(5)
+                .all()
+            )
             sample_data = [f"{c.series_group or c.volume.series.name} #{c.number}" for c in sample]
 
             report.append({
