@@ -10,6 +10,12 @@
     <name>Parker Media Server</name>
   </author>
 
+  {% for link in feed_links %}
+  <link rel="{{ link.rel }}"
+        type="{{ link.type }}"
+        href="{{ link.href }}"/>
+  {% endfor %}
+
   {# --- NAVIGATION ENTRIES (Libraries/Series) --- #}
   {% for entry in entries %}
   <entry>
