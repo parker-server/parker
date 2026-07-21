@@ -328,8 +328,11 @@ templates.env.globals["get_opds_thumbnail_href"] = get_opds_thumbnail_href
 
 # 4. DOWNLOAD: Serve the file
 @router.get("/images/{comic_id}/thumbnail.jpg", name="opds_thumbnail")
-async def opds_thumbnail(comic_id: int, user: OPDSUser, db: SessionDep):
-    comic = get_authorized_opds_comic(comic_id, user, db)
+async def opds_thumbnail(comic_id: int, db: SessionDep):
+    comic = db.query(Comic).filter(Comic.id == comic_id).first()
+    if not comic:
+        raise HTTPException(status_code=404, detail="Comic not found")
+
     thumbnail_path = get_opds_thumbnail_path(comic)
 
     if not thumbnail_path:

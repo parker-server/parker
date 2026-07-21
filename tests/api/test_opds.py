@@ -260,11 +260,7 @@ def test_opds_thumbnail_links_use_jpeg_endpoint(client, db, normal_user, tmp_pat
     assert image.get("type") == "image/jpeg"
     assert image.get("href", "").startswith(f"http://testserver/opds/images/{comic.id}/thumbnail.jpg?v=")
 
-    with patch("app.api.opds_deps.verify_password", return_value=True):
-        thumbnail_response = client.get(
-            f"/opds/images/{comic.id}/thumbnail.jpg",
-            auth=(normal_user.username, "any_password")
-        )
+    thumbnail_response = client.get(f"/opds/images/{comic.id}/thumbnail.jpg")
 
     assert thumbnail_response.status_code == 200
     assert thumbnail_response.headers["content-type"].startswith("image/jpeg")
