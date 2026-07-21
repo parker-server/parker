@@ -1,7 +1,9 @@
+import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+from watchdog.observers import Observer
 
 import app.services.watcher as watcher
 
@@ -232,3 +234,30 @@ def test_refresh_watches_closes_session_when_query_raises(monkeypatch):
         inst.refresh_watches()
 
     db.close.assert_called_once()
+
+
+def test_real_watchdog_event_queues_scan_for_new_archive(monkeypatch, tmp_path):
+    add_task = MagicMock()
+    monkeypatch.setattr(watcher.scan_manager, "add_task", add_task)
+
+    observer = Observer()
+    handler = watcher.LibraryEventHandler(77, batch_window_seconds=0.1)
+    watch = observer.schedule(handler, str(tmp_path), recursive=True)
+
+    observer.start()
+    try:
+        archive_path = tmp_path / "new-issue.cbz"
+        archive_path.write_bytes(b"not a real archive for watcher coverage")
+
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if add_task.called:
+                break
+            time.sleep(0.05)
+
+        add_task.assert_called_once_with(77, force=False)
+    finally:
+        handler.stop()
+        observer.unschedule(watch)
+        observer.stop()
+        observer.join(timeout=5)
