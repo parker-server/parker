@@ -47,6 +47,30 @@ function librariesPage() {
             } finally { 
                 this.loading = false; 
             }
+        },
+
+        async toggleLibraryPin(lib) {
+            const nextPinned = !lib.pinned;
+            lib.pinned = nextPinned;
+
+            try {
+                const res = await fetch(
+                    window.parker.route('libraries.' + (nextPinned ? 'pin' : 'unpin'), { library_id: lib.id }),
+                    { method: nextPinned ? 'POST' : 'DELETE' }
+                );
+
+                if (!res.ok) {
+                    throw new Error(nextPinned ? 'Failed to pin library' : 'Failed to unpin library');
+                }
+
+                const payload = await res.json();
+                lib.pinned = payload.pinned;
+                window.parker.showToast(payload.pinned ? 'Library pinned to Home' : 'Library unpinned from Home');
+            } catch(e) {
+                lib.pinned = !nextPinned;
+                console.error(e);
+                window.parker.showToast(e.message || 'Unable to update library pin', 'error');
+            }
         }
     }
 }

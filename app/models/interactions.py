@@ -41,6 +41,25 @@ class UserVolumeFollow(Base):
     volume = relationship("Volume", backref="user_follows")
 
 
+class UserLibraryPin(Base):
+    """
+    Junction table for User <-> Library home-page pins.
+    Stores pin order through the original pin timestamp.
+    """
+    __tablename__ = "user_library_pins"
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    library_id = Column(Integer, ForeignKey("libraries.id", ondelete="CASCADE"), primary_key=True)
+    pinned_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    user = relationship("User", backref="library_pins")
+    library = relationship("Library", backref="user_pins")
+
+
 class UserComicRating(Base):
     """
     Junction table for User <-> Comic rating interactions.

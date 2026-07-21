@@ -6,6 +6,7 @@ from app.api.deps import get_current_user
 from app.models.comic import Comic, Volume
 from app.models.collection import Collection, CollectionItem
 from app.models.library import Library
+from app.models.interactions import UserLibraryPin
 from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.reading_progress import ReadingProgress
 from app.models.series import Series
@@ -198,6 +199,51 @@ def test_get_library_detail_as_admin(admin_client, db):
     payload = response.json()
     assert payload["id"] == library.id
     assert payload["name"] == "Visible"
+    assert payload["pinned"] is False
+
+
+def test_user_can_pin_and_unpin_accessible_library_idempotently(auth_client, db, normal_user):
+    library = Library(name="Pinned Access", path="/tmp/pinned-access")
+    db.add(library)
+    db.commit()
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    first_pin = auth_client.post(f"/api/libraries/{library.id}/pin")
+    second_pin = auth_client.post(f"/api/libraries/{library.id}/pin")
+
+    assert first_pin.status_code == 200
+    assert second_pin.status_code == 200
+    assert first_pin.json() == {"library_id": library.id, "pinned": True}
+    assert second_pin.json() == {"library_id": library.id, "pinned": True}
+    assert db.query(UserLibraryPin).filter_by(user_id=normal_user.id, library_id=library.id).count() == 1
+
+    list_payload = auth_client.get("/api/libraries/").json()
+    assert list_payload[0]["pinned"] is True
+
+    detail_payload = auth_client.get(f"/api/libraries/{library.id}").json()
+    assert detail_payload["pinned"] is True
+
+    first_unpin = auth_client.delete(f"/api/libraries/{library.id}/pin")
+    second_unpin = auth_client.delete(f"/api/libraries/{library.id}/pin")
+
+    assert first_unpin.status_code == 200
+    assert second_unpin.status_code == 200
+    assert first_unpin.json() == {"library_id": library.id, "pinned": False}
+    assert second_unpin.json() == {"library_id": library.id, "pinned": False}
+    assert db.query(UserLibraryPin).filter_by(user_id=normal_user.id, library_id=library.id).count() == 0
+
+
+def test_user_cannot_pin_inaccessible_library(auth_client, db):
+    library = Library(name="Pinned Hidden", path="/tmp/pinned-hidden")
+    db.add(library)
+    db.commit()
+
+    pin_response = auth_client.post(f"/api/libraries/{library.id}/pin")
+    unpin_response = auth_client.delete(f"/api/libraries/{library.id}/pin")
+
+    assert pin_response.status_code == 404
+    assert unpin_response.status_code == 404
 
 
 def test_get_library_series_sorts_and_computes_cover_and_read_state(auth_client, db, normal_user):
