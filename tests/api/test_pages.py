@@ -122,6 +122,15 @@ def test_admin_settings_page_exposes_quick_navigation(admin_client):
     assert 'x-text="setting.key"' not in body
 
 
+def test_admin_libraries_page_exposes_folder_browser_route(admin_client):
+    response = admin_client.get("/admin/libraries")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "Browse" in body
+    assert "libraries.browse" in body
+
+
 def test_search_widget_people_results_use_generic_creator_handoff(auth_client):
     response = auth_client.get("/")
 

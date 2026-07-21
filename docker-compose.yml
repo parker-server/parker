@@ -6,7 +6,7 @@ services:
     container_name: parker
     user: "${UID}:${GID}"
     ports:
-      - "8000:8000"
+      - "${PARKER_PORT:-8000}:8000"
     volumes:
       - ./comics:/comics:ro  # Mount your comics directory
       - ./data:/app/storage

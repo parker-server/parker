@@ -3,9 +3,11 @@ from typing import List, Annotated, Optional
 from pydantic import BaseModel
 from sqlalchemy import func, case
 from datetime import datetime, timezone
+from pathlib import Path as FsPath
 import logging
 import os
 
+from app.config import settings
 from app.core.comic_helpers import get_thumbnail_url, NON_PLAIN_FORMATS, REVERSE_NUMBERING_SERIES, get_series_age_restriction
 from app.models.library import Library
 from app.models.series import Series
@@ -87,6 +89,19 @@ def _library_payload(lib: Library, *, pinned: bool = False, stats: Optional[dict
     return payload
 
 
+def _resolve_library_browser_path(path: Optional[str] = None) -> tuple[FsPath, FsPath]:
+    root = settings.comics_path.expanduser().resolve()
+    requested = FsPath(path).expanduser() if path else root
+    current = requested.resolve()
+
+    try:
+        current.relative_to(root)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Path must be within the configured comics root")
+
+    return root, current
+
+
 @router.get("/", name="list")
 async def list_libraries(db: SessionDep,
                          current_user: CurrentUser,
@@ -161,6 +176,54 @@ async def list_libraries(db: SessionDep,
         ))
 
     return results
+
+
+@router.get("/browse/paths", tags=["admin"], name="browse")
+async def browse_library_paths(admin_user: AdminUser, path: Optional[str] = Query(None)):
+    root, current = _resolve_library_browser_path(path)
+
+    if not root.exists() or not root.is_dir():
+        raise HTTPException(status_code=404, detail="Configured comics root was not found")
+
+    if not current.exists() or not current.is_dir():
+        raise HTTPException(status_code=404, detail="Directory was not found")
+
+    entries = []
+    try:
+        children = sorted(current.iterdir(), key=lambda child: child.name.lower())
+    except OSError:
+        raise HTTPException(status_code=403, detail="Directory cannot be read")
+
+    for child in children:
+        try:
+            resolved_child = child.resolve()
+            resolved_child.relative_to(root)
+        except (OSError, ValueError):
+            continue
+
+        if not resolved_child.is_dir():
+            continue
+
+        entries.append({
+            "name": child.name,
+            "path": str(resolved_child),
+        })
+
+    parent = None
+    if current != root:
+        parent_path = current.parent.resolve()
+        try:
+            parent_path.relative_to(root)
+            parent = str(parent_path)
+        except ValueError:
+            parent = str(root)
+
+    return {
+        "root": str(root),
+        "current": str(current),
+        "parent": parent,
+        "entries": entries,
+    }
 
 
 @router.get("/{library_id}", name="detail")

@@ -11,6 +11,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
 - **Library Management**
   - Hierarchy: `Library → Series → Volume → Comic`
   - Rich metadata (credits, tags, page counts, colors)
+  - Admin folder browser for selecting server-side library paths under `COMICS_PATH`
   - Reading Lists, Collections, Story Arcs, Stacks, Smart Lists
   - Volume-level `Following` for future issue tracking by run
   - Optional single-volume series shortcut to open the volume detail page directly
@@ -152,6 +153,20 @@ python -m pip install -r requirements.txt -r requirements-dev.txt
 If behavior differs between machines, verify both are using a freshly created
 virtualenv from these pinned requirements.
 
+### Library Browser Root
+
+The admin folder browser is scoped to `COMICS_PATH`. Docker Compose sets this to
+`/comics` by default. For local Python installs, set `COMICS_PATH` in `.env` to
+the local folder Parker should browse from, such as `D:\Comics` or
+`C:\Users\you\Comics`.
+
+### Docker Port Configuration
+
+The Docker image listens on port `8000` inside the container. To change the host
+port exposed by Docker Compose, set `PARKER_PORT` in `.env`; for example,
+`PARKER_PORT=9000` exposes Parker at host port `9000` while the container still
+uses port `8000` internally.
+
 
 ## 📌 Roadmap
 - Improve Documentation
@@ -160,7 +175,6 @@ virtualenv from these pinned requirements.
 - Enhanced WebP transcoding pipeline (JXL, AVIF to WebP)
 - Additional unit test coverage
 - Migration tooling improvements
-- Improve admin Add Library dialog to be able to browse to a folder rather than type it in
 - Support multiple folder locations per library
 - Light metadata editing with file writeback (Tentative)
 
