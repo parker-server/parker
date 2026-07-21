@@ -77,17 +77,19 @@
     {# 4. Images #}
     <link rel="http://opds-spec.org/image"
           type="image/jpeg"
-          href="/api/comics/{{ book.id }}/thumbnail"/>
+          href="{{ get_opds_thumbnail_href(request, book) }}"/>
 
     <link rel="http://opds-spec.org/image/thumbnail"
           type="image/jpeg"
-          href="/api/comics/{{ book.id }}/thumbnail"/>
+          href="{{ get_opds_thumbnail_href(request, book) }}"/>
 
     {# 5. Download Link with File Size #}
+    {% for acquisition_type in get_opds_acquisition_types(book) %}
     <link rel="http://opds-spec.org/acquisition"
-          type="{{ get_opds_acquisition_type(book) }}"
+          type="{{ acquisition_type }}"
           length="{{ book.file_size }}"
-          href="/opds/download/{{ book.id }}"/>
+          href="{{ get_opds_download_href(request, book) }}"/>
+    {% endfor %}
   </entry>
   {% endfor %}
 </feed>

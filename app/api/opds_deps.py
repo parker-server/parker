@@ -8,7 +8,8 @@ from app.models.user import User
 from app.core.security import verify_password
 from app.services.settings_service import SettingsService
 
-security = HTTPBasic()
+OPDS_AUTH_CHALLENGE = 'Basic realm="Parker OPDS"'
+security = HTTPBasic(realm="Parker OPDS")
 logger = logging.getLogger("app.auth")
 
 def get_current_user_opds(
@@ -42,7 +43,7 @@ def get_current_user_opds(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Basic"},
+            headers={"WWW-Authenticate": OPDS_AUTH_CHALLENGE},
         )
 
     # 3. Verify Password
@@ -56,7 +57,7 @@ def get_current_user_opds(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Basic"},
+            headers={"WWW-Authenticate": OPDS_AUTH_CHALLENGE},
         )
 
     return user

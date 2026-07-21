@@ -55,7 +55,7 @@ def test_opds_auth_flow(client, db, normal_user):
     )
     assert response.status_code == 401
     assert "WWW-Authenticate" in response.headers
-    assert response.headers["WWW-Authenticate"] == "Basic"
+    assert response.headers["WWW-Authenticate"] == 'Basic realm="Parker OPDS"'
 
     # 3. Try with CORRECT password (using the fixture's password)
     # Note: The 'normal_user' fixture sets hashed_password="fakehash".
@@ -116,6 +116,15 @@ def test_opds_logs_unknown_user(client, db, caplog):
     )
 
 
+def test_opds_missing_credentials_returns_basic_realm(client, db):
+    _enable_opds(db)
+
+    response = client.get("/opds/")
+
+    assert response.status_code == 401
+    assert response.headers["WWW-Authenticate"] == 'Basic realm="Parker OPDS"'
+
+
 def _enable_opds(db):
     setting = db.query(SystemSetting).filter(SystemSetting.key == "server.opds_enabled").first()
     if not setting:
@@ -163,6 +172,9 @@ def test_opds_library_feed_renders_series_entries(client, db, normal_user):
     entries = root.findall("atom:entry", ns)
     assert len(entries) == 1
     assert entries[0].findtext("atom:title", namespaces=ns) == "Alpha Flight"
+    subsection = entries[0].find("atom:link[@rel='subsection']", ns)
+    assert subsection is not None
+    assert subsection.get("href") == f"http://testserver/opds/series/{series.id}"
     assert "Team book" in response.text
 
 
@@ -203,7 +215,17 @@ def test_opds_series_feed_handles_missing_month_and_day(client, db, normal_user)
     assert entry.findtext("dcterms:issued", namespaces=ns) == "2024-01-01"
     acquisition = entry.find("atom:link[@rel='http://opds-spec.org/acquisition']", ns)
     assert acquisition is not None
-    assert acquisition.get("type") == "application/vnd.comicbook+zip"
+    acquisition_types = [
+        link.get("type")
+        for link in entry.findall("atom:link[@rel='http://opds-spec.org/acquisition']", ns)
+    ]
+    assert acquisition_types == [
+        "application/x-cbz",
+        "application/zip",
+        "application/vnd.comicbook+zip",
+    ]
+    assert acquisition.get("href", "").startswith("http://testserver/opds/download/")
+    assert acquisition.get("href", "").endswith("/Comic%20-%20Stormbreaker.cbz")
 
 
 def test_opds_download_uses_real_archive_type_and_extension(client, db, normal_user, tmp_path):

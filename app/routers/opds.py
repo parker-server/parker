@@ -4,6 +4,7 @@ from sqlalchemy.orm import joinedload
 from datetime import datetime, timezone
 from collections import defaultdict
 from pathlib import Path
+from urllib.parse import quote, urlsplit
 
 from app.api.opds_deps import OPDSUser, SessionDep
 from app.models import ComicCredit
@@ -29,6 +30,17 @@ OPDS_ACQUISITION_TYPES = {
     ".7z": "application/x-7z-compressed",
     ".pdf": "application/pdf",
 }
+
+OPDS_ACQUISITION_ALIASES = {
+    ".cbz": ["application/x-cbz", "application/zip"],
+    ".zip": ["application/zip"],
+    ".cbr": ["application/x-cbr", "application/x-rar-compressed"],
+    ".rar": ["application/x-rar-compressed"],
+    ".cb7": ["application/x-cb7"],
+    ".7z": ["application/x-cb7"],
+}
+
+INVALID_FILENAME_CHARS = set('<>:"/\\|?*')
 
 
 def format_opds_datetime(value: datetime | None) -> str:
@@ -62,6 +74,22 @@ def get_opds_acquisition_type(comic: Comic) -> str:
     return OPDS_ACQUISITION_TYPES.get(get_comic_archive_suffix(comic), "application/octet-stream")
 
 
+def get_opds_acquisition_types(comic: Comic) -> list[str]:
+    """Return OPDS acquisition MIME types, including aliases for older readers."""
+    suffix = get_comic_archive_suffix(comic)
+    types = [
+        *OPDS_ACQUISITION_ALIASES.get(suffix, []),
+        get_opds_acquisition_type(comic),
+    ]
+    return list(dict.fromkeys(types))
+
+
+def sanitize_opds_filename(value: str) -> str:
+    """Return a header/path-safe filename while preserving readable titles."""
+    cleaned = "".join("_" if char in INVALID_FILENAME_CHARS or ord(char) < 32 else char for char in value)
+    return " ".join(cleaned.split()).strip(" .") or "comic"
+
+
 def get_opds_download_filename(comic: Comic) -> str:
     """Return a stable export filename that keeps the comic's real extension."""
     suffix = get_comic_archive_suffix(comic) or ".cbz"
@@ -71,7 +99,37 @@ def get_opds_download_filename(comic: Comic) -> str:
         safe_title = Path(comic.filename).stem or comic.filename
     else:
         safe_title = f"comic-{comic.id}"
-    return f"{comic.series_group or 'Comic'} - {safe_title}{suffix}"
+    return sanitize_opds_filename(f"{comic.series_group or 'Comic'} - {safe_title}{suffix}")
+
+
+def absolute_opds_url(request: Request, href: str) -> str:
+    """Return an absolute URL for OPDS clients that do not resolve relative links."""
+    parsed = urlsplit(href)
+    if parsed.scheme and parsed.netloc:
+        return href
+
+    path = parsed.path if parsed.path.startswith("/") else f"/{parsed.path}"
+    root_path = request.scope.get("root_path", "").rstrip("/")
+    if root_path and not path.startswith(f"{root_path}/"):
+        path = f"{root_path}{path}"
+
+    return str(request.url.replace(path=path, query=parsed.query))
+
+
+def get_opds_download_href(request: Request, comic: Comic) -> str:
+    """Return an absolute, filename-bearing download URL for OPDS acquisition links."""
+    return str(
+        request.url_for(
+            "opds_download_named",
+            comic_id=comic.id,
+            filename=quote(get_opds_download_filename(comic), safe=""),
+        )
+    )
+
+
+def get_opds_thumbnail_href(request: Request, comic: Comic) -> str:
+    """Return an absolute thumbnail URL for an OPDS comic entry."""
+    return absolute_opds_url(request, get_thumbnail_url(comic.id, comic.updated_at))
 
 
 # Helper to render XML
@@ -114,7 +172,7 @@ async def opds_root(request: Request, user: OPDSUser, db: SessionDep):
             "id": f"urn:parker:lib:{lib.id}",
             "title": lib.name,
             "updated": format_opds_datetime(datetime.now(timezone.utc)),  # Libraries rarely change, using now() is acceptable for root
-            "link": f"/opds/libraries/{lib.id}",
+            "link": str(request.url_for("library", library_id=lib.id)),
             "summary": f"Library containing {len(lib.series)} series."
         })
 
@@ -189,9 +247,9 @@ async def opds_library(library_id: int, request: Request, user: OPDSUser, db: Se
             "id": f"urn:parker:series:{s.id}",
             "title": f"{s.name} ({series_year})" if series_year else s.name,
             "updated": format_opds_datetime(s.updated_at),
-            "link": f"/opds/series/{s.id}",
+            "link": str(request.url_for("series", series_id=s.id)),
             "summary": s.summary_override,
-            "thumbnail": get_thumbnail_url(cover_comic.id, cover_comic.updated_at) if cover_comic else None,
+            "thumbnail": absolute_opds_url(request, get_thumbnail_url(cover_comic.id, cover_comic.updated_at)) if cover_comic else None,
         })
 
     return render_xml(request, {
@@ -252,11 +310,15 @@ async def opds_series(series_id: int, request: Request, user: OPDSUser, db: Sess
 templates.env.globals["format_opds_datetime"] = format_opds_datetime
 templates.env.globals["format_opds_issued"] = format_opds_issued
 templates.env.globals["get_opds_acquisition_type"] = get_opds_acquisition_type
+templates.env.globals["get_opds_acquisition_types"] = get_opds_acquisition_types
+templates.env.globals["get_opds_download_href"] = get_opds_download_href
+templates.env.globals["get_opds_thumbnail_href"] = get_opds_thumbnail_href
 
 
 # 4. DOWNLOAD: Serve the file
+@router.get("/download/{comic_id}/{filename}", name="opds_download_named")
 @router.get("/download/{comic_id}", name="download")
-async def opds_download(comic_id: int, user: OPDSUser, db: SessionDep):
+async def opds_download(comic_id: int, user: OPDSUser, db: SessionDep, filename: str | None = None):
     # We duplicate the logic from get_secure_comic here because we need
     # to authenticate via Basic Auth (user argument), not JWT.
 
