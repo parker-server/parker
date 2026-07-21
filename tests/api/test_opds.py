@@ -215,15 +215,9 @@ def test_opds_series_feed_handles_missing_month_and_day(client, db, normal_user)
     assert entry.findtext("dcterms:issued", namespaces=ns) == "2024-01-01"
     acquisition = entry.find("atom:link[@rel='http://opds-spec.org/acquisition']", ns)
     assert acquisition is not None
-    acquisition_types = [
-        link.get("type")
-        for link in entry.findall("atom:link[@rel='http://opds-spec.org/acquisition']", ns)
-    ]
-    assert acquisition_types == [
-        "application/x-cbz",
-        "application/zip",
-        "application/vnd.comicbook+zip",
-    ]
+    acquisitions = entry.findall("atom:link[@rel='http://opds-spec.org/acquisition']", ns)
+    assert len(acquisitions) == 1
+    assert acquisition.get("type") == "application/vnd.comicbook+zip"
     assert acquisition.get("href", "").startswith("http://testserver/opds/download/")
     assert acquisition.get("href", "").endswith("/Comic%20-%20Stormbreaker.cbz")
 

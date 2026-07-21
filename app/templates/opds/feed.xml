@@ -84,12 +84,10 @@
           href="{{ get_opds_thumbnail_href(request, book) }}"/>
 
     {# 5. Download Link with File Size #}
-    {% for acquisition_type in get_opds_acquisition_types(book) %}
     <link rel="http://opds-spec.org/acquisition"
-          type="{{ acquisition_type }}"
+          type="{{ get_opds_acquisition_type(book) }}"
           length="{{ book.file_size }}"
           href="{{ get_opds_download_href(request, book) }}"/>
-    {% endfor %}
   </entry>
   {% endfor %}
 </feed>

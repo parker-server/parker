@@ -82,7 +82,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
   - OPDS 1.2 compliant feeds
   - Dublin Core metadata
   - Legacy client authentication
-  - Compatibility links for older Android OPDS readers
+  - Android reader compatibility improvements
   - User dashboard integration
 
 - **WebP Transcoding**

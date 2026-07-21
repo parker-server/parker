@@ -31,15 +31,6 @@ OPDS_ACQUISITION_TYPES = {
     ".pdf": "application/pdf",
 }
 
-OPDS_ACQUISITION_ALIASES = {
-    ".cbz": ["application/x-cbz", "application/zip"],
-    ".zip": ["application/zip"],
-    ".cbr": ["application/x-cbr", "application/x-rar-compressed"],
-    ".rar": ["application/x-rar-compressed"],
-    ".cb7": ["application/x-cb7"],
-    ".7z": ["application/x-cb7"],
-}
-
 INVALID_FILENAME_CHARS = set('<>:"/\\|?*')
 
 
@@ -72,16 +63,6 @@ def get_comic_archive_suffix(comic: Comic) -> str:
 def get_opds_acquisition_type(comic: Comic) -> str:
     """Return the best OPDS acquisition MIME type for a comic file."""
     return OPDS_ACQUISITION_TYPES.get(get_comic_archive_suffix(comic), "application/octet-stream")
-
-
-def get_opds_acquisition_types(comic: Comic) -> list[str]:
-    """Return OPDS acquisition MIME types, including aliases for older readers."""
-    suffix = get_comic_archive_suffix(comic)
-    types = [
-        *OPDS_ACQUISITION_ALIASES.get(suffix, []),
-        get_opds_acquisition_type(comic),
-    ]
-    return list(dict.fromkeys(types))
 
 
 def sanitize_opds_filename(value: str) -> str:
@@ -310,7 +291,6 @@ async def opds_series(series_id: int, request: Request, user: OPDSUser, db: Sess
 templates.env.globals["format_opds_datetime"] = format_opds_datetime
 templates.env.globals["format_opds_issued"] = format_opds_issued
 templates.env.globals["get_opds_acquisition_type"] = get_opds_acquisition_type
-templates.env.globals["get_opds_acquisition_types"] = get_opds_acquisition_types
 templates.env.globals["get_opds_download_href"] = get_opds_download_href
 templates.env.globals["get_opds_thumbnail_href"] = get_opds_thumbnail_href
 
