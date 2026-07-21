@@ -41,6 +41,11 @@ This file captures follow-up work that should not get lost between releases.
   Current behavior: The follow is filtered out of the `Following` page, the `New from Following` home rail, and direct volume access checks, but the row is not pruned automatically.
   Follow-up goal: Confirm whether Parker should keep this hidden-and-persisted behavior, surface inaccessible follows in a disabled state, or automatically prune them after some explicit rule.
 
+- Plan a replacement for ColorThief before Pillow 14.
+  Context: Full pytest coverage currently emits `DeprecationWarning` from `colorthief==0.2.1` because it calls Pillow's deprecated `Image.Image.getdata`, which is scheduled for removal in Pillow 14 on 2027-10-15.
+  Follow-up goal: Decide whether to replace ColorThief, patch/vendor the small palette extraction path, or move Parker's palette generation to a maintained Pillow-based quantization approach before upgrading to Pillow 14.
+  Guardrail: This is not a `0.1.24` release blocker while Parker remains pinned to Pillow 12.x and tests pass.
+
 - Design safe library relocation before multi-root libraries.
   Context: Parker currently treats absolute comic file paths as durable identity. Changing a library path can cause the next scan to remove old comic rows and import the same files at new paths, risking reading progress, bookmarks, ratings, and list membership continuity.
   Follow-up goal: Introduce root identity and relative-path matching so a single library root can be relocated without changing matched `Comic.id` values.

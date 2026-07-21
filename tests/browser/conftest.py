@@ -35,6 +35,11 @@ PNG_PIXEL_BYTES = base64.b64decode(
 )
 
 
+class BrowserImageService:
+    def get_page_image(self, file_path, page_index, sharpen=False, grayscale=False, transcode_webp=False):
+        return PNG_PIXEL_BYTES, True, "image/png"
+
+
 def _find_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
@@ -227,14 +232,7 @@ def browser_server(browser_db_factory, browser_seed_data, monkeypatch_session):
         finally:
             session.close()
 
-    monkeypatch_session.setattr(
-        "app.api.reader.ImageService.get_page_image",
-        lambda self, file_path, page_index, sharpen=False, grayscale=False, transcode_webp=False: (
-            PNG_PIXEL_BYTES,
-            True,
-            "image/png",
-        ),
-    )
+    monkeypatch_session.setattr("app.api.reader.ImageService", BrowserImageService)
 
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_current_user] = override_get_current_user

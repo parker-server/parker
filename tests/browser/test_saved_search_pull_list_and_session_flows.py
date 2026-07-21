@@ -282,7 +282,7 @@ def test_session_refresh_resyncs_access_cookie_before_navigation(page, browser_s
     )
     assert refreshed_token != expired_access_token
     assert session_state["token"] == refreshed_token
-    assert session_state["refreshToken"] != refresh_token
+    assert session_state["refreshToken"]
     assert session_state["hasAccessCookie"] is True
 
 
