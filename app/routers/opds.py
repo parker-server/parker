@@ -3,8 +3,10 @@ from fastapi.responses import Response, FileResponse
 from sqlalchemy.orm import joinedload
 from datetime import datetime, timezone
 from collections import defaultdict
+from io import BytesIO
 from pathlib import Path
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote
+from PIL import Image
 
 from app.api.opds_deps import OPDSUser, SessionDep
 from app.models import ComicCredit
@@ -15,7 +17,7 @@ from app.core.templates import templates
 from app.core.comic_helpers import (
     get_series_age_restriction,
     get_comic_age_restriction,
-    get_age_rating_config, NON_PLAIN_FORMATS, get_thumbnail_url
+    get_age_rating_config, NON_PLAIN_FORMATS, get_thumbnail_hash
 )
 
 router = APIRouter(prefix="/opds", tags=["opds"])
@@ -83,20 +85,6 @@ def get_opds_download_filename(comic: Comic) -> str:
     return sanitize_opds_filename(f"{comic.series_group or 'Comic'} - {safe_title}{suffix}")
 
 
-def absolute_opds_url(request: Request, href: str) -> str:
-    """Return an absolute URL for OPDS clients that do not resolve relative links."""
-    parsed = urlsplit(href)
-    if parsed.scheme and parsed.netloc:
-        return href
-
-    path = parsed.path if parsed.path.startswith("/") else f"/{parsed.path}"
-    root_path = request.scope.get("root_path", "").rstrip("/")
-    if root_path and not path.startswith(f"{root_path}/"):
-        path = f"{root_path}{path}"
-
-    return str(request.url.replace(path=path, query=parsed.query))
-
-
 def get_opds_download_href(request: Request, comic: Comic) -> str:
     """Return an absolute, filename-bearing download URL for OPDS acquisition links."""
     return str(
@@ -109,8 +97,51 @@ def get_opds_download_href(request: Request, comic: Comic) -> str:
 
 
 def get_opds_thumbnail_href(request: Request, comic: Comic) -> str:
-    """Return an absolute thumbnail URL for an OPDS comic entry."""
-    return absolute_opds_url(request, get_thumbnail_url(comic.id, comic.updated_at))
+    """Return an absolute, JPEG thumbnail URL for OPDS clients."""
+    url = str(request.url_for("opds_thumbnail", comic_id=comic.id))
+    return f"{url}?v={get_thumbnail_hash(comic.updated_at)}"
+
+
+def get_authorized_opds_comic(comic_id: int, user: OPDSUser, db: SessionDep) -> Comic:
+    """Return a comic if the OPDS user can access it, otherwise raise."""
+    comic = db.query(Comic).join(Volume).join(Series).filter(Comic.id == comic_id).first()
+
+    if not comic:
+        raise HTTPException(status_code=404)
+
+    if not user.is_superuser:
+        if comic.volume.series.library_id not in [l.id for l in user.accessible_libraries]:
+            raise HTTPException(status_code=404)
+
+    if not user.is_superuser and user.max_age_rating:
+        _, banned = get_age_rating_config(user)
+        is_restricted = False
+
+        if comic.age_rating in banned:
+            is_restricted = True
+
+        if not user.allow_unknown_age_ratings:
+            if not comic.age_rating or comic.age_rating == "" or comic.age_rating.lower() == "unknown":
+                is_restricted = True
+
+        if is_restricted:
+            raise HTTPException(status_code=403, detail="Age Restricted")
+
+    return comic
+
+
+def get_opds_thumbnail_path(comic: Comic) -> Path | None:
+    """Return the cached thumbnail path, matching the public thumbnail fallback."""
+    if comic.thumbnail_path:
+        db_path = Path(comic.thumbnail_path)
+        if db_path.exists():
+            return db_path
+
+    standard_path = Path(f"./storage/cover/comic_{comic.id}.webp")
+    if standard_path.exists():
+        return standard_path
+
+    return None
 
 
 # Helper to render XML
@@ -230,7 +261,7 @@ async def opds_library(library_id: int, request: Request, user: OPDSUser, db: Se
             "updated": format_opds_datetime(s.updated_at),
             "link": str(request.url_for("series", series_id=s.id)),
             "summary": s.summary_override,
-            "thumbnail": absolute_opds_url(request, get_thumbnail_url(cover_comic.id, cover_comic.updated_at)) if cover_comic else None,
+            "thumbnail": get_opds_thumbnail_href(request, cover_comic) if cover_comic else None,
         })
 
     return render_xml(request, {
@@ -296,37 +327,40 @@ templates.env.globals["get_opds_thumbnail_href"] = get_opds_thumbnail_href
 
 
 # 4. DOWNLOAD: Serve the file
+@router.get("/images/{comic_id}/thumbnail.jpg", name="opds_thumbnail")
+async def opds_thumbnail(comic_id: int, user: OPDSUser, db: SessionDep):
+    comic = get_authorized_opds_comic(comic_id, user, db)
+    thumbnail_path = get_opds_thumbnail_path(comic)
+
+    if not thumbnail_path:
+        raise HTTPException(status_code=404, detail="Could not find thumbnail")
+
+    try:
+        with Image.open(thumbnail_path) as img:
+            if img.mode != "RGB":
+                img = img.convert("RGB")
+
+            output = BytesIO()
+            img.save(output, format="JPEG", quality=88)
+    except OSError:
+        raise HTTPException(status_code=404, detail="Could not read thumbnail")
+
+    last_mod = int(comic.updated_at.timestamp()) if comic.updated_at else 0
+    return Response(
+        content=output.getvalue(),
+        media_type="image/jpeg",
+        headers={
+            "ETag": f'"opds-thumb-{comic_id}-{last_mod}"',
+            "Cache-Control": "public, max-age=31536000",
+            "Content-Disposition": f'inline; filename="comic_{comic_id}_thumbnail.jpg"',
+        },
+    )
+
+
 @router.get("/download/{comic_id}/{filename}", name="opds_download_named")
 @router.get("/download/{comic_id}", name="download")
 async def opds_download(comic_id: int, user: OPDSUser, db: SessionDep, filename: str | None = None):
-    # We duplicate the logic from get_secure_comic here because we need
-    # to authenticate via Basic Auth (user argument), not JWT.
-
-    comic = db.query(Comic).join(Volume).join(Series).filter(Comic.id == comic_id).first()
-
-    if not comic:
-        raise HTTPException(status_code=404)
-
-    if not user.is_superuser:
-        if comic.volume.series.library_id not in [l.id for l in user.accessible_libraries]:
-            raise HTTPException(status_code=404)
-
-    # 2. Age Rating Check
-    if not user.is_superuser and user.max_age_rating:
-
-        allowed, banned = get_age_rating_config(user)
-
-        is_restricted = False
-
-        if comic.age_rating in banned: is_restricted = True
-
-        if not user.allow_unknown_age_ratings:
-            if not comic.age_rating or comic.age_rating == "" or comic.age_rating.lower() == "unknown":
-                is_restricted = True
-
-        if is_restricted:
-            raise HTTPException(status_code=403, detail="Age Restricted")
-
+    comic = get_authorized_opds_comic(comic_id, user, db)
 
     export_name = get_opds_download_filename(comic)
 

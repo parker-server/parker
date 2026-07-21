@@ -82,6 +82,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
   - OPDS 1.2 compliant feeds
   - Dublin Core metadata
   - Legacy client authentication
+  - JPEG cover thumbnails for reader compatibility
   - Android reader compatibility improvements
   - User dashboard integration
 
@@ -167,6 +168,20 @@ The Docker image listens on port `8000` inside the container. To change the host
 port exposed by Docker Compose, set `PARKER_PORT` in `.env`; for example,
 `PARKER_PORT=9000` exposes Parker at host port `9000` while the container still
 uses port `8000` internally.
+
+### OPDS Reader Compatibility
+
+Parker's OPDS feed serves original comic archives and preserves their file type.
+Reader support varies by app: some Android readers can download a CBR but fail
+to open it if the archive uses RAR5 compression. In that case, use a reader with
+RAR5 support or convert the file to CBZ/RAR4 at the library owner's discretion.
+
+Known client behavior:
+
+- Moon+ Reader can browse Parker OPDS catalogs and read downloaded CBZ files.
+  CBR support depends on the archive's RAR version.
+- Librera can browse Parker OPDS catalogs, but may not acquire/open issues when
+  tapping comic entries.
 
 
 ## 📌 Roadmap

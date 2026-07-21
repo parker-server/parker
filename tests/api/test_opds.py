@@ -1,6 +1,7 @@
 import logging
 import pytest
 import xml.etree.ElementTree as ET
+from PIL import Image
 from app.services.settings_service import SettingsService
 from app.models.setting import SystemSetting
 from app.models.library import Library
@@ -220,6 +221,54 @@ def test_opds_series_feed_handles_missing_month_and_day(client, db, normal_user)
     assert acquisition.get("type") == "application/vnd.comicbook+zip"
     assert acquisition.get("href", "").startswith("http://testserver/opds/download/")
     assert acquisition.get("href", "").endswith("/Comic%20-%20Stormbreaker.cbz")
+
+
+def test_opds_thumbnail_links_use_jpeg_endpoint(client, db, normal_user, tmp_path):
+    _enable_opds(db)
+
+    thumbnail_path = tmp_path / "cover.webp"
+    Image.new("RGB", (24, 36), color=(120, 20, 40)).save(thumbnail_path, format="WEBP")
+
+    library = Library(name="Thumbnail Library", path=str(tmp_path / "thumbnail-library"))
+    series = Series(name="Cover Test", library=library)
+    volume = Volume(series=series, volume_number=1)
+    comic = Comic(
+        volume=volume,
+        number="1",
+        title="Cover Story",
+        filename="cover-test-001.cbz",
+        file_path=str(tmp_path / "cover-test-001.cbz"),
+        thumbnail_path=str(thumbnail_path),
+    )
+    db.add_all([library, series, volume, comic])
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    from unittest.mock import patch
+
+    with patch("app.api.opds_deps.verify_password", return_value=True):
+        response = client.get(
+            f"/opds/series/{series.id}",
+            auth=(normal_user.username, "any_password")
+        )
+
+    assert response.status_code == 200
+    root = ET.fromstring(response.text)
+    ns = {"atom": "http://www.w3.org/2005/Atom"}
+    image = root.find("atom:entry/atom:link[@rel='http://opds-spec.org/image']", ns)
+    assert image is not None
+    assert image.get("type") == "image/jpeg"
+    assert image.get("href", "").startswith(f"http://testserver/opds/images/{comic.id}/thumbnail.jpg?v=")
+
+    with patch("app.api.opds_deps.verify_password", return_value=True):
+        thumbnail_response = client.get(
+            f"/opds/images/{comic.id}/thumbnail.jpg",
+            auth=(normal_user.username, "any_password")
+        )
+
+    assert thumbnail_response.status_code == 200
+    assert thumbnail_response.headers["content-type"].startswith("image/jpeg")
+    assert thumbnail_response.content.startswith(b"\xff\xd8")
 
 
 def test_opds_download_uses_real_archive_type_and_extension(client, db, normal_user, tmp_path):
