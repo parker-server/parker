@@ -50,6 +50,7 @@ class Settings(BaseSettings):
     unrar_path: str = "unrar"
 
     # Storage paths
+    comics_path: Path = Path("/comics")
     log_dir: Path = Path("storage/logs")
     cache_dir: Path = Path("storage/cache")
     cover_dir: Path = Path("storage/cover")

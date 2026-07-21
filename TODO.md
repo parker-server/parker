@@ -41,8 +41,13 @@ This file captures follow-up work that should not get lost between releases.
   Current behavior: The follow is filtered out of the `Following` page, the `New from Following` home rail, and direct volume access checks, but the row is not pruned automatically.
   Follow-up goal: Confirm whether Parker should keep this hidden-and-persisted behavior, surface inaccessible follows in a disabled state, or automatically prune them after some explicit rule.
 
-- Design support for multi-root libraries.
+- Design safe library relocation before multi-root libraries.
+  Context: Parker currently treats absolute comic file paths as durable identity. Changing a library path can cause the next scan to remove old comic rows and import the same files at new paths, risking reading progress, bookmarks, ratings, and list membership continuity.
+  Follow-up goal: Introduce root identity and relative-path matching so a single library root can be relocated without changing matched `Comic.id` values.
+  Design note: `docs/library-relocation-scope.md`
+
+- Design support for multi-root libraries after relocation groundwork exists.
   Context: Parker currently assumes one configured filesystem root per library, but some users may want a single logical library to aggregate comics from multiple folder locations across disks, shares, or staged/import storage.
-  Scope risk: This is likely a medium-to-large architectural change rather than a simple admin-form enhancement because it would affect the data model, scanning, file watching, duplicate handling, library stats, and background-job fairness assumptions.
-  Follow-up goal: Define whether Parker should support multiple roots under one library, how root-level failures and duplicate files should be handled, and what scanner/watcher changes would be required before implementation work begins.
+  Scope risk: This is likely a medium-to-large architectural change rather than a simple admin-form enhancement because it would affect the data model, scanning, file watching, duplicate handling, library stats, and background-job fairness assumptions. It should build on `library_roots`, `Comic.library_root_id`, and `Comic.relative_path` rather than inventing a separate root model.
+  Follow-up goal: Define root add/relocate/disable/remove flows, how root-level failures and duplicate files should be handled, and what scanner/watcher changes would be required before implementation work begins.
   Design note: `docs/multi-root-library-scope.md`

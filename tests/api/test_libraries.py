@@ -202,6 +202,76 @@ def test_get_library_detail_as_admin(admin_client, db):
     assert payload["pinned"] is False
 
 
+def test_admin_can_browse_library_paths_within_configured_root(admin_client, monkeypatch, tmp_path):
+    root = tmp_path / "comics"
+    zeta = root / "Zeta"
+    alpha = root / "Alpha"
+    nested = alpha / "Nested"
+    nested.mkdir(parents=True)
+    zeta.mkdir(parents=True)
+    (root / "comic.cbz").write_text("not a directory")
+    monkeypatch.setattr("app.api.libraries.settings.comics_path", root)
+
+    root_response = admin_client.get("/api/libraries/browse/paths")
+
+    assert root_response.status_code == 200
+    root_payload = root_response.json()
+    assert root_payload["root"] == str(root.resolve())
+    assert root_payload["current"] == str(root.resolve())
+    assert root_payload["parent"] is None
+    assert root_payload["entries"] == [
+        {"name": "Alpha", "path": str(alpha.resolve())},
+        {"name": "Zeta", "path": str(zeta.resolve())},
+    ]
+
+    child_response = admin_client.get(
+        "/api/libraries/browse/paths",
+        params={"path": str(alpha)},
+    )
+
+    assert child_response.status_code == 200
+    child_payload = child_response.json()
+    assert child_payload["current"] == str(alpha.resolve())
+    assert child_payload["parent"] == str(root.resolve())
+    assert child_payload["entries"] == [{"name": "Nested", "path": str(nested.resolve())}]
+
+
+def test_library_path_browser_rejects_non_admin(auth_client, monkeypatch, tmp_path):
+    root = tmp_path / "comics"
+    root.mkdir()
+    monkeypatch.setattr("app.api.libraries.settings.comics_path", root)
+
+    response = auth_client.get("/api/libraries/browse/paths")
+
+    assert response.status_code == 400
+
+
+def test_library_path_browser_rejects_outside_paths(admin_client, monkeypatch, tmp_path):
+    root = tmp_path / "comics"
+    outside = tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    monkeypatch.setattr("app.api.libraries.settings.comics_path", root)
+
+    response = admin_client.get(
+        "/api/libraries/browse/paths",
+        params={"path": str(outside)},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Path must be within the configured comics root"}
+
+
+def test_library_path_browser_reports_missing_root(admin_client, monkeypatch, tmp_path):
+    missing_root = tmp_path / "missing"
+    monkeypatch.setattr("app.api.libraries.settings.comics_path", missing_root)
+
+    response = admin_client.get("/api/libraries/browse/paths")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Configured comics root was not found"}
+
+
 def test_user_can_pin_and_unpin_accessible_library_idempotently(auth_client, db, normal_user):
     library = Library(name="Pinned Access", path="/tmp/pinned-access")
     db.add(library)

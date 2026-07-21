@@ -81,8 +81,76 @@
                 </div>
                 <div>
                     <label class="block text-sm text-gray-400 mb-1">Folder Path</label>
-                    <input type="text" x-model="form.path" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white focus:border-blue-500 outline-none" placeholder="/comics/dc">
+                    <div class="flex gap-2">
+                        <input type="text" x-model="form.path" class="flex-1 bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white focus:border-blue-500 outline-none" placeholder="/comics/dc">
+                        <button
+                            type="button"
+                            x-on:click="openDirectoryBrowser()"
+                            class="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded transition-colors text-sm font-medium"
+                        >
+                            Browse
+                        </button>
+                    </div>
                     <p class="text-xs text-gray-500 mt-1">Server-side path where files are located.</p>
+                    <div x-show="isPathChanged" class="mt-2 rounded border border-amber-500/30 bg-amber-950/30 px-3 py-2 text-xs text-amber-100" style="display: none;">
+                        Changing a library path can cause Parker to remove and re-import comics on the next scan. Reading progress, bookmarks, ratings, and list membership may not be preserved unless files keep the same server-visible paths.
+                    </div>
+
+                    <div x-show="pathBrowser.open" class="mt-3 border border-gray-700 rounded bg-gray-900 overflow-hidden" style="display: none;">
+                        <div class="flex items-center justify-between gap-3 px-3 py-2 border-b border-gray-700">
+                            <div class="min-w-0">
+                                <p class="text-[10px] uppercase tracking-wide text-gray-500">Browsing</p>
+                                <p class="text-xs text-gray-300 font-mono truncate" x-text="pathBrowser.current || 'Loading...'"></p>
+                            </div>
+                            <button
+                                type="button"
+                                x-on:click="closeDirectoryBrowser()"
+                                class="text-gray-500 hover:text-white text-sm"
+                            >
+                                Close
+                            </button>
+                        </div>
+
+                        <div x-show="pathBrowser.error" class="px-3 py-3 text-sm text-red-300 bg-red-950/30 border-b border-red-900/50" x-text="pathBrowser.error"></div>
+                        <div x-show="pathBrowser.notice" class="px-3 py-3 text-sm text-amber-200 bg-amber-950/30 border-b border-amber-900/50" x-text="pathBrowser.notice"></div>
+                        <div x-show="pathBrowser.loading" class="px-3 py-4 text-sm text-gray-400">Loading folders...</div>
+
+                        <div x-show="!pathBrowser.loading && !pathBrowser.error" class="max-h-64 overflow-y-auto">
+                            <button
+                                type="button"
+                                x-show="pathBrowser.parent"
+                                x-on:click="browseDirectory(pathBrowser.parent)"
+                                class="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-800 border-b border-gray-800"
+                            >
+                                ../
+                            </button>
+
+                            <template x-for="entry in pathBrowser.entries" :key="entry.path">
+                                <button
+                                    type="button"
+                                    x-on:click="browseDirectory(entry.path)"
+                                    class="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-800 border-b border-gray-800 last:border-b-0"
+                                >
+                                    <span class="text-blue-300 mr-2">/</span><span x-text="entry.name"></span>
+                                </button>
+                            </template>
+
+                            <div x-show="pathBrowser.entries.length === 0" class="px-3 py-4 text-sm text-gray-500">
+                                No subfolders found.
+                            </div>
+                        </div>
+
+                        <div class="flex justify-end gap-2 px-3 py-2 border-t border-gray-700 bg-gray-950/50">
+                            <button
+                                type="button"
+                                x-on:click="useBrowsedDirectory()"
+                                class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded text-sm transition-colors"
+                                :disabled="!pathBrowser.current"
+                            >
+                                Use This Folder
+                            </button>
+                        </div>
+                    </div>
                 </div>
                 <div>
                     <label class="flex items-center gap-2 cursor-pointer">
@@ -149,12 +217,27 @@ function libraryManager() {
             id: null,
             name: '',
             path: '',
+            original_path: '',
             watch_mode: false,
             parse_reading_lists: true,
             parse_collections: true,
             parse_story_arcs: true,
         },
+        pathBrowser: {
+            open: false,
+            loading: false,
+            error: '',
+            notice: '',
+            root: '',
+            current: '',
+            parent: null,
+            entries: [],
+        },
         pollInterval: null,
+
+        get isPathChanged() {
+            return this.isEditing && this.form.path !== this.form.original_path;
+        },
 
         init() {
             this.loadLibraries();
@@ -182,11 +265,13 @@ function libraryManager() {
                 id: null,
                 name: '',
                 path: '',
+                original_path: '',
                 watch_mode: false,
                 parse_reading_lists: true,
                 parse_collections: true,
                 parse_story_arcs: true,
             };
+            this.closeDirectoryBrowser();
             this.showModal = true;
         },
 
@@ -196,12 +281,70 @@ function libraryManager() {
                 id: lib.id,
                 name: lib.name,
                 path: lib.path,
+                original_path: lib.path,
                 watch_mode: lib.watch_mode,
                 parse_reading_lists: lib.parse_reading_lists ?? true,
                 parse_collections: lib.parse_collections ?? true,
                 parse_story_arcs: lib.parse_story_arcs ?? true,
             };
+            this.closeDirectoryBrowser();
             this.showModal = true;
+        },
+
+        async openDirectoryBrowser() {
+            this.pathBrowser.open = true;
+            const requestedPath = this.form.path || null;
+            const openedRequestedPath = await this.browseDirectory(requestedPath);
+
+            if (!openedRequestedPath && requestedPath) {
+                const originalError = this.pathBrowser.error;
+                const openedRoot = await this.browseDirectory(null);
+                if (openedRoot) {
+                    this.pathBrowser.notice = `${originalError}. Showing the configured comics root instead.`;
+                }
+            }
+        },
+
+        closeDirectoryBrowser() {
+            this.pathBrowser.open = false;
+            this.pathBrowser.loading = false;
+            this.pathBrowser.error = '';
+            this.pathBrowser.notice = '';
+        },
+
+        async browseDirectory(path) {
+            this.pathBrowser.loading = true;
+            this.pathBrowser.error = '';
+            this.pathBrowser.notice = '';
+
+            try {
+                const query = path ? `path=${encodeURIComponent(path)}` : '';
+                const res = await fetch(window.parker.route('libraries.browse', {}, query));
+                const payload = await res.json();
+
+                if (!res.ok) {
+                    throw new Error(payload.detail || 'Unable to browse folders');
+                }
+
+                this.pathBrowser.root = payload.root;
+                this.pathBrowser.current = payload.current;
+                this.pathBrowser.parent = payload.parent;
+                this.pathBrowser.entries = payload.entries || [];
+                return true;
+            } catch (e) {
+                console.error(e);
+                this.pathBrowser.error = e.message || 'Unable to browse folders';
+                this.pathBrowser.entries = [];
+                return false;
+            } finally {
+                this.pathBrowser.loading = false;
+            }
+        },
+
+        useBrowsedDirectory() {
+            if (!this.pathBrowser.current) return;
+            this.form.path = this.pathBrowser.current;
+            this.closeDirectoryBrowser();
         },
 
         async saveLibrary() {
@@ -233,6 +376,7 @@ function libraryManager() {
                         id: null,
                         name: '',
                         path: '',
+                        original_path: '',
                         watch_mode: false,
                         parse_reading_lists: true,
                         parse_collections: true,
