@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Annotated, Optional
 from pydantic import BaseModel
 from sqlalchemy import func, case
+from datetime import datetime, timezone
 import logging
 import os
 
@@ -9,6 +10,7 @@ from app.core.comic_helpers import get_thumbnail_url, NON_PLAIN_FORMATS, REVERSE
 from app.models.library import Library
 from app.models.series import Series
 from app.models.comic import Comic, Volume
+from app.models.interactions import UserLibraryPin
 from app.models.reading_progress import ReadingProgress
 from app.services.scan_manager import scan_manager
 from app.services.watcher import library_watcher
@@ -63,6 +65,28 @@ def _has_library_access(library_id: int, current_user: CurrentUser) -> bool:
     return True
 
 
+def _library_payload(lib: Library, *, pinned: bool = False, stats: Optional[dict] = None) -> dict:
+    payload = {
+        "id": lib.id,
+        "name": lib.name,
+        "path": lib.path,
+        "scan_on_startup": lib.scan_on_startup,
+        "watch_mode": lib.watch_mode,
+        "parse_reading_lists": lib.parse_reading_lists,
+        "parse_collections": lib.parse_collections,
+        "parse_story_arcs": lib.parse_story_arcs,
+        "last_scanned": lib.last_scanned,
+        "is_scanning": lib.is_scanning,
+        "created_at": lib.created_at,
+        "pinned": pinned,
+    }
+
+    if stats is not None:
+        payload["stats"] = stats
+
+    return payload
+
+
 @router.get("/", name="list")
 async def list_libraries(db: SessionDep,
                          current_user: CurrentUser,
@@ -87,6 +111,15 @@ async def list_libraries(db: SessionDep,
         return []
 
     lib_ids = [lib.id for lib in libs]
+    pinned_ids = {
+        row.library_id
+        for row in db.query(UserLibraryPin.library_id)
+        .filter(
+            UserLibraryPin.user_id == current_user.id,
+            UserLibraryPin.library_id.in_(lib_ids),
+        )
+        .all()
+    }
 
     # --- AGE RATING FILTER PREP ---
     # We prepare the filter once to reuse inside the loop
@@ -118,34 +151,58 @@ async def list_libraries(db: SessionDep,
     results = []
     for lib in libs:
 
-        # Construct the response dict
-        # We manually build the dict to inject the 'stats' object
-        results.append({
-            "id": lib.id,
-            "name": lib.name,
-            "path": lib.path,
-            "scan_on_startup": lib.scan_on_startup,
-            "watch_mode": lib.watch_mode,
-            "parse_reading_lists": lib.parse_reading_lists,
-            "parse_collections": lib.parse_collections,
-            "parse_story_arcs": lib.parse_story_arcs,
-            "last_scanned": lib.last_scanned,
-            "is_scanning": lib.is_scanning,
-            "created_at": lib.created_at,
-            # Lookup stats from our dictionaries (default to 0)
-            "stats": {
+        results.append(_library_payload(
+            lib,
+            pinned=lib.id in pinned_ids,
+            stats={
                 "series": series_counts.get(lib.id, 0),
                 "issues": issue_counts.get(lib.id, 0)
             }
-        })
+        ))
 
     return results
 
 
 @router.get("/{library_id}", name="detail")
-async def get_library(library: LibraryDep):
+async def get_library(library: LibraryDep, db: SessionDep, current_user: CurrentUser):
+    pin = db.query(UserLibraryPin).filter(
+        UserLibraryPin.user_id == current_user.id,
+        UserLibraryPin.library_id == library.id,
+    ).first()
 
-    return library
+    return _library_payload(library, pinned=pin is not None)
+
+
+@router.post("/{library_id}/pin", name="pin")
+async def pin_library(library: LibraryDep, db: SessionDep, current_user: CurrentUser):
+    existing = db.query(UserLibraryPin).filter(
+        UserLibraryPin.user_id == current_user.id,
+        UserLibraryPin.library_id == library.id,
+    ).first()
+
+    if existing is None:
+        db.add(UserLibraryPin(
+            user_id=current_user.id,
+            library_id=library.id,
+            pinned_at=datetime.now(timezone.utc),
+        ))
+        db.commit()
+
+    return {"library_id": library.id, "pinned": True}
+
+
+@router.delete("/{library_id}/pin", name="unpin")
+async def unpin_library(library: LibraryDep, db: SessionDep, current_user: CurrentUser):
+    pin = db.query(UserLibraryPin).filter(
+        UserLibraryPin.user_id == current_user.id,
+        UserLibraryPin.library_id == library.id,
+    ).first()
+
+    if pin is not None:
+        db.delete(pin)
+        db.commit()
+
+    return {"library_id": library.id, "pinned": False}
 
 
 @router.get("/{library_id}/series", response_model=PaginatedResponse, name="series")

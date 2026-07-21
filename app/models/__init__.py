@@ -10,7 +10,7 @@ from app.models.reading_progress import ReadingProgress
 from app.models.bookmark import Bookmark
 from app.models.job import ScanJob
 from app.models.user import User
-from app.models.interactions import UserSeries, UserVolumeFollow, UserComicRating
+from app.models.interactions import UserSeries, UserVolumeFollow, UserLibraryPin, UserComicRating
 from app.models.saved_search import SavedSearch
 from app.models.setting import SystemSetting
 from app.models.pull_list import PullList, PullListItem
@@ -27,7 +27,7 @@ __all__ = [
     'ReadingProgress', 'ActivityLog', 'Bookmark',
     'ScanJob',
     'User',
-    'UserSeries', 'UserVolumeFollow', 'UserComicRating',
+    'UserSeries', 'UserVolumeFollow', 'UserLibraryPin', 'UserComicRating',
     'SavedSearch', 'SmartList',
     'SystemSetting',
     'PullList', 'PullListItem',

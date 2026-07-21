@@ -112,6 +112,25 @@ def test_dashboard_following_page_can_unfollow_volume(page, browser_server):
 
 
 @pytest.mark.browser
+def test_pinned_library_home_rail_opens_series_detail(page, browser_server):
+    seed = browser_server["seed"]
+
+    page.goto(f"{browser_server['base_url']}/libraries", wait_until="networkidle")
+    page.get_by_role("heading", name="Your Libraries").wait_for()
+    page.get_by_role("button", name="Pin Browser Test Library to Home").click()
+    page.get_by_role("button", name="Unpin Browser Test Library from Home").wait_for()
+
+    page.goto(f"{browser_server['base_url']}/", wait_until="networkidle")
+    page.get_by_role("heading", name="Pinned Libraries").wait_for()
+    pinned_block = page.locator("div").filter(has=page.get_by_role("heading", name="Pinned Libraries")).first
+    pinned_block.get_by_role("heading", name="Browser Test Library").wait_for()
+    pinned_block.locator(f'a[href*="/series/{seed["series_id"]}"]').first.click()
+
+    page.wait_for_url(f"**/series/{seed['series_id']}")
+    page.get_by_role("heading", name=seed["series_name"]).wait_for()
+
+
+@pytest.mark.browser
 def test_home_following_arrival_appears_after_import_and_clears_after_reading(page, browser_server):
     seed = browser_server["seed"]
 

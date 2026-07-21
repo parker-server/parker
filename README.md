@@ -36,6 +36,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
   - Netflix‑style home page with content rails
   - Anonymous aggregate social insights such as reader counts and `Popular with Others`
   - `Continue Reading`, `Jump Back In`, `Trending`, and `New from Following`
+  - Pinned library rails for recently updated series from favorite libraries
   - Library Timeline for character and team histories generated from embedded metadata
   - Recommendations by creator or metadata
   - Random gems, recently updated series
@@ -159,7 +160,6 @@ virtualenv from these pinned requirements.
 - Enhanced WebP transcoding pipeline (JXL, AVIF to WebP)
 - Additional unit test coverage
 - Migration tooling improvements
-- Pin libraries to front page
 - Improve admin Add Library dialog to be able to browse to a folder rather than type it in
 - Support multiple folder locations per library
 - Light metadata editing with file writeback (Tentative)

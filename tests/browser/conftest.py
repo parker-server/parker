@@ -20,7 +20,7 @@ from app.main import app
 from app.models.bookmark import Bookmark
 from app.models.comic import Comic, Volume
 from app.models.credits import ComicCredit, Person
-from app.models.interactions import UserVolumeFollow
+from app.models.interactions import UserLibraryPin, UserVolumeFollow
 from app.models.library import Library
 from app.models.reading_progress import ReadingProgress
 from app.models.reading_list import ReadingList, ReadingListItem
@@ -172,6 +172,7 @@ def reset_browser_state(browser_db_factory, browser_seed_data):
     session = browser_db_factory()
     try:
         session.query(UserVolumeFollow).delete()
+        session.query(UserLibraryPin).delete()
         session.query(PullListItem).delete()
         session.query(PullList).delete()
         session.query(SavedSearch).delete()

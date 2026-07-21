@@ -1,28 +1,43 @@
-<a :href="window.parker.route('pages.library_detail', { library_id: lib.id })"
-   class="block group bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-blue-500/50 rounded-lg p-3 transition-all shadow-sm hover:shadow-md flex flex-col h-full relative overflow-hidden">
+<div class="group bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-blue-500/50 rounded-lg p-3 transition-all shadow-sm hover:shadow-md flex flex-col h-full relative overflow-hidden">
 
     <div class="absolute top-0 right-0 w-16 h-16 bg-blue-500/10 rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-150"></div>
 
-    <div class="flex items-center gap-3 mb-2 relative z-10">
-        <div class="text-xl group-hover:scale-110 transition-transform">📂</div>
+    <button
+        type="button"
+        x-on:click.stop="toggleLibraryPin(lib)"
+        class="absolute right-2 top-2 z-20 rounded-full border px-2 py-1 text-[10px] font-bold transition-colors"
+        :class="lib.pinned ? 'border-blue-400/50 bg-blue-500/20 text-blue-100 hover:bg-blue-500/30' : 'border-gray-600 bg-gray-900/80 text-gray-300 hover:border-blue-400 hover:text-blue-100'"
+        :title="lib.pinned ? 'Unpin from Home' : 'Pin to Home'"
+        :aria-label="lib.pinned ? `Unpin ${lib.name} from Home` : `Pin ${lib.name} to Home`"
+        x-text="lib.pinned ? 'Pinned' : 'Pin'"
+    ></button>
 
-        <div class="min-w-0 flex-1">
-            <h3 class="font-bold text-gray-200 text-lg truncate group-hover:text-white" x-text="lib.name"></h3>
-            <p class="text-[10px] text-gray-500 font-mono truncate" x-text="lib.path"></p>
-        </div>
-    </div>
+    <a :href="window.parker.route('pages.library_detail', { library_id: lib.id })" class="relative z-10 flex flex-col h-full">
+        <div class="flex items-center gap-3 mb-2 pr-16">
+            <div class="text-blue-300 group-hover:scale-110 transition-transform" aria-hidden="true">
+                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"></path>
+                </svg>
+            </div>
 
-    <template x-if="lib.stats">
-        <div class="mt-auto flex items-center gap-3 text-[12px] font-medium text-gray-400 group-hover:text-gray-300">
-            <div class="flex items-center gap-1">
-                <span class="text-blue-400">#</span>
-                <span x-text="`${lib.stats.series} Series`"></span>
-            </div>
-            <div class="w-0.5 h-3 bg-gray-700"></div>
-            <div class="flex items-center gap-1">
-                <span class="text-green-400">#</span>
-                <span x-text="`${lib.stats.issues} Issues`"></span>
+            <div class="min-w-0 flex-1">
+                <h3 class="font-bold text-gray-200 text-lg truncate group-hover:text-white" x-text="lib.name"></h3>
+                <p class="text-[10px] text-gray-500 font-mono truncate" x-text="lib.path"></p>
             </div>
         </div>
-    </template>
-</a>
+
+        <template x-if="lib.stats">
+            <div class="mt-auto flex items-center gap-3 text-[12px] font-medium text-gray-400 group-hover:text-gray-300">
+                <div class="flex items-center gap-1">
+                    <span class="text-blue-400">#</span>
+                    <span x-text="`${lib.stats.series} Series`"></span>
+                </div>
+                <div class="w-0.5 h-3 bg-gray-700"></div>
+                <div class="flex items-center gap-1">
+                    <span class="text-green-400">#</span>
+                    <span x-text="`${lib.stats.issues} Issues`"></span>
+                </div>
+            </div>
+        </template>
+    </a>
+</div>

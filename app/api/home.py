@@ -11,7 +11,9 @@ from app.api.deps import SessionDep, CurrentUser
 from app.core.comic_helpers import get_format_filters, get_smart_cover, get_series_age_restriction, get_thumbnail_url
 from app.models.comic import Comic, Volume
 from app.models.interactions import UserComicRating
+from app.models.interactions import UserLibraryPin
 from app.models.interactions import UserVolumeFollow
+from app.models.library import Library
 from app.models.series import Series
 from app.models.user import User
 from app.models.reading_progress import ReadingProgress
@@ -426,6 +428,71 @@ def get_following_arrivals(
     )
 
     return [format_home_item(comic) for comic in results]
+
+
+@router.get("/pinned-libraries", response_model=List[dict], name="pinned_libraries")
+def get_pinned_libraries(
+        db: SessionDep,
+        current_user: CurrentUser,
+        limit: int = 15,
+):
+    """
+    Get home-page rails for libraries the current user pinned.
+    Each pinned library rail contains recently updated series for that library.
+    """
+    limit = max(1, min(limit, 15))
+
+    pins_query = (
+        db.query(UserLibraryPin, Library)
+        .join(Library, UserLibraryPin.library_id == Library.id)
+        .filter(UserLibraryPin.user_id == current_user.id)
+        .order_by(UserLibraryPin.pinned_at.asc(), Library.name.asc())
+    )
+
+    if not current_user.is_superuser:
+        allowed_ids = [lib.id for lib in current_user.accessible_libraries]
+        if not allowed_ids:
+            return []
+
+        pins_query = pins_query.filter(UserLibraryPin.library_id.in_(allowed_ids))
+
+    pinned_libraries = pins_query.all()
+    if not pinned_libraries:
+        return []
+
+    age_filter = get_series_age_restriction(current_user)
+    rails = []
+
+    for _pin, library in pinned_libraries:
+        recent_series_query = (
+            db.query(Series)
+            .join(Volume)
+            .join(Comic)
+            .filter(Series.library_id == library.id)
+        )
+
+        if age_filter is not None:
+            recent_series_query = recent_series_query.filter(age_filter)
+
+        recent_series = (
+            recent_series_query
+            .group_by(Series.id)
+            .order_by(desc(func.max(Comic.updated_at)), Series.name.asc())
+            .limit(limit)
+            .all()
+        )
+
+        items = _serialize_series_rail_items(db, recent_series)
+        if not items:
+            continue
+
+        rails.append({
+            "library_id": library.id,
+            "name": library.name,
+            "items": items,
+        })
+
+    return rails
 
 
 @router.get("/trending", response_model=List[dict], name="trending")

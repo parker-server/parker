@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 from app.api.home import _pick_best_cover, format_home_item
 from app.models.comic import Comic, Volume
-from app.models.interactions import UserComicRating, UserVolumeFollow
+from app.models.interactions import UserComicRating, UserLibraryPin, UserVolumeFollow
 from app.models.library import Library
 from app.models.reading_progress import ReadingProgress
 from app.models.series import Series
@@ -609,6 +609,63 @@ def test_home_following_arrivals_respects_baseline_formats_and_progress(auth_cli
     assert annual.id not in [item["id"] for item in payload]
     assert started_plain.id not in [item["id"] for item in payload]
     assert completed_plain.id not in [item["id"] for item in payload]
+
+
+def test_home_pinned_libraries_returns_recently_updated_series_by_pin_order(auth_client, db, normal_user):
+    first_library = Library(name="Pinned First", path="/tmp/pinned-first")
+    second_library = Library(name="Pinned Second", path="/tmp/pinned-second")
+    empty_library = Library(name="Pinned Empty", path="/tmp/pinned-empty")
+    hidden_library = Library(name="Pinned Hidden", path="/tmp/pinned-hidden")
+    db.add_all([first_library, second_library, empty_library, hidden_library])
+    db.flush()
+
+    normal_user.accessible_libraries.extend([first_library, second_library, empty_library])
+    pinned_at = datetime(2026, 7, 20, tzinfo=timezone.utc)
+    db.add_all([
+        UserLibraryPin(user_id=normal_user.id, library_id=first_library.id, pinned_at=pinned_at),
+        UserLibraryPin(user_id=normal_user.id, library_id=second_library.id, pinned_at=pinned_at + timedelta(minutes=1)),
+        UserLibraryPin(user_id=normal_user.id, library_id=empty_library.id, pinned_at=pinned_at + timedelta(minutes=2)),
+        UserLibraryPin(user_id=normal_user.id, library_id=hidden_library.id, pinned_at=pinned_at + timedelta(minutes=3)),
+    ])
+
+    for index in range(16):
+        series = Series(name=f"First Updated {index:02d}", library=first_library)
+        volume = Volume(series=series, volume_number=1)
+        db.add_all([series, volume])
+        db.flush()
+        _add_comic(
+            db,
+            volume,
+            number="1",
+            title=f"First Updated Comic {index:02d}",
+            year=2020 + index,
+            updated_at=pinned_at + timedelta(hours=index),
+        )
+
+    older_second = Series(name="Second Older", library=second_library)
+    newer_second = Series(name="Second Newer", library=second_library)
+    older_volume = Volume(series=older_second, volume_number=1)
+    newer_volume = Volume(series=newer_second, volume_number=1)
+    hidden_series = Series(name="Hidden Series", library=hidden_library)
+    hidden_volume = Volume(series=hidden_series, volume_number=1)
+    db.add_all([older_second, newer_second, older_volume, newer_volume, hidden_series, hidden_volume])
+    db.flush()
+    _add_comic(db, older_volume, number="1", title="Second Older Comic", updated_at=pinned_at)
+    _add_comic(db, newer_volume, number="1", title="Second Newer Comic", updated_at=pinned_at + timedelta(days=1))
+    _add_comic(db, hidden_volume, number="1", title="Hidden Comic", updated_at=pinned_at + timedelta(days=2))
+    db.commit()
+
+    response = auth_client.get("/api/home/pinned-libraries?limit=99")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [rail["name"] for rail in payload] == ["Pinned First", "Pinned Second"]
+    assert len(payload[0]["items"]) == 15
+    assert payload[0]["items"][0]["name"] == "First Updated 15"
+    assert payload[0]["items"][-1]["name"] == "First Updated 01"
+    assert [item["name"] for item in payload[1]["items"]] == ["Second Newer", "Second Older"]
+    assert "Pinned Empty" not in [rail["name"] for rail in payload]
+    assert "Pinned Hidden" not in [rail["name"] for rail in payload]
 
 
 def test_home_up_next_handles_duplicates_reverse_and_non_numeric(auth_client, db, normal_user):
