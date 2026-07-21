@@ -80,6 +80,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
 
 - **OPDS Support**
   - OPDS 1.2 compliant feeds
+  - Paginated library and series feeds
   - Dublin Core metadata
   - Legacy client authentication
   - JPEG cover thumbnails for reader compatibility

@@ -44,6 +44,7 @@ Current compatibility choices:
 
 - OPDS feeds use a realm-bearing Basic Auth challenge.
 - navigation links are absolute.
+- library and series feeds support page/size pagination.
 - issue acquisition links use filename-bearing download URLs.
 - each issue emits one acquisition link.
 - OPDS cover links point at a JPEG-specific thumbnail endpoint.
@@ -64,12 +65,15 @@ Out of scope for the first expansion pass:
 
 ### 1. Pagination
 
-Add pagination to large OPDS feeds before adding many more feed types.
+Initial support has been added for the library series feed and the series issue feed. Future OPDS feed types should reuse the same `page`/`size` query params and Atom pagination links.
 
-This should cover:
+Initial coverage:
 
 - library series feeds
 - series issue feeds if needed
+
+Future coverage:
+
 - future collection, reading list, smart list, and search feeds
 
 The feed should expose standard OPDS/Atom navigation links such as `next`, `previous`, `first`, and `last` where practical.
@@ -225,4 +229,3 @@ Suggested smoke tests:
 - download a CBR and confirm client-specific behavior
 - test a large library feed once pagination exists
 - test access restrictions for users with limited libraries or age ratings
-

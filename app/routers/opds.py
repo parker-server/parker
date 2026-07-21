@@ -5,9 +5,11 @@ from datetime import datetime, timezone
 from collections import defaultdict
 from io import BytesIO
 from pathlib import Path
+from typing import Annotated
 from urllib.parse import quote
 from PIL import Image
 
+from app.api.deps import PaginationParams
 from app.api.opds_deps import OPDSUser, SessionDep
 from app.models import ComicCredit
 from app.models.library import Library
@@ -34,6 +36,7 @@ OPDS_ACQUISITION_TYPES = {
 }
 
 INVALID_FILENAME_CHARS = set('<>:"/\\|?*')
+OPDS_CATALOG_FEED_TYPE = "application/atom+xml;profile=opds-catalog"
 
 
 def format_opds_datetime(value: datetime | None) -> str:
@@ -144,8 +147,31 @@ def get_opds_thumbnail_path(comic: Comic) -> Path | None:
     return None
 
 
+def get_opds_pagination_links(request: Request, total: int, params: PaginationParams) -> list[dict[str, str]]:
+    """Return Atom pagination links for OPDS feeds."""
+    total_pages = max(1, (total + params.size - 1) // params.size)
+
+    def page_url(page: int) -> str:
+        return str(request.url.include_query_params(page=page, size=params.size))
+
+    links = [
+        {"rel": "self", "href": page_url(params.page), "type": OPDS_CATALOG_FEED_TYPE},
+        {"rel": "first", "href": page_url(1), "type": OPDS_CATALOG_FEED_TYPE},
+        {"rel": "last", "href": page_url(total_pages), "type": OPDS_CATALOG_FEED_TYPE},
+    ]
+
+    if params.page > 1:
+        links.append({"rel": "previous", "href": page_url(params.page - 1), "type": OPDS_CATALOG_FEED_TYPE})
+
+    if params.page < total_pages:
+        links.append({"rel": "next", "href": page_url(params.page + 1), "type": OPDS_CATALOG_FEED_TYPE})
+
+    return links
+
+
 # Helper to render XML
 def render_xml(request: Request, context: dict):
+    context.setdefault("feed_links", [])
     return templates.TemplateResponse(
         request=request,
         name="opds/feed.xml",
@@ -199,7 +225,13 @@ async def opds_root(request: Request, user: OPDSUser, db: SessionDep):
 
 # 2. LIBRARY: List Series
 @router.get("/libraries/{library_id}", name="library")
-async def opds_library(library_id: int, request: Request, user: OPDSUser, db: SessionDep):
+async def opds_library(
+        library_id: int,
+        request: Request,
+        user: OPDSUser,
+        db: SessionDep,
+        params: Annotated[PaginationParams, Depends()]
+):
     # Security check using your existing accessible_libraries logic
 
     if not user.is_superuser:
@@ -218,17 +250,20 @@ async def opds_library(library_id: int, request: Request, user: OPDSUser, db: Se
         query = query.filter(age_filter)
     # -------------------------------------
 
-    series_list = query.order_by(Series.name).all()
+    total = query.count()
+    series_list = query.order_by(Series.name).offset(params.skip).limit(params.size).all()
 
     # Collect Series IDs
     series_ids = [s.id for s in series_list]
     # Fetch ALL Comics for these series in one go (Lightweight columns only)
-    raw_comics = (
-        db.query(Comic.id, Comic.number, Comic.year,
-                 Comic.format, Comic.updated_at, Comic.thumbnail_path,
-            Volume.series_id, Volume.volume_number
-        ).join(Volume).filter(Volume.series_id.in_(series_ids)).all()
-    )
+    raw_comics = []
+    if series_ids:
+        raw_comics = (
+            db.query(Comic.id, Comic.number, Comic.year,
+                     Comic.format, Comic.updated_at, Comic.thumbnail_path,
+                Volume.series_id, Volume.volume_number
+            ).join(Volume).filter(Volume.series_id.in_(series_ids)).all()
+        )
 
     # Group Comics by Series in Python
     series_map = defaultdict(list)
@@ -268,6 +303,7 @@ async def opds_library(library_id: int, request: Request, user: OPDSUser, db: Se
         "feed_id": f"urn:parker:lib:{library_id}",
         "feed_title": library.name,
         "updated_at": format_opds_datetime(datetime.now(timezone.utc)),
+        "feed_links": get_opds_pagination_links(request, total, params),
         "entries": entries,
         "books": []
     })
@@ -276,7 +312,13 @@ async def opds_library(library_id: int, request: Request, user: OPDSUser, db: Se
 # 3. SERIES: List Comics (Flattening Volumes)
 
 @router.get("/series/{series_id}", name="series")
-async def opds_series(series_id: int, request: Request, user: OPDSUser, db: SessionDep):
+async def opds_series(
+        series_id: int,
+        request: Request,
+        user: OPDSUser,
+        db: SessionDep,
+        params: Annotated[PaginationParams, Depends()]
+):
 
     # Security check for Series existence and Library Access would ideally happen here too
     # Assuming 'get_series_age_restriction' at library level helps, but let's be strict.
@@ -295,11 +337,12 @@ async def opds_series(series_id: int, request: Request, user: OPDSUser, db: Sess
         query = query.filter(age_filter)
     # ---------------------------------------
 
+    total = query.count()
     comics = query.options(
             joinedload(Comic.credits).joinedload(ComicCredit.person), # Load credits + person names
             joinedload(Comic.genres),    # Load Genres
             joinedload(Comic.volume).joinedload(Volume.series) # Load Series Name
-        ).order_by(Volume.volume_number, Comic.number).all()
+        ).order_by(Volume.volume_number, Comic.number).offset(params.skip).limit(params.size).all()
 
     # If all comics are restricted, handle empty list gracefully
     feed_title = "Series"
@@ -314,6 +357,7 @@ async def opds_series(series_id: int, request: Request, user: OPDSUser, db: Sess
         "feed_id": f"urn:parker:series:{series_id}",
         "feed_title": feed_title,
         "updated_at": format_opds_datetime(datetime.now(timezone.utc)),
+        "feed_links": get_opds_pagination_links(request, total, params),
         "entries": [],
         "books": comics
     })

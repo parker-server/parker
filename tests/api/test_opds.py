@@ -179,6 +179,48 @@ def test_opds_library_feed_renders_series_entries(client, db, normal_user):
     assert "Team book" in response.text
 
 
+def test_opds_library_feed_paginates_series_entries(client, db, normal_user):
+    _enable_opds(db)
+
+    library = Library(name="Paged Library", path="/tmp/opds-paged-library")
+    series_names = ["Alpha", "Beta", "Gamma"]
+    for name in series_names:
+        series = Series(name=name, library=library)
+        volume = Volume(series=series, volume_number=1)
+        Comic(
+            volume=volume,
+            number="1",
+            title=f"{name} One",
+            filename=f"{name.lower()}-001.cbz",
+            file_path=f"/tmp/{name.lower()}-001.cbz",
+        )
+
+    db.add(library)
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    from unittest.mock import patch
+
+    with patch("app.api.opds_deps.verify_password", return_value=True):
+        response = client.get(
+            f"/opds/libraries/{library.id}?page=1&size=2",
+            auth=(normal_user.username, "any_password")
+        )
+
+    assert response.status_code == 200
+    root = ET.fromstring(response.text)
+    ns = {"atom": "http://www.w3.org/2005/Atom"}
+    entries = root.findall("atom:entry", ns)
+    assert [entry.findtext("atom:title", namespaces=ns) for entry in entries] == ["Alpha", "Beta"]
+
+    next_link = root.find("atom:link[@rel='next']", ns)
+    last_link = root.find("atom:link[@rel='last']", ns)
+    assert next_link is not None
+    assert next_link.get("href") == f"http://testserver/opds/libraries/{library.id}?page=2&size=2"
+    assert last_link is not None
+    assert last_link.get("href") == f"http://testserver/opds/libraries/{library.id}?page=2&size=2"
+
+
 def test_opds_series_feed_handles_missing_month_and_day(client, db, normal_user):
     _enable_opds(db)
 
@@ -221,6 +263,48 @@ def test_opds_series_feed_handles_missing_month_and_day(client, db, normal_user)
     assert acquisition.get("type") == "application/vnd.comicbook+zip"
     assert acquisition.get("href", "").startswith("http://testserver/opds/download/")
     assert acquisition.get("href", "").endswith("/Comic%20-%20Stormbreaker.cbz")
+
+
+def test_opds_series_feed_paginates_issue_entries(client, db, normal_user):
+    _enable_opds(db)
+
+    library = Library(name="Paged Series Library", path="/tmp/opds-paged-series-library")
+    series = Series(name="Paged Issues", library=library)
+    volume = Volume(series=series, volume_number=1)
+    for number in ("1", "2", "3"):
+        Comic(
+            volume=volume,
+            number=number,
+            title=f"Issue {number}",
+            filename=f"paged-issues-{number}.cbz",
+            file_path=f"/tmp/paged-issues-{number}.cbz",
+            file_size=123,
+        )
+
+    db.add(library)
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    from unittest.mock import patch
+
+    with patch("app.api.opds_deps.verify_password", return_value=True):
+        response = client.get(
+            f"/opds/series/{series.id}?page=2&size=2",
+            auth=(normal_user.username, "any_password")
+        )
+
+    assert response.status_code == 200
+    root = ET.fromstring(response.text)
+    ns = {"atom": "http://www.w3.org/2005/Atom"}
+    entries = root.findall("atom:entry", ns)
+    assert len(entries) == 1
+    assert entries[0].findtext("atom:title", namespaces=ns) == "Paged Issues #3 - Issue 3"
+
+    previous_link = root.find("atom:link[@rel='previous']", ns)
+    next_link = root.find("atom:link[@rel='next']", ns)
+    assert previous_link is not None
+    assert previous_link.get("href") == f"http://testserver/opds/series/{series.id}?page=1&size=2"
+    assert next_link is None
 
 
 def test_opds_thumbnail_links_use_jpeg_endpoint(client, db, normal_user, tmp_path):
