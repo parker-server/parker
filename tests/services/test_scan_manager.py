@@ -305,7 +305,6 @@ def test_run_scan_job_handles_scanner_exception(monkeypatch, db):
     scanner_mock.scan_parallel.side_effect = RuntimeError("scan exploded")
     monkeypatch.setattr(sm, "LibraryScanner", lambda library, session: scanner_mock)
     monkeypatch.setattr(sm, "get_cached_setting", lambda key, default: False)
-    monkeypatch.setattr(sm.traceback, "print_exc", MagicMock())
 
     manager._safe_job_update = MagicMock()
     manager._set_library_scanning_status = MagicMock()
@@ -370,7 +369,6 @@ def test_run_thumbnail_job_failure_marks_job_failed(monkeypatch, db):
     service.process_missing_thumbnails_parallel.side_effect = RuntimeError("thumb fail")
     monkeypatch.setattr(sm, "ThumbnailService", lambda session, library_id: service)
     monkeypatch.setattr(sm, "get_cached_setting", lambda key, default: False)
-    monkeypatch.setattr(sm.traceback, "print_exc", MagicMock())
 
     manager._safe_job_update = MagicMock()
     manager._set_library_scanning_status = MagicMock()
@@ -501,7 +499,6 @@ def test_run_metadata_rehydrate_job_failure_marks_failed(monkeypatch, db):
         "rehydrate_library_metadata_from_cache",
         MagicMock(side_effect=RuntimeError("rehydrate fail")),
     )
-    monkeypatch.setattr(sm.traceback, "print_exc", MagicMock())
 
     manager._safe_job_update = MagicMock()
     manager._set_library_scanning_status = MagicMock()
