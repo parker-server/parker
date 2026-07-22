@@ -32,7 +32,6 @@ class ReadingListService:
 
             self.db.add(reading_list)
             self.db.flush()
-            print(f"Created reading list: {name}")
             self.logger.debug(f"Created reading list: {name}")
 
         self.list_cache[name] = reading_list

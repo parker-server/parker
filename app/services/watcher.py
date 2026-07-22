@@ -153,7 +153,6 @@ class LibraryWatcher:
             # 3. Remove old watches (if disabled in DB)
             for lib_id in current_ids:
                 if lib_id not in active_ids:
-                    print(f"Stopping watch for Library {lib_id}")
                     self.logger.info(f"Stopping watch for Library {lib_id}")
                     watch, handler = self.watches[lib_id]
 

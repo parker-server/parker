@@ -22,7 +22,6 @@ class CollectionService:
             collection = Collection(name=name, auto_generated=1)
             self.db.add(collection)
             self.db.flush()
-            print(f"Created collection: {name}")
             self.logger.debug(f"Created collection: {name}")
 
         self.collection_cache[name] = collection
