@@ -1,3 +1,4 @@
+import logging
 from lxml import etree
 from typing import Optional, Dict, Any
 import json
@@ -7,6 +8,8 @@ from sqlalchemy.orm import Session
 from app.models import Comic, Volume, Series
 from app.services.reading_list import ReadingListService
 from app.services.collection import CollectionService
+
+logger = logging.getLogger(__name__)
 
 
 def parse_comicinfo(xml_content: bytes) -> Dict[str, Any]:
@@ -91,7 +94,7 @@ def parse_comicinfo(xml_content: bytes) -> Dict[str, Any]:
             'raw_xml': xml_content.decode('utf-8')
         }
     except Exception as e:
-        print(f"Error parsing ComicInfo.xml: {e}")
+        logger.error(f"Error parsing ComicInfo.xml: {e}")
         return {}
 
 

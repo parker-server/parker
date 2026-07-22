@@ -9,6 +9,8 @@ from colorthief import ColorThief
 from app.services.archive import ComicArchive
 from app.config import settings
 
+logger = logging.getLogger(__name__)
+
 
 class ImageService:
     """Service for extracting and processing comic images"""
@@ -78,7 +80,7 @@ class ImageService:
             return result
 
         except Exception as e:
-            print(f"Error processing cover for {Path(comic_path).name}: {e}")
+            logger.error(f"Error processing cover for {Path(comic_path).name}: {e}")
             return result
 
 
@@ -104,7 +106,7 @@ class ImageService:
             file_path = Path(comic_path)
 
             if not file_path.exists():
-                print(f"Comic file not found: {comic_path}")
+                logger.warning(f"Comic file not found: {comic_path}")
                 return None, False, "application/octet-stream"
 
             with ComicArchive(file_path) as archive:
@@ -112,7 +114,7 @@ class ImageService:
                 pages = archive.get_pages()
 
                 if page_index < 0 or page_index >= len(pages):
-                    print(f"Page index {page_index} out of range (0-{len(pages) - 1})")
+                    logger.warning(f"Page index {page_index} out of range (0-{len(pages) - 1})")
                     return None, False, "application/octet-stream"
 
                 # Extract Raw Bytes
@@ -177,14 +179,13 @@ class ImageService:
                         return output.getvalue(), True, "image/jpeg"
 
                 except Exception as e:
-                    logging.error(f"Image processing failed: {e}")
-                    print(f"Error processing image: {e}")
+                    logger.error(f"Image processing failed: {e}")
                     # CRITICAL: Return original bytes, but flag as FAILED processing
                     # so the controller knows not to cache this as the 'filtered' version.
                     return image_bytes, False, mime_type  # Fallback, just return original bytes
 
         except Exception as e:
-            print(f"Error extracting page {page_index}: {e}")
+            logger.error(f"Error extracting page {page_index}: {e}")
             return None, False, "application/octet-stream"
 
     @staticmethod
@@ -227,7 +228,7 @@ class ImageService:
 
             return True
         except Exception as e:
-            logging.error(f"Avatar processing error: {e}")
+            logger.error(f"Avatar processing error: {e}")
             return False
 
     def extract_palette(self, comic_path: str, num_colors=5) -> Optional[Dict[str, str]]:
@@ -236,7 +237,7 @@ class ImageService:
 
             path = Path(comic_path)
             if not path.exists():
-                print(f"Image file not found: {path}")
+                logger.warning(f"Image file not found: {path}")
                 return None
 
             # 1. Get Cover Bytes
@@ -260,7 +261,7 @@ class ImageService:
             }
 
         except Exception as e:
-            print(f"Color palette extraction failed for {comic_path}: {e}")
+            logger.error(f"Color palette extraction failed for {comic_path}: {e}")
             return None
 
 
