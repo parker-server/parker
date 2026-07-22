@@ -1,4 +1,5 @@
 from pathlib import Path
+from queue import Empty
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -34,25 +35,46 @@ class _WriteQueue:
     def put(self, item):
         self.put_items.append(item)
 
-    def get(self):
+    def get(self, timeout=None):
         if not self.get_items:
             raise AssertionError("queue unexpectedly empty")
         return self.get_items.pop(0)
 
 
+class _TimeoutQueue(_WriteQueue):
+    def get(self, timeout=None):
+        raise Empty()
+
+
 class _FakeProcess:
+    instances = []
+    force_stuck = False
+
     def __init__(self, target=None, args=(), kwargs=None):
         self.target = target
         self.args = args
         self.kwargs = kwargs or {}
         self.started = False
         self.joined = False
+        self.terminated = False
+        self.alive = False
+        _FakeProcess.instances.append(self)
 
     def start(self):
         self.started = True
+        self.alive = True
 
-    def join(self):
+    def join(self, timeout=None):
         self.joined = True
+        if not self.force_stuck:
+            self.alive = False
+
+    def is_alive(self):
+        return self.alive
+
+    def terminate(self):
+        self.terminated = True
+        self.alive = False
 
 
 class _FakePool:
@@ -343,6 +365,7 @@ def test_process_missing_thumbnails_parallel_worker_limit_override(db, tmp_path,
     stats_queue = _WriteQueue(initial_get_items=[{"summary": True, "processed": 1, "errors": 0, "skipped": 0}])
     monkeypatch.setattr(thumbnailer_module.multiprocessing, "Queue", MagicMock(side_effect=[result_queue, stats_queue]))
     monkeypatch.setattr(thumbnailer_module.multiprocessing, "Process", _FakeProcess)
+    monkeypatch.setattr(thumbnailer_module, "get_cached_setting", lambda _key, default=0: default)
 
     _FakePool.created_processes.clear()
     monkeypatch.setattr(thumbnailer_module.multiprocessing, "Pool", _FakePool)
@@ -413,5 +436,45 @@ def test_process_missing_thumbnails_parallel_respects_requested_worker_cap(db, t
 
     assert stats == {"processed": 1, "errors": 0, "skipped": 0, "error_details": []}
     assert _FakePool.created_processes[-1] == 4
+
+
+def test_process_missing_thumbnails_parallel_timeout_terminates_stuck_writer(db, tmp_path, monkeypatch):
+    service = ThumbnailService(db, library_id=200)
+
+    dirty = SimpleNamespace(
+        id=11,
+        file_path=str(tmp_path / "stuck.cbz"),
+        thumbnail_path=None,
+        color_primary=None,
+        is_dirty=True,
+    )
+    monkeypatch.setattr(service, "_get_target_comics", lambda force=False: [dirty])
+
+    result_queue = _WriteQueue()
+    stats_queue = _TimeoutQueue()
+    monkeypatch.setattr(thumbnailer_module.multiprocessing, "Queue", MagicMock(side_effect=[result_queue, stats_queue]))
+    monkeypatch.setattr(thumbnailer_module.multiprocessing, "Process", _FakeProcess)
+
+    _FakePool.created_processes.clear()
+    monkeypatch.setattr(thumbnailer_module.multiprocessing, "Pool", _FakePool)
+
+    monkeypatch.setattr(
+        thumbnailer_module,
+        "get_cached_setting",
+        lambda key, default=0: 10 if "timeout" in key else default,
+    )
+
+    _FakeProcess.instances = []
+    _FakeProcess.force_stuck = True
+    try:
+        with pytest.raises(TimeoutError):
+            service.process_missing_thumbnails_parallel(force=False, worker_limit=1)
+
+        writer_proc = _FakeProcess.instances[0]
+        assert writer_proc.joined is True
+        assert writer_proc.terminated is True
+        assert result_queue.put_items[-1] is None
+    finally:
+        _FakeProcess.force_stuck = False
 
 

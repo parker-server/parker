@@ -219,6 +219,22 @@ class SettingsService:
             "options": generate_worker_options()
         },
         {
+            "key": "system.parallel_image_writer_summary_timeout_seconds",
+            "value": "180",
+            "category": "system",
+            "data_type": "int",
+            "label": "Thumbnail Writer Summary Timeout (Sec)",
+            "description": "Maximum time to wait for the thumbnail writer to return final stats before failing the job."
+        },
+        {
+            "key": "system.parallel_image_writer_join_timeout_seconds",
+            "value": "30",
+            "category": "system",
+            "data_type": "int",
+            "label": "Thumbnail Writer Join Timeout (Sec)",
+            "description": "Grace period to wait for the thumbnail writer process to exit cleanly before force termination."
+        },
+        {
             "key": "system.task.scan.interval",
             "value": "daily",
             "category": "system",

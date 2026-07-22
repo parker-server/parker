@@ -2,11 +2,12 @@ import logging
 from pathlib import Path
 import multiprocessing
 from multiprocessing import Queue
+from queue import Empty
 from typing import Tuple, Dict, Any, List
 from sqlalchemy.orm import Session
 
 from app.core.settings_loader import get_cached_setting
-from app.database import SessionLocal, engine
+from app.database import SessionLocal, engine, commit_with_retry
 from app.models.comic import Comic, Volume
 from app.models.series import Series
 from app.services.images import ImageService
@@ -57,8 +58,8 @@ def _apply_batch(db, batch, stats_queue, error_details):
 
         stats_queue.put({"comic_id": comic_id, "status": "processed"})
 
-    # Commit the batch (Single Transaction)
-    db.commit()
+    # Commit the batch (Single Transaction), retrying on transient SQLite locks
+    commit_with_retry(db)
 
 
 def _thumbnail_worker(task: Tuple[int, str]) -> Dict[str, Any]:
@@ -255,6 +256,16 @@ class ThumbnailService:
         )
         writer_proc.start()
 
+        summary_timeout = int(
+            get_cached_setting("system.parallel_image_writer_summary_timeout_seconds", 180)
+        )
+        summary_timeout = max(10, summary_timeout)
+
+        join_timeout = int(
+            get_cached_setting("system.parallel_image_writer_join_timeout_seconds", 30)
+        )
+        join_timeout = max(1, join_timeout)
+
         # Determine Worker Count
         if worker_limit > 0:
             workers = worker_limit  # Respect the override (e.g., 1)
@@ -280,27 +291,48 @@ class ThumbnailService:
 
             self.logger.info(f"Using {workers} worker(s) for parallel thumbnail generation")
 
-        # Start Workers (CPU bound)
-        with multiprocessing.Pool(processes=workers) as pool:
-            for payload in pool.imap_unordered(_thumbnail_worker, tasks):
-                # Send worker result to writer
-                result_queue.put(payload)
+        sentinel_sent = False
+        try:
+            # Start Workers (CPU bound)
+            with multiprocessing.Pool(processes=workers) as pool:
+                for payload in pool.imap_unordered(_thumbnail_worker, tasks):
+                    # Send worker result to writer
+                    result_queue.put(payload)
 
-        # All worker tasks done; tell writer to finish
-        result_queue.put(None)
+            # All worker tasks done; tell writer to finish
+            result_queue.put(None)
+            sentinel_sent = True
 
-        # Wait for stats
-        summary_received = False
-        while not summary_received:
-            item = stats_queue.get()
-            if item.get("summary"):
-                stats["processed"] += item.get("processed", 0)
-                stats["errors"] += item.get("errors", 0)
-                stats["skipped"] += item.get("skipped", 0)
-                stats["error_details"] = item.get("error_details", [])
-                summary_received = True
+            # Wait for stats, but do not block forever.
+            summary_received = False
+            while not summary_received:
+                try:
+                    item = stats_queue.get(timeout=summary_timeout)
+                except Empty as exc:
+                    raise TimeoutError(
+                        f"Timed out after {summary_timeout}s waiting for thumbnail writer summary"
+                    ) from exc
 
-        writer_proc.join()
+                if item.get("summary"):
+                    stats["processed"] += item.get("processed", 0)
+                    stats["errors"] += item.get("errors", 0)
+                    stats["skipped"] += item.get("skipped", 0)
+                    stats["error_details"] = item.get("error_details", [])
+                    summary_received = True
+        finally:
+            if not sentinel_sent:
+                try:
+                    result_queue.put(None)
+                except Exception:
+                    pass
+
+            if writer_proc.is_alive():
+                writer_proc.join(timeout=join_timeout)
+
+            if writer_proc.is_alive():
+                self.logger.error("Thumbnail writer did not exit cleanly; terminating process.")
+                writer_proc.terminate()
+                writer_proc.join(timeout=5)
 
         return stats
 

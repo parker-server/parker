@@ -15,6 +15,7 @@ def _apply_metadata_batch(
 
     from pathlib import Path
     from app.models.comic import Comic
+    from app.database import commit_with_retry
     from datetime import datetime, timezone
     import json
 
@@ -176,8 +177,8 @@ def _apply_metadata_batch(
         # Flush but do not commit
         db.flush()
 
-    # Commit entire batch
-    db.commit()
+    # Commit entire batch, retrying on transient SQLite locks
+    commit_with_retry(db)
 
     return {
         "imported": imported,
