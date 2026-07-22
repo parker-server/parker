@@ -1,7 +1,6 @@
 import threading
 import time
 import json
-import traceback
 import logging
 from datetime import datetime, timezone
 from sqlalchemy import asc
@@ -308,8 +307,7 @@ class ScanManager:
                 error = "Library not found"
         except Exception as e:
             error = str(e)
-            self.logger.error(f"Scan failed: {e}")
-            traceback.print_exc()
+            self.logger.error(f"Scan failed: {e}", exc_info=True)
         finally:
             db_scan.close()
 
@@ -379,8 +377,7 @@ class ScanManager:
 
         except Exception as e:
             error = str(e)
-            self.logger.error(f"Thumbnail failed: {e}")
-            traceback.print_exc()
+            self.logger.error(f"Thumbnail failed: {e}", exc_info=True)
         finally:
             db_thumb.close()
 
@@ -471,8 +468,7 @@ class ScanManager:
                 )
         except Exception as e:
             error = str(e)
-            self.logger.error(f"Metadata rehydrate failed: {e}")
-            traceback.print_exc()
+            self.logger.error(f"Metadata rehydrate failed: {e}", exc_info=True)
         finally:
             db_rehydrate.close()
 
