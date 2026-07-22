@@ -135,9 +135,7 @@ def test_apply_batch_updates_processed_and_reports_error_and_missing(db, tmp_pat
     db.add_all([comic_with_palette, comic_no_palette])
     db.commit()
 
-    stats_queue = _WriteQueue()
-    error_details = []
-    _apply_batch(
+    outcomes = _apply_batch(
         db,
         [
             {
@@ -153,8 +151,6 @@ def test_apply_batch_updates_processed_and_reports_error_and_missing(db, tmp_pat
             {"comic_id": 999999, "thumbnail_path": "./storage/cover/missing.webp", "palette": None},
             {"comic_id": 123456, "error": True},
         ],
-        stats_queue,
-        error_details,
     )
 
     db.refresh(comic_with_palette)
@@ -172,9 +168,9 @@ def test_apply_batch_updates_processed_and_reports_error_and_missing(db, tmp_pat
     assert comic_no_palette.color_palette is None
     assert comic_no_palette.is_dirty is False
 
-    statuses = {item["status"] for item in stats_queue.put_items}
+    statuses = {outcome["status"] for outcome in outcomes}
     assert statuses == {"processed", "missing", "error"}
-    assert len(error_details) == 2
+    assert sum(1 for outcome in outcomes if outcome["detail"] is not None) == 2
 
 
 @pytest.mark.parametrize(
@@ -219,8 +215,19 @@ def test_thumbnail_worker_exception_path(monkeypatch):
 def test_thumbnail_writer_batches_and_sends_summary(monkeypatch):
     applied_batches = []
 
-    def fake_apply_batch(db, batch, stats_queue, error_details):
+    def fake_apply_batch_with_retry(db, batch):
         applied_batches.append(list(batch))
+        return [
+            {
+                "comic_id": item["comic_id"],
+                "status": "error" if item.get("error") else "processed",
+                "detail": (
+                    {"comic_id": item["comic_id"], "file_path": None, "message": "boom"}
+                    if item.get("error") else None
+                ),
+            }
+            for item in batch
+        ]
 
     class SummaryQueue:
         def __init__(self):
@@ -230,7 +237,7 @@ def test_thumbnail_writer_batches_and_sends_summary(monkeypatch):
             self.items.append(item)
 
     monkeypatch.setattr(thumbnailer_module.engine, "dispose", MagicMock())
-    monkeypatch.setattr(thumbnailer_module, "_apply_batch", fake_apply_batch)
+    monkeypatch.setattr(thumbnailer_module, "_apply_batch_with_retry", fake_apply_batch_with_retry)
 
     result_queue = _ReadQueue(
         [
@@ -252,7 +259,98 @@ def test_thumbnail_writer_batches_and_sends_summary(monkeypatch):
     assert summary["processed"] == 2
     assert summary["errors"] == 1
     assert summary["skipped"] == 0
-    assert summary["error_details"] == []
+    assert summary["error_details"] == [{"comic_id": 2, "file_path": None, "message": "boom"}]
+
+
+def test_apply_batch_with_retry_recovers_from_transient_lock(monkeypatch):
+    from sqlalchemy.exc import OperationalError
+
+    calls = {"n": 0}
+
+    def fake_apply_batch(db, batch):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise OperationalError("stmt", {}, Exception("database is locked"))
+        return [{"comic_id": 1, "status": "processed", "detail": None}]
+
+    monkeypatch.setattr(thumbnailer_module, "_apply_batch", fake_apply_batch)
+    monkeypatch.setattr(thumbnailer_module.time, "sleep", MagicMock())
+
+    db = MagicMock()
+    result = thumbnailer_module._apply_batch_with_retry(db, [{"comic_id": 1}], attempts=3, delay=0)
+
+    assert result == [{"comic_id": 1, "status": "processed", "detail": None}]
+    assert calls["n"] == 2
+    db.rollback.assert_called_once()
+
+
+def test_apply_batch_with_retry_gives_up_after_max_attempts(monkeypatch):
+    from sqlalchemy.exc import OperationalError
+
+    def always_locked(db, batch):
+        raise OperationalError("stmt", {}, Exception("database is locked"))
+
+    monkeypatch.setattr(thumbnailer_module, "_apply_batch", always_locked)
+    monkeypatch.setattr(thumbnailer_module.time, "sleep", MagicMock())
+
+    db = MagicMock()
+    with pytest.raises(OperationalError):
+        thumbnailer_module._apply_batch_with_retry(db, [{"comic_id": 1}], attempts=3, delay=0)
+
+    assert db.rollback.call_count == 3
+
+
+def test_apply_batch_with_retry_reraises_non_lock_error_immediately(monkeypatch):
+    from sqlalchemy.exc import OperationalError
+
+    def other_error(db, batch):
+        raise OperationalError("stmt", {}, Exception("no such table: foo"))
+
+    monkeypatch.setattr(thumbnailer_module, "_apply_batch", other_error)
+    sleep_mock = MagicMock()
+    monkeypatch.setattr(thumbnailer_module.time, "sleep", sleep_mock)
+
+    db = MagicMock()
+    with pytest.raises(OperationalError):
+        thumbnailer_module._apply_batch_with_retry(db, [{"comic_id": 1}], attempts=5, delay=0)
+
+    assert db.rollback.call_count == 1
+    sleep_mock.assert_not_called()
+
+
+def test_thumbnail_writer_reports_failure_when_batch_retries_exhausted(monkeypatch):
+    from sqlalchemy.exc import OperationalError
+
+    def always_fails(db, batch):
+        raise OperationalError("stmt", {}, Exception("database is locked"))
+
+    class SummaryQueue:
+        def __init__(self):
+            self.items = []
+
+        def put(self, item):
+            self.items.append(item)
+
+    monkeypatch.setattr(thumbnailer_module.engine, "dispose", MagicMock())
+    monkeypatch.setattr(thumbnailer_module, "_apply_batch_with_retry", always_fails)
+
+    result_queue = _ReadQueue(
+        [
+            {"comic_id": 1, "error": False},
+            {"comic_id": 2, "error": False},
+            None,
+        ]
+    )
+    stats_queue = SummaryQueue()
+
+    _thumbnail_writer(result_queue, stats_queue, batch_size=2)
+
+    summary = stats_queue.items[-1]
+    assert summary["summary"] is True
+    assert summary["processed"] == 0
+    assert summary["errors"] == 2
+    assert len(summary["error_details"]) == 1
+    assert "Thumbnail writer aborted" in summary["error_details"][0]["message"]
 
 
 def test_process_series_thumbnails_delegates(db, tmp_path, monkeypatch):

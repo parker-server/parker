@@ -1,46 +1,59 @@
 import logging
+import time
 from pathlib import Path
 import multiprocessing
 from multiprocessing import Queue
 from queue import Empty
 from typing import Tuple, Dict, Any, List
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.core.settings_loader import get_cached_setting
-from app.database import SessionLocal, engine, commit_with_retry
+from app.database import SessionLocal, engine
 from app.models.comic import Comic, Volume
 from app.models.series import Series
 from app.services.images import ImageService
 
+logger = logging.getLogger(__name__)
 
-def _apply_batch(db, batch, stats_queue, error_details):
+
+def _apply_batch(db, batch):
     """
-    Apply a batch of updates to the DB.
-    This runs inside the dedicated Writer process.
+    Apply a batch of updates to the DB and commit.
+    Runs inside the dedicated Writer process. Returns per-item outcomes;
+    callers report these to stats_queue/error_details themselves so a
+    retried batch (after a rollback) doesn't double-report.
     """
     from app.models.comic import Comic
 
-    for item in batch:
+    outcomes = []
 
+    for item in batch:
         comic_id = item.get("comic_id")
 
         if item.get("error"):
-            stats_queue.put({"comic_id": comic_id, "status": "error"})
-            error_details.append({
+            outcomes.append({
                 "comic_id": comic_id,
-                "file_path": item.get("file_path"),
-                "message": item.get("message", "Unknown thumbnail error")
+                "status": "error",
+                "detail": {
+                    "comic_id": comic_id,
+                    "file_path": item.get("file_path"),
+                    "message": item.get("message", "Unknown thumbnail error")
+                }
             })
             continue
 
         # Fetch object to update
         comic = db.get(Comic, comic_id)
         if not comic:
-            stats_queue.put({"comic_id": comic_id, "status": "missing"})
-            error_details.append({
+            outcomes.append({
                 "comic_id": comic_id,
-                "file_path": item.get("file_path"),
-                "message": "Comic not found in database"
+                "status": "missing",
+                "detail": {
+                    "comic_id": comic_id,
+                    "file_path": item.get("file_path"),
+                    "message": "Comic not found in database"
+                }
             })
             continue
 
@@ -56,10 +69,36 @@ def _apply_batch(db, batch, stats_queue, error_details):
         # Work is complete, reset the flag
         comic.is_dirty = False
 
-        stats_queue.put({"comic_id": comic_id, "status": "processed"})
+        outcomes.append({"comic_id": comic_id, "status": "processed", "detail": None})
 
-    # Commit the batch (Single Transaction), retrying on transient SQLite locks
-    commit_with_retry(db)
+    # Commit the batch (Single Transaction)
+    db.commit()
+    return outcomes
+
+
+def _apply_batch_with_retry(db, batch, attempts: int = 5, delay: float = 1.0):
+    """
+    Retry a batch application on transient SQLite 'database is locked' errors.
+
+    A failed commit leaves the session's transaction unusable (SQLAlchemy
+    raises PendingRollbackError on the next commit attempt) and rollback()
+    discards the batch's pending in-memory changes along with it. So a
+    lock failure requires re-running the whole batch (re-fetching rows and
+    re-applying the field updates) on a rolled-back session, not just
+    re-calling commit().
+    """
+    for attempt in range(attempts):
+        try:
+            return _apply_batch(db, batch)
+        except OperationalError as e:
+            db.rollback()
+            if "locked" in str(e).lower() and attempt < attempts - 1:
+                logger.warning(
+                    f"DB Locked applying thumbnail batch (attempt {attempt + 1}/{attempts}). Retrying..."
+                )
+                time.sleep(delay)
+                continue
+            raise
 
 
 def _thumbnail_worker(task: Tuple[int, str]) -> Dict[str, Any]:
@@ -121,6 +160,21 @@ def _thumbnail_writer(queue: Queue, stats_queue: Queue, batch_size: int = 25) ->
     error_details = []
     batch = []
 
+    def _flush_batch():
+        nonlocal processed, errors
+
+        outcomes = _apply_batch_with_retry(db, batch)
+        for outcome in outcomes:
+            stats_queue.put({"comic_id": outcome["comic_id"], "status": outcome["status"]})
+            if outcome["status"] == "processed":
+                processed += 1
+            else:
+                errors += 1
+                if outcome["detail"]:
+                    error_details.append(outcome["detail"])
+
+        batch.clear()
+
     try:
         while True:
             # Block until an item is available
@@ -134,16 +188,23 @@ def _thumbnail_writer(queue: Queue, stats_queue: Queue, batch_size: int = 25) ->
 
             # If batch is full, write it
             if len(batch) >= batch_size:
-                _apply_batch(db, batch, stats_queue, error_details)
-                processed += sum(1 for i in batch if not i.get("error"))
-                errors += sum(1 for i in batch if i.get("error"))
-                batch.clear()
+                _flush_batch()
 
         # Flush remaining items
         if batch:
-            _apply_batch(db, batch, stats_queue, error_details)
-            processed += sum(1 for i in batch if not i.get("error"))
-            errors += sum(1 for i in batch if i.get("error"))
+            _flush_batch()
+
+    except Exception as e:
+        # Batch retries were exhausted (or something else failed). Make this
+        # explicit in the summary instead of silently under-reporting: the
+        # batch currently in flight never got its outcomes counted above.
+        logger.error(f"Thumbnail writer failed: {e}")
+        errors += len(batch)
+        error_details.append({
+            "comic_id": None,
+            "file_path": None,
+            "message": f"Thumbnail writer aborted: {e}"
+        })
 
     finally:
         # CRITICAL Close DB *BEFORE* signaling summary.
