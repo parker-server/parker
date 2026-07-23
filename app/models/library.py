@@ -22,3 +22,4 @@ class Library(Base):
 
     # Relationships - use string reference to avoid circular import
     series = relationship("Series", back_populates="library", cascade="all, delete-orphan")
+    roots = relationship("LibraryRoot", back_populates="library", cascade="all, delete-orphan")

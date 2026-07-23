@@ -1,5 +1,6 @@
 # Import all models here so SQLAlchemy can set up relationships
 from app.models.library import Library
+from app.models.library_root import LibraryRoot
 from app.models.series import Series
 from app.models.comic import Volume, Comic  # Both Volume and Comic are in comic.py
 from app.models.tags import Character, Team, Location, Genre
@@ -19,7 +20,7 @@ from app.models.activity_log import ActivityLog
 
 # This ensures all models are loaded before relationships are configured
 __all__ = [
-    'Library', 'Series', 'Volume', 'Comic',
+    'Library', 'LibraryRoot', 'Series', 'Volume', 'Comic',
     'Character', 'Team', 'Location', 'Genre',
     'Person', 'ComicCredit',
     'ReadingList', 'ReadingListItem',

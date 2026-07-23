@@ -10,6 +10,7 @@ import os
 from app.config import settings
 from app.core.comic_helpers import get_thumbnail_url, NON_PLAIN_FORMATS, REVERSE_NUMBERING_SERIES, get_series_age_restriction
 from app.models.library import Library
+from app.models.library_root import LibraryRoot
 from app.models.series import Series
 from app.models.comic import Comic, Volume
 from app.models.interactions import UserLibraryPin
@@ -471,6 +472,9 @@ async def create_library(lib_in: LibraryCreate,
     db.commit()
     db.refresh(library)
 
+    db.add(LibraryRoot(library_id=library.id, path=library.path, is_active=True))
+    db.commit()
+
     # Notify Watcher
     if library.watch_mode:
         library_watcher.refresh_watches()
@@ -505,17 +509,13 @@ async def update_library(
             raise HTTPException(status_code=400, detail="Library name already exists")
         library.name = updates.name
 
-    if updates.path:
-        overlapping = _find_overlapping_library(db, updates.path, exclude_library_id=library_id)
-        if overlapping:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Library path overlaps with existing library '{overlapping.name}'"
-            )
-
-        library.path = updates.path
-        # Note: Changing path doesn't delete existing comics, but the next scan
-        # might mark them as 'missing' if the new path is totally different.
+    if updates.path and updates.path != library.path:
+        raise HTTPException(
+            status_code=400,
+            detail="Changing a library's path is temporarily disabled. Library relocation is "
+                   "being rebuilt to preserve reading progress and other data; support is "
+                   "coming in a future release.",
+        )
 
     if updates.watch_mode is not None:
         library.watch_mode = updates.watch_mode

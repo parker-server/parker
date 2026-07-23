@@ -129,7 +129,7 @@ def test_admin_libraries_page_exposes_folder_browser_route(admin_client):
     body = response.text
     assert "Browse" in body
     assert "libraries.browse" in body
-    assert "Changing a library path can cause Parker to remove and re-import comics" in body
+    assert "The path is locked for existing libraries" in body
 
 
 def test_search_widget_people_results_use_generic_creator_handoff(auth_client):

@@ -24,6 +24,7 @@ class Comic(Base):
 
     __table_args__ = (
         Index('idx_comic_volume_age_rating', 'volume_id', 'age_rating'),
+        Index('idx_comic_library_root_relative_path', 'library_root_id', 'relative_path'),
     )
 
     id = Column(Integer, primary_key=True, index=True)
@@ -31,6 +32,12 @@ class Comic(Base):
 
     filename = Column(String, nullable=False)
     file_path = Column(String, unique=True, nullable=False)
+    # Physical location only (which root this file was scanned under) — must stay within
+    # the same library as volume.series.library_id. Not a substitute for that field: logical
+    # library membership always flows through Series. Comics never move between libraries
+    # in place; a library change means delete + re-import, which assigns a fresh root.
+    library_root_id = Column(Integer, ForeignKey("library_roots.id"), nullable=True, index=True)
+    relative_path = Column(String, nullable=True)
     file_modified_at = Column(Float)
     file_size = Column(Integer)
     thumbnail_path = Column(String, nullable=True)  # Path to cached thumbnail
@@ -91,6 +98,7 @@ class Comic(Base):
 
     # Relationships
     volume = relationship("Volume", back_populates="comics")
+    library_root = relationship("LibraryRoot")
     reading_list_items = relationship("ReadingListItem", back_populates="comic", cascade="all, delete-orphan")
     collection_items = relationship("CollectionItem", back_populates="comic", cascade="all, delete-orphan")
     reading_progress = relationship("ReadingProgress", back_populates="comic", cascade="all, delete-orphan")
