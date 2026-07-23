@@ -6,6 +6,7 @@ from app.api.deps import get_current_user
 from app.models.comic import Comic, Volume
 from app.models.collection import Collection, CollectionItem
 from app.models.library import Library
+from app.models.library_root import LibraryRoot
 from app.models.interactions import UserLibraryPin
 from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.reading_progress import ReadingProgress
@@ -117,6 +118,11 @@ def test_admin_can_create_library(admin_client, db):
     assert lib.parse_reading_lists is True
     assert lib.parse_collections is True
     assert lib.parse_story_arcs is True
+
+    root = db.query(LibraryRoot).filter_by(library_id=lib.id).first()
+    assert root is not None
+    assert root.path == "/data/marvel"
+    assert root.is_active is True
 
 
 def test_create_library_duplicate_name_returns_400(admin_client, db):
@@ -393,7 +399,7 @@ def test_update_library_applies_fields_and_refreshes_watches(admin_client, db):
             f"/api/libraries/{library.id}",
             json={
                 "name": "Updated",
-                "path": "/tmp/updated",
+                "path": "/tmp/update-me",
                 "watch_mode": True,
                 "parse_reading_lists": False,
                 "parse_collections": False,
@@ -404,7 +410,7 @@ def test_update_library_applies_fields_and_refreshes_watches(admin_client, db):
     assert response.status_code == 200
     payload = response.json()
     assert payload["name"] == "Updated"
-    assert payload["path"] == "/tmp/updated"
+    assert payload["path"] == "/tmp/update-me"
     assert payload["watch_mode"] is True
     assert payload["parse_reading_lists"] is False
     assert payload["parse_collections"] is False
@@ -568,21 +574,36 @@ def test_update_library_rejects_duplicate_name(admin_client, db):
     assert response.json() == {"detail": "Library name already exists"}
 
 
-def test_update_library_rejects_overlapping_path(admin_client, db):
+def test_update_library_rejects_changed_path(admin_client, db):
     original = Library(name="Original", path="/tmp/original")
-    existing = Library(name="Main Library", path="/tmp/comics")
-    db.add_all([original, existing])
+    db.add(original)
     db.commit()
 
     response = admin_client.patch(
         f"/api/libraries/{original.id}",
-        json={"path": "/tmp/comics/DC"},
+        json={"path": "/tmp/relocated"},
     )
 
     assert response.status_code == 400
-    assert response.json() == {
-        "detail": "Library path overlaps with existing library 'Main Library'"
-    }
+    assert "temporarily disabled" in response.json()["detail"]
+
+    db.refresh(original)
+    assert original.path == "/tmp/original"
+
+
+def test_update_library_allows_unchanged_path(admin_client, db):
+    original = Library(name="Original", path="/tmp/original")
+    db.add(original)
+    db.commit()
+
+    response = admin_client.patch(
+        f"/api/libraries/{original.id}",
+        json={"name": "Renamed", "path": "/tmp/original"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "Renamed"
+    assert response.json()["path"] == "/tmp/original"
 
 
 def test_update_library_returns_404_for_missing_library(admin_client):

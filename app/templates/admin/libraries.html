@@ -82,9 +82,10 @@
                 <div>
                     <label class="block text-sm text-gray-400 mb-1">Folder Path</label>
                     <div class="flex gap-2">
-                        <input type="text" x-model="form.path" class="flex-1 bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white focus:border-blue-500 outline-none" placeholder="/comics/dc">
+                        <input type="text" x-model="form.path" :disabled="isEditing" :class="isEditing ? 'opacity-60 cursor-not-allowed' : ''" class="flex-1 bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white focus:border-blue-500 outline-none" placeholder="/comics/dc">
                         <button
                             type="button"
+                            x-show="!isEditing"
                             x-on:click="openDirectoryBrowser()"
                             class="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded transition-colors text-sm font-medium"
                         >
@@ -92,11 +93,11 @@
                         </button>
                     </div>
                     <p class="text-xs text-gray-500 mt-1">Server-side path where files are located.</p>
-                    <div x-show="isPathChanged" class="mt-2 rounded border border-amber-500/30 bg-amber-950/30 px-3 py-2 text-xs text-amber-100" style="display: none;">
-                        Changing a library path can cause Parker to remove and re-import comics on the next scan. Reading progress, bookmarks, ratings, and list membership may not be preserved unless files keep the same server-visible paths.
+                    <div x-show="isEditing" class="mt-2 rounded border border-amber-500/30 bg-amber-950/30 px-3 py-2 text-xs text-amber-100" style="display: none;">
+                        The path is locked for existing libraries. Moving a library's files can break reading progress, bookmarks, ratings, and list membership — safe relocation support is coming in a future release.
                     </div>
 
-                    <div x-show="pathBrowser.open" class="mt-3 border border-gray-700 rounded bg-gray-900 overflow-hidden" style="display: none;">
+                    <div x-show="!isEditing && pathBrowser.open" class="mt-3 border border-gray-700 rounded bg-gray-900 overflow-hidden" style="display: none;">
                         <div class="flex items-center justify-between gap-3 px-3 py-2 border-b border-gray-700">
                             <div class="min-w-0">
                                 <p class="text-[10px] uppercase tracking-wide text-gray-500">Browsing</p>
@@ -217,7 +218,6 @@ function libraryManager() {
             id: null,
             name: '',
             path: '',
-            original_path: '',
             watch_mode: false,
             parse_reading_lists: true,
             parse_collections: true,
@@ -234,10 +234,6 @@ function libraryManager() {
             entries: [],
         },
         pollInterval: null,
-
-        get isPathChanged() {
-            return this.isEditing && this.form.path !== this.form.original_path;
-        },
 
         init() {
             this.loadLibraries();
@@ -265,7 +261,6 @@ function libraryManager() {
                 id: null,
                 name: '',
                 path: '',
-                original_path: '',
                 watch_mode: false,
                 parse_reading_lists: true,
                 parse_collections: true,
@@ -281,7 +276,6 @@ function libraryManager() {
                 id: lib.id,
                 name: lib.name,
                 path: lib.path,
-                original_path: lib.path,
                 watch_mode: lib.watch_mode,
                 parse_reading_lists: lib.parse_reading_lists ?? true,
                 parse_collections: lib.parse_collections ?? true,
@@ -376,7 +370,6 @@ function libraryManager() {
                         id: null,
                         name: '',
                         path: '',
-                        original_path: '',
                         watch_mode: false,
                         parse_reading_lists: true,
                         parse_collections: true,

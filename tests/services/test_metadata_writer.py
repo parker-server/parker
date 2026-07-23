@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 
 from app.models.comic import Comic, Volume
 from app.models.library import Library
+from app.models.library_root import LibraryRoot
 from app.models.series import Series
 import app.database as database_module
 import app.services.workers.metadata_writer as metadata_writer_module
@@ -522,5 +523,121 @@ def test_metadata_writer_creates_series_volume_once_and_reuses_cache(monkeypatch
     assert created_series[0].summary_override == "series:Brand Series"
     assert created_volumes[0].summary_override == "volume:Vol 2"
     assert sidecar_lookup.call_count == 2
+
+
+def test_metadata_writer_populates_library_root_and_relative_path(monkeypatch, db, tmp_path):
+    library_path = tmp_path / "root-lib"
+    library_path.mkdir(parents=True, exist_ok=True)
+
+    library = Library(name="root-lib", path=str(library_path))
+    db.add(library)
+    db.flush()
+
+    root = LibraryRoot(library_id=library.id, path=str(library_path), is_active=True)
+    db.add(root)
+    db.commit()
+    db.refresh(library)
+    db.refresh(root)
+    library_id = library.id
+    root_id = root.id
+
+    series = Series(name="Unmatched Series", library_id=library.id)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
+    db.flush()
+
+    existing_path = str(library_path / "Existing" / "existing.cbz")
+    existing_comic = Comic(
+        volume_id=volume.id,
+        filename="existing.cbz",
+        file_path=existing_path,
+        page_count=1,
+        number="1",
+    )
+    db.add(existing_comic)
+    db.commit()
+
+    class DummyTagService:
+        def __init__(self, _db):
+            pass
+
+        def get_or_create_characters(self, _vals):
+            return []
+
+        def get_or_create_teams(self, _vals):
+            return []
+
+        def get_or_create_locations(self, _vals):
+            return []
+
+        def get_or_create_genres(self, _vals):
+            return []
+
+    class DummyCreditService:
+        def __init__(self, _db):
+            pass
+
+        def add_credits_to_comic(self, comic, _metadata):
+            return comic
+
+    class DummyReadingListService:
+        def __init__(self, _db):
+            pass
+
+        def update_comic_reading_lists(self, comic, _alt_series, _alt_number):
+            return comic
+
+    class DummyCollectionService:
+        def __init__(self, _db):
+            pass
+
+        def update_comic_collections(self, comic, _series_group):
+            return comic
+
+    monkeypatch.setattr(database_module.engine, "dispose", MagicMock())
+    monkeypatch.setattr(database_module, "SessionLocal", lambda: db)
+    monkeypatch.setattr("app.services.tags.TagService", DummyTagService)
+    monkeypatch.setattr("app.services.credits.CreditService", DummyCreditService)
+    monkeypatch.setattr("app.services.reading_list.ReadingListService", DummyReadingListService)
+    monkeypatch.setattr("app.services.collection.CollectionService", DummyCollectionService)
+
+    new_path = str(library_path / "Fresh" / "fresh.cbz")
+
+    result_queue = _ReadQueue([
+        {
+            "file_path": existing_path,
+            "mtime": 1.0,
+            "size": 100,
+            "metadata": _metadata(series="Unmatched Series", volume="1", number="1"),
+            "error": False,
+        },
+        {
+            "file_path": new_path,
+            "mtime": 2.0,
+            "size": 200,
+            "metadata": _metadata(series="Fresh Series", volume="1", number="1"),
+            "error": False,
+        },
+        None,
+    ])
+    stats_queue = _WriteQueue()
+
+    metadata_writer_module.metadata_writer(result_queue, stats_queue, library_id=library_id, batch_size=50)
+
+    summary = stats_queue.items[-1]
+    assert summary["summary"] is True
+    assert summary["imported"] == 1
+    assert summary["updated"] == 1
+    assert summary["errors"] == 0
+
+    refreshed_existing = db.query(Comic).filter_by(file_path=existing_path).first()
+    new_comic = db.query(Comic).filter_by(file_path=new_path).first()
+
+    assert refreshed_existing.library_root_id == root_id
+    assert refreshed_existing.relative_path == "Existing/existing.cbz"
+
+    assert new_comic is not None
+    assert new_comic.library_root_id == root_id
+    assert new_comic.relative_path == "Fresh/fresh.cbz"
 
 

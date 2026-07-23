@@ -11,10 +11,13 @@ def _apply_metadata_batch(
     parse_reading_lists=True,
     parse_collections=True,
     parse_story_arcs=True,
+    library_root_id=None,
+    library_root_path=None,
 ):
 
     from pathlib import Path
     from app.models.comic import Comic
+    from app.core.path_utils import compute_relative_path
     from datetime import datetime, timezone
     import json
 
@@ -84,6 +87,12 @@ def _apply_metadata_batch(
         volume_num = _normalize_volume_number(metadata.get("volume"))
         volume = get_or_create_volume(series, volume_num, file_path)
         comic.volume_id = volume.id
+
+        if library_root_path is not None:
+            relative_path = compute_relative_path(library_root_path, file_path)
+            if relative_path is not None:
+                comic.library_root_id = library_root_id
+                comic.relative_path = relative_path
 
         # --- Basic fields ---
         comic.file_modified_at = mtime
@@ -200,7 +209,7 @@ def metadata_writer(
     try:
 
         from app.database import SessionLocal, engine
-        from app.models import Comic, Series, Volume, Library
+        from app.models import Comic, Series, Volume, Library, LibraryRoot
         from app.services.tags import TagService
         from app.services.credits import CreditService
         from app.services.reading_list import ReadingListService
@@ -214,6 +223,14 @@ def metadata_writer(
         # Get library path for sidecars
         library = db.get(Library, library_id)
         lib_path = Path(library.path)
+
+        library_root = (
+            db.query(LibraryRoot)
+            .filter(LibraryRoot.library_id == library_id, LibraryRoot.is_active == True)
+            .first()
+        )
+        library_root_id = library_root.id if library_root else None
+        library_root_path = library_root.path if library_root else None
 
         # Preload existing comics
         existing = {
@@ -311,6 +328,8 @@ def metadata_writer(
                     parse_reading_lists=parse_reading_lists,
                     parse_collections=parse_collections,
                     parse_story_arcs=parse_story_arcs,
+                    library_root_id=library_root_id,
+                    library_root_path=library_root_path,
                 )
                 for key in ("imported", "updated", "errors", "skipped"):
                     processed[key] += stats.get(key, 0)
@@ -328,6 +347,8 @@ def metadata_writer(
                     parse_reading_lists=parse_reading_lists,
                     parse_collections=parse_collections,
                     parse_story_arcs=parse_story_arcs,
+                    library_root_id=library_root_id,
+                    library_root_path=library_root_path,
             )
             for key in ("imported", "updated", "errors", "skipped"):
                 processed[key] += stats.get(key, 0)

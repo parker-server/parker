@@ -1,8 +1,18 @@
 # Library Relocation Scope
 
-Status: Draft
+Status: Phase 1 implemented (schema + guardrail); relocation flow not yet built
 
 This note captures a future enhancement for safely changing the filesystem path of an existing Parker library without losing comic identity.
+
+## Implementation Status
+
+Phase 1 (schema + guardrail) is done:
+
+- `library_roots` table added; `Comic.library_root_id` and `Comic.relative_path` added (migration `d4a1f6e8b3c2`).
+- Migration backfills one root per existing library and each comic's relative path (see `app/core/path_utils.py:compute_relative_path`).
+- `create_library` now creates a matching `LibraryRoot`, and the metadata writer populates `library_root_id`/`relative_path` for every newly scanned or updated comic going forward — not just the historical backfill.
+- Editing a library's path is hard-blocked in the API and admin UI (400 on change) until the relocation flow below exists.
+- `library_root_id`/`relative_path` are written but not yet read by anything — `LibraryScanner` still matches on `Comic.file_path`, unchanged. See Compatibility Field Removal Plan for what's still ahead.
 
 The immediate user problem is simple: admins can edit a library path today, either by typing a new path or by using the admin folder browser. Parker accepts the change, but the next scan can treat all old files as deleted and all files under the new path as new imports.
 
@@ -139,6 +149,16 @@ During scanning:
 
 Cleanup should operate within the relevant root identity, not by comparing old absolute paths against new absolute paths.
 
+## Compatibility Field Removal Plan
+
+`Library.path` and `Comic.file_path` are not meant to be permanent. The end state is both columns removed once nothing depends on them. Getting there is three stages, not one:
+
+1. **Identity cutover.** `LibraryScanner`, the metadata writer's existing-comic lookup, and the maintenance janitor's missing-file cleanup switch from keying on `Comic.file_path` to `(library_root_id, relative_path)`. This is the stage that actually fixes the data-loss bug described at the top of this doc — everything after it is cleanup, not correctness.
+2. **Read-path cutover.** Every remaining reader of `file_path`/`Library.path` — the comic reader/page-count lookup, thumbnail generation, comic detail/report API responses, OPDS feed entries, and their templates — switches to reconstructing the absolute path on demand from `library_root.path + relative_path` instead of reading the cached column. Needs a small companion helper to `compute_relative_path` for the reverse operation.
+3. **Column removal.** Once nothing reads either field, a final migration drops `Comic.file_path` and `Library.path` for good.
+
+Stage 1 is required before relocation can be considered safe. Stages 2 and 3 should be scheduled explicitly rather than left open-ended — a "temporary" compatibility field that nothing forces out tends to become permanent.
+
 ## Admin UI Guardrails
 
 Short term, Parker should warn when an admin edits the path field.
@@ -187,7 +207,6 @@ Minimum coverage should include:
 - Should Parker allow relocation when some files are missing from the new root?
 - Should relocation update `last_scanned` or require a follow-up scan?
 - Should unmatched files remain in the database as disabled/missing records, or continue using current cleanup behavior after confirmation?
-- How long should `Library.path` and `Comic.file_path` remain as compatibility fields?
 
 ## Effort Estimate
 
