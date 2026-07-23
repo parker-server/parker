@@ -33,3 +33,19 @@ def test_compute_relative_path_returns_none_when_not_under_root():
 def test_compute_relative_path_returns_none_for_sibling_with_shared_prefix():
     # "DC" should not match "DComics" — must respect the path separator boundary
     assert compute_relative_path("C:\\Comics\\DC", "C:\\Comics\\DComics\\file.cbz") is None
+
+
+def test_compute_relative_path_windows_style_paths_regardless_of_host_os():
+    # Backslash-separated paths must resolve correctly even when this code runs on
+    # a host (e.g. Linux) whose native os.sep is '/' — matching must not depend on
+    # which platform originally wrote the path string.
+    assert compute_relative_path("C:\\Comics\\DC", "C:\\Comics\\DC\\Batman\\Batman 001.cbz") == \
+        "Batman/Batman 001.cbz"
+
+
+def test_compute_relative_path_root_at_filesystem_root():
+    assert compute_relative_path("/", "/comics/dc/Batman 001.cbz") == "comics/dc/Batman 001.cbz"
+
+
+def test_compute_relative_path_windows_drive_root():
+    assert compute_relative_path("C:\\", "C:\\Comics\\DC\\Batman 001.cbz") == "Comics/DC/Batman 001.cbz"
