@@ -179,6 +179,8 @@ It introduces the root table, relative path identity, scanner lookup rules, and 
 
 Once relocation exists, multi-root support becomes an extension from one root per library to many roots per library.
 
+Relocation does not become unnecessary once multi-root ships — it stays a required primitive, not a stepping-stone that gets superseded. Multi-root introduces "remove a root" and "add a root" as admin actions, and if removing a root deletes the comics under it, then "remove root, move files, add a new root, rescan" reintroduces the exact same data-loss hazard this doc exists to prevent, just triggered by a different button. Multi-root arguably makes this *more* likely to come up, not less — swapping or reorganizing one root among several (splitting across drives, consolidating storage) is a more routine operation than editing a single-root library's only path ever was. `Relocate Root` and `Remove Root` need to stay distinct, explicit admin actions: the system can't safely infer "this new root is the old one, just moved" on its own — matching by `relative_path` without that explicit signal risks silently merging coincidentally-identical paths from genuinely unrelated content. So relocation should be built as a general root-lifecycle primitive from the start, not a single-root-era feature to retire once multi-root lands.
+
 ## Non-Goals
 
 Out of scope for an initial relocation feature:
