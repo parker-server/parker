@@ -71,6 +71,8 @@ def test_admin_library_relocation_preview_and_confirm_flow(page, browser_server,
         page.get_by_role("heading", name="Relocate Relocation UI Library?").wait_for()
         page.locator('[x-data="globalDialog()"]').get_by_role("button", name="Relocate").click()
 
+        page.get_by_role("heading", name="Scan Recommended").wait_for()
+        page.locator('[x-data="globalDialog()"]').get_by_role("button", name="Not Now").click()
         page.get_by_text("Relocation complete. Scan recommended.").wait_for()
         page.get_by_role("button", name="Run Force Scan").wait_for()
         assert path_input.input_value() == proposed_root.resolve().as_posix()

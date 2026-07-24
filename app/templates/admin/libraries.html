@@ -215,7 +215,7 @@
     </div>
 
     <div x-show="showRelocationModal" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 px-4" style="display: none;" x-transition.opacity>
-        <div class="bg-gray-800 p-6 rounded-lg w-full max-w-3xl max-h-[90vh] overflow-y-auto border border-gray-700 shadow-2xl" x-on:click.away="closeRelocationModal()">
+        <div class="bg-gray-800 p-6 rounded-lg w-full max-w-3xl max-h-[90vh] overflow-y-auto border border-gray-700 shadow-2xl">
             <div class="flex items-start justify-between gap-4 mb-5">
                 <div class="min-w-0">
                     <h2 class="text-xl font-bold text-white">Relocate Library Path</h2>
@@ -771,6 +771,7 @@ function libraryManager() {
                     throw new Error(payload.detail || 'Unable to confirm relocation');
                 }
 
+                this.showRelocationModal = true;
                 this.relocation.confirmation = payload;
                 this.relocation.preview = payload;
                 this.relocation.completed = true;
@@ -782,6 +783,20 @@ function libraryManager() {
 
                 await this.loadLibraries();
                 window.parker.showToast('Library relocated', 'success');
+
+                if (payload.scan_recommended) {
+                    const scanLibrary = this.libraries.find((lib) => lib.id === payload.library_id) || this.relocation.library;
+                    const runScan = await window.parker.dialog.confirm(
+                        'Scan Recommended',
+                        'Relocation is complete. Run a force scan now to verify moved files and reconcile any new or missing archives?',
+                        { isDestructive: false, confirmText: 'Run Force Scan', cancelText: 'Not Now' }
+                    );
+
+                    if (runScan && scanLibrary) {
+                        this.closeRelocationModal();
+                        await this.startScan(scanLibrary, true);
+                    }
+                }
             } catch (e) {
                 console.error(e);
                 this.relocation.error = e.message || 'Unable to confirm relocation';
@@ -837,6 +852,10 @@ function libraryManager() {
 
             if (!confirmed) return;
 
+            await this.startScan(lib, force);
+        },
+
+        async startScan(lib, force) {
             lib.is_scanning = true; // Optimistic update
 
             const res = await fetch(window.parker.route('libraries.scan', { library_id: lib.id }, `force=${force}`), { method: 'POST' });
