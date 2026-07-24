@@ -8,8 +8,8 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
 
 from app.models.job import JobStatus, JobType, ScanJob
-from app.models.library import Library
 import app.services.scan_manager as sm
+from tests.factories import create_library_with_root
 
 
 def _manager():
@@ -39,10 +39,10 @@ def test_scan_manager_init_short_circuits_when_initialized():
 def test_recover_interrupted_jobs_marks_running_as_failed(monkeypatch, db):
     manager = _manager()
 
-    lib = Library(name="recover-lib", path="/tmp/recover-lib", is_scanning=True)
+    lib = create_library_with_root(db, "recover-lib", "/tmp/recover-lib", is_scanning=True)
     running = ScanJob(library=lib, job_type=JobType.SCAN, status=JobStatus.RUNNING)
     pending = ScanJob(library=lib, job_type=JobType.SCAN, status=JobStatus.PENDING)
-    db.add_all([lib, running, pending])
+    db.add_all([running, pending])
     db.commit()
 
     monkeypatch.setattr(sm, "SessionLocal", _session_local_factory(db))
@@ -74,8 +74,7 @@ def test_recover_interrupted_jobs_logs_exception(monkeypatch):
 def test_set_library_scanning_status_updates_and_handles_empty_id(monkeypatch, db):
     manager = _manager()
 
-    lib = Library(name="set-flag-lib", path="/tmp/set-flag-lib", is_scanning=False)
-    db.add(lib)
+    lib = create_library_with_root(db, "set-flag-lib", "/tmp/set-flag-lib", is_scanning=False)
     db.commit()
 
     monkeypatch.setattr(sm, "SessionLocal", _session_local_factory(db))
@@ -219,9 +218,8 @@ def test_add_cleanup_task_and_add_thumbnail_task(monkeypatch, db):
 def test_fix_stuck_libraries_resets_only_without_running_job(monkeypatch, db):
     manager = _manager()
 
-    lib_active = Library(name="lib-active", path="/tmp/lib-active", is_scanning=True)
-    lib_stuck = Library(name="lib-stuck", path="/tmp/lib-stuck", is_scanning=True)
-    db.add_all([lib_active, lib_stuck])
+    lib_active = create_library_with_root(db, "lib-active", "/tmp/lib-active", is_scanning=True)
+    lib_stuck = create_library_with_root(db, "lib-stuck", "/tmp/lib-stuck", is_scanning=True)
     db.flush()
 
     db.add(ScanJob(library_id=lib_active.id, job_type=JobType.SCAN, status=JobStatus.RUNNING))
@@ -254,8 +252,7 @@ def test_run_scan_job_success_updates_and_queues_followup(monkeypatch, db):
     manager = _manager()
     monkeypatch.setattr(sm, "SessionLocal", _session_local_factory(db))
 
-    lib = Library(name="scan-lib", path="/tmp/scan-lib")
-    db.add(lib)
+    lib = create_library_with_root(db, "scan-lib", "/tmp/scan-lib")
     db.commit()
 
     scanner_mock = MagicMock()
@@ -297,8 +294,7 @@ def test_run_scan_job_handles_scanner_exception(monkeypatch, db):
     manager = _manager()
     monkeypatch.setattr(sm, "SessionLocal", _session_local_factory(db))
 
-    lib = Library(name="scan-fail-lib", path="/tmp/scan-fail-lib")
-    db.add(lib)
+    lib = create_library_with_root(db, "scan-fail-lib", "/tmp/scan-fail-lib")
     db.commit()
 
     scanner_mock = MagicMock()
@@ -443,14 +439,14 @@ def test_run_metadata_rehydrate_job_success(monkeypatch, db):
     manager = _manager()
     monkeypatch.setattr(sm, "SessionLocal", _session_local_factory(db))
 
-    lib = Library(
-        name="rehydrate-lib",
-        path="/tmp/rehydrate-lib",
+    lib = create_library_with_root(
+        db,
+        "rehydrate-lib",
+        "/tmp/rehydrate-lib",
         parse_reading_lists=True,
         parse_collections=False,
         parse_story_arcs=True,
     )
-    db.add(lib)
     db.commit()
 
     expected_summary = {"comics_scanned": 12, "reading_lists_restored": 3}
@@ -490,8 +486,7 @@ def test_run_metadata_rehydrate_job_failure_marks_failed(monkeypatch, db):
     manager = _manager()
     monkeypatch.setattr(sm, "SessionLocal", _session_local_factory(db))
 
-    lib = Library(name="rehydrate-fail", path="/tmp/rehydrate-fail")
-    db.add(lib)
+    lib = create_library_with_root(db, "rehydrate-fail", "/tmp/rehydrate-fail")
     db.commit()
 
     monkeypatch.setattr(

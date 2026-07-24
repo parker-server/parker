@@ -334,7 +334,8 @@ async def get_duplicate_report(
         .options(
             contains_eager(Comic.volume)
             .contains_eager(Volume.series)
-            .contains_eager(Series.library)
+            .contains_eager(Series.library),
+            joinedload(Comic.library_root),
         )
         .filter(
             tuple_(Comic.volume_id, Comic.number, Comic.format).in_(dupe_keys)
@@ -364,7 +365,7 @@ async def get_duplicate_report(
         grouped_report[key]["files"].append({
             "id": c.id,
             "filename": c.filename,
-            "path": c.file_path,
+            "path": c.absolute_path,
             "size_bytes": c.file_size,
             "created_at": c.created_at
         })
@@ -408,7 +409,8 @@ async def get_corrupt_files_report(
         .options(
             contains_eager(Comic.volume)
             .contains_eager(Volume.series)
-            .contains_eager(Series.library)
+            .contains_eager(Series.library),
+            joinedload(Comic.library_root),
         )
         .filter(criteria)
         .order_by(Comic.page_count, Comic.file_size)  # Smallest/Emptyest first
@@ -429,7 +431,7 @@ async def get_corrupt_files_report(
             "title": c.title,
             "page_count": c.page_count,
             "file_size": c.file_size,
-            "path": c.file_path,
+            "path": c.absolute_path,
             "filename": c.filename
         })
 

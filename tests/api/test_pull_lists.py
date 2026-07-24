@@ -1,44 +1,35 @@
 from app.core.security import get_password_hash
-from app.models.comic import Comic, Volume
-from app.models.library import Library
+from app.models.comic import Volume
 from app.models.pull_list import PullList, PullListItem
 from app.models.series import Series
 from app.models.user import User
+from tests.factories import create_comic, create_library_with_root
 
 
 def _seed_comics(db, prefix="pull"):
-    lib = Library(name=f"{prefix}-lib", path=f"/tmp/{prefix}-lib")
+    lib = create_library_with_root(db, f"{prefix}-lib", f"/tmp/{prefix}-lib")
+    root = lib.active_root
     series = Series(name=f"{prefix}-series", library=lib)
     volume = Volume(series=series, volume_number=1)
 
-    db.add_all([lib, series, volume])
+    db.add_all([series, volume])
     db.flush()
 
     comics = [
-        Comic(
-            volume_id=volume.id,
-            number="1",
-            title=f"{prefix}-one",
-            filename=f"{prefix}-1.cbz",
-            file_path=f"/tmp/{prefix}-1.cbz",
+        create_comic(
+            db, volume, root, f"{prefix}-1.cbz",
+            number="1", title=f"{prefix}-one", filename=f"{prefix}-1.cbz",
         ),
-        Comic(
-            volume_id=volume.id,
-            number="2",
-            title=f"{prefix}-two",
-            filename=f"{prefix}-2.cbz",
-            file_path=f"/tmp/{prefix}-2.cbz",
+        create_comic(
+            db, volume, root, f"{prefix}-2.cbz",
+            number="2", title=f"{prefix}-two", filename=f"{prefix}-2.cbz",
         ),
-        Comic(
-            volume_id=volume.id,
-            number="3",
-            title=f"{prefix}-three",
-            filename=f"{prefix}-3.cbz",
-            file_path=f"/tmp/{prefix}-3.cbz",
+        create_comic(
+            db, volume, root, f"{prefix}-3.cbz",
+            number="3", title=f"{prefix}-three", filename=f"{prefix}-3.cbz",
         ),
     ]
 
-    db.add_all(comics)
     db.commit()
 
     for c in comics:

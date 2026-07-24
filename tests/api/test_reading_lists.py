@@ -1,32 +1,34 @@
-from app.models.comic import Comic, Volume
-from app.models.library import Library
+from app.models.comic import Volume
 from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.series import Series
+from tests.factories import create_comic, create_library_with_root
 
 
 def _create_series_graph(db, *, lib_name: str, series_name: str, prefix: str):
-    library = Library(name=lib_name, path=f"/tmp/{prefix}-lib")
+    library = create_library_with_root(db, lib_name, f"/tmp/{prefix}-lib")
     series = Series(name=series_name, library=library)
     volume = Volume(series=series, volume_number=1)
-    db.add_all([library, series, volume])
+    db.add_all([series, volume])
     db.flush()
     return library, series, volume
 
 
 def _create_comic(db, *, volume_id: int, prefix: str, number: str, year: int, age_rating=None, title=None):
-    comic = Comic(
-        volume_id=volume_id,
+    volume = db.get(Volume, volume_id)
+    root = volume.series.library.active_root
+    comic = create_comic(
+        db,
+        volume,
+        root,
+        f"{prefix}-{number}.cbz",
         number=number,
         year=year,
         title=title or f"{prefix}-{number}",
         filename=f"{prefix}-{number}.cbz",
-        file_path=f"/tmp/{prefix}-{number}.cbz",
         page_count=20,
         file_size=100,
         age_rating=age_rating,
     )
-    db.add(comic)
-    db.flush()
     return comic
 
 

@@ -3,29 +3,31 @@ from datetime import datetime, time, timedelta, timezone
 from app.models.activity_log import ActivityLog
 from app.models.comic import Comic, Volume
 from app.models.credits import ComicCredit, Person
-from app.models.library import Library
 from app.models.reading_progress import ReadingProgress
 from app.models.series import Series
 from app.models.tags import Character, Genre
 from app.services.statistics import StatisticsService
+from tests.factories import create_library_with_root
 
 
 def _create_series_volume(db, prefix: str):
-    library = Library(name=f"{prefix}-lib", path=f"/tmp/{prefix}-lib")
+    library = create_library_with_root(db, f"{prefix}-lib", f"/tmp/{prefix}-lib")
     series = Series(name=f"{prefix}-series", library=library)
     volume = Volume(series=series, volume_number=1)
-    db.add_all([library, series, volume])
+    db.add_all([series, volume])
     db.flush()
     return series, volume
 
 
 def _create_comic(db, volume: Volume, slug: str, number: str, page_count: int, *, age_rating: str = "Teen"):
+    root = volume.series.library.active_root
     comic = Comic(
         volume_id=volume.id,
         number=number,
         title=f"{slug}-title",
         filename=f"{slug}.cbz",
-        file_path=f"/tmp/{slug}.cbz",
+        library_root_id=root.id,
+        relative_path=f"{slug}.cbz",
         page_count=page_count,
         publisher="Stat Pub",
         age_rating=age_rating,

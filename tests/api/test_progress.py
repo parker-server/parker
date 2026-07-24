@@ -1,39 +1,29 @@
 from datetime import datetime, timezone, timedelta
 
 from app.models.comic import Comic, Volume
-from app.models.library import Library
 from app.models.reading_progress import ReadingProgress
 from app.models.series import Series
+from tests.factories import create_comic, create_library_with_root
 
 
 def _seed_progress_data(db, *, lib_name: str, series_name: str):
-    library = Library(name=lib_name, path=f"/tmp/{lib_name}")
+    library = create_library_with_root(db, lib_name, f"/tmp/{lib_name}")
+    root = library.active_root
     series = Series(name=series_name, library=library)
     volume = Volume(series=series, volume_number=1)
 
-    db.add_all([library, series, volume])
+    db.add_all([series, volume])
     db.flush()
 
-    first = Comic(
-        volume_id=volume.id,
-        number="1",
-        title=f"{series_name} #1",
-        year=2024,
-        filename=f"{series_name}-1.cbz",
-        file_path=f"/tmp/{series_name}-1-{lib_name}.cbz",
-        page_count=10,
+    first = create_comic(
+        db, volume, root, f"{series_name}-1.cbz",
+        number="1", title=f"{series_name} #1", year=2024, filename=f"{series_name}-1.cbz", page_count=10,
     )
-    second = Comic(
-        volume_id=volume.id,
-        number="2",
-        title=f"{series_name} #2",
-        year=2025,
-        filename=f"{series_name}-2.cbz",
-        file_path=f"/tmp/{series_name}-2-{lib_name}.cbz",
-        page_count=12,
+    second = create_comic(
+        db, volume, root, f"{series_name}-2.cbz",
+        number="2", title=f"{series_name} #2", year=2025, filename=f"{series_name}-2.cbz", page_count=12,
     )
 
-    db.add_all([first, second])
     db.commit()
 
     for obj in (library, series, volume, first, second):
@@ -49,7 +39,8 @@ def _seed_progress_data(db, *, lib_name: str, series_name: str):
 
 
 def _seed_age_filtered_progress_data(db, normal_user):
-    library = Library(name="progress-age-lib", path="/tmp/progress-age-lib")
+    library = create_library_with_root(db, "progress-age-lib", "/tmp/progress-age-lib")
+    root = library.active_root
 
     safe_series = Series(name="Safe Progress Series", library=library)
     safe_volume = Volume(series=safe_series, volume_number=1)
@@ -59,7 +50,8 @@ def _seed_age_filtered_progress_data(db, normal_user):
         title="Safe Progress Comic",
         age_rating="Teen",
         filename="safe-progress.cbz",
-        file_path="/tmp/safe-progress.cbz",
+        library_root_id=root.id,
+        relative_path="safe-progress.cbz",
         page_count=10,
     )
 
@@ -71,11 +63,12 @@ def _seed_age_filtered_progress_data(db, normal_user):
         title="Banned Progress Comic",
         age_rating="Mature 17+",
         filename="banned-progress.cbz",
-        file_path="/tmp/banned-progress.cbz",
+        library_root_id=root.id,
+        relative_path="banned-progress.cbz",
         page_count=10,
     )
 
-    db.add_all([library, safe_series, safe_volume, safe_comic, banned_series, banned_volume, banned_comic])
+    db.add_all([safe_series, safe_volume, safe_comic, banned_series, banned_volume, banned_comic])
     db.flush()
 
     db.add_all([
@@ -294,17 +287,10 @@ def test_recent_progress_filters_completed_and_in_progress(auth_client, db, norm
 def test_recent_progress_paginates_results(auth_client, db, normal_user):
     data = _seed_progress_data(db, lib_name="progress-pagination", series_name="Pagination Progress")
 
-    third = Comic(
-        volume_id=data["volume"].id,
-        number="3",
-        title="Pagination Progress #3",
-        year=2026,
-        filename="Pagination-3.cbz",
-        file_path="/tmp/Pagination-3-progress-pagination.cbz",
-        page_count=14,
+    third = create_comic(
+        db, data["volume"], data["library"].active_root, "Pagination-3.cbz",
+        number="3", title="Pagination Progress #3", year=2026, filename="Pagination-3.cbz", page_count=14,
     )
-    db.add(third)
-    db.flush()
 
     now = datetime.now(timezone.utc)
     db.add_all([

@@ -1,17 +1,17 @@
 from app.core.security import get_password_hash
-from app.models.comic import Comic, Volume
-from app.models.library import Library
+from app.models.comic import Volume
 from app.models.reading_progress import ReadingProgress
 from app.models.series import Series
 from app.models.tags import Genre
 from app.models.user import User
+from tests.factories import create_comic, create_library_with_root
 
 
 def _create_series_volume(db, *, prefix: str, series_suffix: str):
-    library = Library(name=f"{prefix}-lib", path=f"/tmp/{prefix}-lib")
+    library = create_library_with_root(db, f"{prefix}-lib", f"/tmp/{prefix}-lib")
     series = Series(name=f"{prefix}-series-{series_suffix}", library=library)
     volume = Volume(series=series, volume_number=1)
-    db.add_all([library, series, volume])
+    db.add_all([series, volume])
     db.flush()
     return library, series, volume
 
@@ -81,19 +81,18 @@ def test_startup_support_snapshot_endpoint_returns_structured_snapshot(admin_cli
 
 
 def test_system_stats_aggregates_counts_storage_and_activity(admin_client, db, admin_user):
-    lib = Library(name="stats-lib", path="/tmp/stats-lib")
+    lib = create_library_with_root(db, "stats-lib", "/tmp/stats-lib")
+    root = lib.active_root
     series_a = Series(name="stats-series-a", library=lib)
     series_b = Series(name="stats-series-b", library=lib)
     vol_a = Volume(series=series_a, volume_number=1)
     vol_b = Volume(series=series_b, volume_number=1)
-    db.add_all([lib, series_a, series_b, vol_a, vol_b])
+    db.add_all([series_a, series_b, vol_a, vol_b])
     db.flush()
 
-    c1 = Comic(volume_id=vol_a.id, number="1", filename="stats-1.cbz", file_path="/tmp/stats-1.cbz", file_size=100, page_count=10)
-    c2 = Comic(volume_id=vol_a.id, number="2", filename="stats-2.cbz", file_path="/tmp/stats-2.cbz", file_size=200, page_count=12)
-    c3 = Comic(volume_id=vol_b.id, number="1", filename="stats-3.cbz", file_path="/tmp/stats-3.cbz", file_size=300, page_count=14)
-    db.add_all([c1, c2, c3])
-    db.flush()
+    c1 = create_comic(db, vol_a, root, "stats-1.cbz", number="1", filename="stats-1.cbz", file_size=100, page_count=10)
+    c2 = create_comic(db, vol_a, root, "stats-2.cbz", number="2", filename="stats-2.cbz", file_size=200, page_count=12)
+    c3 = create_comic(db, vol_b, root, "stats-3.cbz", number="1", filename="stats-3.cbz", file_size=300, page_count=14)
 
     other_user = User(
         username="stats-other",
@@ -128,15 +127,16 @@ def test_system_stats_aggregates_counts_storage_and_activity(admin_client, db, a
 
 
 def test_genre_stats_aggregate_inventory_read_percent_and_size(admin_client, db, admin_user):
-    lib = Library(name="stats-genre-lib", path="/tmp/stats-genre-lib")
+    lib = create_library_with_root(db, "stats-genre-lib", "/tmp/stats-genre-lib")
+    root = lib.active_root
     series = Series(name="stats-genre-series", library=lib)
     volume = Volume(series=series, volume_number=1)
-    db.add_all([lib, series, volume])
+    db.add_all([series, volume])
     db.flush()
 
-    c1 = Comic(volume_id=volume.id, number="1", filename="genre-1.cbz", file_path="/tmp/genre-1.cbz", file_size=100, page_count=10)
-    c2 = Comic(volume_id=volume.id, number="2", filename="genre-2.cbz", file_path="/tmp/genre-2.cbz", file_size=250, page_count=12)
-    c3 = Comic(volume_id=volume.id, number="3", filename="genre-3.cbz", file_path="/tmp/genre-3.cbz", file_size=400, page_count=14)
+    c1 = create_comic(db, volume, root, "genre-1.cbz", number="1", filename="genre-1.cbz", file_size=100, page_count=10)
+    c2 = create_comic(db, volume, root, "genre-2.cbz", number="2", filename="genre-2.cbz", file_size=250, page_count=12)
+    c3 = create_comic(db, volume, root, "genre-3.cbz", number="3", filename="genre-3.cbz", file_size=400, page_count=14)
 
     action = Genre(name="Action")
     sci_fi = Genre(name="Sci-Fi")

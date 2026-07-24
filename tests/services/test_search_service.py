@@ -6,41 +6,39 @@ from sqlalchemy import literal_column
 
 from app.models.comic import Comic, Volume
 from app.models.interactions import UserComicRating
-from app.models.library import Library
 from app.models.series import Series
 from app.models.user import User
 from app.schemas.search import SearchFilter, SearchRequest
 from app.services.search import SearchService
+from tests.factories import create_comic, create_library_with_root
 
 
 def _seed_search_graph(db):
-    library = Library(name="search-lib", path="/tmp/search-lib")
+    library = create_library_with_root(db, "search-lib", "/tmp/search-lib")
+    root = library.active_root
     series = Series(name="Search Series", library=library)
     volume = Volume(series=series, volume_number=1)
 
-    db.add_all([library, series, volume])
+    db.add_all([series, volume])
     db.flush()
 
-    alpha = Comic(
-        volume_id=volume.id,
+    alpha = create_comic(
+        db, volume, root, "alpha.cbz",
         number="1",
         title="Alpha Dawn",
         year=2020,
         publisher="Marvel",
         filename="alpha.cbz",
-        file_path="/tmp/alpha.cbz",
     )
-    beta = Comic(
-        volume_id=volume.id,
+    beta = create_comic(
+        db, volume, root, "beta.cbz",
         number="2",
         title="Beta Night",
         year=2021,
         publisher="DC",
         filename="beta.cbz",
-        file_path="/tmp/beta.cbz",
     )
 
-    db.add_all([alpha, beta])
     db.commit()
 
     for obj in (library, series, volume, alpha, beta):

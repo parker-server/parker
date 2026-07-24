@@ -4,17 +4,15 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.models.comic import Comic, Volume
-from app.models.library import Library
 from app.models.series import Series
 from app.services.scanner import LibraryScanner
 import app.services.scanner as scanner_module
+from tests.factories import create_comic, create_library_with_root
 
 
 def _build_scanner(db, tmp_path, *, name="scanner-lib"):
-    library = Library(name=name, path=str(tmp_path))
-    db.add(library)
+    library = create_library_with_root(db, name, str(tmp_path))
     db.commit()
-    db.refresh(library)
 
     scanner = LibraryScanner(library, db)
     scanner.reading_list_service.cleanup_empty_lists = MagicMock()
@@ -33,18 +31,21 @@ def test_scan_parallel_raises_when_library_path_missing(db, tmp_path):
 
 def test_cleanup_missing_files_deletes_and_commits(db, tmp_path):
     scanner, library = _build_scanner(db, tmp_path, name="scanner-cleanup-lib")
+    root = library.active_root
 
     series = Series(name="Cleanup Series", library_id=library.id)
     volume = Volume(series=series, volume_number=1)
     db.add_all([series, volume])
     db.flush()
 
-    keep = Comic(volume_id=volume.id, number="1", filename="keep.cbz", file_path=str(tmp_path / "keep.cbz"), page_count=10)
-    gone = Comic(volume_id=volume.id, number="2", filename="gone.cbz", file_path=str(tmp_path / "gone.cbz"), page_count=10)
-    db.add_all([keep, gone])
+    keep = create_comic(db, volume, root, "keep.cbz", number="1", filename="keep.cbz", page_count=10)
+    gone = create_comic(db, volume, root, "gone.cbz", number="2", filename="gone.cbz", page_count=10)
     db.commit()
 
-    deleted = scanner._cleanup_missing_files({str(tmp_path / "keep.cbz")}, {keep.file_path: keep, gone.file_path: gone})
+    deleted = scanner._cleanup_missing_files(
+        {(root.id, "keep.cbz")},
+        {(root.id, "keep.cbz"): keep, (root.id, "gone.cbz"): gone},
+    )
 
     assert deleted == 1
     assert db.get(Comic, gone.id) is None
@@ -79,20 +80,21 @@ def test_reconcile_sidecars_guard_paths(db, tmp_path):
     scanner, _ = _build_scanner(db, tmp_path, name="scanner-reconcile-lib")
 
     root_file = tmp_path / "root.cbz"
-    scanner._reconcile_sidecars(root_file, {})
+    scanner._reconcile_sidecars(root_file, None, str(tmp_path))
 
     nested = tmp_path / "Series" / "Issue" / "a.cbz"
     scanner.reconciled_folders.add(str(nested.parent))
-    scanner._reconcile_sidecars(nested, {})
+    scanner._reconcile_sidecars(nested, None, str(tmp_path))
 
     scanner.reconciled_folders.clear()
-    scanner._reconcile_sidecars(nested, {})
+    scanner._reconcile_sidecars(nested, None, str(tmp_path))
 
     assert str(nested.parent) not in scanner.reconciled_folders
 
 
 def test_reconcile_sidecars_updates_series_and_volume_once(db, tmp_path, monkeypatch):
     scanner, library = _build_scanner(db, tmp_path, name="scanner-reconcile-update-lib")
+    root = library.active_root
 
     series = Series(name="Recon Series", library_id=library.id, summary_override="old-series")
     volume = Volume(series=series, volume_number=1, summary_override="old-volume")
@@ -100,18 +102,19 @@ def test_reconcile_sidecars_updates_series_and_volume_once(db, tmp_path, monkeyp
         volume=volume,
         number="1",
         filename="a.cbz",
-        file_path=str(tmp_path / "Recon Series" / "Issue" / "a.cbz"),
+        library_root_id=root.id,
+        relative_path="Recon Series/Issue/a.cbz",
         page_count=10,
     )
     db.add_all([series, volume, comic])
     db.commit()
 
-    file_path = Path(comic.file_path)
+    file_path = Path(root.path) / "Recon Series" / "Issue" / "a.cbz"
 
     resolver = MagicMock(side_effect=["new-volume", "new-series"])
     monkeypatch.setattr(scanner, "_resolve_sidecar_from_parents", resolver)
 
-    scanner._reconcile_sidecars(file_path, {str(file_path): comic})
+    scanner._reconcile_sidecars(file_path, comic, root.path)
 
     assert volume.summary_override == "new-volume"
     assert series.summary_override == "new-series"
@@ -120,12 +123,13 @@ def test_reconcile_sidecars_updates_series_and_volume_once(db, tmp_path, monkeyp
     assert str(file_path.parent) in scanner.reconciled_folders
 
     resolver.reset_mock()
-    scanner._reconcile_sidecars(file_path, {str(file_path): comic})
+    scanner._reconcile_sidecars(file_path, comic, root.path)
     resolver.assert_not_called()
 
 
 def test_scan_parallel_clears_reconciliation_caches_each_run(db, tmp_path):
     scanner, library = _build_scanner(db, tmp_path, name="scanner-cache-reset-lib")
+    root = library.active_root
 
     comic_path = tmp_path / "Series" / "Issue" / "reset.cbz"
     comic_path.parent.mkdir(parents=True, exist_ok=True)
@@ -136,15 +140,13 @@ def test_scan_parallel_clears_reconciliation_caches_each_run(db, tmp_path):
     db.add_all([series, volume])
     db.flush()
 
-    comic = Comic(
-        volume_id=volume.id,
+    comic = create_comic(
+        db, volume, root, "Series/Issue/reset.cbz",
         number="1",
         filename=comic_path.name,
-        file_path=str(comic_path),
         file_modified_at=comic_path.stat().st_mtime + 60,
         page_count=10,
     )
-    db.add(comic)
     db.commit()
 
     scanner.reconciled_folders.add("stale-folder")

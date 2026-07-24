@@ -1,12 +1,13 @@
 from app.models.bookmark import Bookmark
 from app.models.comic import Comic, Volume
-from app.models.library import Library
 from app.models.series import Series
 from app.models.user import User
+from tests.factories import create_library_with_root
 
 
 def _seed_bookmark_data(db, normal_user, *, lib_name: str = "bookmark-lib", series_name: str = "Bookmark Series"):
-    library = Library(name=lib_name, path=f"/tmp/{lib_name}")
+    library = create_library_with_root(db, lib_name, f"/tmp/{lib_name}")
+    root = library.active_root
     series = Series(name=series_name, library=library)
     volume = Volume(series=series, volume_number=1)
     comic = Comic(
@@ -14,11 +15,12 @@ def _seed_bookmark_data(db, normal_user, *, lib_name: str = "bookmark-lib", seri
         number="1",
         title=f"{series_name} #1",
         filename=f"{series_name}-1.cbz",
-        file_path=f"/tmp/{series_name}-{lib_name}.cbz",
+        library_root_id=root.id,
+        relative_path=f"{series_name}-1.cbz",
         page_count=10,
     )
 
-    db.add_all([library, series, volume, comic])
+    db.add_all([series, volume, comic])
     db.flush()
 
     normal_user.accessible_libraries.append(library)

@@ -83,4 +83,4 @@ class UserComicRating(Base):
 
     # Relationships
     user = relationship("User", backref="comic_ratings")
-    comic = relationship("Comic", backref="user_ratings")
+    comic = relationship("Comic", back_populates="user_ratings")

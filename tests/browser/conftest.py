@@ -30,6 +30,8 @@ from app.models.series import Series
 from app.models.tags import Character
 from app.models.user import User
 
+from tests.factories import create_library_with_root
+
 PNG_PIXEL_BYTES = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9sZVE70AAAAASUVORK5CYII="
 )
@@ -65,33 +67,37 @@ def browser_db_factory(tmp_path_factory):
 @pytest.fixture(scope="session")
 def browser_seed_data(browser_db_factory):
     session = browser_db_factory()
-    library = Library(name="Browser Test Library", path=str(Path("/tmp/browser-test-library")))
+    library = create_library_with_root(session, "Browser Test Library", str(Path("/tmp/browser-test-library")))
+    root = library.active_root
     series = Series(name="Smoke Series", library=library)
     volume = Volume(series=series, volume_number=1)
     completed_comic = Comic(
         volume=volume,
+        library_root_id=root.id,
+        relative_path="smoke-reader.cbz",
         number="1",
         title="Smoke Reader",
         filename="smoke-reader.cbz",
-        file_path="/tmp/smoke-reader.cbz",
         page_count=3,
     )
     active_comic = Comic(
         volume=volume,
+        library_root_id=root.id,
+        relative_path="smoke-encore.cbz",
         number="2",
         title="Smoke Encore",
         filename="smoke-encore.cbz",
-        file_path="/tmp/smoke-encore.cbz",
         page_count=3,
     )
     in_progress_comic = Comic(
         volume=volume,
+        library_root_id=root.id,
+        relative_path="smoke-horizon.cbz",
         number="3",
         title="Smoke Horizon",
         year=2024,
         month=5,
         filename="smoke-horizon.cbz",
-        file_path="/tmp/smoke-horizon.cbz",
         page_count=4,
     )
     reading_list = ReadingList(
@@ -223,7 +229,7 @@ def browser_server(browser_db_factory, browser_seed_data, monkeypatch_session):
         try:
             user = session.scalar(
                 select(User)
-                .options(selectinload(User.accessible_libraries))
+                .options(selectinload(User.accessible_libraries).selectinload(Library.roots))
                 .where(User.id == browser_seed_data["user_id"])
             )
             _ = list(user.accessible_libraries)

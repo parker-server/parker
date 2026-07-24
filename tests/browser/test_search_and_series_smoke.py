@@ -2,8 +2,9 @@ import pytest
 from datetime import timedelta
 from sqlalchemy import select
 
-from app.models.comic import Comic
+from app.models.comic import Volume
 from app.models.interactions import UserVolumeFollow
+from tests.factories import create_comic
 
 
 def _insert_following_arrival(browser_server):
@@ -18,8 +19,10 @@ def _insert_following_arrival(browser_server):
         )
         assert follow is not None
 
-        new_issue = Comic(
-            volume_id=seed["volume_id"],
+        volume = session.get(Volume, seed["volume_id"])
+        root = volume.series.library.active_root
+        new_issue = create_comic(
+            session, volume, root, "smoke-future-shock.cbz",
             number="4",
             title="Smoke Future Shock",
             year=2026,
@@ -27,9 +30,7 @@ def _insert_following_arrival(browser_server):
             created_at=follow.followed_at + timedelta(minutes=1),
             updated_at=follow.followed_at + timedelta(minutes=1),
             filename="smoke-future-shock.cbz",
-            file_path="/tmp/smoke-future-shock.cbz",
         )
-        session.add(new_issue)
         session.commit()
         session.refresh(new_issue)
         return new_issue.id, new_issue.title

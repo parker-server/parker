@@ -11,9 +11,11 @@ from typing import Dict, Optional
 from sqlalchemy.orm import Session
 
 from app.core.comic_helpers import NON_PLAIN_FORMATS
+from app.core.path_utils import resolve_absolute_path
 from app.core.security import get_password_hash
 from app.models.comic import Comic, Volume
 from app.models.library import Library
+from app.models.library_root import LibraryRoot
 from app.models.reading_progress import ReadingProgress
 from app.models.series import Series
 from app.models.user import User
@@ -270,7 +272,8 @@ class KavitaMigrationService:
         parker_comics = (
             self.db.query(
                 Comic.id,
-                Comic.file_path,
+                LibraryRoot.path.label("root_path"),
+                Comic.relative_path,
                 Comic.number,
                 Comic.format,
                 Series.name.label("series_name"),
@@ -278,6 +281,7 @@ class KavitaMigrationService:
             .select_from(Comic)
             .join(Comic.volume)
             .join(Volume.series)
+            .join(LibraryRoot, LibraryRoot.id == Comic.library_root_id)
             .all()
         )
 
@@ -286,7 +290,8 @@ class KavitaMigrationService:
         meta_index: dict[str, set[int]] = {}
 
         for comic in parker_comics:
-            normalized = self._normalize_path(str(comic.file_path))
+            absolute_path = resolve_absolute_path(comic.root_path, comic.relative_path)
+            normalized = self._normalize_path(absolute_path)
             if normalized:
                 path_index.setdefault(normalized, set()).add(comic.id)
 

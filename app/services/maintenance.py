@@ -4,9 +4,11 @@ import logging
 import os
 
 from app.config import settings
+from app.core.path_utils import resolve_absolute_path
 from app.models.tags import Character, Team, Location
 from app.models.credits import Person
 from app.models.comic import Comic, Volume
+from app.models.library_root import LibraryRoot
 from app.models.series import Series
 from app.models.reading_list import ReadingList
 from app.models.collection import Collection
@@ -109,9 +111,19 @@ class MaintenanceService:
         comics = query.all()
         deleted_ids = []
 
+        # Cache root paths since many comics typically share the same root(s).
+        root_paths: dict[int, str] = {}
+
         for comic in comics:
-            if not os.path.exists(comic.file_path):
-                self.logger.info(f"Janitor: Removing missing file: {comic.file_path}")
+            if comic.library_root_id not in root_paths:
+                root = self.db.get(LibraryRoot, comic.library_root_id)
+                root_paths[comic.library_root_id] = root.path if root else None
+
+            root_path = root_paths[comic.library_root_id]
+            path_to_check = resolve_absolute_path(root_path, comic.relative_path) if root_path else None
+
+            if not path_to_check or not os.path.exists(path_to_check):
+                self.logger.info(f"Janitor: Removing missing file: {comic.filename} ({path_to_check})")
                 deleted_ids.append(comic.id)
                 self.db.delete(comic)
 

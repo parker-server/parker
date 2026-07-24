@@ -3,9 +3,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from app.models.comic import Comic, Volume
-from app.models.library import Library
 from app.models.series import Series
 from app.models.user import User
+from tests.factories import create_library_with_root
 from app.services.startup_diagnostics import (
     RUNTIME_MODE_CONTAINER,
     RUNTIME_MODE_LOCAL,
@@ -73,7 +73,8 @@ def test_log_startup_diagnostics_logs_populated_database_summary(db, caplog, tmp
         is_superuser=True,
         is_active=True,
     )
-    library = Library(name="Main Library", path="/comics/main")
+    library = create_library_with_root(db, "Main Library", "/comics/main")
+    root = library.active_root
     series = Series(name="Amazing Tales", library=library)
     volume = Volume(series=series, volume_number=1)
     comic = Comic(
@@ -81,10 +82,11 @@ def test_log_startup_diagnostics_logs_populated_database_summary(db, caplog, tmp
         number="1",
         title="Amazing Tales #1",
         filename="amazing-tales-1.cbz",
-        file_path="/comics/main/Amazing Tales #1.cbz",
+        library_root_id=root.id,
+        relative_path="Amazing Tales #1.cbz",
     )
 
-    db.add_all([user, library, series, volume, comic])
+    db.add_all([user, series, volume, comic])
     db.commit()
 
     db_path = tmp_path / "comics.db"
@@ -198,8 +200,7 @@ def test_build_support_snapshot_wraps_diagnostics_with_metadata():
 
 
 def test_collect_startup_diagnostics_marks_default_comics_root_as_container_runtime(db, tmp_path):
-    library = Library(name="Container Library", path="/comics/main")
-    db.add(library)
+    create_library_with_root(db, "Container Library", "/comics/main")
     db.commit()
 
     db_path = tmp_path / "comics.db"
@@ -214,8 +215,7 @@ def test_collect_startup_diagnostics_marks_default_comics_root_as_container_runt
 
 
 def test_collect_startup_diagnostics_marks_missing_default_comics_root_as_local_when_library_paths_are_local(db, tmp_path):
-    library = Library(name="Local Library", path="C:/Users/test/MyComics")
-    db.add(library)
+    create_library_with_root(db, "Local Library", "C:/Users/test/MyComics")
     db.commit()
 
     db_path = tmp_path / "comics.db"
@@ -233,10 +233,8 @@ def test_collect_startup_diagnostics_tracks_library_path_existence(db, tmp_path)
     existing_library_root = tmp_path / "Comics"
     existing_library_root.mkdir()
 
-    db.add_all([
-        Library(name="Existing", path=str(existing_library_root)),
-        Library(name="Missing", path=str(tmp_path / "DoesNotExist")),
-    ])
+    create_library_with_root(db, "Existing", str(existing_library_root))
+    create_library_with_root(db, "Missing", str(tmp_path / "DoesNotExist"))
     db.commit()
 
     db_path = tmp_path / "comics.db"

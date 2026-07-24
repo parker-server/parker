@@ -24,5 +24,5 @@ class ActivityLog(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
 
     # Relationships
-    comic = relationship("Comic")
+    comic = relationship("Comic", back_populates="activity_logs")
     user = relationship("User", back_populates="activity_logs")

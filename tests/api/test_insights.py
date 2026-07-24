@@ -1,15 +1,15 @@
-from app.models.comic import Comic, Volume
+from app.models.comic import Volume
 from app.models.credits import ComicCredit, Person
-from app.models.library import Library
 from app.models.series import Series
 from app.models.tags import Character
+from tests.factories import create_comic, create_library_with_root
 
 
 def _seed_creator_collab_fixture(db, normal_user):
-    visible_lib = Library(name="Insights Visible", path="/tmp/insights-visible")
-    hidden_lib = Library(name="Insights Hidden", path="/tmp/insights-hidden")
-    db.add_all([visible_lib, hidden_lib])
-    db.flush()
+    visible_lib = create_library_with_root(db, "Insights Visible", "/tmp/insights-visible")
+    hidden_lib = create_library_with_root(db, "Insights Hidden", "/tmp/insights-hidden")
+    visible_root = visible_lib.active_root
+    hidden_root = hidden_lib.active_root
 
     safe_series = Series(name="Insights Safe Series", library_id=visible_lib.id)
     banned_series = Series(name="Insights Banned Series", library_id=visible_lib.id)
@@ -24,69 +24,39 @@ def _seed_creator_collab_fixture(db, normal_user):
     db.flush()
 
     safe_comics = [
-        Comic(
-            volume_id=safe_volume.id,
-            number="1",
-            title="Safe #1",
-            age_rating="Teen",
-            filename="safe-1.cbz",
-            file_path="/tmp/safe-1.cbz",
+        create_comic(
+            db, safe_volume, visible_root, "safe-1.cbz",
+            number="1", title="Safe #1", age_rating="Teen", filename="safe-1.cbz",
         ),
-        Comic(
-            volume_id=safe_volume.id,
-            number="2",
-            title="Safe #2",
-            age_rating="Teen",
-            filename="safe-2.cbz",
-            file_path="/tmp/safe-2.cbz",
+        create_comic(
+            db, safe_volume, visible_root, "safe-2.cbz",
+            number="2", title="Safe #2", age_rating="Teen", filename="safe-2.cbz",
         ),
-        Comic(
-            volume_id=safe_volume.id,
-            number="3",
-            title="Safe #3",
-            age_rating="Teen",
-            filename="safe-3.cbz",
-            file_path="/tmp/safe-3.cbz",
+        create_comic(
+            db, safe_volume, visible_root, "safe-3.cbz",
+            number="3", title="Safe #3", age_rating="Teen", filename="safe-3.cbz",
         ),
     ]
     banned_comics = [
-        Comic(
-            volume_id=banned_volume.id,
-            number="1",
-            title="Banned #1",
-            age_rating="Mature 17+",
-            filename="banned-1.cbz",
-            file_path="/tmp/banned-1.cbz",
+        create_comic(
+            db, banned_volume, visible_root, "banned-1.cbz",
+            number="1", title="Banned #1", age_rating="Mature 17+", filename="banned-1.cbz",
         ),
-        Comic(
-            volume_id=banned_volume.id,
-            number="2",
-            title="Banned #2",
-            age_rating="Mature 17+",
-            filename="banned-2.cbz",
-            file_path="/tmp/banned-2.cbz",
+        create_comic(
+            db, banned_volume, visible_root, "banned-2.cbz",
+            number="2", title="Banned #2", age_rating="Mature 17+", filename="banned-2.cbz",
         ),
     ]
     hidden_comics = [
-        Comic(
-            volume_id=hidden_volume.id,
-            number="1",
-            title="Hidden #1",
-            age_rating="Teen",
-            filename="hidden-1.cbz",
-            file_path="/tmp/hidden-1.cbz",
+        create_comic(
+            db, hidden_volume, hidden_root, "hidden-1.cbz",
+            number="1", title="Hidden #1", age_rating="Teen", filename="hidden-1.cbz",
         ),
-        Comic(
-            volume_id=hidden_volume.id,
-            number="2",
-            title="Hidden #2",
-            age_rating="Teen",
-            filename="hidden-2.cbz",
-            file_path="/tmp/hidden-2.cbz",
+        create_comic(
+            db, hidden_volume, hidden_root, "hidden-2.cbz",
+            number="2", title="Hidden #2", age_rating="Teen", filename="hidden-2.cbz",
         ),
     ]
-    db.add_all(safe_comics + banned_comics + hidden_comics)
-    db.flush()
 
     writer_a = Person(name="Insight Writer A")
     writer_b = Person(name="Insight Writer B")
@@ -128,10 +98,10 @@ def _seed_creator_collab_fixture(db, normal_user):
 
 
 def _seed_character_collab_fixture(db, normal_user):
-    visible_lib = Library(name="Character Insights Visible", path="/tmp/character-insights-visible")
-    hidden_lib = Library(name="Character Insights Hidden", path="/tmp/character-insights-hidden")
-    db.add_all([visible_lib, hidden_lib])
-    db.flush()
+    visible_lib = create_library_with_root(db, "Character Insights Visible", "/tmp/character-insights-visible")
+    hidden_lib = create_library_with_root(db, "Character Insights Hidden", "/tmp/character-insights-hidden")
+    visible_root = visible_lib.active_root
+    hidden_root = hidden_lib.active_root
 
     safe_series = Series(name="Character Insights Safe Series", library_id=visible_lib.id)
     banned_series = Series(name="Character Insights Banned Series", library_id=visible_lib.id)
@@ -146,69 +116,39 @@ def _seed_character_collab_fixture(db, normal_user):
     db.flush()
 
     safe_comics = [
-        Comic(
-            volume_id=safe_volume.id,
-            number="1",
-            title="Character Safe #1",
-            age_rating="Teen",
-            filename="character-safe-1.cbz",
-            file_path="/tmp/character-safe-1.cbz",
+        create_comic(
+            db, safe_volume, visible_root, "character-safe-1.cbz",
+            number="1", title="Character Safe #1", age_rating="Teen", filename="character-safe-1.cbz",
         ),
-        Comic(
-            volume_id=safe_volume.id,
-            number="2",
-            title="Character Safe #2",
-            age_rating="Teen",
-            filename="character-safe-2.cbz",
-            file_path="/tmp/character-safe-2.cbz",
+        create_comic(
+            db, safe_volume, visible_root, "character-safe-2.cbz",
+            number="2", title="Character Safe #2", age_rating="Teen", filename="character-safe-2.cbz",
         ),
-        Comic(
-            volume_id=safe_volume.id,
-            number="3",
-            title="Character Safe #3",
-            age_rating="Teen",
-            filename="character-safe-3.cbz",
-            file_path="/tmp/character-safe-3.cbz",
+        create_comic(
+            db, safe_volume, visible_root, "character-safe-3.cbz",
+            number="3", title="Character Safe #3", age_rating="Teen", filename="character-safe-3.cbz",
         ),
     ]
     banned_comics = [
-        Comic(
-            volume_id=banned_volume.id,
-            number="1",
-            title="Character Banned #1",
-            age_rating="Mature 17+",
-            filename="character-banned-1.cbz",
-            file_path="/tmp/character-banned-1.cbz",
+        create_comic(
+            db, banned_volume, visible_root, "character-banned-1.cbz",
+            number="1", title="Character Banned #1", age_rating="Mature 17+", filename="character-banned-1.cbz",
         ),
-        Comic(
-            volume_id=banned_volume.id,
-            number="2",
-            title="Character Banned #2",
-            age_rating="Mature 17+",
-            filename="character-banned-2.cbz",
-            file_path="/tmp/character-banned-2.cbz",
+        create_comic(
+            db, banned_volume, visible_root, "character-banned-2.cbz",
+            number="2", title="Character Banned #2", age_rating="Mature 17+", filename="character-banned-2.cbz",
         ),
     ]
     hidden_comics = [
-        Comic(
-            volume_id=hidden_volume.id,
-            number="1",
-            title="Character Hidden #1",
-            age_rating="Teen",
-            filename="character-hidden-1.cbz",
-            file_path="/tmp/character-hidden-1.cbz",
+        create_comic(
+            db, hidden_volume, hidden_root, "character-hidden-1.cbz",
+            number="1", title="Character Hidden #1", age_rating="Teen", filename="character-hidden-1.cbz",
         ),
-        Comic(
-            volume_id=hidden_volume.id,
-            number="2",
-            title="Character Hidden #2",
-            age_rating="Teen",
-            filename="character-hidden-2.cbz",
-            file_path="/tmp/character-hidden-2.cbz",
+        create_comic(
+            db, hidden_volume, hidden_root, "character-hidden-2.cbz",
+            number="2", title="Character Hidden #2", age_rating="Teen", filename="character-hidden-2.cbz",
         ),
     ]
-    db.add_all(safe_comics + banned_comics + hidden_comics)
-    db.flush()
 
     hero_alpha = Character(name="Hero Alpha")
     hero_beta = Character(name="Hero Beta")
@@ -238,10 +178,10 @@ def _seed_character_collab_fixture(db, normal_user):
 
 
 def _seed_writer_character_fixture(db, normal_user):
-    visible_lib = Library(name="Writer Character Visible", path="/tmp/writer-character-visible")
-    hidden_lib = Library(name="Writer Character Hidden", path="/tmp/writer-character-hidden")
-    db.add_all([visible_lib, hidden_lib])
-    db.flush()
+    visible_lib = create_library_with_root(db, "Writer Character Visible", "/tmp/writer-character-visible")
+    hidden_lib = create_library_with_root(db, "Writer Character Hidden", "/tmp/writer-character-hidden")
+    visible_root = visible_lib.active_root
+    hidden_root = hidden_lib.active_root
 
     safe_series = Series(name="Writer Character Safe Series", library_id=visible_lib.id)
     banned_series = Series(name="Writer Character Banned Series", library_id=visible_lib.id)
@@ -256,69 +196,39 @@ def _seed_writer_character_fixture(db, normal_user):
     db.flush()
 
     safe_comics = [
-        Comic(
-            volume_id=safe_volume.id,
-            number="1",
-            title="Writer Character Safe #1",
-            age_rating="Teen",
-            filename="writer-character-safe-1.cbz",
-            file_path="/tmp/writer-character-safe-1.cbz",
+        create_comic(
+            db, safe_volume, visible_root, "writer-character-safe-1.cbz",
+            number="1", title="Writer Character Safe #1", age_rating="Teen", filename="writer-character-safe-1.cbz",
         ),
-        Comic(
-            volume_id=safe_volume.id,
-            number="2",
-            title="Writer Character Safe #2",
-            age_rating="Teen",
-            filename="writer-character-safe-2.cbz",
-            file_path="/tmp/writer-character-safe-2.cbz",
+        create_comic(
+            db, safe_volume, visible_root, "writer-character-safe-2.cbz",
+            number="2", title="Writer Character Safe #2", age_rating="Teen", filename="writer-character-safe-2.cbz",
         ),
-        Comic(
-            volume_id=safe_volume.id,
-            number="3",
-            title="Writer Character Safe #3",
-            age_rating="Teen",
-            filename="writer-character-safe-3.cbz",
-            file_path="/tmp/writer-character-safe-3.cbz",
+        create_comic(
+            db, safe_volume, visible_root, "writer-character-safe-3.cbz",
+            number="3", title="Writer Character Safe #3", age_rating="Teen", filename="writer-character-safe-3.cbz",
         ),
     ]
     banned_comics = [
-        Comic(
-            volume_id=banned_volume.id,
-            number="1",
-            title="Writer Character Banned #1",
-            age_rating="Mature 17+",
-            filename="writer-character-banned-1.cbz",
-            file_path="/tmp/writer-character-banned-1.cbz",
+        create_comic(
+            db, banned_volume, visible_root, "writer-character-banned-1.cbz",
+            number="1", title="Writer Character Banned #1", age_rating="Mature 17+", filename="writer-character-banned-1.cbz",
         ),
-        Comic(
-            volume_id=banned_volume.id,
-            number="2",
-            title="Writer Character Banned #2",
-            age_rating="Mature 17+",
-            filename="writer-character-banned-2.cbz",
-            file_path="/tmp/writer-character-banned-2.cbz",
+        create_comic(
+            db, banned_volume, visible_root, "writer-character-banned-2.cbz",
+            number="2", title="Writer Character Banned #2", age_rating="Mature 17+", filename="writer-character-banned-2.cbz",
         ),
     ]
     hidden_comics = [
-        Comic(
-            volume_id=hidden_volume.id,
-            number="1",
-            title="Writer Character Hidden #1",
-            age_rating="Teen",
-            filename="writer-character-hidden-1.cbz",
-            file_path="/tmp/writer-character-hidden-1.cbz",
+        create_comic(
+            db, hidden_volume, hidden_root, "writer-character-hidden-1.cbz",
+            number="1", title="Writer Character Hidden #1", age_rating="Teen", filename="writer-character-hidden-1.cbz",
         ),
-        Comic(
-            volume_id=hidden_volume.id,
-            number="2",
-            title="Writer Character Hidden #2",
-            age_rating="Teen",
-            filename="writer-character-hidden-2.cbz",
-            file_path="/tmp/writer-character-hidden-2.cbz",
+        create_comic(
+            db, hidden_volume, hidden_root, "writer-character-hidden-2.cbz",
+            number="2", title="Writer Character Hidden #2", age_rating="Teen", filename="writer-character-hidden-2.cbz",
         ),
     ]
-    db.add_all(safe_comics + banned_comics + hidden_comics)
-    db.flush()
 
     writer_a = Person(name="Writer Character A")
     writer_b = Person(name="Writer Character B")
@@ -362,10 +272,10 @@ def _seed_writer_character_fixture(db, normal_user):
 
 
 def _seed_artist_character_fixture(db, normal_user):
-    visible_lib = Library(name="Artist Character Visible", path="/tmp/artist-character-visible")
-    hidden_lib = Library(name="Artist Character Hidden", path="/tmp/artist-character-hidden")
-    db.add_all([visible_lib, hidden_lib])
-    db.flush()
+    visible_lib = create_library_with_root(db, "Artist Character Visible", "/tmp/artist-character-visible")
+    hidden_lib = create_library_with_root(db, "Artist Character Hidden", "/tmp/artist-character-hidden")
+    visible_root = visible_lib.active_root
+    hidden_root = hidden_lib.active_root
 
     safe_series = Series(name="Artist Character Safe Series", library_id=visible_lib.id)
     banned_series = Series(name="Artist Character Banned Series", library_id=visible_lib.id)
@@ -380,69 +290,39 @@ def _seed_artist_character_fixture(db, normal_user):
     db.flush()
 
     safe_comics = [
-        Comic(
-            volume_id=safe_volume.id,
-            number="1",
-            title="Artist Character Safe #1",
-            age_rating="Teen",
-            filename="artist-character-safe-1.cbz",
-            file_path="/tmp/artist-character-safe-1.cbz",
+        create_comic(
+            db, safe_volume, visible_root, "artist-character-safe-1.cbz",
+            number="1", title="Artist Character Safe #1", age_rating="Teen", filename="artist-character-safe-1.cbz",
         ),
-        Comic(
-            volume_id=safe_volume.id,
-            number="2",
-            title="Artist Character Safe #2",
-            age_rating="Teen",
-            filename="artist-character-safe-2.cbz",
-            file_path="/tmp/artist-character-safe-2.cbz",
+        create_comic(
+            db, safe_volume, visible_root, "artist-character-safe-2.cbz",
+            number="2", title="Artist Character Safe #2", age_rating="Teen", filename="artist-character-safe-2.cbz",
         ),
-        Comic(
-            volume_id=safe_volume.id,
-            number="3",
-            title="Artist Character Safe #3",
-            age_rating="Teen",
-            filename="artist-character-safe-3.cbz",
-            file_path="/tmp/artist-character-safe-3.cbz",
+        create_comic(
+            db, safe_volume, visible_root, "artist-character-safe-3.cbz",
+            number="3", title="Artist Character Safe #3", age_rating="Teen", filename="artist-character-safe-3.cbz",
         ),
     ]
     banned_comics = [
-        Comic(
-            volume_id=banned_volume.id,
-            number="1",
-            title="Artist Character Banned #1",
-            age_rating="Mature 17+",
-            filename="artist-character-banned-1.cbz",
-            file_path="/tmp/artist-character-banned-1.cbz",
+        create_comic(
+            db, banned_volume, visible_root, "artist-character-banned-1.cbz",
+            number="1", title="Artist Character Banned #1", age_rating="Mature 17+", filename="artist-character-banned-1.cbz",
         ),
-        Comic(
-            volume_id=banned_volume.id,
-            number="2",
-            title="Artist Character Banned #2",
-            age_rating="Mature 17+",
-            filename="artist-character-banned-2.cbz",
-            file_path="/tmp/artist-character-banned-2.cbz",
+        create_comic(
+            db, banned_volume, visible_root, "artist-character-banned-2.cbz",
+            number="2", title="Artist Character Banned #2", age_rating="Mature 17+", filename="artist-character-banned-2.cbz",
         ),
     ]
     hidden_comics = [
-        Comic(
-            volume_id=hidden_volume.id,
-            number="1",
-            title="Artist Character Hidden #1",
-            age_rating="Teen",
-            filename="artist-character-hidden-1.cbz",
-            file_path="/tmp/artist-character-hidden-1.cbz",
+        create_comic(
+            db, hidden_volume, hidden_root, "artist-character-hidden-1.cbz",
+            number="1", title="Artist Character Hidden #1", age_rating="Teen", filename="artist-character-hidden-1.cbz",
         ),
-        Comic(
-            volume_id=hidden_volume.id,
-            number="2",
-            title="Artist Character Hidden #2",
-            age_rating="Teen",
-            filename="artist-character-hidden-2.cbz",
-            file_path="/tmp/artist-character-hidden-2.cbz",
+        create_comic(
+            db, hidden_volume, hidden_root, "artist-character-hidden-2.cbz",
+            number="2", title="Artist Character Hidden #2", age_rating="Teen", filename="artist-character-hidden-2.cbz",
         ),
     ]
-    db.add_all(safe_comics + banned_comics + hidden_comics)
-    db.flush()
 
     artist_a = Person(name="Artist Character A")
     artist_b = Person(name="Artist Character B")
@@ -574,9 +454,8 @@ def test_creator_collaborations_include_identity_fields_for_matrix_alignment(aut
 
 
 def test_creator_collaboration_header_totals_match_visible_matrix(auth_client, db, normal_user):
-    visible_lib = Library(name="Visible Matrix Totals", path="/tmp/visible-matrix-totals")
-    db.add(visible_lib)
-    db.flush()
+    visible_lib = create_library_with_root(db, "Visible Matrix Totals", "/tmp/visible-matrix-totals")
+    root = visible_lib.active_root
 
     series = Series(name="Visible Matrix Totals Series", library_id=visible_lib.id)
     db.add(series)
@@ -587,49 +466,27 @@ def test_creator_collaboration_header_totals_match_visible_matrix(auth_client, d
     db.flush()
 
     comics = [
-        Comic(
-            volume_id=volume.id,
-            number="1",
-            title="Visible #1",
-            age_rating="Teen",
-            filename="visible-1.cbz",
-            file_path="/tmp/visible-1.cbz",
+        create_comic(
+            db, volume, root, "visible-1.cbz",
+            number="1", title="Visible #1", age_rating="Teen", filename="visible-1.cbz",
         ),
-        Comic(
-            volume_id=volume.id,
-            number="2",
-            title="Visible #2",
-            age_rating="Teen",
-            filename="visible-2.cbz",
-            file_path="/tmp/visible-2.cbz",
+        create_comic(
+            db, volume, root, "visible-2.cbz",
+            number="2", title="Visible #2", age_rating="Teen", filename="visible-2.cbz",
         ),
-        Comic(
-            volume_id=volume.id,
-            number="3",
-            title="Visible #3",
-            age_rating="Teen",
-            filename="visible-3.cbz",
-            file_path="/tmp/visible-3.cbz",
+        create_comic(
+            db, volume, root, "visible-3.cbz",
+            number="3", title="Visible #3", age_rating="Teen", filename="visible-3.cbz",
         ),
-        Comic(
-            volume_id=volume.id,
-            number="4",
-            title="Visible #4",
-            age_rating="Teen",
-            filename="visible-4.cbz",
-            file_path="/tmp/visible-4.cbz",
+        create_comic(
+            db, volume, root, "visible-4.cbz",
+            number="4", title="Visible #4", age_rating="Teen", filename="visible-4.cbz",
         ),
-        Comic(
-            volume_id=volume.id,
-            number="5",
-            title="Visible #5",
-            age_rating="Teen",
-            filename="visible-5.cbz",
-            file_path="/tmp/visible-5.cbz",
+        create_comic(
+            db, volume, root, "visible-5.cbz",
+            number="5", title="Visible #5", age_rating="Teen", filename="visible-5.cbz",
         ),
     ]
-    db.add_all(comics)
-    db.flush()
 
     writer_a = Person(name="Visible Writer A")
     writer_b = Person(name="Visible Writer B")

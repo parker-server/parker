@@ -2,6 +2,7 @@ import time
 import logging
 import threading
 from pathlib import Path
+from sqlalchemy.orm import selectinload
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from app.database import SessionLocal
@@ -128,7 +129,12 @@ class LibraryWatcher:
         db = SessionLocal()
         try:
             # 1. Get all libraries that should be watched
-            libraries = db.query(Library).filter(Library.watch_mode == True).all()
+            libraries = (
+                db.query(Library)
+                .options(selectinload(Library.roots))
+                .filter(Library.watch_mode == True)
+                .all()
+            )
             active_ids = {lib.id for lib in libraries}
             current_ids = set(self.watches.keys())
 
@@ -140,15 +146,20 @@ class LibraryWatcher:
             # 2. Add new watches
             for lib in libraries:
                 if lib.id not in self.watches:
+                    active_root = lib.active_root
+                    if active_root is None:
+                        self.logger.error(f"Library {lib.id} ('{lib.name}') has no active root; skipping watch")
+                        continue
+
                     try:
-                        self.logger.info(f"Starting watch for: {lib.path}")
+                        self.logger.info(f"Starting watch for: {active_root.path}")
                         handler = LibraryEventHandler(lib.id, int(batch_window))
-                        watch = self.observer.schedule(handler, lib.path, recursive=True)
+                        watch = self.observer.schedule(handler, active_root.path, recursive=True)
 
                         # Store both so we can cancel the handler later
                         self.watches[lib.id] = (watch, handler)
                     except Exception as e:
-                        self.logger.error(f"Failed to watch {lib.path}: {e}")
+                        self.logger.error(f"Failed to watch {active_root.path}: {e}")
 
             # 3. Remove old watches (if disabled in DB)
             for lib_id in current_ids:

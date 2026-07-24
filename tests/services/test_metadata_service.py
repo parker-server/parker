@@ -2,14 +2,15 @@ import json
 
 from app.models.comic import Comic, Volume
 from app.models.collection import Collection, CollectionItem
-from app.models.library import Library
 from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.series import Series
 from app.services.metadata import rehydrate_library_metadata_from_cache
+from tests.factories import create_library_with_root
 
 
 def test_rehydrate_library_metadata_from_cache_restores_expected_metadata(db):
-    library = Library(name="metadata-rehydrate-lib", path="/tmp/metadata-rehydrate-lib")
+    library = create_library_with_root(db, "metadata-rehydrate-lib", "/tmp/metadata-rehydrate-lib")
+    root = library.active_root
     series = Series(name="Metadata Rehydrate Series", library=library)
     volume = Volume(series=series, volume_number=1)
 
@@ -18,7 +19,8 @@ def test_rehydrate_library_metadata_from_cache_restores_expected_metadata(db):
         number="1",
         title="Restorable Issue",
         filename="restorable.cbz",
-        file_path="/tmp/restorable.cbz",
+        library_root_id=root.id,
+        relative_path="restorable.cbz",
         metadata_json=json.dumps(
             {
                 "alternate_series": "Event Gamma",
@@ -34,11 +36,12 @@ def test_rehydrate_library_metadata_from_cache_restores_expected_metadata(db):
         number="2",
         title="Missing Source",
         filename="missing-source.cbz",
-        file_path="/tmp/missing-source.cbz",
+        library_root_id=root.id,
+        relative_path="missing-source.cbz",
         metadata_json=None,
     )
 
-    db.add_all([library, series, volume, restorable, missing_source])
+    db.add_all([series, volume, restorable, missing_source])
     db.commit()
 
     summary = rehydrate_library_metadata_from_cache(

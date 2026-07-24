@@ -1,20 +1,20 @@
 from app.api.search import _get_allowed_library_ids
 from app.models.collection import Collection, CollectionItem
-from app.models.comic import Comic, Volume
+from app.models.comic import Volume
 from app.models.credits import ComicCredit, Person
-from app.models.library import Library
 from app.models.pull_list import PullList, PullListItem
 from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.series import Series
 from app.models.tags import Character, Location, Team
 from app.models.user import User
+from tests.factories import create_comic, create_library_with_root
 
 
 def _seed_search_fixture(db, normal_user):
-    visible_lib = Library(name="FindMe Visible Library", path="/tmp/findme-visible")
-    hidden_lib = Library(name="FindMe Hidden Library", path="/tmp/findme-hidden")
-    db.add_all([visible_lib, hidden_lib])
-    db.flush()
+    visible_lib = create_library_with_root(db, "FindMe Visible Library", "/tmp/findme-visible")
+    hidden_lib = create_library_with_root(db, "FindMe Hidden Library", "/tmp/findme-hidden")
+    visible_root = visible_lib.active_root
+    hidden_root = hidden_lib.active_root
 
     safe_series = Series(name="FindMe Safe Series", library_id=visible_lib.id)
     poisoned_series = Series(name="FindMe Banned Series", library_id=visible_lib.id)
@@ -28,8 +28,8 @@ def _seed_search_fixture(db, normal_user):
     db.add_all([safe_vol, poisoned_vol, hidden_vol])
     db.flush()
 
-    safe1 = Comic(
-        volume_id=safe_vol.id,
+    safe1 = create_comic(
+        db, safe_vol, visible_root, "findme-safe-1.cbz",
         number="1",
         title="FindMe Safe #1",
         publisher="FindMe Publisher",
@@ -38,10 +38,9 @@ def _seed_search_fixture(db, normal_user):
         age_rating="Teen",
         language_iso="en",
         filename="findme-safe-1.cbz",
-        file_path="/tmp/findme-safe-1.cbz",
     )
-    safe2 = Comic(
-        volume_id=safe_vol.id,
+    safe2 = create_comic(
+        db, safe_vol, visible_root, "findme-safe-2.cbz",
         number="2",
         title="FindMe Safe #2",
         publisher="FindMe Publisher",
@@ -50,10 +49,9 @@ def _seed_search_fixture(db, normal_user):
         age_rating="Teen",
         language_iso="en",
         filename="findme-safe-2.cbz",
-        file_path="/tmp/findme-safe-2.cbz",
     )
-    banned = Comic(
-        volume_id=poisoned_vol.id,
+    banned = create_comic(
+        db, poisoned_vol, visible_root, "findme-banned.cbz",
         number="1",
         title="FindMe Banned",
         publisher="FindMe Banned Publisher",
@@ -62,10 +60,9 @@ def _seed_search_fixture(db, normal_user):
         age_rating="Mature 17+",
         language_iso="jp",
         filename="findme-banned.cbz",
-        file_path="/tmp/findme-banned.cbz",
     )
-    hidden = Comic(
-        volume_id=hidden_vol.id,
+    hidden = create_comic(
+        db, hidden_vol, hidden_root, "findme-hidden.cbz",
         number="1",
         title="FindMe Hidden",
         publisher="FindMe Hidden Publisher",
@@ -74,10 +71,7 @@ def _seed_search_fixture(db, normal_user):
         age_rating="Teen",
         language_iso="fr",
         filename="findme-hidden.cbz",
-        file_path="/tmp/findme-hidden.cbz",
     )
-    db.add_all([safe1, safe2, banned, hidden])
-    db.flush()
 
     safe_character = Character(name="FindMe Hero")
     banned_character = Character(name="FindMe Villain")
@@ -179,9 +173,7 @@ def _seed_search_fixture(db, normal_user):
 
 
 def test_get_allowed_library_ids_helper(db, normal_user, admin_user):
-    lib = Library(name="search-helper-lib", path="/tmp/search-helper")
-    db.add(lib)
-    db.flush()
+    lib = create_library_with_root(db, "search-helper-lib", "/tmp/search-helper")
 
     normal_user.accessible_libraries.append(lib)
     db.commit()

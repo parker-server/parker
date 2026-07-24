@@ -1,54 +1,51 @@
 from datetime import datetime, timezone
 
-from app.models.comic import Comic, Volume
+from app.models.comic import Volume
 from app.models.credits import ComicCredit, Person
 from app.models.interactions import UserVolumeFollow
-from app.models.library import Library
 from app.models.reading_progress import ReadingProgress
 from app.models.series import Series
 from app.models.tags import Character, Location, Team
+from tests.factories import create_comic, create_library_with_root
 
 
 def _create_volume_fixture(db, *, lib_name: str, series_name: str):
-    library = Library(name=lib_name, path=f"/tmp/{lib_name}")
+    library = create_library_with_root(db, lib_name, f"/tmp/{lib_name}")
+    root = library.active_root
     series = Series(name=series_name, library=library)
     volume = Volume(series=series, volume_number=1)
 
-    db.add_all([library, series, volume])
+    db.add_all([series, volume])
     db.flush()
 
     comics = [
-        Comic(
-            volume_id=volume.id,
+        create_comic(
+            db, volume, root, f"{series_name}-10.cbz",
             number="10",
             title=f"{series_name} #10",
             year=2024,
             filename=f"{series_name}-10.cbz",
-            file_path=f"/tmp/{series_name}-10-{lib_name}.cbz",
             page_count=20,
         ),
-        Comic(
-            volume_id=volume.id,
+        create_comic(
+            db, volume, root, f"{series_name}-2.cbz",
             number="2",
             title=f"{series_name} #2",
             year=2023,
             filename=f"{series_name}-2.cbz",
-            file_path=f"/tmp/{series_name}-2-{lib_name}.cbz",
             page_count=22,
         ),
-        Comic(
-            volume_id=volume.id,
+        create_comic(
+            db, volume, root, f"{series_name}-annual.cbz",
             number="1",
             title=f"{series_name} Annual",
             format="annual",
             year=2022,
             filename=f"{series_name}-annual.cbz",
-            file_path=f"/tmp/{series_name}-annual-{lib_name}.cbz",
             page_count=30,
         ),
     ]
 
-    db.add_all(comics)
     db.commit()
 
     db.refresh(library)
@@ -68,15 +65,13 @@ def _create_volume_fixture(db, *, lib_name: str, series_name: str):
 def test_volume_detail_blocks_restricted_content(auth_client, db, normal_user):
     data = _create_volume_fixture(db, lib_name="restricted-lib", series_name="Restricted Volume")
 
-    mature = Comic(
-        volume_id=data["volume"].id,
+    create_comic(
+        db, data["volume"], data["library"].active_root, "restricted.cbz",
         number="11",
         title="Restricted Issue",
         age_rating="Mature 17+",
         filename="restricted.cbz",
-        file_path="/tmp/restricted-issue.cbz",
     )
-    db.add(mature)
 
     normal_user.max_age_rating = "Teen"
     normal_user.allow_unknown_age_ratings = False
@@ -124,14 +119,15 @@ def test_volume_issues_filters_sorting_and_read_status(auth_client, db, normal_u
 
 
 def test_volume_detail_reports_missing_zero_index_and_metadata(auth_client, db, normal_user):
-    library = Library(name="vol-detail-lib", path="/tmp/vol-detail-lib")
+    library = create_library_with_root(db, "vol-detail-lib", "/tmp/vol-detail-lib")
+    root = library.active_root
     series = Series(name="Volume Detail Saga", library=library)
     volume = Volume(series=series, volume_number=1, summary_override="Volume override summary")
-    db.add_all([library, series, volume])
+    db.add_all([series, volume])
     db.flush()
 
-    issue_zero = Comic(
-        volume_id=volume.id,
+    issue_zero = create_comic(
+        db, volume, root, "issue-0.cbz",
         number="0",
         title="Issue Zero",
         year=2000,
@@ -142,10 +138,9 @@ def test_volume_detail_reports_missing_zero_index_and_metadata(auth_client, db, 
         publisher="Detail Pub",
         imprint="Detail Imprint",
         filename="issue-0.cbz",
-        file_path="/tmp/vol-detail-0.cbz",
     )
-    issue_one = Comic(
-        volume_id=volume.id,
+    issue_one = create_comic(
+        db, volume, root, "issue-1.cbz",
         number="1",
         title="Issue One",
         year=2001,
@@ -159,10 +154,9 @@ def test_volume_detail_reports_missing_zero_index_and_metadata(auth_client, db, 
         publisher="Detail Pub",
         imprint="Detail Imprint",
         filename="issue-1.cbz",
-        file_path="/tmp/vol-detail-1.cbz",
     )
-    issue_three = Comic(
-        volume_id=volume.id,
+    issue_three = create_comic(
+        db, volume, root, "issue-3.cbz",
         number="3",
         title="Issue Three",
         year=2003,
@@ -173,10 +167,9 @@ def test_volume_detail_reports_missing_zero_index_and_metadata(auth_client, db, 
         publisher="Detail Pub",
         imprint="Detail Imprint",
         filename="issue-3.cbz",
-        file_path="/tmp/vol-detail-3.cbz",
     )
-    annual = Comic(
-        volume_id=volume.id,
+    annual = create_comic(
+        db, volume, root, "annual.cbz",
         number="1",
         title="Annual",
         format="annual",
@@ -185,10 +178,9 @@ def test_volume_detail_reports_missing_zero_index_and_metadata(auth_client, db, 
         page_count=30,
         file_size=140,
         filename="annual.cbz",
-        file_path="/tmp/vol-detail-annual.cbz",
     )
-    special = Comic(
-        volume_id=volume.id,
+    special = create_comic(
+        db, volume, root, "special.cbz",
         number="0.5",
         title="Special",
         format="one-shot",
@@ -197,10 +189,7 @@ def test_volume_detail_reports_missing_zero_index_and_metadata(auth_client, db, 
         page_count=26,
         file_size=90,
         filename="special.cbz",
-        file_path="/tmp/vol-detail-special.cbz",
     )
-    db.add_all([issue_zero, issue_one, issue_three, annual, special])
-    db.flush()
 
     writer = Person(name="Writer A")
     penciller = Person(name="Penciller A")
@@ -266,21 +255,19 @@ def test_volume_detail_reports_missing_zero_index_and_metadata(auth_client, db, 
 
 
 def test_volume_detail_hides_story_arcs_when_parsing_disabled(auth_client, db, normal_user):
-    library = Library(name="vol-story-parse-off-lib", path="/tmp/vol-story-parse-off-lib", parse_story_arcs=False)
+    library = create_library_with_root(db, "vol-story-parse-off-lib", "/tmp/vol-story-parse-off-lib", parse_story_arcs=False)
+    root = library.active_root
     series = Series(name="Volume Story Off", library=library)
     volume = Volume(series=series, volume_number=1)
-    db.add_all([library, series, volume])
+    db.add_all([series, volume])
     db.flush()
 
-    db.add(
-        Comic(
-            volume_id=volume.id,
-            number="1",
-            title="Story Arc Off",
-            story_arc="Hidden Arc",
-            filename="story-off.cbz",
-            file_path="/tmp/story-off.cbz",
-        )
+    create_comic(
+        db, volume, root, "story-off.cbz",
+        number="1",
+        title="Story Arc Off",
+        story_arc="Hidden Arc",
+        filename="story-off.cbz",
     )
 
     normal_user.accessible_libraries.append(library)
@@ -293,14 +280,15 @@ def test_volume_detail_hides_story_arcs_when_parsing_disabled(auth_client, db, n
 
 
 def test_volume_detail_marks_standalone_without_plain_issues(auth_client, db, normal_user):
-    library = Library(name="vol-standalone-lib", path="/tmp/vol-standalone-lib")
+    library = create_library_with_root(db, "vol-standalone-lib", "/tmp/vol-standalone-lib")
+    root = library.active_root
     series = Series(name="Standalone Volume", library=library)
     volume = Volume(series=series, volume_number=1)
-    db.add_all([library, series, volume])
+    db.add_all([series, volume])
     db.flush()
 
-    annual = Comic(
-        volume_id=volume.id,
+    create_comic(
+        db, volume, root, "standalone-annual.cbz",
         number="1",
         title="Standalone Annual",
         format="annual",
@@ -308,10 +296,9 @@ def test_volume_detail_marks_standalone_without_plain_issues(auth_client, db, no
         page_count=40,
         file_size=150,
         filename="standalone-annual.cbz",
-        file_path="/tmp/standalone-annual.cbz",
     )
-    special = Comic(
-        volume_id=volume.id,
+    create_comic(
+        db, volume, root, "standalone-special.cbz",
         number="2",
         title="Standalone Special",
         format="one-shot",
@@ -319,9 +306,7 @@ def test_volume_detail_marks_standalone_without_plain_issues(auth_client, db, no
         page_count=35,
         file_size=130,
         filename="standalone-special.cbz",
-        file_path="/tmp/standalone-special.cbz",
     )
-    db.add_all([annual, special])
 
     normal_user.accessible_libraries.append(library)
     db.commit()
@@ -341,34 +326,31 @@ def test_volume_detail_marks_standalone_without_plain_issues(auth_client, db, no
 
 
 def test_volume_detail_advances_to_next_issue_when_latest_progress_is_completed(auth_client, db, normal_user):
-    library = Library(name="volume-next-lib", path="/tmp/volume-next-lib")
+    library = create_library_with_root(db, "volume-next-lib", "/tmp/volume-next-lib")
+    root = library.active_root
     series = Series(name="Volume Next Logic", library=library)
     volume = Volume(series=series, volume_number=1)
-    db.add_all([library, series, volume])
+    db.add_all([series, volume])
     db.flush()
 
-    issue_one = Comic(
-        volume_id=volume.id,
+    issue_one = create_comic(
+        db, volume, root, "volume-next-1.cbz",
         number="1",
         title="Volume Next #1",
         filename="volume-next-1.cbz",
-        file_path="/tmp/volume-next-1.cbz",
     )
-    issue_two = Comic(
-        volume_id=volume.id,
+    issue_two = create_comic(
+        db, volume, root, "volume-next-2.cbz",
         number="2",
         title="Volume Next #2",
         filename="volume-next-2.cbz",
-        file_path="/tmp/volume-next-2.cbz",
     )
-    issue_three = Comic(
-        volume_id=volume.id,
+    issue_three = create_comic(
+        db, volume, root, "volume-next-3.cbz",
         number="3",
         title="Volume Next #3",
         filename="volume-next-3.cbz",
-        file_path="/tmp/volume-next-3.cbz",
     )
-    db.add_all([issue_one, issue_two, issue_three])
 
     normal_user.accessible_libraries.append(library)
     db.flush()
@@ -458,36 +440,32 @@ def test_following_list_reports_new_arrivals_and_filters_hidden_volumes(auth_cli
     ])
     db.flush()
 
-    new_issue = Comic(
-        volume_id=visible["volume"].id,
+    visible_root = visible["library"].active_root
+    new_issue = create_comic(
+        db, visible["volume"], visible_root, "visible-follow-11.cbz",
         number="11",
         title="Visible Follow #11",
         year=2026,
         created_at=datetime(2026, 7, 2, 12, 0, tzinfo=timezone.utc),
         filename="visible-follow-11.cbz",
-        file_path="/tmp/visible-follow-11.cbz",
     )
-    started_issue = Comic(
-        volume_id=visible["volume"].id,
+    started_issue = create_comic(
+        db, visible["volume"], visible_root, "visible-follow-12.cbz",
         number="12",
         title="Visible Follow #12",
         year=2026,
         created_at=datetime(2026, 7, 3, 12, 0, tzinfo=timezone.utc),
         filename="visible-follow-12.cbz",
-        file_path="/tmp/visible-follow-12.cbz",
     )
-    annual = Comic(
-        volume_id=visible["volume"].id,
+    annual = create_comic(
+        db, visible["volume"], visible_root, "visible-follow-annual.cbz",
         number="1",
         title="Visible Follow Annual",
         format="annual",
         year=2026,
         created_at=datetime(2026, 7, 4, 12, 0, tzinfo=timezone.utc),
         filename="visible-follow-annual.cbz",
-        file_path="/tmp/visible-follow-annual.cbz",
     )
-    db.add_all([new_issue, started_issue, annual])
-    db.flush()
 
     db.add(
         ReadingProgress(

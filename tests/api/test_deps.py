@@ -9,9 +9,9 @@ from app.api import deps
 from app.config import settings
 from app.core.security import get_password_hash
 from app.models.comic import Comic, Volume
-from app.models.library import Library
 from app.models.series import Series
 from app.models.user import User
+from tests.factories import create_library_with_root
 
 
 def _make_request(cookie_header: str | None = None) -> Request:
@@ -35,7 +35,8 @@ def _make_request(cookie_header: str | None = None) -> Request:
 
 
 def _seed_graph(db):
-    library = Library(name="deps-lib", path="/tmp/deps-lib")
+    library = create_library_with_root(db, "deps-lib", "/tmp/deps-lib")
+    root = library.active_root
     series = Series(name="Deps Series", library=library)
     volume = Volume(series=series, volume_number=1)
     comic = Comic(
@@ -43,9 +44,10 @@ def _seed_graph(db):
         number="1",
         title="Deps Comic",
         filename="deps-comic.cbz",
-        file_path="/tmp/deps-comic.cbz",
+        library_root_id=root.id,
+        relative_path="deps-comic.cbz",
     )
-    db.add_all([library, series, volume, comic])
+    db.add_all([series, volume, comic])
     db.commit()
     db.refresh(library)
     db.refresh(series)

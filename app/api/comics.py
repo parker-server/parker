@@ -121,6 +121,7 @@ async def get_comic(comic_id: int, db: SessionDep, current_user: CurrentUser):
     comic = db.query(Comic).options(
         # Parents: Join them (1 row)
         joinedload(Comic.volume).joinedload(Volume.series).joinedload(Series.library),
+        joinedload(Comic.library_root),
 
         # Children/Lists: Select them separately to avoid 10x10x10 row explosion
         selectinload(Comic.credits).joinedload(ComicCredit.person),  # Keep person joined to credit
@@ -199,7 +200,7 @@ async def get_comic(comic_id: int, db: SessionDep, current_user: CurrentUser):
     return {
         "id": comic.id,
         "filename": comic.filename,
-        "file_path": comic.file_path,
+        "file_path": comic.absolute_path,
         "file_size": comic.file_size,
         "thumbnail_hash": get_thumbnail_hash(comic.updated_at),
 

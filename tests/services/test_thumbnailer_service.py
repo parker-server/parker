@@ -5,8 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.models.comic import Comic, Volume
-from app.models.library import Library
+from app.models.comic import Volume
 from app.models.series import Series
 from app.services.thumbnailer import (
     ThumbnailService,
@@ -15,6 +14,7 @@ from app.services.thumbnailer import (
     _thumbnail_writer,
 )
 import app.services.thumbnailer as thumbnailer_module
+from tests.factories import create_comic, create_library_with_root
 
 
 class _ReadQueue:
@@ -101,9 +101,7 @@ class _FakePool:
 
 
 def _seed_library_and_comics(db, tmp_path, *, lib_name="thumb-lib"):
-    lib = Library(name=lib_name, path=str(tmp_path / lib_name))
-    db.add(lib)
-    db.flush()
+    lib = create_library_with_root(db, lib_name, str(tmp_path / lib_name))
 
     series = Series(name=f"{lib_name}-series", library_id=lib.id)
     volume = Volume(series=series, volume_number=1)
@@ -114,25 +112,23 @@ def _seed_library_and_comics(db, tmp_path, *, lib_name="thumb-lib"):
 
 
 def test_apply_batch_updates_processed_and_reports_error_and_missing(db, tmp_path):
-    _lib, _series, volume = _seed_library_and_comics(db, tmp_path, lib_name="thumb-batch-lib")
+    lib, _series, volume = _seed_library_and_comics(db, tmp_path, lib_name="thumb-batch-lib")
+    root = lib.active_root
 
-    comic_with_palette = Comic(
-        volume_id=volume.id,
+    comic_with_palette = create_comic(
+        db, volume, root, "one.cbz",
         number="1",
         filename="one.cbz",
-        file_path=str(tmp_path / "one.cbz"),
         page_count=10,
         is_dirty=True,
     )
-    comic_no_palette = Comic(
-        volume_id=volume.id,
+    comic_no_palette = create_comic(
+        db, volume, root, "two.cbz",
         number="2",
         filename="two.cbz",
-        file_path=str(tmp_path / "two.cbz"),
         page_count=12,
         is_dirty=True,
     )
-    db.add_all([comic_with_palette, comic_no_palette])
     db.commit()
 
     outcomes = _apply_batch(
@@ -371,32 +367,30 @@ def test_get_target_comics_requires_library_and_filters_dirty(db, tmp_path):
 
     lib_a, _series_a, volume_a = _seed_library_and_comics(db, tmp_path, lib_name="target-lib-a")
     lib_b, _series_b, volume_b = _seed_library_and_comics(db, tmp_path, lib_name="target-lib-b")
+    root_a = lib_a.active_root
+    root_b = lib_b.active_root
 
-    dirty_a = Comic(
-        volume_id=volume_a.id,
+    dirty_a = create_comic(
+        db, volume_a, root_a, "dirty-a.cbz",
         number="1",
         filename="dirty-a.cbz",
-        file_path=str(tmp_path / "dirty-a.cbz"),
         page_count=10,
         is_dirty=True,
     )
-    clean_a = Comic(
-        volume_id=volume_a.id,
+    clean_a = create_comic(
+        db, volume_a, root_a, "clean-a.cbz",
         number="2",
         filename="clean-a.cbz",
-        file_path=str(tmp_path / "clean-a.cbz"),
         page_count=10,
         is_dirty=False,
     )
-    dirty_b = Comic(
-        volume_id=volume_b.id,
+    dirty_b = create_comic(
+        db, volume_b, root_b, "dirty-b.cbz",
         number="1",
         filename="dirty-b.cbz",
-        file_path=str(tmp_path / "dirty-b.cbz"),
         page_count=10,
         is_dirty=True,
     )
-    db.add_all([dirty_a, clean_a, dirty_b])
     db.commit()
 
     scoped_service = ThumbnailService(db, library_id=lib_a.id)
@@ -429,7 +423,7 @@ def test_process_missing_thumbnails_parallel_all_skipped_short_circuit(db, tmp_p
 
     skipped_comic = SimpleNamespace(
         id=1,
-        file_path=str(tmp_path / "comic.cbz"),
+        absolute_path=str(tmp_path / "comic.cbz"),
         thumbnail_path=str(thumb),
         color_primary="#111",
         is_dirty=False,
@@ -452,7 +446,7 @@ def test_process_missing_thumbnails_parallel_worker_limit_override(db, tmp_path,
 
     dirty = SimpleNamespace(
         id=5,
-        file_path=str(tmp_path / "dirty.cbz"),
+        absolute_path=str(tmp_path / "dirty.cbz"),
         thumbnail_path=None,
         color_primary=None,
         is_dirty=True,
@@ -477,15 +471,13 @@ def test_process_missing_thumbnails_parallel_worker_limit_override(db, tmp_path,
 
 def test_process_missing_thumbnails_parallel_auto_worker_count_for_series(db, tmp_path, monkeypatch):
     lib, series, volume = _seed_library_and_comics(db, tmp_path, lib_name="auto-worker-lib")
-    comic = Comic(
-        volume_id=volume.id,
+    comic = create_comic(
+        db, volume, lib.active_root, "auto.cbz",
         number="1",
         filename="auto.cbz",
-        file_path=str(tmp_path / "auto.cbz"),
         page_count=10,
         is_dirty=True,
     )
-    db.add(comic)
     db.commit()
 
     service = ThumbnailService(db, library_id=None)
@@ -512,7 +504,7 @@ def test_process_missing_thumbnails_parallel_respects_requested_worker_cap(db, t
 
     dirty = SimpleNamespace(
         id=9,
-        file_path=str(tmp_path / "dirty2.cbz"),
+        absolute_path=str(tmp_path / "dirty2.cbz"),
         thumbnail_path=None,
         color_primary=None,
         is_dirty=True,
@@ -541,7 +533,7 @@ def test_process_missing_thumbnails_parallel_timeout_terminates_stuck_writer(db,
 
     dirty = SimpleNamespace(
         id=11,
-        file_path=str(tmp_path / "stuck.cbz"),
+        absolute_path=str(tmp_path / "stuck.cbz"),
         thumbnail_path=None,
         color_primary=None,
         is_dirty=True,

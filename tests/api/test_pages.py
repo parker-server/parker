@@ -1,11 +1,12 @@
 from app.core.templates import templates
 from app.models.comic import Comic, Volume
-from app.models.library import Library
 from app.models.series import Series
+from tests.factories import create_library_with_root
 
 
 def _seed_series_page_data(db, volume_count=1):
-    library = Library(name=f"Page Test Library {volume_count}", path=f"/tmp/page-test-library-{volume_count}")
+    library = create_library_with_root(db, f"Page Test Library {volume_count}", f"/tmp/page-test-library-{volume_count}")
+    root = library.active_root
     series = Series(name=f"Page Test Series {volume_count}", library=library)
     db.add(series)
 
@@ -18,7 +19,8 @@ def _seed_series_page_data(db, volume_count=1):
                 volume=volume,
                 number="1",
                 filename=f"page-test-{volume_count}-{index}.cbz",
-                file_path=f"/tmp/page-test-{volume_count}-{index}.cbz",
+                library_root_id=root.id,
+                relative_path=f"page-test-{volume_count}-{index}.cbz",
                 page_count=10,
             )
         )

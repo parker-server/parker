@@ -3,12 +3,13 @@ import pytest
 from unittest.mock import patch
 
 from app.models.comic import Comic, Volume
-from app.models.series import Series
 from app.models.library import Library
+from app.models.series import Series
 from app.core.security import get_password_hash, verify_password
 from app.models.user import User
 from app.models.reading_progress import ReadingProgress
 from app.services.settings_service import SettingsService
+from tests.factories import create_comic, create_library_with_root
 
 # --- HELPERS ---
 
@@ -20,9 +21,8 @@ def setup_mixed_environment(db):
     3. Series B (Poisoned): 1 Comic (Teen), 1 Comic (Mature)
     """
     # 1. Library
-    lib = Library(name="Test Lib", path="/tmp")
-    db.add(lib)
-    db.commit()
+    lib = create_library_with_root(db, "Test Lib", "/tmp")
+    root = lib.active_root
 
     # 2. Series A (Safe)
     series_safe = Series(name="Safe Series", library_id=lib.id)
@@ -33,15 +33,13 @@ def setup_mixed_environment(db):
     db.add(vol_safe)
     db.commit()
 
-    c1 = Comic(
-        volume_id=vol_safe.id,
+    c1 = create_comic(
+        db, vol_safe, root, "safe.cbz",
         title="Safe Book",
         number="1",
         age_rating="Teen",
         filename="safe.cbz",
-        file_path="/tmp/safe.cbz"
     )
-    db.add(c1)
 
     # 3. Series B (Poisoned/Mixed)
     series_mixed = Series(name="Poisoned Series", library_id=lib.id)
@@ -53,25 +51,21 @@ def setup_mixed_environment(db):
     db.commit()
 
     # This comic is SAFE, but lives in a dangerous neighborhood
-    c2 = Comic(
-        volume_id=vol_mixed.id,
+    c2 = create_comic(
+        db, vol_mixed, root, "mixed_safe.cbz",
         title="Safe Book in Bad Series",
         number="1",
         age_rating="Teen",
         filename="mixed_safe.cbz",
-        file_path="/tmp/mixed_safe.cbz"
     )
     # This comic is the POISON PILL
-    c3 = Comic(
-        volume_id=vol_mixed.id,
+    c3 = create_comic(
+        db, vol_mixed, root, "mixed_mature.cbz",
         title="Mature Book",
         number="2",
         age_rating="Mature 17+",
         filename="mixed_mature.cbz",
-        file_path="/tmp/mixed_mature.cbz"
     )
-    db.add(c2)
-    db.add(c3)
     db.commit()
 
     return {

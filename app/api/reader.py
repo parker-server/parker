@@ -9,10 +9,12 @@ import logging
 
 from app.core.comic_helpers import (get_age_rating_config, get_comic_age_restriction)
 from app.core.comic_helpers import get_format_sort_index, get_format_weight, REVERSE_NUMBERING_SERIES
+from app.core.path_utils import resolve_absolute_path
 from app.api.deps import SessionDep, CurrentUser
 from app.models.comic import Comic, Volume
 from app.models.series import Series
 from app.models.library import Library
+from app.models.library_root import LibraryRoot
 
 from app.services.images import ImageService
 from app.models.reading_progress import ReadingProgress
@@ -62,7 +64,8 @@ async def get_comic_reader_init(comic_id: int,
     """
     # 1. Fetch Comic with Series/Volume loaded (Avoids N+1 later)
     comic = db.query(Comic).options(
-        joinedload(Comic.volume).joinedload(Volume.series)
+        joinedload(Comic.volume).joinedload(Volume.series),
+        joinedload(Comic.library_root),
     ).filter(Comic.id == comic_id).first()
 
     if not comic:
@@ -351,7 +354,7 @@ async def get_comic_reader_init(comic_id: int,
         # Fallback to Physical (Slow but accurate)
         # This handles legacy scans or edge cases
         image_service = ImageService()
-        page_count = image_service.get_page_count(str(comic.file_path))
+        page_count = image_service.get_page_count(comic.absolute_path)
 
         # No Self-heal the DB record here
         # GET requests shouldn't write to DB to avoid locks.
@@ -387,17 +390,24 @@ def get_comic_page(
 ):
     """
     Get a specific page image.
-    OPTIMIZED: Fetches only the file_path string, not the full Comic object.
+    OPTIMIZED: Fetches only the root path + relative path, not the full Comic object.
     """
-    # 1. Fetch Path Only (Scalar Query = <1ms)
-    file_path = db.query(Comic.file_path).filter(Comic.id == comic_id).scalar()
+    # 1. Fetch Path Only (Lean joined query = <1ms, no full ORM object)
+    row = (
+        db.query(LibraryRoot.path, Comic.relative_path)
+        .join(Comic, Comic.library_root_id == LibraryRoot.id)
+        .filter(Comic.id == comic_id)
+        .first()
+    )
 
-    if not file_path:
+    if not row:
         raise HTTPException(status_code=404, detail="Comic not found")
+
+    file_path = resolve_absolute_path(row[0], row[1])
 
     image_service = ImageService()
     image_bytes, is_correct_format, mime_type = image_service.get_page_image(
-        str(file_path),
+        file_path,
         page_index,
         sharpen=sharpen,
         grayscale=grayscale,
