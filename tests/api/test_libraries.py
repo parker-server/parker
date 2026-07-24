@@ -694,6 +694,80 @@ def test_preview_library_relocation_returns_404_for_missing_library(admin_client
     assert response.json() == {"detail": "Library not found"}
 
 
+def test_confirm_library_relocation_updates_root_without_queuing_scan(admin_client, db, tmp_path):
+    current_root_path = tmp_path / "confirm-api-current"
+    proposed_root_path = tmp_path / "confirm-api-proposed"
+    current_root_path.mkdir()
+    proposed_root_path.mkdir()
+
+    library = create_library_with_root(db, "API Confirm Relocation", str(current_root_path))
+    root = library.active_root
+    series = Series(name="API Confirm Series", library=library)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
+    db.flush()
+
+    matched = create_comic(db, volume, root, "Alpha/one.cbz", filename="one.cbz")
+    missing = create_comic(db, volume, root, "Beta/two.cbz", filename="two.cbz")
+    db.commit()
+
+    library_id = library.id
+    root_id = root.id
+    matched_id = matched.id
+    missing_id = missing.id
+
+    _write_comic_file(proposed_root_path / "Alpha" / "one.cbz")
+    _write_comic_file(proposed_root_path / "Extra" / "three.cbz")
+
+    with (
+        patch("app.api.libraries.library_watcher.refresh_watches") as mock_refresh_watches,
+        patch("app.api.libraries.scan_manager.add_task") as mock_add_scan_task,
+    ):
+        response = admin_client.post(
+            f"/api/libraries/{library_id}/relocation/confirm",
+            json={"path": str(proposed_root_path)},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["library_id"] == library_id
+    assert payload["root_id"] == root_id
+    assert payload["relocated"] is True
+    assert payload["previous_path"] == str(current_root_path)
+    assert payload["current_path"] == str(proposed_root_path.resolve())
+    assert payload["proposed_path"] == str(proposed_root_path.resolve())
+    assert payload["matched_count"] == 1
+    assert payload["missing_count"] == 1
+    assert payload["new_count"] == 1
+    assert payload["scan_recommended"] is True
+    assert payload["scan_reasons"] == [
+        "Verify relocated archives and refresh metadata if files changed",
+        "Reconcile existing comics that were missing at the new root",
+        "Import new archive files found at the new root",
+    ]
+
+    mock_refresh_watches.assert_called_once()
+    mock_add_scan_task.assert_not_called()
+
+    db.refresh(root)
+    assert root.path == str(proposed_root_path.resolve())
+    assert db.get(Comic, matched_id).relative_path == "Alpha/one.cbz"
+    assert db.get(Comic, missing_id).relative_path == "Beta/two.cbz"
+
+
+def test_confirm_library_relocation_returns_404_for_missing_library(admin_client, tmp_path):
+    proposed_root_path = tmp_path / "missing-confirm-api-proposed"
+    proposed_root_path.mkdir()
+
+    response = admin_client.post(
+        "/api/libraries/999999/relocation/confirm",
+        json={"path": str(proposed_root_path)},
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Library not found"}
+
+
 def test_update_library_returns_404_for_missing_library(admin_client):
     response = admin_client.patch("/api/libraries/999999", json={"name": "Nope"})
 

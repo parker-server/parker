@@ -61,6 +61,22 @@ class LibraryRootRelocationPreview:
         }
 
 
+@dataclass(frozen=True)
+class LibraryRootRelocationConfirmation:
+    preview: LibraryRootRelocationPreview
+    scan_recommended: bool
+    scan_reasons: list[str]
+
+    def to_dict(self) -> dict:
+        payload = self.preview.to_dict()
+        payload["previous_path"] = payload.pop("current_path")
+        payload["current_path"] = self.preview.proposed_path
+        payload["relocated"] = True
+        payload["scan_recommended"] = self.scan_recommended
+        payload["scan_reasons"] = self.scan_reasons
+        return payload
+
+
 def preview_library_root_relocation(
     db: Session,
     *,
@@ -156,6 +172,38 @@ def preview_library_root_relocation(
     )
 
 
+def confirm_library_root_relocation(
+    db: Session,
+    *,
+    library: Library,
+    proposed_path: str,
+    root_id: int | None = None,
+    sample_limit: int = DEFAULT_SAMPLE_LIMIT,
+) -> LibraryRootRelocationConfirmation:
+    preview = preview_library_root_relocation(
+        db,
+        library=library,
+        proposed_path=proposed_path,
+        root_id=root_id,
+        sample_limit=sample_limit,
+    )
+
+    selected_root = _select_relocation_root(library, preview.root_id)
+    selected_root.path = preview.proposed_path
+
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    return LibraryRootRelocationConfirmation(
+        preview=preview,
+        scan_recommended=True,
+        scan_reasons=_scan_reasons(preview),
+    )
+
+
 def _select_relocation_root(library: Library, root_id: int | None) -> LibraryRoot:
     if root_id is not None:
         root = next((candidate for candidate in library.roots if candidate.id == root_id), None)
@@ -209,6 +257,17 @@ def _comparison_path(path: str) -> str:
         return str(Path(path).expanduser().resolve(strict=True))
     except OSError:
         return path
+
+
+def _scan_reasons(preview: LibraryRootRelocationPreview) -> list[str]:
+    reasons = ["Verify relocated archives and refresh metadata if files changed"]
+
+    if preview.missing_count:
+        reasons.append("Reconcile existing comics that were missing at the new root")
+    if preview.new_count:
+        reasons.append("Import new archive files found at the new root")
+
+    return reasons
 
 
 def _paths_equal(first_path: str, second_path: str) -> bool:

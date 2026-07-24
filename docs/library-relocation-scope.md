@@ -1,6 +1,6 @@
 # Library Relocation Scope
 
-Status: Phase 1 (schema + guardrail), the full Compatibility Field Removal Plan, and the relocation preview backend are implemented; confirmation/UI are not yet built
+Status: Phase 1 (schema + guardrail), the full Compatibility Field Removal Plan, and the relocation preview/confirmation backend are implemented; UI is not yet built
 
 This note captures a future enhancement for safely changing the filesystem path of an existing Parker library without losing comic identity.
 
@@ -13,9 +13,10 @@ Phase 1 (schema + guardrail) is done:
 - `create_library` now creates a matching `LibraryRoot`.
 - Editing a library's path is hard-blocked in the API and admin UI (400 on change) until the relocation flow below exists.
 
-The relocation preview backend is done:
+The relocation preview/confirmation backend is done:
 
 - Admin `POST /api/libraries/{library_id}/relocation/preview` computes matched, missing, and new archive counts without mutating stored root paths.
+- Admin `POST /api/libraries/{library_id}/relocation/confirm` recomputes the same impact summary, updates only the selected `LibraryRoot.path`, and returns `scan_recommended: true` without queuing a scan.
 - Preview targets a `LibraryRoot`; `root_id` is optional only when the library has one active root, and becomes required when multiple active roots would make the target ambiguous.
 - Path overlap validation is root-level and rejects overlap with the current root or any other root, including roots in the same library.
 
@@ -171,7 +172,7 @@ Cleanup should operate within the relevant root identity, not by comparing old a
 3. **Read-path cutover.** Every reader of `file_path`/`Library.path` — the comic reader, thumbnail generation, comics/reports API responses, OPDS, the Kavita migration tool, the library API, watcher, and startup diagnostics — reconstructs the absolute path on demand via `Comic.absolute_path` / `Library.active_root`, backed by `resolve_absolute_path` in `app/core/path_utils.py`.
 4. **Column removal.** Migration `9def8df8ed7c` dropped `Comic.file_path` and `Library.path` for good.
 
-Stage 1 remains a prerequisite for the relocation flow below to be considered safe. The non-mutating preview backend is now built; confirmation and UI are still unbuilt.
+Stage 1 remains a prerequisite for the relocation flow below to be considered safe. The backend preview and confirmation endpoints are now built; UI is still unbuilt.
 
 ## Admin UI Guardrails
 

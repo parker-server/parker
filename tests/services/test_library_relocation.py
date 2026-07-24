@@ -1,10 +1,11 @@
 import pytest
 
-from app.models.comic import Volume
+from app.models.comic import Comic, Volume
 from app.models.library_root import LibraryRoot
 from app.models.series import Series
 from app.services.library_relocation import (
     LibraryRelocationError,
+    confirm_library_root_relocation,
     preview_library_root_relocation,
 )
 from tests.factories import create_comic, create_library_with_root
@@ -164,3 +165,80 @@ def test_preview_library_root_relocation_compares_resolved_current_root_path(db,
             library=library,
             proposed_path=str(current_root_path.resolve()),
         )
+
+
+def test_confirm_library_root_relocation_updates_root_and_preserves_comic_identity(db, tmp_path):
+    current_root_path = tmp_path / "confirm-current"
+    proposed_root_path = tmp_path / "confirm-proposed"
+    current_root_path.mkdir()
+    proposed_root_path.mkdir()
+
+    library = create_library_with_root(db, "Confirm Relocation", str(current_root_path))
+    root = library.active_root
+    volume = _create_volume(db, library)
+
+    matched = create_comic(db, volume, root, "Alpha/one.cbz", filename="one.cbz")
+    missing = create_comic(db, volume, root, "Beta/two.cbz", filename="two.cbz")
+    db.commit()
+
+    root_id = root.id
+    matched_id = matched.id
+    missing_id = missing.id
+
+    _write_file(proposed_root_path / "Alpha" / "one.cbz")
+    _write_file(proposed_root_path / "Extra" / "three.cbz")
+
+    confirmation = confirm_library_root_relocation(
+        db,
+        library=library,
+        proposed_path=str(proposed_root_path),
+    )
+
+    payload = confirmation.to_dict()
+    assert payload["relocated"] is True
+    assert payload["previous_path"] == str(current_root_path)
+    assert payload["current_path"] == str(proposed_root_path.resolve())
+    assert payload["proposed_path"] == str(proposed_root_path.resolve())
+    assert payload["matched_count"] == 1
+    assert payload["missing_count"] == 1
+    assert payload["new_count"] == 1
+    assert payload["scan_recommended"] is True
+    assert payload["scan_reasons"] == [
+        "Verify relocated archives and refresh metadata if files changed",
+        "Reconcile existing comics that were missing at the new root",
+        "Import new archive files found at the new root",
+    ]
+
+    refreshed_root = db.get(LibraryRoot, root_id)
+    assert refreshed_root.path == str(proposed_root_path.resolve())
+
+    refreshed_matched = db.get(Comic, matched_id)
+    refreshed_missing = db.get(Comic, missing_id)
+    assert refreshed_matched is not None
+    assert refreshed_missing is not None
+    assert refreshed_matched.library_root_id == root_id
+    assert refreshed_missing.library_root_id == root_id
+    assert refreshed_matched.relative_path == "Alpha/one.cbz"
+    assert refreshed_missing.relative_path == "Beta/two.cbz"
+
+
+def test_confirm_library_root_relocation_reuses_preview_validation(db, tmp_path):
+    first_root_path = tmp_path / "confirm-first"
+    second_root_path = tmp_path / "confirm-second"
+    first_root_path.mkdir()
+    second_root_path.mkdir()
+
+    library = create_library_with_root(db, "Confirm Sibling Root", str(first_root_path))
+    first_root_id = library.active_root.id
+    db.add(LibraryRoot(library_id=library.id, path=str(second_root_path), is_active=True))
+    db.commit()
+
+    with pytest.raises(LibraryRelocationError, match="overlaps with existing root"):
+        confirm_library_root_relocation(
+            db,
+            library=library,
+            root_id=first_root_id,
+            proposed_path=str(second_root_path),
+        )
+
+    assert db.get(LibraryRoot, first_root_id).path == str(first_root_path)

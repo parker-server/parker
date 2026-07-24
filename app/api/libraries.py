@@ -21,6 +21,7 @@ from app.services.scan_manager import scan_manager
 from app.services.library_relocation import (
     DEFAULT_SAMPLE_LIMIT,
     LibraryRelocationError,
+    confirm_library_root_relocation,
     preview_library_root_relocation,
 )
 from app.services.watcher import library_watcher
@@ -487,7 +488,7 @@ class LibraryUpdate(BaseModel):
     parse_story_arcs: Optional[bool] = None
 
 
-class LibraryRelocationPreviewRequest(BaseModel):
+class LibraryRelocationRequest(BaseModel):
     path: str
     root_id: Optional[int] = None
     sample_limit: int = Field(DEFAULT_SAMPLE_LIMIT, ge=0, le=100)
@@ -575,7 +576,7 @@ async def update_library(
 @router.post("/{library_id}/relocation/preview", tags=["admin"], name="relocation_preview")
 async def preview_library_relocation(
         library_id: int,
-        preview_in: LibraryRelocationPreviewRequest,
+        preview_in: LibraryRelocationRequest,
         db: SessionDep,
         admin_user: AdminUser,
 ):
@@ -601,6 +602,39 @@ async def preview_library_relocation(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return preview.to_dict()
+
+
+@router.post("/{library_id}/relocation/confirm", tags=["admin"], name="relocation_confirm")
+async def confirm_library_relocation(
+        library_id: int,
+        relocation_in: LibraryRelocationRequest,
+        db: SessionDep,
+        admin_user: AdminUser,
+):
+    """Confirm a library root relocation without queuing a scan."""
+    library = (
+        db.query(Library)
+        .options(selectinload(Library.roots))
+        .filter(Library.id == library_id)
+        .first()
+    )
+    if not library:
+        raise HTTPException(status_code=404, detail="Library not found")
+
+    try:
+        confirmation = confirm_library_root_relocation(
+            db,
+            library=library,
+            proposed_path=relocation_in.path,
+            root_id=relocation_in.root_id,
+            sample_limit=relocation_in.sample_limit,
+        )
+    except LibraryRelocationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    library_watcher.refresh_watches()
+
+    return confirmation.to_dict()
 
 
 @router.delete("/{library_id}", tags=["admin"], name="delete")
