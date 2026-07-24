@@ -71,6 +71,11 @@ def _create_library_series_fixture(db, *, lib_name: str):
     }
 
 
+def _write_comic_file(path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"comic")
+
+
 def test_admin_can_create_library(admin_client, db):
     payload = {"name": "Marvel Comics", "path": "/data/marvel"}
 
@@ -574,6 +579,119 @@ def test_update_library_allows_unchanged_path(admin_client, db):
     assert response.status_code == 200
     assert response.json()["name"] == "Renamed"
     assert response.json()["path"] == "/tmp/original"
+
+
+def test_preview_library_relocation_returns_counts_without_updating_root(admin_client, db, tmp_path):
+    current_root_path = tmp_path / "api-current"
+    proposed_root_path = tmp_path / "api-proposed"
+    current_root_path.mkdir()
+    proposed_root_path.mkdir()
+
+    library = create_library_with_root(db, "API Relocation Preview", str(current_root_path))
+    root = library.active_root
+    series = Series(name="API Preview Series", library=library)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
+    db.flush()
+
+    create_comic(db, volume, root, "Alpha/one.cbz", filename="one.cbz")
+    create_comic(db, volume, root, "Beta/two.cbz", filename="two.cbz")
+    db.commit()
+
+    library_id = library.id
+    root_id = root.id
+    _write_comic_file(proposed_root_path / "Alpha" / "one.cbz")
+    _write_comic_file(proposed_root_path / "Extra" / "three.cbz")
+
+    response = admin_client.post(
+        f"/api/libraries/{library_id}/relocation/preview",
+        json={"path": str(proposed_root_path)},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["library_id"] == library_id
+    assert payload["root_id"] == root_id
+    assert payload["current_path"] == str(current_root_path)
+    assert payload["proposed_path"] == str(proposed_root_path.resolve())
+    assert payload["total_existing"] == 2
+    assert payload["total_scanned"] == 2
+    assert payload["matched_count"] == 1
+    assert payload["missing_count"] == 1
+    assert payload["new_count"] == 1
+    assert payload["matched_samples"][0]["relative_path"] == "Alpha/one.cbz"
+    assert payload["missing_samples"][0]["relative_path"] == "Beta/two.cbz"
+    assert payload["new_samples"][0]["relative_path"] == "Extra/three.cbz"
+
+    db.refresh(root)
+    assert root.path == str(current_root_path)
+
+
+def test_preview_library_relocation_requires_root_id_when_multiple_roots_are_active(admin_client, db, tmp_path):
+    first_root_path = tmp_path / "api-first"
+    second_root_path = tmp_path / "api-second"
+    proposed_root_path = tmp_path / "api-proposed"
+    first_root_path.mkdir()
+    second_root_path.mkdir()
+    proposed_root_path.mkdir()
+
+    library = create_library_with_root(db, "API Multi Root Preview", str(first_root_path))
+    second_root = LibraryRoot(library_id=library.id, path=str(second_root_path), is_active=True)
+    db.add(second_root)
+    db.commit()
+
+    default_response = admin_client.post(
+        f"/api/libraries/{library.id}/relocation/preview",
+        json={"path": str(proposed_root_path)},
+    )
+
+    assert default_response.status_code == 400
+    assert default_response.json() == {
+        "detail": "root_id is required when a library has multiple active roots"
+    }
+
+    explicit_response = admin_client.post(
+        f"/api/libraries/{library.id}/relocation/preview",
+        json={"path": str(proposed_root_path), "root_id": second_root.id},
+    )
+
+    assert explicit_response.status_code == 200
+    assert explicit_response.json()["root_id"] == second_root.id
+
+
+def test_preview_library_relocation_rejects_sibling_root_overlap(admin_client, db, tmp_path):
+    first_root_path = tmp_path / "api-sibling-first"
+    second_root_path = tmp_path / "api-sibling-second"
+    first_root_path.mkdir()
+    second_root_path.mkdir()
+
+    library = create_library_with_root(db, "API Sibling Preview", str(first_root_path))
+    first_root_id = library.active_root.id
+    db.add(LibraryRoot(library_id=library.id, path=str(second_root_path), is_active=True))
+    db.commit()
+
+    response = admin_client.post(
+        f"/api/libraries/{library.id}/relocation/preview",
+        json={"path": str(second_root_path), "root_id": first_root_id},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "Relocation path overlaps with existing root for library 'API Sibling Preview'"
+    }
+
+
+def test_preview_library_relocation_returns_404_for_missing_library(admin_client, tmp_path):
+    proposed_root_path = tmp_path / "missing-api-proposed"
+    proposed_root_path.mkdir()
+
+    response = admin_client.post(
+        "/api/libraries/999999/relocation/preview",
+        json={"path": str(proposed_root_path)},
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Library not found"}
 
 
 def test_update_library_returns_404_for_missing_library(admin_client):
