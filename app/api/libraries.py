@@ -96,6 +96,10 @@ def _resolve_library_browser_path(path: Optional[str] = None) -> tuple[FsPath, F
     return root, current
 
 
+def _browser_path(path: FsPath) -> str:
+    return path.as_posix()
+
+
 @router.get("/", name="list")
 async def list_libraries(db: SessionDep,
                          current_user: CurrentUser,
@@ -200,7 +204,7 @@ async def browse_library_paths(admin_user: AdminUser, path: Optional[str] = Quer
 
         entries.append({
             "name": child.name,
-            "path": str(resolved_child),
+            "path": _browser_path(resolved_child),
         })
 
     parent = None
@@ -208,13 +212,13 @@ async def browse_library_paths(admin_user: AdminUser, path: Optional[str] = Quer
         parent_path = current.parent.resolve()
         try:
             parent_path.relative_to(root)
-            parent = str(parent_path)
+            parent = _browser_path(parent_path)
         except ValueError:
-            parent = str(root)
+            parent = _browser_path(root)
 
     return {
-        "root": str(root),
-        "current": str(current),
+        "root": _browser_path(root),
+        "current": _browser_path(current),
         "parent": parent,
         "entries": entries,
     }

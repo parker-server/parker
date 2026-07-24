@@ -5,6 +5,7 @@ from app.models.library_root import LibraryRoot
 from app.models.series import Series
 from app.services.library_relocation import (
     LibraryRelocationError,
+    NO_RELOCATION_MATCHES_MESSAGE,
     confirm_library_root_relocation,
     preview_library_root_relocation,
 )
@@ -53,12 +54,14 @@ def test_preview_library_root_relocation_counts_matched_missing_and_new_files(db
     assert preview.library_id == library.id
     assert preview.root_id == root.id
     assert preview.current_path == str(current_root_path)
-    assert preview.proposed_path == str(proposed_root_path.resolve())
+    assert preview.proposed_path == proposed_root_path.resolve().as_posix()
     assert preview.total_existing == 3
     assert preview.total_scanned == 3
     assert preview.matched_count == 2
     assert preview.missing_count == 1
     assert preview.new_count == 1
+    assert preview.confirm_blocked is False
+    assert preview.confirm_blocked_reason is None
     assert [sample.relative_path for sample in preview.matched_samples] == [
         "Alpha/one.cbz",
         "Gamma/three.cbr",
@@ -197,8 +200,8 @@ def test_confirm_library_root_relocation_updates_root_and_preserves_comic_identi
     payload = confirmation.to_dict()
     assert payload["relocated"] is True
     assert payload["previous_path"] == str(current_root_path)
-    assert payload["current_path"] == str(proposed_root_path.resolve())
-    assert payload["proposed_path"] == str(proposed_root_path.resolve())
+    assert payload["current_path"] == proposed_root_path.resolve().as_posix()
+    assert payload["proposed_path"] == proposed_root_path.resolve().as_posix()
     assert payload["matched_count"] == 1
     assert payload["missing_count"] == 1
     assert payload["new_count"] == 1
@@ -210,7 +213,7 @@ def test_confirm_library_root_relocation_updates_root_and_preserves_comic_identi
     ]
 
     refreshed_root = db.get(LibraryRoot, root_id)
-    assert refreshed_root.path == str(proposed_root_path.resolve())
+    assert refreshed_root.path == proposed_root_path.resolve().as_posix()
 
     refreshed_matched = db.get(Comic, matched_id)
     refreshed_missing = db.get(Comic, missing_id)
@@ -220,6 +223,66 @@ def test_confirm_library_root_relocation_updates_root_and_preserves_comic_identi
     assert refreshed_missing.library_root_id == root_id
     assert refreshed_matched.relative_path == "Alpha/one.cbz"
     assert refreshed_missing.relative_path == "Beta/two.cbz"
+
+
+def test_confirm_library_root_relocation_rejects_when_no_existing_files_match(db, tmp_path):
+    current_root_path = tmp_path / "all-missing-current"
+    proposed_root_path = tmp_path / "all-missing-proposed"
+    current_root_path.mkdir()
+    proposed_root_path.mkdir()
+
+    library = create_library_with_root(db, "All Missing Relocation", str(current_root_path))
+    root = library.active_root
+    volume = _create_volume(db, library)
+    create_comic(db, volume, root, "Alpha/one.cbz", filename="one.cbz")
+    create_comic(db, volume, root, "Beta/two.cbz", filename="two.cbz")
+    db.commit()
+
+    preview = preview_library_root_relocation(
+        db,
+        library=library,
+        proposed_path=str(proposed_root_path),
+    )
+
+    assert preview.total_existing == 2
+    assert preview.matched_count == 0
+    assert preview.missing_count == 2
+    assert preview.confirm_blocked is True
+    assert preview.confirm_blocked_reason == NO_RELOCATION_MATCHES_MESSAGE
+
+    with pytest.raises(LibraryRelocationError, match="No existing comics were found"):
+        confirm_library_root_relocation(
+            db,
+            library=library,
+            proposed_path=str(proposed_root_path),
+        )
+
+    db.refresh(root)
+    assert root.path == str(current_root_path)
+
+
+def test_confirm_library_root_relocation_allows_empty_library(db, tmp_path):
+    current_root_path = tmp_path / "empty-current"
+    proposed_root_path = tmp_path / "empty-proposed"
+    current_root_path.mkdir()
+    proposed_root_path.mkdir()
+
+    library = create_library_with_root(db, "Empty Relocation", str(current_root_path))
+    root = library.active_root
+    root_id = root.id
+    db.commit()
+
+    confirmation = confirm_library_root_relocation(
+        db,
+        library=library,
+        proposed_path=str(proposed_root_path),
+    )
+
+    assert confirmation.preview.total_existing == 0
+    assert confirmation.preview.confirm_blocked is False
+
+    refreshed_root = db.get(LibraryRoot, root_id)
+    assert refreshed_root.path == proposed_root_path.resolve().as_posix()
 
 
 def test_confirm_library_root_relocation_reuses_preview_validation(db, tmp_path):

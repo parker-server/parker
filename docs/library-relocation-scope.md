@@ -1,6 +1,6 @@
 # Library Relocation Scope
 
-Status: Phase 1 (schema + guardrail), the full Compatibility Field Removal Plan, and the relocation preview/confirmation backend are implemented; UI is not yet built
+Status: Phase 1 (schema + guardrail), the full Compatibility Field Removal Plan, and the relocation preview/confirmation flow are implemented
 
 This note captures a future enhancement for safely changing the filesystem path of an existing Parker library without losing comic identity.
 
@@ -11,12 +11,14 @@ Phase 1 (schema + guardrail) is done:
 - `library_roots` table added; `Comic.library_root_id` and `Comic.relative_path` added (migration `d4a1f6e8b3c2`).
 - Migration backfills one root per existing library and each comic's relative path (see `app/core/path_utils.py:compute_relative_path`).
 - `create_library` now creates a matching `LibraryRoot`.
-- Editing a library's path is hard-blocked in the API and admin UI (400 on change) until the relocation flow below exists.
+- Editing a library's path remains hard-blocked in the generic edit flow; admins use the dedicated relocate action for path moves.
 
-The relocation preview/confirmation backend is done:
+The relocation preview/confirmation flow is done:
 
 - Admin `POST /api/libraries/{library_id}/relocation/preview` computes matched, missing, and new archive counts without mutating stored root paths.
 - Admin `POST /api/libraries/{library_id}/relocation/confirm` recomputes the same impact summary, updates only the selected `LibraryRoot.path`, and returns `scan_recommended: true` without queuing a scan.
+- The admin library UI exposes a dedicated relocate action with preview counts, sample paths, confirmation, and an explicit post-confirm force-scan option.
+- Confirmation is blocked when a library already has comics and none of them match at the proposed new root. Admins must move the files first, preserving relative paths, then preview again.
 - Preview targets a `LibraryRoot`; `root_id` is optional only when the library has one active root, and becomes required when multiple active roots would make the target ambiguous.
 - Path overlap validation is root-level and rejects overlap with the current root or any other root, including roots in the same library.
 
@@ -127,7 +129,7 @@ A safe relocation should look like this:
    - missing files at the new root
    - new files found under the new root
    - conflicts or duplicate candidates
-5. Admin confirms.
+5. Admin confirms, unless the library has existing comics and zero of them match at the new root.
 6. Parker updates the selected root path.
 7. Parker queues or recommends a scan.
 
@@ -146,6 +148,8 @@ Initial matching should be conservative:
 3. do not use content hashes in the first implementation unless there is already a hashing system
 
 If a file is missing from the new root, the preview should not delete it automatically.
+
+If no existing comics match at the new root, confirmation should be blocked. That usually means the admin picked the wrong folder, picked the empty destination before moving files, or changed the relative folder layout enough that Parker cannot preserve comic identity.
 
 If a file appears at the new root but has no existing relative-path match, it should be treated as a new import candidate.
 
@@ -172,7 +176,7 @@ Cleanup should operate within the relevant root identity, not by comparing old a
 3. **Read-path cutover.** Every reader of `file_path`/`Library.path` — the comic reader, thumbnail generation, comics/reports API responses, OPDS, the Kavita migration tool, the library API, watcher, and startup diagnostics — reconstructs the absolute path on demand via `Comic.absolute_path` / `Library.active_root`, backed by `resolve_absolute_path` in `app/core/path_utils.py`.
 4. **Column removal.** Migration `9def8df8ed7c` dropped `Comic.file_path` and `Library.path` for good.
 
-Stage 1 remains a prerequisite for the relocation flow below to be considered safe. The backend preview and confirmation endpoints are now built; UI is still unbuilt.
+Stage 1 remains a prerequisite for the relocation flow below to be considered safe. The backend preview/confirmation endpoints and admin UI are now built.
 
 ## Admin UI Guardrails
 
@@ -221,7 +225,7 @@ Minimum coverage should include:
 ## Open Questions
 
 - Should relocation be allowed while a library scan is running?
-- Should Parker allow relocation when some files are missing from the new root?
+- Should Parker eventually require an explicit override when some, but not all, files are missing from the new root?
 - Should relocation update `last_scanned` or require a follow-up scan?
 - Should unmatched files remain in the database as disabled/missing records, or continue using current cleanup behavior after confirmation?
 
