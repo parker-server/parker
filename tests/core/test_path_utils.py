@@ -1,4 +1,4 @@
-from app.core.path_utils import compute_relative_path
+from app.core.path_utils import compute_relative_path, resolve_absolute_path
 
 
 def test_compute_relative_path_basic_match():
@@ -49,3 +49,25 @@ def test_compute_relative_path_root_at_filesystem_root():
 
 def test_compute_relative_path_windows_drive_root():
     assert compute_relative_path("C:\\", "C:\\Comics\\DC\\Batman 001.cbz") == "Comics/DC/Batman 001.cbz"
+
+
+def test_resolve_absolute_path_preserves_forward_slash_root_style():
+    result = resolve_absolute_path(
+        "D:/_ComicTests/DC",
+        "Pulp Fantastic/Pulp Fantastic #001 {2000}.cbr",
+    )
+
+    assert result == "D:/_ComicTests/DC/Pulp Fantastic/Pulp Fantastic #001 {2000}.cbr"
+
+
+def test_resolve_absolute_path_preserves_backslash_root_style():
+    result = resolve_absolute_path(
+        "D:\\_ComicTests\\DC",
+        "Pulp Fantastic/Pulp Fantastic #001 {2000}.cbr",
+    )
+
+    assert result == "D:\\_ComicTests\\DC\\Pulp Fantastic\\Pulp Fantastic #001 {2000}.cbr"
+
+
+def test_resolve_absolute_path_handles_filesystem_root():
+    assert resolve_absolute_path("/", "comics/dc/Batman 001.cbz") == "/comics/dc/Batman 001.cbz"

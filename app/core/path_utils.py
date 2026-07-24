@@ -1,4 +1,3 @@
-import os
 import posixpath
 from typing import List, Optional
 
@@ -45,7 +44,19 @@ def resolve_absolute_path(root_path: str, relative_path: str) -> str:
     the relative path stored under it."""
     if not relative_path:
         return root_path
-    return os.path.join(root_path, relative_path)
+
+    separator = "\\" if root_path.count("\\") > root_path.count("/") else "/"
+    normalized_relative = relative_path.replace("\\", "/").strip("/")
+    relative_for_display = normalized_relative.replace("/", separator)
+    if not root_path:
+        return relative_for_display
+
+    base = root_path.rstrip("/\\")
+
+    if not base:
+        return f"{separator}{relative_for_display}"
+
+    return f"{base}{separator}{relative_for_display}"
 
 
 def paths_overlap(first_path: str, second_path: str) -> bool:
