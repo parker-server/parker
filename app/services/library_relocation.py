@@ -11,6 +11,10 @@ from app.models.library_root import LibraryRoot
 
 
 DEFAULT_SAMPLE_LIMIT = 10
+NO_RELOCATION_MATCHES_MESSAGE = (
+    "No existing comics were found at the new path. Move the library files first, "
+    "preserving the same folder structure, then preview again."
+)
 
 
 class LibraryRelocationError(ValueError):
@@ -44,6 +48,17 @@ class LibraryRootRelocationPreview:
     missing_samples: list[RelocationPathSample]
     new_samples: list[RelocationPathSample]
 
+    @property
+    def confirm_blocked(self) -> bool:
+        return self.total_existing > 0 and self.matched_count == 0
+
+    @property
+    def confirm_blocked_reason(self) -> str | None:
+        if not self.confirm_blocked:
+            return None
+
+        return NO_RELOCATION_MATCHES_MESSAGE
+
     def to_dict(self) -> dict:
         return {
             "library_id": self.library_id,
@@ -58,6 +73,8 @@ class LibraryRootRelocationPreview:
             "matched_samples": [sample.to_dict() for sample in self.matched_samples],
             "missing_samples": [sample.to_dict() for sample in self.missing_samples],
             "new_samples": [sample.to_dict() for sample in self.new_samples],
+            "confirm_blocked": self.confirm_blocked,
+            "confirm_blocked_reason": self.confirm_blocked_reason,
         }
 
 
@@ -87,7 +104,7 @@ def preview_library_root_relocation(
 ) -> LibraryRootRelocationPreview:
     selected_root = _select_relocation_root(library, root_id)
     resolved_proposed_path = _resolve_proposed_path(proposed_path)
-    resolved_proposed_path_str = str(resolved_proposed_path)
+    resolved_proposed_path_str = _path_for_storage(resolved_proposed_path)
     current_comparison_path = _comparison_path(selected_root.path)
 
     if _paths_equal(current_comparison_path, resolved_proposed_path_str):
@@ -152,7 +169,7 @@ def preview_library_root_relocation(
                 continue
 
             new_count += 1
-            _append_sample(new_samples, relative_path, str(scanned_file), sample_limit)
+            _append_sample(new_samples, relative_path, scanned_file.as_posix(), sample_limit)
     except OSError as exc:
         raise LibraryRelocationError(f"Relocation path cannot be scanned: {exc}") from exc
 
@@ -187,6 +204,8 @@ def confirm_library_root_relocation(
         root_id=root_id,
         sample_limit=sample_limit,
     )
+    if preview.confirm_blocked:
+        raise LibraryRelocationError(NO_RELOCATION_MATCHES_MESSAGE)
 
     selected_root = _select_relocation_root(library, preview.root_id)
     selected_root.path = preview.proposed_path
@@ -254,9 +273,9 @@ def _find_overlapping_root(
 
 def _comparison_path(path: str) -> str:
     try:
-        return str(Path(path).expanduser().resolve(strict=True))
+        return _path_for_storage(Path(path).expanduser().resolve(strict=True))
     except OSError:
-        return path
+        return path.replace("\\", "/")
 
 
 def _scan_reasons(preview: LibraryRootRelocationPreview) -> list[str]:
@@ -268,6 +287,10 @@ def _scan_reasons(preview: LibraryRootRelocationPreview) -> list[str]:
         reasons.append("Import new archive files found at the new root")
 
     return reasons
+
+
+def _path_for_storage(path: Path) -> str:
+    return path.as_posix()
 
 
 def _paths_equal(first_path: str, second_path: str) -> bool:

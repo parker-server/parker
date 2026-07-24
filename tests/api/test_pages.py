@@ -131,6 +131,14 @@ def test_admin_libraries_page_exposes_folder_browser_route(admin_client):
     body = response.text
     assert "Browse" in body
     assert "libraries.browse" in body
+    assert "Relocate" in body
+    assert "libraries.relocation_preview" in body
+    assert "libraries.relocation_confirm" in body
+    assert "scan_recommended" in body
+    assert "confirm_blocked" in body
+    assert "relocationConfirmBlocked" in body
+    assert "relocationSampleSummary" in body
+    assert "Showing ${shown.toLocaleString()} of ${total.toLocaleString()}" in body
     assert "The path is locked for existing libraries" in body
 
 

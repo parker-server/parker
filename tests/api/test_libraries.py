@@ -13,6 +13,7 @@ from app.models.interactions import UserLibraryPin
 from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.reading_progress import ReadingProgress
 from app.models.series import Series
+from app.services.library_relocation import NO_RELOCATION_MATCHES_MESSAGE
 from tests.factories import create_comic, create_library_with_root
 
 
@@ -203,12 +204,12 @@ def test_admin_can_browse_library_paths_within_configured_root(admin_client, mon
 
     assert root_response.status_code == 200
     root_payload = root_response.json()
-    assert root_payload["root"] == str(root.resolve())
-    assert root_payload["current"] == str(root.resolve())
+    assert root_payload["root"] == root.resolve().as_posix()
+    assert root_payload["current"] == root.resolve().as_posix()
     assert root_payload["parent"] is None
     assert root_payload["entries"] == [
-        {"name": "Alpha", "path": str(alpha.resolve())},
-        {"name": "Zeta", "path": str(zeta.resolve())},
+        {"name": "Alpha", "path": alpha.resolve().as_posix()},
+        {"name": "Zeta", "path": zeta.resolve().as_posix()},
     ]
 
     child_response = admin_client.get(
@@ -218,9 +219,9 @@ def test_admin_can_browse_library_paths_within_configured_root(admin_client, mon
 
     assert child_response.status_code == 200
     child_payload = child_response.json()
-    assert child_payload["current"] == str(alpha.resolve())
-    assert child_payload["parent"] == str(root.resolve())
-    assert child_payload["entries"] == [{"name": "Nested", "path": str(nested.resolve())}]
+    assert child_payload["current"] == alpha.resolve().as_posix()
+    assert child_payload["parent"] == root.resolve().as_posix()
+    assert child_payload["entries"] == [{"name": "Nested", "path": nested.resolve().as_posix()}]
 
 
 def test_library_path_browser_rejects_non_admin(auth_client, monkeypatch, tmp_path):
@@ -613,15 +614,50 @@ def test_preview_library_relocation_returns_counts_without_updating_root(admin_c
     assert payload["library_id"] == library_id
     assert payload["root_id"] == root_id
     assert payload["current_path"] == str(current_root_path)
-    assert payload["proposed_path"] == str(proposed_root_path.resolve())
+    assert payload["proposed_path"] == proposed_root_path.resolve().as_posix()
     assert payload["total_existing"] == 2
     assert payload["total_scanned"] == 2
     assert payload["matched_count"] == 1
     assert payload["missing_count"] == 1
     assert payload["new_count"] == 1
+    assert payload["confirm_blocked"] is False
+    assert payload["confirm_blocked_reason"] is None
     assert payload["matched_samples"][0]["relative_path"] == "Alpha/one.cbz"
     assert payload["missing_samples"][0]["relative_path"] == "Beta/two.cbz"
     assert payload["new_samples"][0]["relative_path"] == "Extra/three.cbz"
+
+    db.refresh(root)
+    assert root.path == str(current_root_path)
+
+
+def test_preview_library_relocation_marks_all_missing_as_not_confirmable(admin_client, db, tmp_path):
+    current_root_path = tmp_path / "api-all-missing-current"
+    proposed_root_path = tmp_path / "api-all-missing-proposed"
+    current_root_path.mkdir()
+    proposed_root_path.mkdir()
+
+    library = create_library_with_root(db, "API All Missing Preview", str(current_root_path))
+    root = library.active_root
+    series = Series(name="API All Missing Series", library=library)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
+    db.flush()
+
+    create_comic(db, volume, root, "Alpha/one.cbz", filename="one.cbz")
+    db.commit()
+
+    response = admin_client.post(
+        f"/api/libraries/{library.id}/relocation/preview",
+        json={"path": str(proposed_root_path)},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total_existing"] == 1
+    assert payload["matched_count"] == 0
+    assert payload["missing_count"] == 1
+    assert payload["confirm_blocked"] is True
+    assert payload["confirm_blocked_reason"] == NO_RELOCATION_MATCHES_MESSAGE
 
     db.refresh(root)
     assert root.path == str(current_root_path)
@@ -734,8 +770,8 @@ def test_confirm_library_relocation_updates_root_without_queuing_scan(admin_clie
     assert payload["root_id"] == root_id
     assert payload["relocated"] is True
     assert payload["previous_path"] == str(current_root_path)
-    assert payload["current_path"] == str(proposed_root_path.resolve())
-    assert payload["proposed_path"] == str(proposed_root_path.resolve())
+    assert payload["current_path"] == proposed_root_path.resolve().as_posix()
+    assert payload["proposed_path"] == proposed_root_path.resolve().as_posix()
     assert payload["matched_count"] == 1
     assert payload["missing_count"] == 1
     assert payload["new_count"] == 1
@@ -750,9 +786,43 @@ def test_confirm_library_relocation_updates_root_without_queuing_scan(admin_clie
     mock_add_scan_task.assert_not_called()
 
     db.refresh(root)
-    assert root.path == str(proposed_root_path.resolve())
+    assert root.path == proposed_root_path.resolve().as_posix()
     assert db.get(Comic, matched_id).relative_path == "Alpha/one.cbz"
     assert db.get(Comic, missing_id).relative_path == "Beta/two.cbz"
+
+
+def test_confirm_library_relocation_rejects_all_missing(admin_client, db, tmp_path):
+    current_root_path = tmp_path / "confirm-api-all-missing-current"
+    proposed_root_path = tmp_path / "confirm-api-all-missing-proposed"
+    current_root_path.mkdir()
+    proposed_root_path.mkdir()
+
+    library = create_library_with_root(db, "API Confirm All Missing", str(current_root_path))
+    root = library.active_root
+    series = Series(name="API Confirm All Missing Series", library=library)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
+    db.flush()
+
+    create_comic(db, volume, root, "Alpha/one.cbz", filename="one.cbz")
+    db.commit()
+
+    with (
+        patch("app.api.libraries.library_watcher.refresh_watches") as mock_refresh_watches,
+        patch("app.api.libraries.scan_manager.add_task") as mock_add_scan_task,
+    ):
+        response = admin_client.post(
+            f"/api/libraries/{library.id}/relocation/confirm",
+            json={"path": str(proposed_root_path)},
+        )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": NO_RELOCATION_MATCHES_MESSAGE}
+    mock_refresh_watches.assert_not_called()
+    mock_add_scan_task.assert_not_called()
+
+    db.refresh(root)
+    assert root.path == str(current_root_path)
 
 
 def test_confirm_library_relocation_returns_404_for_missing_library(admin_client, tmp_path):
