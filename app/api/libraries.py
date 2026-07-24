@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Annotated, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, case
 from sqlalchemy.orm import selectinload
 from datetime import datetime, timezone
@@ -18,6 +18,11 @@ from app.models.comic import Comic, Volume
 from app.models.interactions import UserLibraryPin
 from app.models.reading_progress import ReadingProgress
 from app.services.scan_manager import scan_manager
+from app.services.library_relocation import (
+    DEFAULT_SAMPLE_LIMIT,
+    LibraryRelocationError,
+    preview_library_root_relocation,
+)
 from app.services.watcher import library_watcher
 from app.api.deps import PaginationParams, PaginatedResponse, SessionDep, CurrentUser, AdminUser, LibraryDep
 
@@ -481,6 +486,13 @@ class LibraryUpdate(BaseModel):
     parse_collections: Optional[bool] = None
     parse_story_arcs: Optional[bool] = None
 
+
+class LibraryRelocationPreviewRequest(BaseModel):
+    path: str
+    root_id: Optional[int] = None
+    sample_limit: int = Field(DEFAULT_SAMPLE_LIMIT, ge=0, le=100)
+
+
 @router.patch("/{library_id}", tags=["admin"], name="update")
 async def update_library(
         library_id: int,
@@ -558,6 +570,38 @@ async def update_library(
         response["rehydration"] = rehydration_result
 
     return response
+
+
+@router.post("/{library_id}/relocation/preview", tags=["admin"], name="relocation_preview")
+async def preview_library_relocation(
+        library_id: int,
+        preview_in: LibraryRelocationPreviewRequest,
+        db: SessionDep,
+        admin_user: AdminUser,
+):
+    """Preview a library root relocation without changing stored paths."""
+    library = (
+        db.query(Library)
+        .options(selectinload(Library.roots))
+        .filter(Library.id == library_id)
+        .first()
+    )
+    if not library:
+        raise HTTPException(status_code=404, detail="Library not found")
+
+    try:
+        preview = preview_library_root_relocation(
+            db,
+            library=library,
+            proposed_path=preview_in.path,
+            root_id=preview_in.root_id,
+            sample_limit=preview_in.sample_limit,
+        )
+    except LibraryRelocationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return preview.to_dict()
+
 
 @router.delete("/{library_id}", tags=["admin"], name="delete")
 async def delete_library(library_id: int,

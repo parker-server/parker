@@ -1,0 +1,166 @@
+import pytest
+
+from app.models.comic import Volume
+from app.models.library_root import LibraryRoot
+from app.models.series import Series
+from app.services.library_relocation import (
+    LibraryRelocationError,
+    preview_library_root_relocation,
+)
+from tests.factories import create_comic, create_library_with_root
+
+
+def _create_volume(db, library):
+    series = Series(name=f"{library.name} Series", library=library)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
+    db.flush()
+    return volume
+
+
+def _write_file(path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"comic")
+
+
+def test_preview_library_root_relocation_counts_matched_missing_and_new_files(db, tmp_path):
+    current_root_path = tmp_path / "current"
+    proposed_root_path = tmp_path / "proposed"
+    current_root_path.mkdir()
+    proposed_root_path.mkdir()
+
+    library = create_library_with_root(db, "Relocation Preview", str(current_root_path))
+    root = library.active_root
+    volume = _create_volume(db, library)
+
+    create_comic(db, volume, root, "Alpha/one.cbz", filename="one.cbz")
+    create_comic(db, volume, root, "Beta/two.cbz", filename="two.cbz")
+    create_comic(db, volume, root, "Gamma/three.cbr", filename="three.cbr")
+    db.commit()
+
+    _write_file(proposed_root_path / "Alpha" / "one.cbz")
+    _write_file(proposed_root_path / "Gamma" / "three.cbr")
+    _write_file(proposed_root_path / "New" / "four.cbz")
+    _write_file(proposed_root_path / "ignored.txt")
+
+    preview = preview_library_root_relocation(
+        db,
+        library=library,
+        proposed_path=str(proposed_root_path),
+    )
+
+    assert preview.library_id == library.id
+    assert preview.root_id == root.id
+    assert preview.current_path == str(current_root_path)
+    assert preview.proposed_path == str(proposed_root_path.resolve())
+    assert preview.total_existing == 3
+    assert preview.total_scanned == 3
+    assert preview.matched_count == 2
+    assert preview.missing_count == 1
+    assert preview.new_count == 1
+    assert [sample.relative_path for sample in preview.matched_samples] == [
+        "Alpha/one.cbz",
+        "Gamma/three.cbr",
+    ]
+    assert [sample.relative_path for sample in preview.missing_samples] == ["Beta/two.cbz"]
+    assert [sample.relative_path for sample in preview.new_samples] == ["New/four.cbz"]
+
+    db.refresh(root)
+    assert root.path == str(current_root_path)
+
+
+def test_preview_library_root_relocation_requires_root_id_for_multiple_active_roots(db, tmp_path):
+    first_root_path = tmp_path / "first"
+    second_root_path = tmp_path / "second"
+    proposed_root_path = tmp_path / "proposed"
+    first_root_path.mkdir()
+    second_root_path.mkdir()
+    proposed_root_path.mkdir()
+
+    library = create_library_with_root(db, "Multi Root Preview", str(first_root_path))
+    db.add(LibraryRoot(library_id=library.id, path=str(second_root_path), is_active=True))
+    db.commit()
+
+    with pytest.raises(LibraryRelocationError, match="root_id is required"):
+        preview_library_root_relocation(
+            db,
+            library=library,
+            proposed_path=str(proposed_root_path),
+        )
+
+
+def test_preview_library_root_relocation_accepts_explicit_root_id(db, tmp_path):
+    first_root_path = tmp_path / "first"
+    second_root_path = tmp_path / "second"
+    proposed_root_path = tmp_path / "proposed"
+    first_root_path.mkdir()
+    second_root_path.mkdir()
+    proposed_root_path.mkdir()
+
+    library = create_library_with_root(db, "Explicit Root Preview", str(first_root_path))
+    second_root = LibraryRoot(library_id=library.id, path=str(second_root_path), is_active=True)
+    db.add(second_root)
+    db.commit()
+
+    preview = preview_library_root_relocation(
+        db,
+        library=library,
+        root_id=second_root.id,
+        proposed_path=str(proposed_root_path),
+    )
+
+    assert preview.root_id == second_root.id
+    assert preview.current_path == str(second_root_path)
+
+
+def test_preview_library_root_relocation_rejects_overlap_with_sibling_root(db, tmp_path):
+    first_root_path = tmp_path / "first"
+    second_root_path = tmp_path / "second"
+    first_root_path.mkdir()
+    second_root_path.mkdir()
+
+    library = create_library_with_root(db, "Sibling Root Preview", str(first_root_path))
+    first_root_id = library.active_root.id
+    second_root = LibraryRoot(library_id=library.id, path=str(second_root_path), is_active=True)
+    db.add(second_root)
+    db.commit()
+
+    with pytest.raises(LibraryRelocationError, match="overlaps with existing root"):
+        preview_library_root_relocation(
+            db,
+            library=library,
+            root_id=first_root_id,
+            proposed_path=str(second_root_path),
+        )
+
+
+def test_preview_library_root_relocation_rejects_current_root_child(db, tmp_path):
+    current_root_path = tmp_path / "current"
+    proposed_root_path = current_root_path / "nested"
+    proposed_root_path.mkdir(parents=True)
+
+    library = create_library_with_root(db, "Nested Root Preview", str(current_root_path))
+    db.commit()
+
+    with pytest.raises(LibraryRelocationError, match="current root path"):
+        preview_library_root_relocation(
+            db,
+            library=library,
+            proposed_path=str(proposed_root_path),
+        )
+
+
+def test_preview_library_root_relocation_compares_resolved_current_root_path(db, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    current_root_path = tmp_path / "relative-current"
+    current_root_path.mkdir()
+
+    library = create_library_with_root(db, "Relative Current Root Preview", "relative-current")
+    db.commit()
+
+    with pytest.raises(LibraryRelocationError, match="different from the current root path"):
+        preview_library_root_relocation(
+            db,
+            library=library,
+            proposed_path=str(current_root_path.resolve()),
+        )

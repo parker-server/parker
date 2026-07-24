@@ -1,6 +1,6 @@
 # Library Relocation Scope
 
-Status: Phase 1 (schema + guardrail) and the full Compatibility Field Removal Plan are implemented; relocation flow itself not yet built
+Status: Phase 1 (schema + guardrail), the full Compatibility Field Removal Plan, and the relocation preview backend are implemented; confirmation/UI are not yet built
 
 This note captures a future enhancement for safely changing the filesystem path of an existing Parker library without losing comic identity.
 
@@ -12,6 +12,12 @@ Phase 1 (schema + guardrail) is done:
 - Migration backfills one root per existing library and each comic's relative path (see `app/core/path_utils.py:compute_relative_path`).
 - `create_library` now creates a matching `LibraryRoot`.
 - Editing a library's path is hard-blocked in the API and admin UI (400 on change) until the relocation flow below exists.
+
+The relocation preview backend is done:
+
+- Admin `POST /api/libraries/{library_id}/relocation/preview` computes matched, missing, and new archive counts without mutating stored root paths.
+- Preview targets a `LibraryRoot`; `root_id` is optional only when the library has one active root, and becomes required when multiple active roots would make the target ambiguous.
+- Path overlap validation is root-level and rejects overlap with the current root or any other root, including roots in the same library.
 
 The full Compatibility Field Removal Plan (all four stages) is also done, landing together in one release (`0.1.25`) rather than staged over time — see the plan section below for why:
 
@@ -27,7 +33,7 @@ That behavior is understandable from the current data model, but it is risky bec
 
 ## Why This Exists
 
-Parker currently stores physical file identity primarily as `Comic.file_path`.
+Parker previously stored physical file identity primarily as `Comic.file_path`.
 
 If a library moves from one server-visible path to another, the same archive can look like a completely different comic:
 
@@ -36,7 +42,7 @@ If a library moves from one server-visible path to another, the same archive can
 
 The comic content and logical position are the same, but the stored absolute path changed.
 
-Today, changing `Library.path` does not rewrite existing comic paths. During the next scan, `LibraryScanner` scans the new root, builds a set of discovered paths, and removes existing comics whose old paths were not seen. The scanner then imports matching files at their new paths as new rows.
+Before path edits were blocked, changing `Library.path` did not rewrite existing comic paths. During the next scan, `LibraryScanner` scanned the new root, built a set of discovered paths, and removed existing comics whose old paths were not seen. The scanner then imported matching files at their new paths as new rows.
 
 That can break continuity for:
 
@@ -67,7 +73,7 @@ Introduce a durable root record and store comic paths relative to that root:
 - `LibraryRoot` represents a physical filesystem root
 - `Comic.library_root_id` points to the physical root that contains the file
 - `Comic.relative_path` stores the path under that root
-- `Comic.file_path` may initially remain as a cached absolute path for compatibility
+- `Comic.absolute_path` reconstructs the absolute path from the root path and relative path when needed
 
 This allows Parker to preserve `Comic.id` when only the root path changes.
 
@@ -121,7 +127,7 @@ A safe relocation should look like this:
    - new files found under the new root
    - conflicts or duplicate candidates
 5. Admin confirms.
-6. Parker updates the root path and cached `Comic.file_path` values for matched comics.
+6. Parker updates the selected root path.
 7. Parker queues or recommends a scan.
 
 Important rule:
@@ -165,7 +171,7 @@ Cleanup should operate within the relevant root identity, not by comparing old a
 3. **Read-path cutover.** Every reader of `file_path`/`Library.path` — the comic reader, thumbnail generation, comics/reports API responses, OPDS, the Kavita migration tool, the library API, watcher, and startup diagnostics — reconstructs the absolute path on demand via `Comic.absolute_path` / `Library.active_root`, backed by `resolve_absolute_path` in `app/core/path_utils.py`.
 4. **Column removal.** Migration `9def8df8ed7c` dropped `Comic.file_path` and `Library.path` for good.
 
-Stage 1 remains a prerequisite for the relocation flow below to be considered safe — that flow is still unbuilt.
+Stage 1 remains a prerequisite for the relocation flow below to be considered safe. The non-mutating preview backend is now built; confirmation and UI are still unbuilt.
 
 ## Admin UI Guardrails
 
