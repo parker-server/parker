@@ -56,6 +56,14 @@
 
                             <div class="h-4 w-px bg-gray-700 mx-1"></div>
 
+                            <button
+                                x-on:click="openRelocateModal(lib)"
+                                class="text-amber-300 hover:text-white text-sm font-medium px-2 disabled:opacity-30 disabled:cursor-not-allowed"
+                                :disabled="lib.is_scanning"
+                                title="Relocate library path"
+                            >
+                                Relocate
+                            </button>
                             <button x-on:click="openEditModal(lib)" class="text-blue-400 hover:text-white text-sm font-medium px-2">Edit</button>
                             <button x-on:click="deleteLibrary(lib)" class="text-red-400 hover:text-white text-sm font-medium px-2">Delete</button>
                         </td>
@@ -206,6 +214,217 @@
         </div>
     </div>
 
+    <div x-show="showRelocationModal" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 px-4" style="display: none;" x-transition.opacity>
+        <div class="bg-gray-800 p-6 rounded-lg w-full max-w-3xl max-h-[90vh] overflow-y-auto border border-gray-700 shadow-2xl" x-on:click.away="closeRelocationModal()">
+            <div class="flex items-start justify-between gap-4 mb-5">
+                <div class="min-w-0">
+                    <h2 class="text-xl font-bold text-white">Relocate Library Path</h2>
+                    <p class="text-sm text-gray-400 truncate" x-text="relocation.library?.name"></p>
+                </div>
+                <button
+                    type="button"
+                    x-on:click="closeRelocationModal()"
+                    class="text-gray-500 hover:text-white text-sm"
+                >
+                    Close
+                </button>
+            </div>
+
+            <div class="space-y-5">
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Current Path</label>
+                    <div class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-300 font-mono break-all" x-text="relocation.library?.path"></div>
+                </div>
+
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">New Path</label>
+                    <div class="flex gap-2">
+                        <input
+                            type="text"
+                            x-model="relocation.path"
+                            x-on:input="resetRelocationPreview()"
+                            class="flex-1 bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white focus:border-blue-500 outline-none"
+                            placeholder="/comics/relocated"
+                            :disabled="relocation.completed"
+                        >
+                        <button
+                            type="button"
+                            x-on:click="openDirectoryBrowser('relocation')"
+                            class="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                            :disabled="relocation.completed"
+                        >
+                            Browse
+                        </button>
+                    </div>
+                </div>
+
+                <div x-show="pathBrowser.open && pathBrowser.target === 'relocation'" class="border border-gray-700 rounded bg-gray-900 overflow-hidden" style="display: none;">
+                    <div class="flex items-center justify-between gap-3 px-3 py-2 border-b border-gray-700">
+                        <div class="min-w-0">
+                            <p class="text-[10px] uppercase tracking-wide text-gray-500">Browsing</p>
+                            <p class="text-xs text-gray-300 font-mono truncate" x-text="pathBrowser.current || 'Loading...'"></p>
+                        </div>
+                        <button
+                            type="button"
+                            x-on:click="closeDirectoryBrowser()"
+                            class="text-gray-500 hover:text-white text-sm"
+                        >
+                            Close
+                        </button>
+                    </div>
+
+                    <div x-show="pathBrowser.error" class="px-3 py-3 text-sm text-red-300 bg-red-950/30 border-b border-red-900/50" x-text="pathBrowser.error"></div>
+                    <div x-show="pathBrowser.notice" class="px-3 py-3 text-sm text-amber-200 bg-amber-950/30 border-b border-amber-900/50" x-text="pathBrowser.notice"></div>
+                    <div x-show="pathBrowser.loading" class="px-3 py-4 text-sm text-gray-400">Loading folders...</div>
+
+                    <div x-show="!pathBrowser.loading && !pathBrowser.error" class="max-h-64 overflow-y-auto">
+                        <button
+                            type="button"
+                            x-show="pathBrowser.parent"
+                            x-on:click="browseDirectory(pathBrowser.parent)"
+                            class="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-800 border-b border-gray-800"
+                        >
+                            ../
+                        </button>
+
+                        <template x-for="entry in pathBrowser.entries" :key="entry.path">
+                            <button
+                                type="button"
+                                x-on:click="browseDirectory(entry.path)"
+                                class="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-800 border-b border-gray-800 last:border-b-0"
+                            >
+                                <span class="text-blue-300 mr-2">/</span><span x-text="entry.name"></span>
+                            </button>
+                        </template>
+
+                        <div x-show="pathBrowser.entries.length === 0" class="px-3 py-4 text-sm text-gray-500">
+                            No subfolders found.
+                        </div>
+                    </div>
+
+                    <div class="flex justify-end gap-2 px-3 py-2 border-t border-gray-700 bg-gray-950/50">
+                        <button
+                            type="button"
+                            x-on:click="useBrowsedDirectory()"
+                            class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded text-sm transition-colors"
+                            :disabled="!pathBrowser.current"
+                        >
+                            Use This Folder
+                        </button>
+                    </div>
+                </div>
+
+                <div x-show="relocation.error" class="rounded border border-red-900/60 bg-red-950/30 px-3 py-2 text-sm text-red-200" x-text="relocation.error"></div>
+
+                <div x-show="relocation.preview" class="space-y-4" style="display: none;">
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 border-y border-gray-700 py-4">
+                        <div>
+                            <p class="text-[10px] uppercase tracking-wide text-gray-500">Matched</p>
+                            <p class="text-2xl font-bold text-green-300" x-text="relocation.preview?.matched_count ?? 0"></p>
+                        </div>
+                        <div>
+                            <p class="text-[10px] uppercase tracking-wide text-gray-500">Missing</p>
+                            <p class="text-2xl font-bold text-amber-300" x-text="relocation.preview?.missing_count ?? 0"></p>
+                        </div>
+                        <div>
+                            <p class="text-[10px] uppercase tracking-wide text-gray-500">New</p>
+                            <p class="text-2xl font-bold text-blue-300" x-text="relocation.preview?.new_count ?? 0"></p>
+                        </div>
+                    </div>
+
+                    <div
+                        x-show="relocationConfirmBlocked()"
+                        class="rounded border border-red-900/60 bg-red-950/30 px-3 py-2 text-sm text-red-200"
+                        x-text="relocationConfirmBlockReason()"
+                    ></div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 text-sm">
+                        <div>
+                            <div class="mb-2">
+                                <h3 class="font-semibold text-green-200">Matched Files</h3>
+                                <p class="text-xs text-gray-500" x-text="relocationSampleSummary('matched')"></p>
+                            </div>
+                            <template x-if="relocation.preview?.matched_samples?.length">
+                                <ul class="space-y-1 text-gray-300">
+                                    <template x-for="sample in relocation.preview.matched_samples" :key="sample.relative_path">
+                                        <li class="font-mono text-xs break-all" x-text="sample.relative_path"></li>
+                                    </template>
+                                </ul>
+                            </template>
+                            <p x-show="!relocation.preview?.matched_samples?.length" class="text-gray-500 text-xs">No samples.</p>
+                        </div>
+                        <div>
+                            <div class="mb-2">
+                                <h3 class="font-semibold text-amber-200">Missing Files</h3>
+                                <p class="text-xs text-gray-500" x-text="relocationSampleSummary('missing')"></p>
+                            </div>
+                            <template x-if="relocation.preview?.missing_samples?.length">
+                                <ul class="space-y-1 text-gray-300">
+                                    <template x-for="sample in relocation.preview.missing_samples" :key="sample.relative_path">
+                                        <li class="font-mono text-xs break-all" x-text="sample.relative_path"></li>
+                                    </template>
+                                </ul>
+                            </template>
+                            <p x-show="!relocation.preview?.missing_samples?.length" class="text-gray-500 text-xs">No samples.</p>
+                        </div>
+                        <div>
+                            <div class="mb-2">
+                                <h3 class="font-semibold text-blue-200">New Files</h3>
+                                <p class="text-xs text-gray-500" x-text="relocationSampleSummary('new')"></p>
+                            </div>
+                            <template x-if="relocation.preview?.new_samples?.length">
+                                <ul class="space-y-1 text-gray-300">
+                                    <template x-for="sample in relocation.preview.new_samples" :key="sample.relative_path">
+                                        <li class="font-mono text-xs break-all" x-text="sample.relative_path"></li>
+                                    </template>
+                                </ul>
+                            </template>
+                            <p x-show="!relocation.preview?.new_samples?.length" class="text-gray-500 text-xs">No samples.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div x-show="relocation.completed" class="rounded border border-amber-500/30 bg-amber-950/30 px-3 py-3 text-sm text-amber-100" style="display: none;">
+                    <p class="font-semibold">Relocation complete. Scan recommended.</p>
+                    <ul class="mt-2 space-y-1 text-xs text-amber-100/80">
+                        <template x-for="reason in relocation.confirmation?.scan_reasons || []" :key="reason">
+                            <li x-text="reason"></li>
+                        </template>
+                    </ul>
+                </div>
+
+                <div class="flex flex-wrap justify-end gap-2 pt-2 border-t border-gray-700">
+                    <button x-on:click="closeRelocationModal()" class="text-gray-400 hover:text-white px-4 py-2 transition-colors">
+                        <span x-text="relocation.completed ? 'Close' : 'Cancel'"></span>
+                    </button>
+                    <button
+                        x-show="!relocation.completed"
+                        x-on:click="previewRelocation()"
+                        class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        :disabled="relocation.previewLoading || relocation.confirming || !relocation.path"
+                    >
+                        <span x-text="relocation.previewLoading ? 'Previewing...' : 'Preview'"></span>
+                    </button>
+                    <button
+                        x-show="!relocation.completed"
+                        x-on:click="confirmRelocation()"
+                        class="bg-amber-600 hover:bg-amber-500 text-white px-4 py-2 rounded transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                        :disabled="!relocation.preview || relocation.confirming || relocationConfirmBlocked()"
+                    >
+                        <span x-text="relocation.confirming ? 'Relocating...' : 'Confirm Relocation'"></span>
+                    </button>
+                    <button
+                        x-show="relocation.completed && relocation.confirmation?.scan_recommended"
+                        x-on:click="runRelocationScan()"
+                        class="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded transition-colors shadow-lg"
+                    >
+                        Run Force Scan
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
 </div>
 
 <script>
@@ -213,6 +432,7 @@ function libraryManager() {
     return {
         libraries: [],
         showModal: false,
+        showRelocationModal: false,
         isEditing: false,
         form: {
             id: null,
@@ -223,8 +443,19 @@ function libraryManager() {
             parse_collections: true,
             parse_story_arcs: true,
         },
+        relocation: {
+            library: null,
+            path: '',
+            preview: null,
+            confirmation: null,
+            error: '',
+            previewLoading: false,
+            confirming: false,
+            completed: false,
+        },
         pathBrowser: {
             open: false,
+            target: 'form',
             loading: false,
             error: '',
             notice: '',
@@ -285,9 +516,54 @@ function libraryManager() {
             this.showModal = true;
         },
 
-        async openDirectoryBrowser() {
+        resetRelocationState() {
+            this.relocation = {
+                library: null,
+                path: '',
+                preview: null,
+                confirmation: null,
+                error: '',
+                previewLoading: false,
+                confirming: false,
+                completed: false,
+            };
+        },
+
+        openRelocateModal(lib) {
+            this.showModal = false;
+            this.closeDirectoryBrowser();
+            this.relocation = {
+                library: lib,
+                path: lib.path || '',
+                preview: null,
+                confirmation: null,
+                error: '',
+                previewLoading: false,
+                confirming: false,
+                completed: false,
+            };
+            this.showRelocationModal = true;
+        },
+
+        closeRelocationModal() {
+            this.showRelocationModal = false;
+            this.closeDirectoryBrowser();
+            this.resetRelocationState();
+        },
+
+        resetRelocationPreview() {
+            this.relocation.preview = null;
+            this.relocation.confirmation = null;
+            this.relocation.error = '';
+            this.relocation.completed = false;
+        },
+
+        async openDirectoryBrowser(target = 'form') {
+            this.pathBrowser.target = target;
             this.pathBrowser.open = true;
-            const requestedPath = this.form.path || null;
+            const requestedPath = target === 'relocation'
+                ? (this.relocation.path || this.relocation.library?.path || null)
+                : (this.form.path || null);
             const openedRequestedPath = await this.browseDirectory(requestedPath);
 
             if (!openedRequestedPath && requestedPath) {
@@ -301,6 +577,7 @@ function libraryManager() {
 
         closeDirectoryBrowser() {
             this.pathBrowser.open = false;
+            this.pathBrowser.target = 'form';
             this.pathBrowser.loading = false;
             this.pathBrowser.error = '';
             this.pathBrowser.notice = '';
@@ -337,7 +614,12 @@ function libraryManager() {
 
         useBrowsedDirectory() {
             if (!this.pathBrowser.current) return;
-            this.form.path = this.pathBrowser.current;
+            if (this.pathBrowser.target === 'relocation') {
+                this.relocation.path = this.pathBrowser.current;
+                this.resetRelocationPreview();
+            } else {
+                this.form.path = this.pathBrowser.current;
+            }
             this.closeDirectoryBrowser();
         },
 
@@ -400,6 +682,121 @@ function libraryManager() {
                 console.error(e);
                 await window.parker.dialog.alert('Error', 'Network error occurred');
             }
+        },
+
+        async previewRelocation() {
+            if (!this.relocation.library || !this.relocation.path) return;
+
+            this.relocation.previewLoading = true;
+            this.relocation.error = '';
+            this.relocation.preview = null;
+            this.relocation.confirmation = null;
+
+            try {
+                const res = await fetch(
+                    window.parker.route('libraries.relocation_preview', { library_id: this.relocation.library.id }),
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ path: this.relocation.path })
+                    }
+                );
+                const payload = await res.json();
+
+                if (!res.ok) {
+                    throw new Error(payload.detail || 'Unable to preview relocation');
+                }
+
+                this.relocation.preview = payload;
+            } catch (e) {
+                console.error(e);
+                this.relocation.error = e.message || 'Unable to preview relocation';
+            } finally {
+                this.relocation.previewLoading = false;
+            }
+        },
+
+        relocationConfirmBlocked() {
+            return Boolean(this.relocation.preview?.confirm_blocked);
+        },
+
+        relocationConfirmBlockReason() {
+            return this.relocation.preview?.confirm_blocked_reason || '';
+        },
+
+        relocationSampleSummary(kind) {
+            const preview = this.relocation.preview;
+            if (!preview) return '';
+
+            const total = Number(preview[`${kind}_count`] || 0);
+            const shown = (preview[`${kind}_samples`] || []).length;
+
+            if (total === 0) return 'No files found.';
+            if (shown === 0) return 'No samples shown.';
+            if (shown < total) return `Showing ${shown.toLocaleString()} of ${total.toLocaleString()}`;
+
+            return `Showing ${shown.toLocaleString()} ${shown === 1 ? 'file' : 'files'}`;
+        },
+
+        async confirmRelocation() {
+            if (!this.relocation.library || !this.relocation.path || !this.relocation.preview) return;
+            if (this.relocationConfirmBlocked()) {
+                this.relocation.error = this.relocationConfirmBlockReason();
+                return;
+            }
+
+            const confirmed = await window.parker.dialog.confirm(
+                `Relocate ${this.relocation.library.name}?`,
+                'The library path will change, existing comic records will be preserved, and no scan will start automatically.',
+                { isDestructive: false, confirmText: 'Relocate' }
+            );
+
+            if (!confirmed) return;
+
+            this.relocation.confirming = true;
+            this.relocation.error = '';
+
+            try {
+                const res = await fetch(
+                    window.parker.route('libraries.relocation_confirm', { library_id: this.relocation.library.id }),
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ path: this.relocation.path })
+                    }
+                );
+                const payload = await res.json();
+
+                if (!res.ok) {
+                    throw new Error(payload.detail || 'Unable to confirm relocation');
+                }
+
+                this.relocation.confirmation = payload;
+                this.relocation.preview = payload;
+                this.relocation.completed = true;
+                this.relocation.path = payload.current_path;
+                this.relocation.library.path = payload.current_path;
+
+                const updated = this.libraries.find((lib) => lib.id === payload.library_id);
+                if (updated) updated.path = payload.current_path;
+
+                await this.loadLibraries();
+                window.parker.showToast('Library relocated', 'success');
+            } catch (e) {
+                console.error(e);
+                this.relocation.error = e.message || 'Unable to confirm relocation';
+            } finally {
+                this.relocation.confirming = false;
+            }
+        },
+
+        async runRelocationScan() {
+            const libraryId = this.relocation.library?.id;
+            const library = this.libraries.find((lib) => lib.id === libraryId) || this.relocation.library;
+            if (!library) return;
+
+            this.closeRelocationModal();
+            await this.triggerScan(library, true);
         },
 
         async deleteLibrary(lib) {
