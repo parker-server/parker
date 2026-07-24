@@ -1,26 +1,28 @@
 from app.models import (
     CollectionItem,
     Comic,
-    Library,
     ReadingListItem,
     Series,
     Volume,
 )
 from app.services.collection import CollectionService
 from app.services.reading_list import ReadingListService
+from tests.factories import create_library_with_root
 
 
 def _create_comic(db, suffix: str) -> Comic:
-    library = Library(name=f"Library {suffix}", path=f"/library/{suffix}")
+    library = create_library_with_root(db, f"Library {suffix}", f"/library/{suffix}")
+    root = library.active_root
     series = Series(name=f"Series {suffix}", library=library)
     volume = Volume(series=series, volume_number=1)
     comic = Comic(
         volume=volume,
         filename=f"{suffix}.cbz",
-        file_path=f"/library/{suffix}/{suffix}.cbz",
+        library_root_id=root.id,
+        relative_path=f"{suffix}.cbz",
         page_count=24,
     )
-    db.add_all([library, series, volume, comic])
+    db.add_all([series, volume, comic])
     db.commit()
     db.refresh(comic)
     return comic

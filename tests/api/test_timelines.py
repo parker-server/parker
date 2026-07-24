@@ -1,9 +1,9 @@
 from app.models.collection import Collection, CollectionItem
 from app.models.comic import Comic, Volume
-from app.models.library import Library
 from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.series import Series
 from app.models.tags import Character, Team
+from tests.factories import create_library_with_root
 
 
 def _comic(
@@ -19,6 +19,7 @@ def _comic(
     age_rating: str | None = None,
 ) -> Comic:
     slug = title.lower().replace(" ", "-").replace("#", "")
+    root = volume.series.library.active_root
     return Comic(
         volume=volume,
         number=number,
@@ -30,16 +31,15 @@ def _comic(
         series_group=series_group,
         age_rating=age_rating,
         filename=f"{slug}.cbz",
-        file_path=f"/tmp/{slug}.cbz",
+        library_root_id=root.id,
+        relative_path=f"{slug}.cbz",
         page_count=22,
     )
 
 
 def _seed_timeline_fixture(db, normal_user):
-    library = Library(name="Timeline Library", path="/tmp/timeline-library")
-    hidden_library = Library(name="Hidden Timeline Library", path="/tmp/hidden-timeline-library")
-    db.add_all([library, hidden_library])
-    db.flush()
+    library = create_library_with_root(db, "Timeline Library", "/tmp/timeline-library")
+    hidden_library = create_library_with_root(db, "Hidden Timeline Library", "/tmp/hidden-timeline-library")
 
     action = Series(name="Action Timeline", library=library)
     adventures = Series(name="Adventures Timeline", library=library)

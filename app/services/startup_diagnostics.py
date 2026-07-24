@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from sqlalchemy import text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.models.comic import Comic
 from app.models.library import Library
@@ -205,14 +205,21 @@ def collect_startup_diagnostics(
         User.is_superuser == True,
     ).first() is not None
 
-    library_sample = [
-        {
+    library_sample = []
+    for library in (
+        db.query(Library)
+        .options(selectinload(Library.roots))
+        .order_by(Library.name)
+        .limit(5)
+        .all()
+    ):
+        active_root = library.active_root
+        root_path = active_root.path if active_root else None
+        library_sample.append({
             "name": library.name,
-            "path": library.path,
-            "path_exists": _safe_path_exists(library.path),
-        }
-        for library in db.query(Library).order_by(Library.name).limit(5).all()
-    ]
+            "path": root_path,
+            "path_exists": _safe_path_exists(root_path),
+        })
 
     comics_root_exists = comics_root.exists()
     comics_root_sample = _sample_directory(comics_root)

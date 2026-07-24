@@ -1,11 +1,12 @@
-from app.models.comic import Comic, Volume
-from app.models.library import Library
+from app.models.comic import Volume
 from app.models.reading_progress import ReadingProgress
 from app.models.series import Series
+from tests.factories import create_comic, create_library_with_root
 
 
 def _seed_batch_graph(db, *, prefix: str):
-    library = Library(name=f"{prefix}-lib", path=f"/tmp/{prefix}-lib")
+    library = create_library_with_root(db, f"{prefix}-lib", f"/tmp/{prefix}-lib")
+    root = library.active_root
     series_a = Series(name=f"{prefix}-series-a", library=library)
     series_b = Series(name=f"{prefix}-series-b", library=library)
 
@@ -13,43 +14,38 @@ def _seed_batch_graph(db, *, prefix: str):
     vol_a2 = Volume(series=series_a, volume_number=2)
     vol_b1 = Volume(series=series_b, volume_number=1)
 
-    db.add_all([library, series_a, series_b, vol_a1, vol_a2, vol_b1])
+    db.add_all([series_a, series_b, vol_a1, vol_a2, vol_b1])
     db.flush()
 
-    c1 = Comic(
-        volume_id=vol_a1.id,
+    c1 = create_comic(
+        db, vol_a1, root, f"{prefix}-a1-1.cbz",
         number="1",
         title=f"{prefix}-a1-1",
         filename=f"{prefix}-a1-1.cbz",
-        file_path=f"/tmp/{prefix}-a1-1.cbz",
         page_count=10,
     )
-    c2 = Comic(
-        volume_id=vol_a1.id,
+    c2 = create_comic(
+        db, vol_a1, root, f"{prefix}-a1-2.cbz",
         number="2",
         title=f"{prefix}-a1-2",
         filename=f"{prefix}-a1-2.cbz",
-        file_path=f"/tmp/{prefix}-a1-2.cbz",
         page_count=0,
     )
-    c3 = Comic(
-        volume_id=vol_a2.id,
+    c3 = create_comic(
+        db, vol_a2, root, f"{prefix}-a2-1.cbz",
         number="1",
         title=f"{prefix}-a2-1",
         filename=f"{prefix}-a2-1.cbz",
-        file_path=f"/tmp/{prefix}-a2-1.cbz",
         page_count=5,
     )
-    c4 = Comic(
-        volume_id=vol_b1.id,
+    c4 = create_comic(
+        db, vol_b1, root, f"{prefix}-b1-1.cbz",
         number="1",
         title=f"{prefix}-b1-1",
         filename=f"{prefix}-b1-1.cbz",
-        file_path=f"/tmp/{prefix}-b1-1.cbz",
         page_count=7,
     )
 
-    db.add_all([c1, c2, c3, c4])
     db.commit()
 
     for obj in (library, series_a, series_b, vol_a1, vol_a2, vol_b1, c1, c2, c3, c4):

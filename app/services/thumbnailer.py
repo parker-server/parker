@@ -6,7 +6,7 @@ from multiprocessing import Queue
 from queue import Empty
 from typing import Tuple, Dict, Any, List
 from sqlalchemy.exc import OperationalError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.settings_loader import get_cached_setting
 from app.database import SessionLocal, engine
@@ -253,6 +253,7 @@ class ThumbnailService:
             .query(Comic)
             .join(Comic.volume)
             .join(Series)
+            .options(joinedload(Comic.library_root))
             .filter(Series.library_id == self.library_id)
         )
 
@@ -274,6 +275,7 @@ class ThumbnailService:
             #self.logger.info(f"Processing Series {series_id}")
             comics = (self.db.query(Comic)
                       .join(Volume)
+                      .options(joinedload(Comic.library_root))
                       .filter(Volume.series_id == series_id)
                       .all())
         elif self.library_id:
@@ -300,7 +302,7 @@ class ThumbnailService:
                 stats["skipped"] += 1
                 continue
 
-            tasks.append((comic.id, str(comic.file_path)))
+            tasks.append((comic.id, comic.absolute_path))
 
         if not tasks:
             return stats

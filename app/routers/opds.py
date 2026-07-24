@@ -62,8 +62,7 @@ def format_opds_issued(year: int | None, month: int | None, day: int | None) -> 
 
 def get_comic_archive_suffix(comic: Comic) -> str:
     """Return the normalized archive suffix for OPDS/download metadata."""
-    filename = comic.filename or str(comic.file_path or "")
-    return Path(filename).suffix.lower()
+    return Path(comic.filename).suffix.lower()
 
 
 def get_opds_acquisition_type(comic: Comic) -> str:
@@ -108,7 +107,14 @@ def get_opds_thumbnail_href(request: Request, comic: Comic) -> str:
 
 def get_authorized_opds_comic(comic_id: int, user: OPDSUser, db: SessionDep) -> Comic:
     """Return a comic if the OPDS user can access it, otherwise raise."""
-    comic = db.query(Comic).join(Volume).join(Series).filter(Comic.id == comic_id).first()
+    comic = (
+        db.query(Comic)
+        .join(Volume)
+        .join(Series)
+        .options(joinedload(Comic.library_root))
+        .filter(Comic.id == comic_id)
+        .first()
+    )
 
     if not comic:
         raise HTTPException(status_code=404)
@@ -421,7 +427,7 @@ async def opds_download(comic_id: int, user: OPDSUser, db: SessionDep, filename:
     export_name = get_opds_download_filename(comic)
 
     return FileResponse(
-        path=str(comic.file_path),
+        path=comic.absolute_path,
         filename=export_name,
         media_type=get_opds_acquisition_type(comic),
         headers={"Content-Disposition": f'attachment; filename="{export_name}"'}

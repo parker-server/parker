@@ -5,32 +5,30 @@ from unittest.mock import patch
 from app.api.home import _pick_best_cover, format_home_item
 from app.models.comic import Comic, Volume
 from app.models.interactions import UserComicRating, UserLibraryPin, UserVolumeFollow
-from app.models.library import Library
 from app.models.reading_progress import ReadingProgress
 from app.models.series import Series
 from app.models.user import User
+from tests.factories import create_comic, create_library_with_root
 
 
 def _create_series_graph(db, *, lib_name: str, series_name: str):
-    library = Library(name=lib_name, path=f"/tmp/{lib_name}")
+    library = create_library_with_root(db, lib_name, f"/tmp/{lib_name}")
     series = Series(name=series_name, library=library)
     volume = Volume(series=series, volume_number=1)
-    db.add_all([library, series, volume])
+    db.add_all([series, volume])
     db.flush()
     return library, series, volume
 
 
 def _add_comic(db, volume: Volume, *, number: str, title: str, **kwargs):
-    comic = Comic(
-        volume_id=volume.id,
+    root = volume.series.library.active_root
+    comic = create_comic(
+        db, volume, root, f"{title.replace(' ', '-')}-{volume.id}-{number}.cbz",
         number=number,
         title=title,
         filename=f"{title.replace(' ', '-')}.cbz",
-        file_path=f"/tmp/{title.replace(' ', '-')}-{volume.id}-{number}.cbz",
         **kwargs,
     )
-    db.add(comic)
-    db.flush()
     return comic
 
 
@@ -612,12 +610,10 @@ def test_home_following_arrivals_respects_baseline_formats_and_progress(auth_cli
 
 
 def test_home_pinned_libraries_returns_recently_updated_series_by_pin_order(auth_client, db, normal_user):
-    first_library = Library(name="Pinned First", path="/tmp/pinned-first")
-    second_library = Library(name="Pinned Second", path="/tmp/pinned-second")
-    empty_library = Library(name="Pinned Empty", path="/tmp/pinned-empty")
-    hidden_library = Library(name="Pinned Hidden", path="/tmp/pinned-hidden")
-    db.add_all([first_library, second_library, empty_library, hidden_library])
-    db.flush()
+    first_library = create_library_with_root(db, "Pinned First", "/tmp/pinned-first")
+    second_library = create_library_with_root(db, "Pinned Second", "/tmp/pinned-second")
+    empty_library = create_library_with_root(db, "Pinned Empty", "/tmp/pinned-empty")
+    hidden_library = create_library_with_root(db, "Pinned Hidden", "/tmp/pinned-hidden")
 
     normal_user.accessible_libraries.extend([first_library, second_library, empty_library])
     pinned_at = datetime(2026, 7, 20, tzinfo=timezone.utc)

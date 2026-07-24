@@ -2,10 +2,11 @@ import logging
 import os
 
 from app.models.comic import Comic, Volume
-from app.models.library import Library
 from app.models.series import Series
 from app.services.scanner import LibraryScanner
 from app.services.sidecar_service import SidecarService
+from app.core.path_utils import compute_relative_path
+from tests.factories import create_library_with_root
 
 
 def _write_dummy_comic(path):
@@ -13,12 +14,13 @@ def _write_dummy_comic(path):
     path.write_bytes(b"not-a-real-archive")
 
 
-def _create_existing_comic(db, volume_id, file_path, number):
+def _create_existing_comic(db, volume_id, root, file_path, number):
     mtime = os.path.getmtime(file_path)
     comic = Comic(
         volume_id=volume_id,
         filename=file_path.name,
-        file_path=str(file_path),
+        library_root_id=root.id,
+        relative_path=compute_relative_path(root.path, str(file_path)),
         file_modified_at=mtime + 60,  # Ensure scanner skips metadata extraction path
         file_size=file_path.stat().st_size,
         page_count=24,
@@ -31,9 +33,7 @@ def _create_existing_comic(db, volume_id, file_path, number):
 
 
 def _setup_library_series_volume(db, library_path):
-    library = Library(name="Test Library", path=str(library_path))
-    db.add(library)
-    db.flush()
+    library = create_library_with_root(db, "Test Library", str(library_path))
 
     series = Series(name="Hawk and Dove", library_id=library.id, summary_override="old-series")
     db.add(series)
@@ -64,7 +64,7 @@ def test_sidecar_reconcile_from_parent_folder_for_deep_file(db, tmp_path):
 
     comic_file = deep_path / "hawk-and-dove-03.cbz"
     _write_dummy_comic(comic_file)
-    _create_existing_comic(db, volume.id, comic_file, number=1)
+    _create_existing_comic(db, volume.id, library.active_root, comic_file, number=1)
     db.commit()
 
     scanner = LibraryScanner(library, db)
@@ -102,8 +102,8 @@ def test_sidecar_reconcile_logs_once_per_entity_when_multiple_subfolders(db, tmp
     comic_b = deep_path / "hawk-and-dove-03-b.cbz"
     _write_dummy_comic(comic_a)
     _write_dummy_comic(comic_b)
-    _create_existing_comic(db, volume.id, comic_a, number=1)
-    _create_existing_comic(db, volume.id, comic_b, number=2)
+    _create_existing_comic(db, volume.id, library.active_root, comic_a, number=1)
+    _create_existing_comic(db, volume.id, library.active_root, comic_b, number=2)
     db.commit()
 
     caplog.set_level(logging.INFO, logger="app.services.scanner")

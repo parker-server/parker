@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from app.models.job import JobStatus, JobType, ScanJob
-from app.models.library import Library
+from tests.factories import create_library_with_root
 
 
 def test_active_job_returns_inactive_when_none(client):
@@ -35,9 +35,7 @@ def test_active_job_returns_cleanup_placeholder_library_name(client, db):
 
 
 def test_list_jobs_applies_filters_and_parses_summary(admin_client, db):
-    library = Library(name="Jobs-Lib", path="/tmp/jobs-lib")
-    db.add(library)
-    db.flush()
+    library = create_library_with_root(db, "Jobs-Lib", "/tmp/jobs-lib")
 
     base_time = datetime.now(timezone.utc)
     completed = ScanJob(
@@ -80,9 +78,7 @@ def test_list_jobs_applies_filters_and_parses_summary(admin_client, db):
 
 
 def test_get_job_status_success_and_not_found(admin_client, db):
-    library = Library(name="Status-Lib", path="/tmp/status-lib")
-    db.add(library)
-    db.flush()
+    library = create_library_with_root(db, "Status-Lib", "/tmp/status-lib")
 
     job = ScanJob(
         library_id=library.id,

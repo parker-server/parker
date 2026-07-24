@@ -4,55 +4,52 @@ from app.models.collection import Collection, CollectionItem
 from app.models.comic import Comic, Volume
 from app.models.credits import ComicCredit, Person
 from app.models.interactions import UserSeries
-from app.models.library import Library
 from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.reading_progress import ReadingProgress
 from app.models.series import Series
 from app.models.tags import Character, Location, Team
 from app.models.user import User
+from tests.factories import create_comic, create_library_with_root
 
 
 def _create_series_with_volume(db, *, lib_name: str, series_name: str):
-    library = Library(name=lib_name, path=f"/tmp/{lib_name}")
+    library = create_library_with_root(db, lib_name, f"/tmp/{lib_name}")
+    root = library.active_root
     series = Series(name=series_name, library=library)
     volume = Volume(series=series, volume_number=1)
 
-    db.add_all([library, series, volume])
+    db.add_all([series, volume])
     db.flush()
 
     comics = [
-        Comic(
-            volume_id=volume.id,
+        create_comic(
+            db, volume, root, f"{series_name}-1.cbz",
             number="1",
             title=f"{series_name} #1",
             year=2020,
             filename=f"{series_name}-1.cbz",
-            file_path=f"/tmp/{series_name}-1-{lib_name}.cbz",
             page_count=24,
         ),
-        Comic(
-            volume_id=volume.id,
+        create_comic(
+            db, volume, root, f"{series_name}-2.cbz",
             number="2",
             title=f"{series_name} Annual",
             year=2021,
             format="annual",
             filename=f"{series_name}-2.cbz",
-            file_path=f"/tmp/{series_name}-2-{lib_name}.cbz",
             page_count=30,
         ),
-        Comic(
-            volume_id=volume.id,
+        create_comic(
+            db, volume, root, f"{series_name}-3.cbz",
             number="3",
             title=f"{series_name} Special",
             year=2022,
             format="one-shot",
             filename=f"{series_name}-3.cbz",
-            file_path=f"/tmp/{series_name}-3-{lib_name}.cbz",
             page_count=20,
         ),
     ]
 
-    db.add_all(comics)
     db.commit()
 
     db.refresh(library)
@@ -70,15 +67,16 @@ def _create_series_with_volume(db, *, lib_name: str, series_name: str):
 
 
 def _create_series_detail_fixture(db):
-    library = Library(name="series-detail-lib", path="/tmp/series-detail-lib")
+    library = create_library_with_root(db, "series-detail-lib", "/tmp/series-detail-lib")
+    root = library.active_root
     series = Series(name="Countdown", library=library, summary_override="Series override summary")
     vol1 = Volume(series=series, volume_number=1)
     vol2 = Volume(series=series, volume_number=2)
-    db.add_all([library, series, vol1, vol2])
+    db.add_all([series, vol1, vol2])
     db.flush()
 
-    issue_one = Comic(
-        volume_id=vol1.id,
+    issue_one = create_comic(
+        db, vol1, root, "countdown-1.cbz",
         number="1",
         title="Countdown #1",
         year=2000,
@@ -88,10 +86,9 @@ def _create_series_detail_fixture(db):
         publisher="Series Pub",
         imprint="Series Imprint",
         filename="countdown-1.cbz",
-        file_path="/tmp/series-countdown-1.cbz",
     )
-    issue_four = Comic(
-        volume_id=vol1.id,
+    issue_four = create_comic(
+        db, vol1, root, "countdown-4.cbz",
         number="4",
         title="Countdown #4",
         year=2000,
@@ -102,10 +99,9 @@ def _create_series_detail_fixture(db):
         publisher="Series Pub",
         imprint="Series Imprint",
         filename="countdown-4.cbz",
-        file_path="/tmp/series-countdown-4.cbz",
     )
-    issue_two = Comic(
-        volume_id=vol2.id,
+    issue_two = create_comic(
+        db, vol2, root, "countdown-2.cbz",
         number="2",
         title="Countdown #2",
         year=2000,
@@ -115,10 +111,9 @@ def _create_series_detail_fixture(db):
         publisher="Series Pub",
         imprint="Series Imprint",
         filename="countdown-2.cbz",
-        file_path="/tmp/series-countdown-2.cbz",
     )
-    annual = Comic(
-        volume_id=vol2.id,
+    annual = create_comic(
+        db, vol2, root, "countdown-annual.cbz",
         number="1",
         title="Countdown Annual",
         year=2001,
@@ -129,10 +124,7 @@ def _create_series_detail_fixture(db):
         publisher="Series Pub",
         imprint="Series Imprint",
         filename="countdown-annual.cbz",
-        file_path="/tmp/series-countdown-annual.cbz",
     )
-    db.add_all([issue_one, issue_four, issue_two, annual])
-    db.flush()
 
     writer = Person(name="Series Writer")
     penciller = Person(name="Series Penciller")
@@ -475,9 +467,9 @@ def test_series_detail_hides_story_arcs_and_related_containers_when_parsing_disa
 
 
 def test_series_detail_returns_empty_structure_when_no_volumes(auth_client, db, normal_user):
-    library = Library(name="empty-series-lib", path="/tmp/empty-series-lib")
+    library = create_library_with_root(db, "empty-series-lib", "/tmp/empty-series-lib")
     series = Series(name="Empty Series", library=library)
-    db.add_all([library, series])
+    db.add_all([series])
     db.commit()
 
     normal_user.accessible_libraries.append(library)
@@ -496,21 +488,19 @@ def test_series_detail_returns_empty_structure_when_no_volumes(auth_client, db, 
 
 
 def test_series_detail_blocks_age_restricted_content(auth_client, db, normal_user):
-    library = Library(name="restricted-series-lib", path="/tmp/restricted-series-lib")
+    library = create_library_with_root(db, "restricted-series-lib", "/tmp/restricted-series-lib")
+    root = library.active_root
     series = Series(name="Restricted Series", library=library)
     volume = Volume(series=series, volume_number=1)
-    db.add_all([library, series, volume])
+    db.add_all([series, volume])
     db.flush()
 
-    db.add(
-        Comic(
-            volume_id=volume.id,
-            number="1",
-            title="Restricted Comic",
-            age_rating="Mature 17+",
-            filename="restricted-series.cbz",
-            file_path="/tmp/restricted-series.cbz",
-        )
+    create_comic(
+        db, volume, root, "restricted-series.cbz",
+        number="1",
+        title="Restricted Comic",
+        age_rating="Mature 17+",
+        filename="restricted-series.cbz",
     )
 
     normal_user.accessible_libraries.append(library)
@@ -551,32 +541,29 @@ def test_series_recommendations_returns_empty_when_series_missing(auth_client):
 
 
 def test_series_recommendations_includes_group_lane(auth_client, db, normal_user):
-    library = Library(name="rec-lib", path="/tmp/rec-lib")
+    library = create_library_with_root(db, "rec-lib", "/tmp/rec-lib")
+    root = library.active_root
     source = Series(name="Source Series", library=library)
     other = Series(name="Other Series", library=library)
     source_vol = Volume(series=source, volume_number=1)
     other_vol = Volume(series=other, volume_number=1)
-    db.add_all([library, source, other, source_vol, other_vol])
+    db.add_all([source, other, source_vol, other_vol])
     db.flush()
 
-    db.add_all([
-        Comic(
-            volume_id=source_vol.id,
-            number="1",
-            title="Source #1",
-            series_group="Shared Verse",
-            filename="source-1.cbz",
-            file_path="/tmp/source-1.cbz",
-        ),
-        Comic(
-            volume_id=other_vol.id,
-            number="1",
-            title="Other #1",
-            series_group="Shared Verse",
-            filename="other-1.cbz",
-            file_path="/tmp/other-1.cbz",
-        ),
-    ])
+    create_comic(
+        db, source_vol, root, "source-1.cbz",
+        number="1",
+        title="Source #1",
+        series_group="Shared Verse",
+        filename="source-1.cbz",
+    )
+    create_comic(
+        db, other_vol, root, "other-1.cbz",
+        number="1",
+        title="Other #1",
+        series_group="Shared Verse",
+        filename="other-1.cbz",
+    )
 
     normal_user.accessible_libraries.append(library)
     db.commit()
@@ -607,6 +594,7 @@ def _create_single_issue_series(
     writer=None,
     penciller=None,
 ):
+    root = library.active_root
     series = Series(name=name, library=library)
     volume = Volume(series=series, volume_number=1)
     comic = Comic(
@@ -618,7 +606,8 @@ def _create_single_issue_series(
         series_group=series_group,
         publisher=publisher,
         filename=f"{name}-{number}.cbz",
-        file_path=f"/tmp/{name}-{number}.cbz",
+        library_root_id=root.id,
+        relative_path=f"{name}-{number}.cbz",
     )
 
     db.add_all([series, volume, comic])
@@ -638,29 +627,27 @@ def _create_single_issue_series(
 
 
 def test_series_list_fallback_cover_handles_non_numeric_issue_numbers(auth_client, db, normal_user):
-    library = Library(name="series-fallback-list-lib", path="/tmp/series-fallback-list-lib")
+    library = create_library_with_root(db, "series-fallback-list-lib", "/tmp/series-fallback-list-lib")
+    root = library.active_root
     series = Series(name="Fallback Sort Series", library=library)
     volume = Volume(series=series, volume_number=1)
-    db.add_all([library, series, volume])
+    db.add_all([series, volume])
     db.flush()
 
-    comic_alpha = Comic(
-        volume_id=volume.id,
+    comic_alpha = create_comic(
+        db, volume, root, "fallback-a.cbz",
         number="A",
         title="Fallback A",
         year=2025,
         filename="fallback-a.cbz",
-        file_path="/tmp/fallback-a.cbz",
     )
-    comic_two = Comic(
-        volume_id=volume.id,
+    comic_two = create_comic(
+        db, volume, root, "fallback-2.cbz",
         number="2",
         title="Fallback 2",
         year=2024,
         filename="fallback-2.cbz",
-        file_path="/tmp/fallback-2.cbz",
     )
-    db.add_all([comic_alpha, comic_two])
 
     normal_user.accessible_libraries.append(library)
     db.commit()
@@ -675,46 +662,42 @@ def test_series_list_fallback_cover_handles_non_numeric_issue_numbers(auth_clien
 
 
 def test_series_detail_non_reverse_cover_logic_and_resume_default(auth_client, db, normal_user):
-    library = Library(name="series-detail-cover-lib", path="/tmp/series-detail-cover-lib")
+    library = create_library_with_root(db, "series-detail-cover-lib", "/tmp/series-detail-cover-lib")
+    root = library.active_root
     series = Series(name="Alpha Line", library=library)
     vol1 = Volume(series=series, volume_number=1)
     vol2 = Volume(series=series, volume_number=2)
-    db.add_all([library, series, vol1, vol2])
+    db.add_all([series, vol1, vol2])
     db.flush()
 
-    v1_issue_alpha = Comic(
-        volume_id=vol1.id,
+    v1_issue_alpha = create_comic(
+        db, vol1, root, "v1-a.cbz",
         number="A",
         title="Vol1 A",
         year=2026,
         filename="v1-a.cbz",
-        file_path="/tmp/v1-a.cbz",
     )
-    v1_issue_two = Comic(
-        volume_id=vol1.id,
+    v1_issue_two = create_comic(
+        db, vol1, root, "v1-2.cbz",
         number="2",
         title="Vol1 #2",
         year=2025,
         filename="v1-2.cbz",
-        file_path="/tmp/v1-2.cbz",
     )
-    v2_issue_one = Comic(
-        volume_id=vol2.id,
+    v2_issue_one = create_comic(
+        db, vol2, root, "v2-1.cbz",
         number="1",
         title="Vol2 #1",
         year=2024,
         filename="v2-1.cbz",
-        file_path="/tmp/v2-1.cbz",
     )
-    v2_issue_three = Comic(
-        volume_id=vol2.id,
+    v2_issue_three = create_comic(
+        db, vol2, root, "v2-3.cbz",
         number="3",
         title="Vol2 #3",
         year=2027,
         filename="v2-3.cbz",
-        file_path="/tmp/v2-3.cbz",
     )
-    db.add_all([v1_issue_alpha, v1_issue_two, v2_issue_one, v2_issue_three])
 
     normal_user.accessible_libraries.append(library)
     db.commit()
@@ -732,34 +715,31 @@ def test_series_detail_non_reverse_cover_logic_and_resume_default(auth_client, d
 
 
 def test_series_detail_advances_to_next_issue_when_latest_progress_is_completed(auth_client, db, normal_user):
-    library = Library(name="series-detail-next-lib", path="/tmp/series-detail-next-lib")
+    library = create_library_with_root(db, "series-detail-next-lib", "/tmp/series-detail-next-lib")
+    root = library.active_root
     series = Series(name="Series Next Logic", library=library)
     volume = Volume(series=series, volume_number=1)
-    db.add_all([library, series, volume])
+    db.add_all([series, volume])
     db.flush()
 
-    issue_one = Comic(
-        volume_id=volume.id,
+    issue_one = create_comic(
+        db, volume, root, "series-next-1.cbz",
         number="1",
         title="Series Next #1",
         filename="series-next-1.cbz",
-        file_path="/tmp/series-next-1.cbz",
     )
-    issue_two = Comic(
-        volume_id=volume.id,
+    issue_two = create_comic(
+        db, volume, root, "series-next-2.cbz",
         number="2",
         title="Series Next #2",
         filename="series-next-2.cbz",
-        file_path="/tmp/series-next-2.cbz",
     )
-    issue_three = Comic(
-        volume_id=volume.id,
+    issue_three = create_comic(
+        db, volume, root, "series-next-3.cbz",
         number="3",
         title="Series Next #3",
         filename="series-next-3.cbz",
-        file_path="/tmp/series-next-3.cbz",
     )
-    db.add_all([issue_one, issue_two, issue_three])
 
     normal_user.accessible_libraries.append(library)
     db.flush()
@@ -792,7 +772,8 @@ def test_series_detail_advances_to_next_issue_when_latest_progress_is_completed(
 
 
 def test_series_detail_filters_related_containers_with_banned_content(auth_client, db, normal_user):
-    library = Library(name="series-detail-ban-lib", path="/tmp/series-detail-ban-lib")
+    library = create_library_with_root(db, "series-detail-ban-lib", "/tmp/series-detail-ban-lib")
+    root = library.active_root
 
     safe_series = Series(name="Safe Detail Series", library=library)
     safe_volume = Volume(series=safe_series, volume_number=1)
@@ -802,7 +783,8 @@ def test_series_detail_filters_related_containers_with_banned_content(auth_clien
         title="Safe Detail",
         age_rating="Teen",
         filename="safe-detail.cbz",
-        file_path="/tmp/safe-detail.cbz",
+        library_root_id=root.id,
+        relative_path="safe-detail.cbz",
     )
 
     banned_series = Series(name="Banned Detail Series", library=library)
@@ -813,14 +795,14 @@ def test_series_detail_filters_related_containers_with_banned_content(auth_clien
         title="Banned Detail",
         age_rating="Mature 17+",
         filename="banned-detail.cbz",
-        file_path="/tmp/banned-detail.cbz",
+        library_root_id=root.id,
+        relative_path="banned-detail.cbz",
     )
 
     collection = Collection(name="Mixed Collection")
     reading_list = ReadingList(name="Mixed Reading List")
 
     db.add_all([
-        library,
         safe_series,
         safe_volume,
         safe_comic,
@@ -853,33 +835,30 @@ def test_series_detail_filters_related_containers_with_banned_content(auth_clien
 
 
 def test_series_list_applies_age_filter_and_created_sort(auth_client, db, normal_user):
-    library = Library(name="series-list-age-lib", path="/tmp/series-list-age-lib")
+    library = create_library_with_root(db, "series-list-age-lib", "/tmp/series-list-age-lib")
+    root = library.active_root
 
     safe_series = Series(name="Safe Created Series", library=library)
     banned_series = Series(name="Banned Created Series", library=library)
     safe_volume = Volume(series=safe_series, volume_number=1)
     banned_volume = Volume(series=banned_series, volume_number=1)
-    db.add_all([library, safe_series, banned_series, safe_volume, banned_volume])
+    db.add_all([safe_series, banned_series, safe_volume, banned_volume])
     db.flush()
 
-    db.add_all([
-        Comic(
-            volume_id=safe_volume.id,
-            number="1",
-            title="Safe Created",
-            age_rating="Teen",
-            filename="safe-created.cbz",
-            file_path="/tmp/safe-created.cbz",
-        ),
-        Comic(
-            volume_id=banned_volume.id,
-            number="1",
-            title="Banned Created",
-            age_rating="Mature 17+",
-            filename="banned-created.cbz",
-            file_path="/tmp/banned-created.cbz",
-        ),
-    ])
+    create_comic(
+        db, safe_volume, root, "safe-created.cbz",
+        number="1",
+        title="Safe Created",
+        age_rating="Teen",
+        filename="safe-created.cbz",
+    )
+    create_comic(
+        db, banned_volume, root, "banned-created.cbz",
+        number="1",
+        title="Banned Created",
+        age_rating="Mature 17+",
+        filename="banned-created.cbz",
+    )
 
     safe_series.created_at = datetime(2020, 1, 1, tzinfo=timezone.utc)
     banned_series.created_at = datetime(2021, 1, 1, tzinfo=timezone.utc)
@@ -904,9 +883,9 @@ def test_series_thumbnails_404_when_series_missing(admin_client):
 
 
 def test_series_thumbnails_background_task_handles_errors(admin_client, db, monkeypatch):
-    library = Library(name="series-thumb-lib", path="/tmp/series-thumb-lib")
+    library = create_library_with_root(db, "series-thumb-lib", "/tmp/series-thumb-lib")
     series = Series(name="Series Thumbs", library=library)
-    db.add_all([library, series])
+    db.add_all([series])
     db.commit()
 
     called = {"value": False}
@@ -929,46 +908,41 @@ def test_series_issues_sort_order_none_uses_reverse_numbering_rule(db, normal_us
     from app.api.deps import PaginationParams
     from app.api.series import get_series_issues
 
-    library = Library(name="series-issues-none-lib", path="/tmp/series-issues-none-lib")
+    library = create_library_with_root(db, "series-issues-none-lib", "/tmp/series-issues-none-lib")
+    root = library.active_root
     reverse_series = Series(name="Countdown", library=library)
     reverse_volume = Volume(series=reverse_series, volume_number=1)
 
     normal_series = Series(name="Regular Sort Series", library=library)
     normal_volume = Volume(series=normal_series, volume_number=1)
 
-    db.add_all([library, reverse_series, reverse_volume, normal_series, normal_volume])
+    db.add_all([reverse_series, reverse_volume, normal_series, normal_volume])
     db.flush()
 
-    db.add_all([
-        Comic(
-            volume_id=reverse_volume.id,
-            number="1",
-            title="Reverse #1",
-            filename="reverse-1.cbz",
-            file_path="/tmp/reverse-1.cbz",
-        ),
-        Comic(
-            volume_id=reverse_volume.id,
-            number="2",
-            title="Reverse #2",
-            filename="reverse-2.cbz",
-            file_path="/tmp/reverse-2.cbz",
-        ),
-        Comic(
-            volume_id=normal_volume.id,
-            number="1",
-            title="Regular #1",
-            filename="regular-1.cbz",
-            file_path="/tmp/regular-1.cbz",
-        ),
-        Comic(
-            volume_id=normal_volume.id,
-            number="2",
-            title="Regular #2",
-            filename="regular-2.cbz",
-            file_path="/tmp/regular-2.cbz",
-        ),
-    ])
+    create_comic(
+        db, reverse_volume, root, "reverse-1.cbz",
+        number="1",
+        title="Reverse #1",
+        filename="reverse-1.cbz",
+    )
+    create_comic(
+        db, reverse_volume, root, "reverse-2.cbz",
+        number="2",
+        title="Reverse #2",
+        filename="reverse-2.cbz",
+    )
+    create_comic(
+        db, normal_volume, root, "regular-1.cbz",
+        number="1",
+        title="Regular #1",
+        filename="regular-1.cbz",
+    )
+    create_comic(
+        db, normal_volume, root, "regular-2.cbz",
+        number="2",
+        title="Regular #2",
+        filename="regular-2.cbz",
+    )
     db.commit()
 
     params = PaginationParams(page=1, size=20)
@@ -1001,9 +975,9 @@ def test_series_issues_sort_order_none_uses_reverse_numbering_rule(db, normal_us
 
 
 def test_series_recommendations_writer_lane(auth_client, db, normal_user):
-    library = Library(name="series-rec-writer-lib", path="/tmp/series-rec-writer-lib")
+    library = create_library_with_root(db, "series-rec-writer-lib", "/tmp/series-rec-writer-lib")
     writer = Person(name="Writer Lane")
-    db.add_all([library, writer])
+    db.add_all([writer])
     db.flush()
 
     source = _create_single_issue_series(db, library, name="Writer Source", writer=writer)
@@ -1025,9 +999,9 @@ def test_series_recommendations_writer_lane(auth_client, db, normal_user):
 
 
 def test_series_recommendations_penciller_lane(auth_client, db, normal_user):
-    library = Library(name="series-rec-pencil-lib", path="/tmp/series-rec-pencil-lib")
+    library = create_library_with_root(db, "series-rec-pencil-lib", "/tmp/series-rec-pencil-lib")
     penciller = Person(name="Penciller Lane")
-    db.add_all([library, penciller])
+    db.add_all([penciller])
     db.flush()
 
     source = _create_single_issue_series(db, library, name="Penciller Source", penciller=penciller)
@@ -1051,9 +1025,9 @@ def test_series_recommendations_penciller_lane(auth_client, db, normal_user):
 def test_series_recommendations_genre_lane(auth_client, db, normal_user):
     from app.models.tags import Genre
 
-    library = Library(name="series-rec-genre-lib", path="/tmp/series-rec-genre-lib")
+    library = create_library_with_root(db, "series-rec-genre-lib", "/tmp/series-rec-genre-lib")
     genre = Genre(name="Mystery")
-    db.add_all([library, genre])
+    db.add_all([genre])
     db.flush()
 
     source = _create_single_issue_series(db, library, name="Genre Source", genre=genre)
@@ -1075,7 +1049,7 @@ def test_series_recommendations_genre_lane(auth_client, db, normal_user):
 
 
 def test_series_recommendations_publisher_lane(auth_client, db, normal_user):
-    library = Library(name="series-rec-publisher-lib", path="/tmp/series-rec-publisher-lib")
+    library = create_library_with_root(db, "series-rec-publisher-lib", "/tmp/series-rec-publisher-lib")
     source = _create_single_issue_series(db, library, name="Publisher Source", publisher="Pub Lane")
     match_ids = []
     for i in range(5):
@@ -1095,9 +1069,7 @@ def test_series_recommendations_publisher_lane(auth_client, db, normal_user):
 
 
 def test_series_recommendations_apply_age_filter_for_restricted_user(auth_client, db, normal_user):
-    library = Library(name="series-rec-age-lib", path="/tmp/series-rec-age-lib")
-    db.add(library)
-    db.flush()
+    library = create_library_with_root(db, "series-rec-age-lib", "/tmp/series-rec-age-lib")
 
     source = _create_single_issue_series(
         db,
@@ -1138,29 +1110,27 @@ def test_series_recommendations_apply_age_filter_for_restricted_user(auth_client
 
 
 def test_series_list_reverse_numbering_fallback_uses_highest_issue(auth_client, db, normal_user):
-    library = Library(name="series-reverse-list-lib", path="/tmp/series-reverse-list-lib")
+    library = create_library_with_root(db, "series-reverse-list-lib", "/tmp/series-reverse-list-lib")
+    root = library.active_root
     series = Series(name="Countdown", library=library)
     volume = Volume(series=series, volume_number=1)
-    db.add_all([library, series, volume])
+    db.add_all([series, volume])
     db.flush()
 
-    issue_two = Comic(
-        volume_id=volume.id,
+    issue_two = create_comic(
+        db, volume, root, "countdown-2.cbz",
         number="2",
         title="Countdown #2",
         year=2008,
         filename="countdown-2.cbz",
-        file_path="/tmp/countdown-2.cbz",
     )
-    issue_four = Comic(
-        volume_id=volume.id,
+    issue_four = create_comic(
+        db, volume, root, "countdown-4.cbz",
         number="4",
         title="Countdown #4",
         year=2007,
         filename="countdown-4.cbz",
-        file_path="/tmp/countdown-4.cbz",
     )
-    db.add_all([issue_two, issue_four])
 
     normal_user.accessible_libraries.append(library)
     db.commit()

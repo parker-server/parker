@@ -4,9 +4,9 @@ import xml.etree.ElementTree as ET
 from PIL import Image
 from app.services.settings_service import SettingsService
 from app.models.setting import SystemSetting
-from app.models.library import Library
 from app.models.series import Series
 from app.models.comic import Comic, Volume
+from tests.factories import create_library_with_root
 
 
 def test_opds_disabled_by_default(client, normal_user):
@@ -144,7 +144,8 @@ def _enable_opds(db):
 def test_opds_library_feed_renders_series_entries(client, db, normal_user):
     _enable_opds(db)
 
-    library = Library(name="OPDS Library", path="/tmp/opds-library")
+    library = create_library_with_root(db, "OPDS Library", "/tmp/opds-library")
+    root = library.active_root
     series = Series(name="Alpha Flight", library=library, summary_override="Team book")
     volume = Volume(series=series, volume_number=1)
     comic = Comic(
@@ -152,10 +153,11 @@ def test_opds_library_feed_renders_series_entries(client, db, normal_user):
         number="1",
         title="First Issue",
         filename="alpha-flight-001.cbz",
-        file_path="/tmp/alpha-flight-001.cbz",
+        library_root_id=root.id,
+        relative_path="alpha-flight-001.cbz",
         updated_at=series.updated_at,
     )
-    db.add_all([library, series, volume, comic])
+    db.add_all([series, volume, comic])
     normal_user.accessible_libraries.append(library)
     db.commit()
 
@@ -182,20 +184,22 @@ def test_opds_library_feed_renders_series_entries(client, db, normal_user):
 def test_opds_library_feed_paginates_series_entries(client, db, normal_user):
     _enable_opds(db)
 
-    library = Library(name="Paged Library", path="/tmp/opds-paged-library")
+    library = create_library_with_root(db, "Paged Library", "/tmp/opds-paged-library")
+    root = library.active_root
     series_names = ["Alpha", "Beta", "Gamma"]
     for name in series_names:
         series = Series(name=name, library=library)
         volume = Volume(series=series, volume_number=1)
-        Comic(
+        comic = Comic(
             volume=volume,
             number="1",
             title=f"{name} One",
             filename=f"{name.lower()}-001.cbz",
-            file_path=f"/tmp/{name.lower()}-001.cbz",
+            library_root_id=root.id,
+            relative_path=f"{name.lower()}-001.cbz",
         )
+        db.add_all([series, volume, comic])
 
-    db.add(library)
     normal_user.accessible_libraries.append(library)
     db.commit()
 
@@ -224,7 +228,8 @@ def test_opds_library_feed_paginates_series_entries(client, db, normal_user):
 def test_opds_series_feed_handles_missing_month_and_day(client, db, normal_user):
     _enable_opds(db)
 
-    library = Library(name="Series Library", path="/tmp/opds-series-library")
+    library = create_library_with_root(db, "Series Library", "/tmp/opds-series-library")
+    root = library.active_root
     series = Series(name="Beta Ray", library=library)
     volume = Volume(series=series, volume_number=1)
     comic = Comic(
@@ -232,13 +237,14 @@ def test_opds_series_feed_handles_missing_month_and_day(client, db, normal_user)
         number="7",
         title="Stormbreaker",
         filename="beta-ray-007.cbz",
-        file_path="/tmp/beta-ray-007.cbz",
+        library_root_id=root.id,
+        relative_path="beta-ray-007.cbz",
         year=2024,
         month=None,
         day=None,
         file_size=12345,
     )
-    db.add_all([library, series, volume, comic])
+    db.add_all([series, volume, comic])
     normal_user.accessible_libraries.append(library)
     db.commit()
 
@@ -268,20 +274,23 @@ def test_opds_series_feed_handles_missing_month_and_day(client, db, normal_user)
 def test_opds_series_feed_paginates_issue_entries(client, db, normal_user):
     _enable_opds(db)
 
-    library = Library(name="Paged Series Library", path="/tmp/opds-paged-series-library")
+    library = create_library_with_root(db, "Paged Series Library", "/tmp/opds-paged-series-library")
+    root = library.active_root
     series = Series(name="Paged Issues", library=library)
     volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
     for number in ("1", "2", "3"):
-        Comic(
+        comic = Comic(
             volume=volume,
             number=number,
             title=f"Issue {number}",
             filename=f"paged-issues-{number}.cbz",
-            file_path=f"/tmp/paged-issues-{number}.cbz",
+            library_root_id=root.id,
+            relative_path=f"paged-issues-{number}.cbz",
             file_size=123,
         )
+        db.add(comic)
 
-    db.add(library)
     normal_user.accessible_libraries.append(library)
     db.commit()
 
@@ -313,7 +322,8 @@ def test_opds_thumbnail_links_use_jpeg_endpoint(client, db, normal_user, tmp_pat
     thumbnail_path = tmp_path / "cover.webp"
     Image.new("RGB", (24, 36), color=(120, 20, 40)).save(thumbnail_path, format="WEBP")
 
-    library = Library(name="Thumbnail Library", path=str(tmp_path / "thumbnail-library"))
+    library = create_library_with_root(db, "Thumbnail Library", str(tmp_path))
+    root = library.active_root
     series = Series(name="Cover Test", library=library)
     volume = Volume(series=series, volume_number=1)
     comic = Comic(
@@ -321,10 +331,11 @@ def test_opds_thumbnail_links_use_jpeg_endpoint(client, db, normal_user, tmp_pat
         number="1",
         title="Cover Story",
         filename="cover-test-001.cbz",
-        file_path=str(tmp_path / "cover-test-001.cbz"),
+        library_root_id=root.id,
+        relative_path="cover-test-001.cbz",
         thumbnail_path=str(thumbnail_path),
     )
-    db.add_all([library, series, volume, comic])
+    db.add_all([series, volume, comic])
     normal_user.accessible_libraries.append(library)
     db.commit()
 
@@ -357,7 +368,8 @@ def test_opds_download_uses_real_archive_type_and_extension(client, db, normal_u
     archive_path = tmp_path / "gamma-ray-001.cbr"
     archive_path.write_bytes(b"fake-rar")
 
-    library = Library(name="Download Library", path=str(tmp_path / "download-library"))
+    library = create_library_with_root(db, "Download Library", str(tmp_path))
+    root = library.active_root
     series = Series(name="Gamma Ray", library=library)
     volume = Volume(series=series, volume_number=1)
     comic = Comic(
@@ -365,9 +377,10 @@ def test_opds_download_uses_real_archive_type_and_extension(client, db, normal_u
         number="1",
         title="First Blast",
         filename="gamma-ray-001.cbr",
-        file_path=str(archive_path),
+        library_root_id=root.id,
+        relative_path=archive_path.name,
     )
-    db.add_all([library, series, volume, comic])
+    db.add_all([series, volume, comic])
     normal_user.accessible_libraries.append(library)
     db.commit()
 
@@ -390,7 +403,8 @@ def test_opds_download_uses_filename_stem_when_title_missing(client, db, normal_
     archive_path = tmp_path / "titleless-special.cbz"
     archive_path.write_bytes(b"fake-zip")
 
-    library = Library(name="Titleless Library", path=str(tmp_path / "titleless-library"))
+    library = create_library_with_root(db, "Titleless Library", str(tmp_path))
+    root = library.active_root
     series = Series(name="Titleless Series", library=library)
     volume = Volume(series=series, volume_number=1)
     comic = Comic(
@@ -398,9 +412,10 @@ def test_opds_download_uses_filename_stem_when_title_missing(client, db, normal_
         number="2",
         title=None,
         filename="titleless-special.cbz",
-        file_path=str(archive_path),
+        library_root_id=root.id,
+        relative_path=archive_path.name,
     )
-    db.add_all([library, series, volume, comic])
+    db.add_all([series, volume, comic])
     normal_user.accessible_libraries.append(library)
     db.commit()
 

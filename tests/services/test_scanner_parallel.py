@@ -9,13 +9,23 @@ from sqlalchemy.orm import sessionmaker
 
 import app.services.scanner as scanner_module
 from app.database import Base
-from app.models import Collection, CollectionItem, Comic, Library, ReadingList, ReadingListItem
+from app.models import (
+    Collection,
+    CollectionItem,
+    Comic,
+    ReadingList,
+    ReadingListItem,
+    Series,
+    Volume,
+)
 from app.services.scanner import LibraryScanner
+from tests.factories import create_comic, create_library_with_root
 
 
 class DummyQuery:
-    def __init__(self, existing):
+    def __init__(self, existing, library_root):
         self._existing = existing
+        self._library_root = library_root
 
     def join(self, *_args, **_kwargs):
         return self
@@ -26,14 +36,18 @@ class DummyQuery:
     def all(self):
         return list(self._existing)
 
+    def first(self):
+        return self._library_root
+
 
 class DummyDB:
-    def __init__(self, existing):
+    def __init__(self, existing, library_root=None):
         self._existing = existing
+        self._library_root = library_root
         self.commit_calls = 0
 
     def query(self, *_args, **_kwargs):
-        return DummyQuery(self._existing)
+        return DummyQuery(self._existing, self._library_root)
 
     def commit(self):
         self.commit_calls += 1
@@ -168,13 +182,20 @@ def test_scan_parallel_orchestrates_pool_writer_and_summary(monkeypatch, tmp_pat
     changed = _create_file(library_path / "changed.cbz")
     _create_file(library_path / "new.cbz")
 
+    library_root = SimpleNamespace(id=1, path=str(library_path))
     existing = [
-        SimpleNamespace(file_path=str(unchanged), file_modified_at=unchanged.stat().st_mtime + 30),
-        SimpleNamespace(file_path=str(changed), file_modified_at=changed.stat().st_mtime - 30),
+        SimpleNamespace(
+            library_root_id=1, relative_path="unchanged.cbz",
+            file_modified_at=unchanged.stat().st_mtime + 30,
+        ),
+        SimpleNamespace(
+            library_root_id=1, relative_path="changed.cbz",
+            file_modified_at=changed.stat().st_mtime - 30,
+        ),
     ]
 
-    db = DummyDB(existing)
-    library = SimpleNamespace(path=str(library_path), name="Test", id=42, last_scanned=None)
+    db = DummyDB(existing, library_root=library_root)
+    library = SimpleNamespace(name="Test", id=42, last_scanned=None)
     scanner = LibraryScanner(library, db)
 
     scanner._reconcile_sidecars = lambda *_args, **_kwargs: None
@@ -221,12 +242,16 @@ def test_scan_parallel_no_tasks_skips_parallel_components(monkeypatch, tmp_path)
     library_path = tmp_path / "library"
     unchanged = _create_file(library_path / "only.cbz")
 
+    library_root = SimpleNamespace(id=1, path=str(library_path))
     existing = [
-        SimpleNamespace(file_path=str(unchanged), file_modified_at=unchanged.stat().st_mtime + 30),
+        SimpleNamespace(
+            library_root_id=1, relative_path="only.cbz",
+            file_modified_at=unchanged.stat().st_mtime + 30,
+        ),
     ]
 
-    db = DummyDB(existing)
-    library = SimpleNamespace(path=str(library_path), name="Test", id=7, last_scanned=None)
+    db = DummyDB(existing, library_root=library_root)
+    library = SimpleNamespace(name="Test", id=7, last_scanned=None)
     scanner = LibraryScanner(library, db)
 
     scanner._reconcile_sidecars = lambda *_args, **_kwargs: None
@@ -252,8 +277,9 @@ def test_scan_parallel_auto_worker_count_uses_half_cores(monkeypatch, tmp_path):
     library_path = tmp_path / "library"
     _create_file(library_path / "new.cbz")
 
-    db = DummyDB(existing=[])
-    library = SimpleNamespace(path=str(library_path), name="Test", id=99, last_scanned=None)
+    library_root = SimpleNamespace(id=1, path=str(library_path))
+    db = DummyDB(existing=[], library_root=library_root)
+    library = SimpleNamespace(name="Test", id=99, last_scanned=None)
     scanner = LibraryScanner(library, db)
 
     scanner._reconcile_sidecars = lambda *_args, **_kwargs: None
@@ -286,8 +312,9 @@ def test_scan_parallel_timeout_terminates_stuck_writer(monkeypatch, tmp_path):
     library_path = tmp_path / "library"
     _create_file(library_path / "new.cbz")
 
-    db = DummyDB(existing=[])
-    library = SimpleNamespace(path=str(library_path), name="Test", id=100, last_scanned=None)
+    library_root = SimpleNamespace(id=1, path=str(library_path))
+    db = DummyDB(existing=[], library_root=library_root)
+    library = SimpleNamespace(name="Test", id=100, last_scanned=None)
     scanner = LibraryScanner(library, db)
 
     scanner._reconcile_sidecars = lambda *_args, **_kwargs: None
@@ -327,8 +354,9 @@ def test_scan_parallel_pool_error_still_signals_and_joins_writer(monkeypatch, tm
     library_path = tmp_path / "library"
     _create_file(library_path / "new.cbz")
 
-    db = DummyDB(existing=[])
-    library = SimpleNamespace(path=str(library_path), name="Test", id=101, last_scanned=None)
+    library_root = SimpleNamespace(id=1, path=str(library_path))
+    db = DummyDB(existing=[], library_root=library_root)
+    library = SimpleNamespace(name="Test", id=101, last_scanned=None)
     scanner = LibraryScanner(library, db)
 
     scanner._reconcile_sidecars = lambda *_args, **_kwargs: None
@@ -365,8 +393,9 @@ def test_scan_parallel_requested_workers_capped_by_cpu_count(monkeypatch, tmp_pa
     library_path = tmp_path / "library"
     _create_file(library_path / "new.cbz")
 
-    db = DummyDB(existing=[])
-    library = SimpleNamespace(path=str(library_path), name="Test", id=102, last_scanned=None)
+    library_root = SimpleNamespace(id=1, path=str(library_path))
+    db = DummyDB(existing=[], library_root=library_root)
+    library = SimpleNamespace(name="Test", id=102, last_scanned=None)
     scanner = LibraryScanner(library, db)
 
     scanner._reconcile_sidecars = lambda *_args, **_kwargs: None
@@ -405,8 +434,9 @@ def test_scan_parallel_swallows_sentinel_put_error_during_failure_cleanup(monkey
     library_path = tmp_path / "library"
     _create_file(library_path / "new.cbz")
 
-    db = DummyDB(existing=[])
-    library = SimpleNamespace(path=str(library_path), name="Test", id=103, last_scanned=None)
+    library_root = SimpleNamespace(id=1, path=str(library_path))
+    db = DummyDB(existing=[], library_root=library_root)
+    library = SimpleNamespace(name="Test", id=103, last_scanned=None)
     scanner = LibraryScanner(library, db)
 
     scanner._reconcile_sidecars = lambda *_args, **_kwargs: None
@@ -446,9 +476,9 @@ def test_scan_parallel_passes_library_metadata_flags_to_writer(monkeypatch, tmp_
     library_path = tmp_path / "library"
     _create_file(library_path / "new.cbz")
 
-    db = DummyDB(existing=[])
+    library_root = SimpleNamespace(id=1, path=str(library_path))
+    db = DummyDB(existing=[], library_root=library_root)
     library = SimpleNamespace(
-        path=str(library_path),
         name="Flagged",
         id=104,
         last_scanned=None,
@@ -526,10 +556,8 @@ def test_scan_parallel_real_pool_and_writer_smoke(monkeypatch, tmp_path):
 
     db = SessionLocal()
     try:
-        library = Library(name="Parallel Smoke", path=str(library_path))
-        db.add(library)
+        library = create_library_with_root(db, "Parallel Smoke", str(library_path))
         db.commit()
-        db.refresh(library)
 
         scanner = LibraryScanner(library, db)
         result = scanner.scan_parallel(force=False, worker_limit=2)
@@ -552,4 +580,68 @@ def test_scan_parallel_real_pool_and_writer_smoke(monkeypatch, tmp_path):
         assert verify_db.query(ReadingListItem).filter(ReadingListItem.reading_list_id == reading_list.id).count() == 2
     finally:
         verify_db.close()
+        engine.dispose()
+
+
+def test_scan_parallel_self_heals_legacy_comic_missing_root_stamp(monkeypatch, tmp_path):
+    """
+    Confirms an existing comic whose file is unchanged still gets skipped (not
+    re-imported) once its identity is already correctly stamped -- the scanner's
+    matching purely by (library_root_id, relative_path) must find it without
+    ever routing it through the metadata writer.
+    """
+    library_path = tmp_path / "library"
+    library_path.mkdir(parents=True, exist_ok=True)
+    alpha_path = _create_file(library_path / "alpha.cbz")
+
+    db_path = tmp_path / "self-heal.db"
+    db_url = f"sqlite:///{db_path.as_posix()}"
+    monkeypatch.setenv("DATABASE_URL", db_url)
+
+    spawn_ctx = multiprocessing.get_context("spawn")
+    monkeypatch.setattr(scanner_module, "Queue", spawn_ctx.Queue)
+    monkeypatch.setattr(scanner_module.multiprocessing, "Process", spawn_ctx.Process)
+    monkeypatch.setattr(scanner_module.multiprocessing, "Pool", spawn_ctx.Pool)
+
+    engine = create_engine(
+        db_url,
+        connect_args={"check_same_thread": False, "timeout": 60},
+    )
+    SessionLocal = sessionmaker(autoflush=False, bind=engine)
+    Base.metadata.create_all(bind=engine)
+
+    db = SessionLocal()
+    try:
+        library = create_library_with_root(db, "Self Heal", str(library_path))
+        root = library.active_root
+        db.commit()
+
+        series = Series(name="Self Heal Series", library_id=library.id)
+        volume = Volume(series=series, volume_number=1)
+        db.add_all([series, volume])
+        db.flush()
+
+        comic = create_comic(
+            db, volume, root, "alpha.cbz",
+            number="1",
+            filename="alpha.cbz",
+            file_modified_at=alpha_path.stat().st_mtime,
+            page_count=1,
+        )
+        db.commit()
+
+        scanner = LibraryScanner(library, db)
+        result = scanner.scan_parallel(force=False, worker_limit=1)
+
+        # Unchanged file -> never sent to the metadata writer.
+        assert result["imported"] == 0
+        assert result["updated"] == 0
+        assert result["skipped"] == 1
+        assert result["deleted"] == 0
+
+        db.refresh(comic)
+        assert comic.library_root_id == root.id
+        assert comic.relative_path == "alpha.cbz"
+    finally:
+        db.close()
         engine.dispose()

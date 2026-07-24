@@ -1,8 +1,9 @@
 import pytest
 
 from app.models.collection import Collection, CollectionItem
-from app.models.comic import Comic
+from app.models.comic import Comic, Volume
 from app.models.tags import Character
+from tests.factories import create_comic
 
 
 def _insert_decade_timeline_fixture(browser_server):
@@ -13,18 +14,18 @@ def _insert_decade_timeline_fixture(browser_server):
         session.flush()
 
         volume_id = browser_server["seed"]["volume_id"]
+        volume = session.get(Volume, volume_id)
+        root = volume.series.library.active_root
         for offset, year in enumerate(range(2000, 2013), start=1):
-            comic = Comic(
-                volume_id=volume_id,
+            comic = create_comic(
+                session, volume, root, f"decade-smoke-{year}.cbz",
                 number=str(100 + offset),
                 title=f"Decade Smoke {year}",
                 year=year,
                 filename=f"decade-smoke-{year}.cbz",
-                file_path=f"/tmp/decade-smoke-{year}.cbz",
                 page_count=3,
             )
             comic.characters.append(character)
-            session.add(comic)
 
         session.commit()
     finally:

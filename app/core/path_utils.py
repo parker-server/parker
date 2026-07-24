@@ -1,3 +1,4 @@
+import os
 import posixpath
 from typing import List, Optional
 
@@ -37,3 +38,30 @@ def compute_relative_path(root_path: str, file_path: str) -> Optional[str]:
         return None
 
     return "/".join(file_segments[len(root_segments):])
+
+
+def resolve_absolute_path(root_path: str, relative_path: str) -> str:
+    """Reverse of compute_relative_path: rebuild an absolute path from a root and
+    the relative path stored under it."""
+    if not relative_path:
+        return root_path
+    return os.path.join(root_path, relative_path)
+
+
+def paths_overlap(first_path: str, second_path: str) -> bool:
+    """
+    True if one of the two paths is an ancestor of (or equal to) the other,
+    compared per path segment rather than via os.path.commonpath/os.sep — see
+    compute_relative_path for why that matters across platforms.
+    """
+    first_segments = _segments(first_path)
+    second_segments = _segments(second_path)
+
+    shorter, longer = (
+        (first_segments, second_segments)
+        if len(first_segments) <= len(second_segments)
+        else (second_segments, first_segments)
+    )
+
+    prefix = longer[:len(shorter)]
+    return [part.lower() for part in prefix] == [part.lower() for part in shorter]

@@ -4,11 +4,10 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from app.models.comic import Comic, Volume
-from app.models.library import Library
-from app.models.library_root import LibraryRoot
 from app.models.series import Series
 import app.database as database_module
 import app.services.workers.metadata_writer as metadata_writer_module
+from tests.factories import create_comic, create_library_with_root
 
 
 class _ReadQueue:
@@ -30,9 +29,10 @@ class _WriteQueue:
 
 
 class _FakeQuery:
-    def __init__(self, model, library_obj):
+    def __init__(self, model, library_obj, library_root_obj):
         self.model = model
         self.library_obj = library_obj
+        self.library_root_obj = library_root_obj
 
     def get(self, _library_id):
         return self.library_obj
@@ -47,7 +47,7 @@ class _FakeQuery:
         return self
 
     def first(self):
-        return None
+        return self.library_root_obj
 
     def all(self):
         return []
@@ -55,14 +55,15 @@ class _FakeQuery:
 
 class _FakeDB:
     def __init__(self, library_path):
-        self.library_obj = SimpleNamespace(path=library_path)
+        self.library_obj = SimpleNamespace(name="fake-lib")
+        self.library_root_obj = SimpleNamespace(id=1, path=library_path)
         self.closed = False
 
     def get(self, _model, _library_id):
         return self.library_obj
 
     def query(self, model):
-        return _FakeQuery(model, self.library_obj)
+        return _FakeQuery(model, self.library_obj, self.library_root_obj)
 
     def close(self):
         self.closed = True
@@ -103,28 +104,29 @@ def _metadata(**overrides):
     return payload
 
 
+def _seed_library_with_root(db, name, path):
+    library = create_library_with_root(db, name, path)
+    return library, library.active_root
+
+
 def test_apply_metadata_batch_import_update_and_error_paths(db):
-    library = Library(name="writer-lib", path="/tmp/writer-lib")
-    db.add(library)
-    db.flush()
+    library, root = _seed_library_with_root(db, "writer-lib", "/tmp/writer-lib")
 
     existing_series = Series(name="Series A", library_id=library.id)
     existing_volume = Volume(series=existing_series, volume_number=1)
     db.add_all([existing_series, existing_volume])
     db.flush()
 
-    existing_comic_path = "/tmp/existing.cbz"
-    existing_comic = Comic(
-        volume_id=existing_volume.id,
+    existing_comic_path = "/tmp/writer-lib/existing.cbz"
+    existing_comic = create_comic(
+        db, existing_volume, root, "existing.cbz",
         filename="existing.cbz",
-        file_path=existing_comic_path,
         page_count=10,
         number="1",
     )
-    db.add(existing_comic)
     db.commit()
 
-    existing_map = {existing_comic_path: existing_comic}
+    existing_by_key = {(root.id, "existing.cbz"): existing_comic}
 
     def get_or_create_series(name: str):
         series = db.query(Series).filter_by(name=name, library_id=library.id).first()
@@ -162,7 +164,7 @@ def test_apply_metadata_batch_import_update_and_error_paths(db):
             "error": False,
         },
         {
-            "file_path": "/tmp/new.cbz",
+            "file_path": "/tmp/writer-lib/new.cbz",
             "mtime": 333.0,
             "size": 444,
             "metadata": _metadata(series=None, volume=None, number="2", title="Imported New", raw_metadata={"n": 1}),
@@ -173,17 +175,19 @@ def test_apply_metadata_batch_import_update_and_error_paths(db):
     stats = metadata_writer_module._apply_metadata_batch(
         db,
         batch,
-        existing_map,
+        existing_by_key,
         get_or_create_series,
         get_or_create_volume,
         tag_service,
         credit_service,
         reading_list_service,
         collection_service,
+        library_root_id=root.id,
+        library_root_path="/tmp/writer-lib",
     )
 
     db.refresh(existing_comic)
-    imported_comic = db.query(Comic).filter_by(file_path="/tmp/new.cbz").first()
+    imported_comic = db.query(Comic).filter_by(relative_path="new.cbz").first()
     unknown_series = db.query(Series).filter_by(name="Unknown Series", library_id=library.id).first()
 
     assert stats["imported"] == 1
@@ -204,27 +208,91 @@ def test_apply_metadata_batch_import_update_and_error_paths(db):
     assert json.loads(imported_comic.metadata_json) == {"n": 1}
     assert unknown_series is not None
 
-    assert existing_map["/tmp/new.cbz"].id == imported_comic.id
+    assert existing_by_key[(root.id, "new.cbz")].id == imported_comic.id
     assert credit_service.add_credits_to_comic.call_count == 2
     assert reading_list_service.update_comic_reading_lists.call_count == 2
     assert collection_service.update_comic_collections.call_count == 2
 
 
-def test_apply_metadata_batch_disables_optional_metadata_flows(db):
-    library = Library(name="writer-disable-lib", path="/tmp/writer-disable-lib")
-    db.add(library)
-    db.flush()
+def test_apply_metadata_batch_matches_existing_comic_by_identity_when_path_differs(db):
+    library, root = _seed_library_with_root(db, "writer-identity-lib", "/tmp/writer-identity-lib")
 
     series = Series(name="Series A", library_id=library.id)
     volume = Volume(series=series, volume_number=1)
     db.add_all([series, volume])
     db.flush()
 
-    existing_path = "/tmp/disable-existing.cbz"
-    comic = Comic(
-        volume_id=volume.id,
+    # The comic is already stamped with the identity this scan's freshly computed
+    # relative_path resolves to -- that must be recognized as an update, not a
+    # duplicate import, even if some other lookup by path would've missed it.
+    existing_comic = create_comic(
+        db, volume, root, "existing.cbz",
+        filename="existing.cbz",
+        page_count=10,
+        number="1",
+    )
+    db.commit()
+
+    existing_by_key = {(root.id, "existing.cbz"): existing_comic}
+
+    def get_or_create_series(name: str):
+        return db.query(Series).filter_by(name=name, library_id=library.id).first()
+
+    def get_or_create_volume(series_obj, volume_num: int, _file_path: str):
+        return db.query(Volume).filter_by(series_id=series_obj.id, volume_number=volume_num).first()
+
+    tag_service = SimpleNamespace(
+        get_or_create_characters=MagicMock(return_value=[]),
+        get_or_create_teams=MagicMock(return_value=[]),
+        get_or_create_locations=MagicMock(return_value=[]),
+        get_or_create_genres=MagicMock(return_value=[]),
+    )
+    credit_service = SimpleNamespace(add_credits_to_comic=MagicMock())
+    reading_list_service = SimpleNamespace(update_comic_reading_lists=MagicMock())
+    collection_service = SimpleNamespace(update_comic_collections=MagicMock())
+
+    batch = [{
+        "file_path": "/tmp/writer-identity-lib/existing.cbz",
+        "mtime": 111.0,
+        "size": 222,
+        "metadata": _metadata(title="Renamed On Disk"),
+        "error": False,
+    }]
+
+    stats = metadata_writer_module._apply_metadata_batch(
+        db,
+        batch,
+        existing_by_key,
+        get_or_create_series,
+        get_or_create_volume,
+        tag_service,
+        credit_service,
+        reading_list_service,
+        collection_service,
+        library_root_id=root.id,
+        library_root_path="/tmp/writer-identity-lib",
+    )
+
+    assert stats["imported"] == 0
+    assert stats["updated"] == 1
+
+    db.refresh(existing_comic)
+    assert existing_comic.title == "Renamed On Disk"
+    assert db.query(Comic).count() == 1
+
+
+def test_apply_metadata_batch_disables_optional_metadata_flows(db):
+    library, root = _seed_library_with_root(db, "writer-disable-lib", "/tmp/writer-disable-lib")
+
+    series = Series(name="Series A", library_id=library.id)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
+    db.flush()
+
+    existing_path = "/tmp/writer-disable-lib/disable-existing.cbz"
+    comic = create_comic(
+        db, volume, root, "disable-existing.cbz",
         filename="disable-existing.cbz",
-        file_path=existing_path,
         page_count=10,
         number="1",
         alternate_series="Old List",
@@ -232,10 +300,9 @@ def test_apply_metadata_batch_disables_optional_metadata_flows(db):
         series_group="Old Group",
         story_arc="Old Arc",
     )
-    db.add(comic)
     db.commit()
 
-    existing_map = {existing_path: comic}
+    existing_by_key = {(root.id, "disable-existing.cbz"): comic}
 
     def get_or_create_series(name: str):
         return db.query(Series).filter_by(name=name, library_id=library.id).first()
@@ -273,13 +340,15 @@ def test_apply_metadata_batch_disables_optional_metadata_flows(db):
     metadata_writer_module._apply_metadata_batch(
         db,
         batch,
-        existing_map,
+        existing_by_key,
         get_or_create_series,
         get_or_create_volume,
         tag_service,
         credit_service,
         reading_list_service,
         collection_service,
+        library_root_id=root.id,
+        library_root_path="/tmp/writer-disable-lib",
         parse_reading_lists=False,
         parse_collections=False,
         parse_story_arcs=False,
@@ -295,9 +364,7 @@ def test_apply_metadata_batch_disables_optional_metadata_flows(db):
 
 
 def test_apply_metadata_batch_falls_back_to_volume_one_for_invalid_volume_metadata(db):
-    library = Library(name="writer-invalid-volume-lib", path="/tmp/writer-invalid-volume-lib")
-    db.add(library)
-    db.flush()
+    library, root = _seed_library_with_root(db, "writer-invalid-volume-lib", "/tmp/writer-invalid-volume-lib")
 
     def get_or_create_series(name: str):
         series = db.query(Series).filter_by(name=name, library_id=library.id).first()
@@ -326,7 +393,7 @@ def test_apply_metadata_batch_falls_back_to_volume_one_for_invalid_volume_metada
     collection_service = SimpleNamespace(update_comic_collections=MagicMock())
 
     batch = [{
-        "file_path": "/tmp/invalid-volume.cbz",
+        "file_path": "/tmp/writer-invalid-volume-lib/invalid-volume.cbz",
         "mtime": 123.0,
         "size": 456,
         "metadata": _metadata(volume="3bbbb", title="Invalid Volume"),
@@ -343,9 +410,11 @@ def test_apply_metadata_batch_falls_back_to_volume_one_for_invalid_volume_metada
         credit_service,
         reading_list_service,
         collection_service,
+        library_root_id=root.id,
+        library_root_path="/tmp/writer-invalid-volume-lib",
     )
 
-    imported = db.query(Comic).filter_by(file_path="/tmp/invalid-volume.cbz").first()
+    imported = db.query(Comic).filter_by(relative_path="invalid-volume.cbz").first()
     assert stats["imported"] == 1
     assert stats["errors"] == 0
     assert imported is not None
@@ -424,11 +493,10 @@ def test_metadata_writer_creates_series_volume_once_and_reuses_cache(monkeypatch
     library_path = tmp_path / "writer-cache-lib"
     library_path.mkdir(parents=True, exist_ok=True)
 
-    library = Library(name="writer-cache-lib", path=str(library_path))
-    db.add(library)
+    library, root = _seed_library_with_root(db, "writer-cache-lib", str(library_path))
     db.commit()
-    db.refresh(library)
     library_id = library.id
+    root_id = root.id
 
     class DummyTagService:
         def __init__(self, _db):
@@ -515,8 +583,8 @@ def test_metadata_writer_creates_series_volume_once_and_reuses_cache(monkeypatch
     assert len(created_volumes) == 1
     assert len(created_comics) == 2
 
-    first_comic = db.query(Comic).filter_by(file_path=item_one_path).first()
-    second_comic = db.query(Comic).filter_by(file_path=item_two_path).first()
+    first_comic = db.query(Comic).filter_by(library_root_id=root_id, relative_path="Brand Series/Vol 2/one.cbz").first()
+    second_comic = db.query(Comic).filter_by(library_root_id=root_id, relative_path="Brand Series/Vol 2/two.cbz").first()
     assert first_comic.number is None
     assert second_comic.number == "5"
 
@@ -529,15 +597,8 @@ def test_metadata_writer_populates_library_root_and_relative_path(monkeypatch, d
     library_path = tmp_path / "root-lib"
     library_path.mkdir(parents=True, exist_ok=True)
 
-    library = Library(name="root-lib", path=str(library_path))
-    db.add(library)
-    db.flush()
-
-    root = LibraryRoot(library_id=library.id, path=str(library_path), is_active=True)
-    db.add(root)
+    library, root = _seed_library_with_root(db, "root-lib", str(library_path))
     db.commit()
-    db.refresh(library)
-    db.refresh(root)
     library_id = library.id
     root_id = root.id
 
@@ -546,15 +607,14 @@ def test_metadata_writer_populates_library_root_and_relative_path(monkeypatch, d
     db.add_all([series, volume])
     db.flush()
 
-    existing_path = str(library_path / "Existing" / "existing.cbz")
-    existing_comic = Comic(
-        volume_id=volume.id,
+    existing_relative_path = "Existing/existing.cbz"
+    existing_path = str(library_path / existing_relative_path)
+    existing_comic = create_comic(
+        db, volume, root, existing_relative_path,
         filename="existing.cbz",
-        file_path=existing_path,
         page_count=1,
         number="1",
     )
-    db.add(existing_comic)
     db.commit()
 
     class DummyTagService:
@@ -630,8 +690,8 @@ def test_metadata_writer_populates_library_root_and_relative_path(monkeypatch, d
     assert summary["updated"] == 1
     assert summary["errors"] == 0
 
-    refreshed_existing = db.query(Comic).filter_by(file_path=existing_path).first()
-    new_comic = db.query(Comic).filter_by(file_path=new_path).first()
+    refreshed_existing = db.query(Comic).filter_by(library_root_id=root_id, relative_path=existing_relative_path).first()
+    new_comic = db.query(Comic).filter_by(library_root_id=root_id, relative_path="Fresh/fresh.cbz").first()
 
     assert refreshed_existing.library_root_id == root_id
     assert refreshed_existing.relative_path == "Existing/existing.cbz"
@@ -639,5 +699,3 @@ def test_metadata_writer_populates_library_root_and_relative_path(monkeypatch, d
     assert new_comic is not None
     assert new_comic.library_root_id == root_id
     assert new_comic.relative_path == "Fresh/fresh.cbz"
-
-

@@ -1,6 +1,8 @@
 import json
 from unittest.mock import patch
 
+import pytest
+
 from app.main import app
 from app.api.deps import get_current_user
 from app.models.comic import Comic, Volume
@@ -11,10 +13,12 @@ from app.models.interactions import UserLibraryPin
 from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.reading_progress import ReadingProgress
 from app.models.series import Series
+from tests.factories import create_comic, create_library_with_root
 
 
 def _create_library_series_fixture(db, *, lib_name: str):
-    library = Library(name=lib_name, path=f"/tmp/{lib_name}")
+    library = create_library_with_root(db, lib_name, f"/tmp/{lib_name}")
+    root = library.active_root
     series_alpha = Series(name="The Alpha", library=library)
     series_beta = Series(name="Beta", library=library)
     series_reverse = Series(name="Countdown", library=library)
@@ -23,69 +27,36 @@ def _create_library_series_fixture(db, *, lib_name: str):
     vol_beta = Volume(series=series_beta, volume_number=1)
     vol_reverse = Volume(series=series_reverse, volume_number=1)
 
-    db.add_all([library, series_alpha, series_beta, series_reverse, vol_alpha, vol_beta, vol_reverse])
+    db.add_all([series_alpha, series_beta, series_reverse, vol_alpha, vol_beta, vol_reverse])
     db.flush()
 
-    alpha_two = Comic(
-        volume_id=vol_alpha.id,
-        number="2",
-        title="The Alpha #2",
-        year=2002,
-        filename="alpha-2.cbz",
-        file_path=f"/tmp/{lib_name}-alpha-2.cbz",
-        page_count=20,
+    alpha_two = create_comic(
+        db, vol_alpha, root, "alpha-2.cbz",
+        number="2", title="The Alpha #2", year=2002, filename="alpha-2.cbz", page_count=20,
     )
-    alpha_one = Comic(
-        volume_id=vol_alpha.id,
-        number="1",
-        title="The Alpha #1",
-        year=2001,
-        filename="alpha-1.cbz",
-        file_path=f"/tmp/{lib_name}-alpha-1.cbz",
-        page_count=20,
+    alpha_one = create_comic(
+        db, vol_alpha, root, "alpha-1.cbz",
+        number="1", title="The Alpha #1", year=2001, filename="alpha-1.cbz", page_count=20,
     )
 
-    beta_five = Comic(
-        volume_id=vol_beta.id,
-        number="5",
-        title="Beta Annual",
-        year=2005,
-        format="annual",
-        filename="beta-5.cbz",
-        file_path=f"/tmp/{lib_name}-beta-5.cbz",
-        page_count=20,
+    beta_five = create_comic(
+        db, vol_beta, root, "beta-5.cbz",
+        number="5", title="Beta Annual", year=2005, format="annual", filename="beta-5.cbz", page_count=20,
     )
-    beta_three = Comic(
-        volume_id=vol_beta.id,
-        number="3",
-        title="Beta Special",
-        year=2003,
-        format="one-shot",
-        filename="beta-3.cbz",
-        file_path=f"/tmp/{lib_name}-beta-3.cbz",
-        page_count=20,
+    beta_three = create_comic(
+        db, vol_beta, root, "beta-3.cbz",
+        number="3", title="Beta Special", year=2003, format="one-shot", filename="beta-3.cbz", page_count=20,
     )
 
-    reverse_one = Comic(
-        volume_id=vol_reverse.id,
-        number="1",
-        title="Countdown #1",
-        year=2001,
-        filename="countdown-1.cbz",
-        file_path=f"/tmp/{lib_name}-countdown-1.cbz",
-        page_count=20,
+    reverse_one = create_comic(
+        db, vol_reverse, root, "countdown-1.cbz",
+        number="1", title="Countdown #1", year=2001, filename="countdown-1.cbz", page_count=20,
     )
-    reverse_four = Comic(
-        volume_id=vol_reverse.id,
-        number="4",
-        title="Countdown #4",
-        year=2004,
-        filename="countdown-4.cbz",
-        file_path=f"/tmp/{lib_name}-countdown-4.cbz",
-        page_count=20,
+    reverse_four = create_comic(
+        db, vol_reverse, root, "countdown-4.cbz",
+        number="4", title="Countdown #4", year=2004, filename="countdown-4.cbz", page_count=20,
     )
 
-    db.add_all([alpha_two, alpha_one, beta_five, beta_three, reverse_one, reverse_four])
     db.commit()
 
     return {
@@ -125,9 +96,22 @@ def test_admin_can_create_library(admin_client, db):
     assert root.is_active is True
 
 
+def test_create_library_rolls_back_if_root_creation_fails(admin_client, db, monkeypatch):
+    import app.api.libraries as libraries_module
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(libraries_module, "LibraryRoot", _boom)
+
+    with pytest.raises(RuntimeError):
+        admin_client.post("/api/libraries/", json={"name": "Atomic Test", "path": "/tmp/atomic"})
+
+    assert db.query(Library).filter_by(name="Atomic Test").first() is None
+
+
 def test_create_library_duplicate_name_returns_400(admin_client, db):
-    db.add(Library(name="Duplicate", path="/tmp/dup"))
-    db.commit()
+    create_library_with_root(db, "Duplicate", "/tmp/dup")
 
     response = admin_client.post("/api/libraries/", json={"name": "Duplicate", "path": "/tmp/other"})
 
@@ -136,8 +120,7 @@ def test_create_library_duplicate_name_returns_400(admin_client, db):
 
 
 def test_create_library_rejects_overlapping_child_path(admin_client, db):
-    db.add(Library(name="Main Library", path="/tmp/comics"))
-    db.commit()
+    create_library_with_root(db, "Main Library", "/tmp/comics")
 
     response = admin_client.post(
         "/api/libraries/",
@@ -151,8 +134,7 @@ def test_create_library_rejects_overlapping_child_path(admin_client, db):
 
 
 def test_create_library_rejects_overlapping_parent_path(admin_client, db):
-    db.add(Library(name="Marvel", path="/tmp/comics/Marvel"))
-    db.commit()
+    create_library_with_root(db, "Marvel", "/tmp/comics/Marvel")
 
     response = admin_client.post(
         "/api/libraries/",
@@ -166,9 +148,7 @@ def test_create_library_rejects_overlapping_parent_path(admin_client, db):
 
 
 def test_user_rls_security(client, db, admin_user, normal_user):
-    lib = Library(name="Secret Library", path="/tmp")
-    db.add(lib)
-    db.commit()
+    lib = create_library_with_root(db, "Secret Library", "/tmp")
 
     app.dependency_overrides[get_current_user] = lambda: admin_user
 
@@ -184,9 +164,7 @@ def test_user_rls_security(client, db, admin_user, normal_user):
 
 
 def test_get_library_detail_requires_access(auth_client, db):
-    library = Library(name="Hidden", path="/tmp/hidden")
-    db.add(library)
-    db.commit()
+    library = create_library_with_root(db, "Hidden", "/tmp/hidden")
 
     response = auth_client.get(f"/api/libraries/{library.id}")
 
@@ -195,9 +173,7 @@ def test_get_library_detail_requires_access(auth_client, db):
 
 
 def test_get_library_detail_as_admin(admin_client, db):
-    library = Library(name="Visible", path="/tmp/visible")
-    db.add(library)
-    db.commit()
+    library = create_library_with_root(db, "Visible", "/tmp/visible")
 
     response = admin_client.get(f"/api/libraries/{library.id}")
 
@@ -279,9 +255,7 @@ def test_library_path_browser_reports_missing_root(admin_client, monkeypatch, tm
 
 
 def test_user_can_pin_and_unpin_accessible_library_idempotently(auth_client, db, normal_user):
-    library = Library(name="Pinned Access", path="/tmp/pinned-access")
-    db.add(library)
-    db.commit()
+    library = create_library_with_root(db, "Pinned Access", "/tmp/pinned-access")
     normal_user.accessible_libraries.append(library)
     db.commit()
 
@@ -311,9 +285,7 @@ def test_user_can_pin_and_unpin_accessible_library_idempotently(auth_client, db,
 
 
 def test_user_cannot_pin_inaccessible_library(auth_client, db):
-    library = Library(name="Pinned Hidden", path="/tmp/pinned-hidden")
-    db.add(library)
-    db.commit()
+    library = create_library_with_root(db, "Pinned Hidden", "/tmp/pinned-hidden")
 
     pin_response = auth_client.post(f"/api/libraries/{library.id}/pin")
     unpin_response = auth_client.delete(f"/api/libraries/{library.id}/pin")
@@ -369,9 +341,7 @@ def test_get_library_series_sorts_and_computes_cover_and_read_state(auth_client,
 
 
 def test_get_library_series_empty_page_returns_empty_items(auth_client, db, normal_user):
-    library = Library(name="No-Series", path="/tmp/no-series")
-    db.add(library)
-    db.commit()
+    library = create_library_with_root(db, "No-Series", "/tmp/no-series")
 
     normal_user.accessible_libraries.append(library)
     db.commit()
@@ -383,16 +353,15 @@ def test_get_library_series_empty_page_returns_empty_items(auth_client, db, norm
 
 
 def test_update_library_applies_fields_and_refreshes_watches(admin_client, db):
-    library = Library(
-        name="UpdateMe",
-        path="/tmp/update-me",
+    library = create_library_with_root(
+        db,
+        "UpdateMe",
+        "/tmp/update-me",
         watch_mode=False,
         parse_reading_lists=True,
         parse_collections=True,
         parse_story_arcs=True,
     )
-    db.add(library)
-    db.commit()
 
     with patch("app.api.libraries.library_watcher.refresh_watches") as mock_refresh:
         response = admin_client.patch(
@@ -419,13 +388,15 @@ def test_update_library_applies_fields_and_refreshes_watches(admin_client, db):
 
 
 def test_update_library_disabling_metadata_flags_preserves_existing_metadata_rows(admin_client, db):
-    library = Library(
-        name="Cleanup Metadata",
-        path="/tmp/cleanup-metadata",
+    library = create_library_with_root(
+        db,
+        "Cleanup Metadata",
+        "/tmp/cleanup-metadata",
         parse_reading_lists=True,
         parse_collections=True,
         parse_story_arcs=True,
     )
+    root = library.active_root
     series = Series(name="Cleanup Series", library=library)
     volume = Volume(series=series, volume_number=1)
     comic = Comic(
@@ -433,7 +404,8 @@ def test_update_library_disabling_metadata_flags_preserves_existing_metadata_row
         number="1",
         title="Cleanup Issue",
         filename="cleanup.cbz",
-        file_path="/tmp/cleanup.cbz",
+        library_root_id=root.id,
+        relative_path="cleanup.cbz",
         alternate_series="Event Alpha",
         alternate_number="1",
         series_group="Group Alpha",
@@ -442,7 +414,7 @@ def test_update_library_disabling_metadata_flags_preserves_existing_metadata_row
 
     reading_list = ReadingList(name="Event Alpha")
     collection = Collection(name="Group Alpha")
-    db.add_all([library, series, volume, comic, reading_list, collection])
+    db.add_all([series, volume, comic, reading_list, collection])
     db.flush()
 
     reading_list_item = ReadingListItem(reading_list_id=reading_list.id, comic_id=comic.id, position=1.0)
@@ -479,13 +451,15 @@ def test_update_library_disabling_metadata_flags_preserves_existing_metadata_row
 
 
 def test_update_library_reenabling_metadata_flags_queues_rehydrate_job(admin_client, db):
-    library = Library(
-        name="Rehydrate Metadata",
-        path="/tmp/rehydrate-metadata",
+    library = create_library_with_root(
+        db,
+        "Rehydrate Metadata",
+        "/tmp/rehydrate-metadata",
         parse_reading_lists=False,
         parse_collections=False,
         parse_story_arcs=False,
     )
+    root = library.active_root
 
     series = Series(name="Rehydrate Series", library=library)
     volume = Volume(series=series, volume_number=1)
@@ -495,7 +469,8 @@ def test_update_library_reenabling_metadata_flags_queues_rehydrate_job(admin_cli
         number="1",
         title="Restorable Issue",
         filename="restorable.cbz",
-        file_path="/tmp/restorable.cbz",
+        library_root_id=root.id,
+        relative_path="restorable.cbz",
         metadata_json=json.dumps(
             {
                 "alternate_series": "Event Beta",
@@ -511,11 +486,12 @@ def test_update_library_reenabling_metadata_flags_queues_rehydrate_job(admin_cli
         number="2",
         title="Missing Source",
         filename="missing-source.cbz",
-        file_path="/tmp/missing-source.cbz",
+        library_root_id=root.id,
+        relative_path="missing-source.cbz",
         metadata_json=None,
     )
 
-    db.add_all([library, series, volume, restorable, missing_source])
+    db.add_all([series, volume, restorable, missing_source])
     db.commit()
 
     with (
@@ -563,10 +539,8 @@ def test_update_library_reenabling_metadata_flags_queues_rehydrate_job(admin_cli
 
 
 def test_update_library_rejects_duplicate_name(admin_client, db):
-    original = Library(name="Original", path="/tmp/original")
-    duplicate = Library(name="Taken", path="/tmp/taken")
-    db.add_all([original, duplicate])
-    db.commit()
+    original = create_library_with_root(db, "Original", "/tmp/original")
+    create_library_with_root(db, "Taken", "/tmp/taken")
 
     response = admin_client.patch(f"/api/libraries/{original.id}", json={"name": "Taken"})
 
@@ -575,9 +549,7 @@ def test_update_library_rejects_duplicate_name(admin_client, db):
 
 
 def test_update_library_rejects_changed_path(admin_client, db):
-    original = Library(name="Original", path="/tmp/original")
-    db.add(original)
-    db.commit()
+    original = create_library_with_root(db, "Original", "/tmp/original")
 
     response = admin_client.patch(
         f"/api/libraries/{original.id}",
@@ -588,13 +560,11 @@ def test_update_library_rejects_changed_path(admin_client, db):
     assert "temporarily disabled" in response.json()["detail"]
 
     db.refresh(original)
-    assert original.path == "/tmp/original"
+    assert original.active_root.path == "/tmp/original"
 
 
 def test_update_library_allows_unchanged_path(admin_client, db):
-    original = Library(name="Original", path="/tmp/original")
-    db.add(original)
-    db.commit()
+    original = create_library_with_root(db, "Original", "/tmp/original")
 
     response = admin_client.patch(
         f"/api/libraries/{original.id}",
@@ -614,9 +584,7 @@ def test_update_library_returns_404_for_missing_library(admin_client):
 
 
 def test_delete_library_success_and_not_found(admin_client, db):
-    library = Library(name="DeleteMe", path="/tmp/delete-me")
-    db.add(library)
-    db.commit()
+    library = create_library_with_root(db, "DeleteMe", "/tmp/delete-me")
 
     success = admin_client.delete(f"/api/libraries/{library.id}")
     assert success.status_code == 200
@@ -629,9 +597,7 @@ def test_delete_library_success_and_not_found(admin_client, db):
 
 
 def test_scan_library_passes_force_flag_to_scan_manager(admin_client, db):
-    library = Library(name="ScanMe", path="/tmp/scan-me")
-    db.add(library)
-    db.commit()
+    library = create_library_with_root(db, "ScanMe", "/tmp/scan-me")
 
     expected = {"status": "queued", "job_id": 55, "message": "Queued"}
     with patch("app.api.libraries.scan_manager.add_task", return_value=expected) as mock_add_task:
@@ -652,10 +618,8 @@ def test_scan_library_returns_404_for_missing_library(admin_client):
 def test_has_library_access_helper_paths(db, normal_user, admin_user):
     from app.api.libraries import _has_library_access
 
-    allowed_library = Library(name="Helper Allowed", path="/tmp/helper-allowed")
-    denied_library = Library(name="Helper Denied", path="/tmp/helper-denied")
-    db.add_all([allowed_library, denied_library])
-    db.commit()
+    allowed_library = create_library_with_root(db, "Helper Allowed", "/tmp/helper-allowed")
+    denied_library = create_library_with_root(db, "Helper Denied", "/tmp/helper-denied")
 
     normal_user.accessible_libraries.append(allowed_library)
     db.commit()
@@ -666,12 +630,9 @@ def test_has_library_access_helper_paths(db, normal_user, admin_user):
 
 
 def test_list_libraries_applies_limit_for_superuser(admin_client, db):
-    db.add_all([
-        Library(name="A Library", path="/tmp/a"),
-        Library(name="B Library", path="/tmp/b"),
-        Library(name="C Library", path="/tmp/c"),
-    ])
-    db.commit()
+    create_library_with_root(db, "A Library", "/tmp/a")
+    create_library_with_root(db, "B Library", "/tmp/b")
+    create_library_with_root(db, "C Library", "/tmp/c")
 
     response = admin_client.get("/api/libraries/?limit=2")
 
@@ -682,11 +643,9 @@ def test_list_libraries_applies_limit_for_superuser(admin_client, db):
 
 
 def test_list_libraries_applies_limit_for_normal_user(auth_client, db, normal_user):
-    lib_a = Library(name="Limit User A", path="/tmp/limit-user-a")
-    lib_b = Library(name="Limit User B", path="/tmp/limit-user-b")
-    lib_c = Library(name="Limit User C", path="/tmp/limit-user-c")
-    db.add_all([lib_a, lib_b, lib_c])
-    db.commit()
+    lib_a = create_library_with_root(db, "Limit User A", "/tmp/limit-user-a")
+    lib_b = create_library_with_root(db, "Limit User B", "/tmp/limit-user-b")
+    lib_c = create_library_with_root(db, "Limit User C", "/tmp/limit-user-c")
 
     normal_user.accessible_libraries.extend([lib_b, lib_a, lib_c])
     db.commit()
@@ -700,7 +659,8 @@ def test_list_libraries_applies_limit_for_normal_user(auth_client, db, normal_us
 
 
 def test_list_libraries_filters_stats_by_age_restriction(auth_client, db, normal_user):
-    library = Library(name="Age Stats Library", path="/tmp/age-stats-library")
+    library = create_library_with_root(db, "Age Stats Library", "/tmp/age-stats-library")
+    root = library.active_root
 
     safe_series = Series(name="Safe Stats Series", library=library)
     safe_volume = Volume(series=safe_series, volume_number=1)
@@ -710,7 +670,8 @@ def test_list_libraries_filters_stats_by_age_restriction(auth_client, db, normal
         title="Safe Stats Comic",
         age_rating="Teen",
         filename="safe-stats.cbz",
-        file_path="/tmp/safe-stats.cbz",
+        library_root_id=root.id,
+        relative_path="safe-stats.cbz",
     )
 
     banned_series = Series(name="Banned Stats Series", library=library)
@@ -721,10 +682,11 @@ def test_list_libraries_filters_stats_by_age_restriction(auth_client, db, normal
         title="Banned Stats Comic",
         age_rating="Mature 17+",
         filename="banned-stats.cbz",
-        file_path="/tmp/banned-stats.cbz",
+        library_root_id=root.id,
+        relative_path="banned-stats.cbz",
     )
 
-    db.add_all([library, safe_series, safe_volume, safe_comic, banned_series, banned_volume, banned_comic])
+    db.add_all([safe_series, safe_volume, safe_comic, banned_series, banned_volume, banned_comic])
     normal_user.accessible_libraries.append(library)
     normal_user.max_age_rating = "Teen"
     normal_user.allow_unknown_age_ratings = False
@@ -739,7 +701,8 @@ def test_list_libraries_filters_stats_by_age_restriction(auth_client, db, normal
 
 
 def test_get_library_series_filters_by_age_restriction(auth_client, db, normal_user):
-    library = Library(name="Age Series Library", path="/tmp/age-series-library")
+    library = create_library_with_root(db, "Age Series Library", "/tmp/age-series-library")
+    root = library.active_root
 
     safe_series = Series(name="Safe Series", library=library)
     safe_volume = Volume(series=safe_series, volume_number=1)
@@ -749,7 +712,8 @@ def test_get_library_series_filters_by_age_restriction(auth_client, db, normal_u
         title="Safe Comic",
         age_rating="Teen",
         filename="safe-series.cbz",
-        file_path="/tmp/safe-series.cbz",
+        library_root_id=root.id,
+        relative_path="safe-series.cbz",
     )
 
     banned_series = Series(name="Banned Series", library=library)
@@ -760,10 +724,11 @@ def test_get_library_series_filters_by_age_restriction(auth_client, db, normal_u
         title="Banned Comic",
         age_rating="Mature 17+",
         filename="banned-series.cbz",
-        file_path="/tmp/banned-series.cbz",
+        library_root_id=root.id,
+        relative_path="banned-series.cbz",
     )
 
-    db.add_all([library, safe_series, safe_volume, safe_comic, banned_series, banned_volume, banned_comic])
+    db.add_all([safe_series, safe_volume, safe_comic, banned_series, banned_volume, banned_comic])
     normal_user.accessible_libraries.append(library)
     normal_user.max_age_rating = "Teen"
     normal_user.allow_unknown_age_ratings = False
@@ -779,29 +744,21 @@ def test_get_library_series_filters_by_age_restriction(auth_client, db, normal_u
 
 
 def test_get_library_series_cover_fallback_handles_non_numeric_numbers(auth_client, db, normal_user):
-    library = Library(name="Library Non Numeric", path="/tmp/library-non-numeric")
+    library = create_library_with_root(db, "Library Non Numeric", "/tmp/library-non-numeric")
+    root = library.active_root
     series = Series(name="Non Numeric Series", library=library)
     volume = Volume(series=series, volume_number=1)
-    db.add_all([library, series, volume])
+    db.add_all([series, volume])
     db.flush()
 
-    comic_alpha = Comic(
-        volume_id=volume.id,
-        number="A",
-        title="Non Numeric A",
-        year=2024,
-        filename="non-numeric-a.cbz",
-        file_path="/tmp/non-numeric-a.cbz",
+    comic_alpha = create_comic(
+        db, volume, root, "non-numeric-a.cbz",
+        number="A", title="Non Numeric A", year=2024, filename="non-numeric-a.cbz",
     )
-    comic_two = Comic(
-        volume_id=volume.id,
-        number="2",
-        title="Non Numeric #2",
-        year=2023,
-        filename="non-numeric-2.cbz",
-        file_path="/tmp/non-numeric-2.cbz",
+    comic_two = create_comic(
+        db, volume, root, "non-numeric-2.cbz",
+        number="2", title="Non Numeric #2", year=2023, filename="non-numeric-2.cbz",
     )
-    db.add_all([comic_alpha, comic_two])
 
     normal_user.accessible_libraries.append(library)
     db.commit()

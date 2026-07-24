@@ -6,15 +6,16 @@ from app.api.users import MAX_AVATAR_SIZE_BYTES, get_stats_service
 from app.core.security import get_password_hash, verify_password
 from app.main import app
 from app.models.comic import Comic, Volume
-from app.models.library import Library
 from app.models.pull_list import PullList, PullListItem
 from app.models.reading_progress import ReadingProgress
 from app.models.series import Series
 from app.models.user import User
+from tests.factories import create_library_with_root
 
 
 def _seed_user_activity(db, user):
-    library = Library(name="Dash Library", path="/tmp/dash-lib")
+    library = create_library_with_root(db, "Dash Library", "/tmp/dash-lib")
+    root = library.active_root
     series = Series(name="Dashboard Series", library=library)
     volume = Volume(series=series, volume_number=1)
     comic = Comic(
@@ -22,12 +23,13 @@ def _seed_user_activity(db, user):
         number="1",
         title="Dashboard Issue",
         filename="dashboard.cbz",
-        file_path="/tmp/dashboard.cbz",
+        library_root_id=root.id,
+        relative_path="dashboard.cbz",
         page_count=10,
     )
     pull_list = PullList(user_id=user.id, name="Weekly Pulls")
 
-    db.add_all([library, series, volume, comic, pull_list])
+    db.add_all([series, volume, comic, pull_list])
     db.flush()
 
     pull_item = PullListItem(pull_list_id=pull_list.id, comic_id=comic.id, sort_order=0)
@@ -126,8 +128,7 @@ def test_year_in_review_uses_default_and_explicit_year(auth_client):
 
 
 def test_admin_create_user_and_duplicate_username(admin_client, db):
-    lib = Library(name="Create User Library", path="/tmp/create-user-lib")
-    db.add(lib)
+    lib = create_library_with_root(db, "Create User Library", "/tmp/create-user-lib")
     db.commit()
 
     create_response = admin_client.post(
@@ -181,7 +182,7 @@ def test_admin_create_user_rejects_empty_fields(admin_client):
 
 
 def test_admin_list_users_includes_library_ids(admin_client, db):
-    lib = Library(name="List User Library", path="/tmp/list-user-lib")
+    lib = create_library_with_root(db, "List User Library", "/tmp/list-user-lib")
     user = User(
         username="list-user",
         email="list-user@example.com",
@@ -190,7 +191,7 @@ def test_admin_list_users_includes_library_ids(admin_client, db):
         is_active=True,
         accessible_libraries=[lib],
     )
-    db.add_all([lib, user])
+    db.add(user)
     db.commit()
 
     response = admin_client.get("/api/users/?page=1&size=100")
@@ -204,8 +205,8 @@ def test_admin_list_users_includes_library_ids(admin_client, db):
 
 
 def test_admin_update_user_handles_normal_and_superuser_modes(admin_client, db):
-    lib_a = Library(name="Update Library A", path="/tmp/update-lib-a")
-    lib_b = Library(name="Update Library B", path="/tmp/update-lib-b")
+    lib_a = create_library_with_root(db, "Update Library A", "/tmp/update-lib-a")
+    lib_b = create_library_with_root(db, "Update Library B", "/tmp/update-lib-b")
     user = User(
         username="target-user",
         email="target@example.com",
@@ -213,7 +214,7 @@ def test_admin_update_user_handles_normal_and_superuser_modes(admin_client, db):
         is_superuser=False,
         is_active=True,
     )
-    db.add_all([lib_a, lib_b, user])
+    db.add(user)
     db.commit()
 
     missing = admin_client.patch("/api/users/999999", json={"email": "none@example.com"})

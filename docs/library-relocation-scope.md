@@ -1,6 +1,6 @@
 # Library Relocation Scope
 
-Status: Phase 1 implemented (schema + guardrail); relocation flow not yet built
+Status: Phase 1 (schema + guardrail) and the full Compatibility Field Removal Plan are implemented; relocation flow itself not yet built
 
 This note captures a future enhancement for safely changing the filesystem path of an existing Parker library without losing comic identity.
 
@@ -10,9 +10,16 @@ Phase 1 (schema + guardrail) is done:
 
 - `library_roots` table added; `Comic.library_root_id` and `Comic.relative_path` added (migration `d4a1f6e8b3c2`).
 - Migration backfills one root per existing library and each comic's relative path (see `app/core/path_utils.py:compute_relative_path`).
-- `create_library` now creates a matching `LibraryRoot`, and the metadata writer populates `library_root_id`/`relative_path` for every newly scanned or updated comic going forward — not just the historical backfill.
+- `create_library` now creates a matching `LibraryRoot`.
 - Editing a library's path is hard-blocked in the API and admin UI (400 on change) until the relocation flow below exists.
-- `library_root_id`/`relative_path` are written but not yet read by anything — `LibraryScanner` still matches on `Comic.file_path`, unchanged. See Compatibility Field Removal Plan for what's still ahead.
+
+The full Compatibility Field Removal Plan (all four stages) is also done, landing together in one release (`0.1.25`) rather than staged over time — see the plan section below for why:
+
+- `LibraryScanner`, the metadata writer, and the maintenance janitor all match/dedupe purely on `(library_root_id, relative_path)`.
+- `compute_relative_path` compares paths per-segment instead of via `os.sep`/`os.path.normcase`/`os.path.normpath`, so matching doesn't depend on which OS produced the stored path vs. which OS is currently running — this also fixed a bug where a root path of `/` or `C:\` could never match anything.
+- Migration `71464b56eb8a` retried the original backfill with the corrected matching logic; migration `7e3ba96ed6dc` retried once more, deleted any comic still unresolved (logging id/filename/path), and made `library_root_id`/`relative_path` `NOT NULL` with a unique constraint. Migration `9def8df8ed7c` dropped `Comic.file_path` and `Library.path` outright.
+- Every remaining reader (comic reader, thumbnailer, comics API, admin reports, OPDS, Kavita migration, the library API, watcher, and startup diagnostics) reconstructs the absolute path on demand from `library_root.path` + `relative_path` via `Comic.absolute_path`/`Library.active_root`, instead of reading a cached column.
+- `Comic.file_path` and `Library.path` no longer exist. See `docs/releases/0.1.25.md` for the upgrade caveat this required.
 
 The immediate user problem is simple: admins can edit a library path today, either by typing a new path or by using the admin folder browser. Parker accepts the change, but the next scan can treat all old files as deleted and all files under the new path as new imports.
 
@@ -149,15 +156,16 @@ During scanning:
 
 Cleanup should operate within the relevant root identity, not by comparing old absolute paths against new absolute paths.
 
-## Compatibility Field Removal Plan
+## Compatibility Field Removal Plan — done
 
-`Library.path` and `Comic.file_path` are not meant to be permanent. The end state is both columns removed once nothing depends on them. Getting there is three stages, not one:
+`Library.path` and `Comic.file_path` were never meant to be permanent, and as of `0.1.25` they're gone. This originally shipped as a planned four-stage sequence (identity cutover, close the fallback, read-path cutover, column removal), but staging it across multiple releases would have meant carrying a `file_path`-keyed fallback for an indefinite, unmeasurable window — every release in between would be one more chance for someone to edit a library path and never rescan, exactly the hazard this whole doc exists to close off. All four stages landed together in one release instead:
 
-1. **Identity cutover.** `LibraryScanner`, the metadata writer's existing-comic lookup, and the maintenance janitor's missing-file cleanup switch from keying on `Comic.file_path` to `(library_root_id, relative_path)`. This is the stage that actually fixes the data-loss bug described at the top of this doc — everything after it is cleanup, not correctness.
-2. **Read-path cutover.** Every remaining reader of `file_path`/`Library.path` — the comic reader/page-count lookup, thumbnail generation, comic detail/report API responses, OPDS feed entries, and their templates — switches to reconstructing the absolute path on demand from `library_root.path + relative_path` instead of reading the cached column. Needs a small companion helper to `compute_relative_path` for the reverse operation.
-3. **Column removal.** Once nothing reads either field, a final migration drops `Comic.file_path` and `Library.path` for good.
+1. **Identity cutover.** `LibraryScanner`, the metadata writer, and the maintenance janitor switched from keying on `Comic.file_path` to `(library_root_id, relative_path)`. This is the stage that actually fixes the data-loss bug described at the top of this doc.
+2. **Close the fallback.** Migration `7e3ba96ed6dc` forced the invariant directly instead of waiting to observe it: retry matching once more, delete anything still unresolved (logged for traceability), then make `library_root_id`/`relative_path` `NOT NULL` with a unique constraint. No fallback code shipped at all in the final state — see `docs/releases/0.1.25.md` for the upgrade caveat this required.
+3. **Read-path cutover.** Every reader of `file_path`/`Library.path` — the comic reader, thumbnail generation, comics/reports API responses, OPDS, the Kavita migration tool, the library API, watcher, and startup diagnostics — reconstructs the absolute path on demand via `Comic.absolute_path` / `Library.active_root`, backed by `resolve_absolute_path` in `app/core/path_utils.py`.
+4. **Column removal.** Migration `9def8df8ed7c` dropped `Comic.file_path` and `Library.path` for good.
 
-Stage 1 is required before relocation can be considered safe. Stages 2 and 3 should be scheduled explicitly rather than left open-ended — a "temporary" compatibility field that nothing forces out tends to become permanent.
+Stage 1 remains a prerequisite for the relocation flow below to be considered safe — that flow is still unbuilt.
 
 ## Admin UI Guardrails
 

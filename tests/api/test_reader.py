@@ -7,34 +7,36 @@ from PIL import Image, ImageDraw
 
 from app.api.reader import natural_sort_key
 from app.models.collection import Collection, CollectionItem
-from app.models.comic import Comic, Volume
-from app.models.library import Library
+from app.models.comic import Volume
 from app.models.pull_list import PullList, PullListItem
 from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.series import Series
+from tests.factories import create_comic, create_library_with_root
 
 
 def _create_graph(db, *, lib_name: str, series_name: str, volume_number: int = 1):
-    library = Library(name=lib_name, path=f"/tmp/{lib_name}")
+    library = create_library_with_root(db, lib_name, f"/tmp/{lib_name}")
     series = Series(name=series_name, library=library)
     volume = Volume(series=series, volume_number=volume_number)
-    db.add_all([library, series, volume])
+    db.add_all([series, volume])
     db.flush()
     return library, series, volume
 
 
 def _add_comic(db, volume: Volume, *, number: str, title: str, **kwargs):
     kwargs.setdefault("filename", f"{title.replace(' ', '-')}.cbz")
-    kwargs.setdefault("file_path", f"/tmp/{title.replace(' ', '-')}-{volume.id}-{number}.cbz")
-    comic = Comic(
-        volume_id=volume.id,
-        number=number,
-        title=title,
-        **kwargs,
-    )
-    db.add(comic)
-    db.flush()
-    return comic
+    file_path = kwargs.pop("file_path", None)
+    root = volume.series.library.active_root
+    if file_path is not None:
+        # Real archive on disk: point the root at its containing directory
+        # so relative_path + root.path reconstructs the real absolute path.
+        archive = Path(file_path)
+        root.path = str(archive.parent)
+        db.flush()
+        relative_path = archive.name
+    else:
+        relative_path = kwargs["filename"]
+    return create_comic(db, volume, root, relative_path, number=number, title=title, **kwargs)
 
 
 def _write_jxl_page(path: Path, accent: tuple[int, int, int]) -> None:
@@ -350,7 +352,7 @@ def test_reader_page_endpoint_headers_and_errors(client, db):
     assert jpeg.headers["content-disposition"] == 'inline; filename="page_1.jpg"'
     assert jpeg.headers["cache-control"] == "public, max-age=31536000"
     mock_page.assert_called_once_with(
-        str(comic.file_path),
+        str(comic.absolute_path),
         1,
         sharpen=True,
         grayscale=True,
@@ -408,7 +410,6 @@ def test_reader_page_endpoint_serves_real_jxl_archive_page(client, db, tmp_path)
         title="JXL Archive Comic",
         file_path=str(archive_path),
     )
-    db.add(library)
     db.commit()
 
     response = client.get(f"/api/reader/{comic.id}/page/0")
@@ -429,7 +430,6 @@ def test_reader_page_endpoint_serves_real_avif_archive_page(client, db, tmp_path
         title="AVIF Archive Comic",
         file_path=str(archive_path),
     )
-    db.add(library)
     db.commit()
 
     response = client.get(f"/api/reader/{comic.id}/page/0")

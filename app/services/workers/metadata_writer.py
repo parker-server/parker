@@ -1,18 +1,18 @@
 def _apply_metadata_batch(
     db,
     batch,
-    existing_map,
+    existing_by_key,
     get_or_create_series,
     get_or_create_volume,
     tag_service,
     credit_service,
     reading_list_service,
     collection_service,
+    library_root_id,
+    library_root_path,
     parse_reading_lists=True,
     parse_collections=True,
     parse_story_arcs=True,
-    library_root_id=None,
-    library_root_path=None,
 ):
 
     from pathlib import Path
@@ -67,14 +67,17 @@ def _apply_metadata_batch(
         size = item["size"]
         updated_at = datetime.now(timezone.utc)
 
-        existing = existing_map.get(file_path)
+        # Always resolves: the scanner only ever sends paths physically nested
+        # under the library's active root.
+        relative_path = compute_relative_path(library_root_path, file_path)
+        existing = existing_by_key.get((library_root_id, relative_path))
 
         # --- Determine Import vs Update ---
         if existing:
             comic = existing
             action = "update"
         else:
-            comic = Comic(file_path=file_path)
+            comic = Comic()
             action = "import"
 
         # Get or create series (Uses Cache)
@@ -88,11 +91,8 @@ def _apply_metadata_batch(
         volume = get_or_create_volume(series, volume_num, file_path)
         comic.volume_id = volume.id
 
-        if library_root_path is not None:
-            relative_path = compute_relative_path(library_root_path, file_path)
-            if relative_path is not None:
-                comic.library_root_id = library_root_id
-                comic.relative_path = relative_path
+        comic.library_root_id = library_root_id
+        comic.relative_path = relative_path
 
         # --- Basic fields ---
         comic.file_modified_at = mtime
@@ -175,7 +175,7 @@ def _apply_metadata_batch(
         if action == "import":
             comic.is_dirty = True
             imported += 1
-            existing_map[file_path] = comic
+            existing_by_key[(library_root_id, relative_path)] = comic
 
         elif action == "update":
             # If the scanner sent it, we *know* it changed (or force=True)
@@ -222,25 +222,28 @@ def metadata_writer(
 
         # Get library path for sidecars
         library = db.get(Library, library_id)
-        lib_path = Path(library.path)
 
         library_root = (
             db.query(LibraryRoot)
             .filter(LibraryRoot.library_id == library_id, LibraryRoot.is_active == True)
             .first()
         )
-        library_root_id = library_root.id if library_root else None
-        library_root_path = library_root.path if library_root else None
+        if library_root is None:
+            raise ValueError(f"Library '{library.name}' has no active root configured")
+
+        library_root_id = library_root.id
+        library_root_path = library_root.path
+        lib_path = Path(library_root.path)
 
         # Preload existing comics
-        existing = {
-            c.file_path: c
-            for c in db.query(Comic)
-                .join(Volume)
-                .join(Series)
-                .filter(Series.library_id == library_id)
-                .all()
-        }
+        existing_comics = (
+            db.query(Comic)
+            .join(Volume)
+            .join(Series)
+            .filter(Series.library_id == library_id)
+            .all()
+        )
+        existing_by_key = {(c.library_root_id, c.relative_path): c for c in existing_comics}
 
         # Local caches to reduce DB reads during the scan loop
         series_cache = {}
@@ -321,7 +324,7 @@ def metadata_writer(
 
             if len(batch) >= batch_size:
                 stats = _apply_metadata_batch(
-                    db, batch, existing,
+                    db, batch, existing_by_key,
                     get_or_create_series, get_or_create_volume,
                     tag_service, credit_service,
                     reading_list_service, collection_service,
@@ -340,7 +343,7 @@ def metadata_writer(
 
         # Commit remaining
         if batch:
-            stats = _apply_metadata_batch(db, batch, existing,
+            stats = _apply_metadata_batch(db, batch, existing_by_key,
                     get_or_create_series, get_or_create_volume,
                     tag_service, credit_service,
                     reading_list_service, collection_service,

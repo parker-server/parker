@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Annotated, Optional
 from pydantic import BaseModel
 from sqlalchemy import func, case
+from sqlalchemy.orm import selectinload
 from datetime import datetime, timezone
 from pathlib import Path as FsPath
 import logging
@@ -9,6 +10,7 @@ import os
 
 from app.config import settings
 from app.core.comic_helpers import get_thumbnail_url, NON_PLAIN_FORMATS, REVERSE_NUMBERING_SERIES, get_series_age_restriction
+from app.core.path_utils import paths_overlap
 from app.models.library import Library
 from app.models.library_root import LibraryRoot
 from app.models.series import Series
@@ -23,35 +25,19 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-def _normalize_library_path(path: str) -> str:
-    return os.path.normcase(os.path.normpath(path.strip()))
-
-
-def _paths_overlap(first_path: str, second_path: str) -> bool:
-    first = _normalize_library_path(first_path)
-    second = _normalize_library_path(second_path)
-
-    try:
-        common = os.path.commonpath([first, second])
-    except ValueError:
-        return False
-
-    return common == first or common == second
-
-
 def _find_overlapping_library(
         db,
         candidate_path: str,
         *,
         exclude_library_id: Optional[int] = None,
 ) -> Optional[Library]:
-    query = db.query(Library)
+    query = db.query(LibraryRoot).join(Library)
     if exclude_library_id is not None:
-        query = query.filter(Library.id != exclude_library_id)
+        query = query.filter(LibraryRoot.library_id != exclude_library_id)
 
-    for existing in query.all():
-        if _paths_overlap(candidate_path, existing.path):
-            return existing
+    for root in query.all():
+        if paths_overlap(candidate_path, root.path):
+            return root.library
 
     return None
 
@@ -69,10 +55,11 @@ def _has_library_access(library_id: int, current_user: CurrentUser) -> bool:
 
 
 def _library_payload(lib: Library, *, pinned: bool = False, stats: Optional[dict] = None) -> dict:
+    active_root = lib.active_root
     payload = {
         "id": lib.id,
         "name": lib.name,
-        "path": lib.path,
+        "path": active_root.path if active_root else None,
         "scan_on_startup": lib.scan_on_startup,
         "watch_mode": lib.watch_mode,
         "parse_reading_lists": lib.parse_reading_lists,
@@ -114,7 +101,7 @@ async def list_libraries(db: SessionDep,
 
     # Fetch the libraries based on permissions
     if current_user.is_superuser:
-        query = db.query(Library).order_by(Library.name)
+        query = db.query(Library).options(selectinload(Library.roots)).order_by(Library.name)
         if limit:
             query = query.limit(limit)
         libs = query.all()
@@ -461,25 +448,29 @@ async def create_library(lib_in: LibraryCreate,
 
     library = Library(
         name=lib_in.name,
-        path=lib_in.path,
         watch_mode=lib_in.watch_mode,
         parse_reading_lists=lib_in.parse_reading_lists,
         parse_collections=lib_in.parse_collections,
         parse_story_arcs=lib_in.parse_story_arcs,
     )
 
-    db.add(library)
-    db.commit()
-    db.refresh(library)
+    try:
+        db.add(library)
+        db.flush()
 
-    db.add(LibraryRoot(library_id=library.id, path=library.path, is_active=True))
-    db.commit()
+        db.add(LibraryRoot(library_id=library.id, path=lib_in.path, is_active=True))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    db.refresh(library)
 
     # Notify Watcher
     if library.watch_mode:
         library_watcher.refresh_watches()
 
-    return library
+    return _library_payload(library)
 
 # Schema for updates
 class LibraryUpdate(BaseModel):
@@ -509,7 +500,9 @@ async def update_library(
             raise HTTPException(status_code=400, detail="Library name already exists")
         library.name = updates.name
 
-    if updates.path and updates.path != library.path:
+    active_root = library.active_root
+    current_path = active_root.path if active_root else None
+    if updates.path and updates.path != current_path:
         raise HTTPException(
             status_code=400,
             detail="Changing a library's path is temporarily disabled. Library relocation is "
@@ -550,7 +543,7 @@ async def update_library(
     response = {
         "id": library.id,
         "name": library.name,
-        "path": library.path,
+        "path": current_path,
         "scan_on_startup": library.scan_on_startup,
         "watch_mode": library.watch_mode,
         "parse_reading_lists": library.parse_reading_lists,

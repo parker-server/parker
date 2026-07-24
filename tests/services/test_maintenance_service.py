@@ -1,25 +1,33 @@
 from pathlib import Path
 from unittest.mock import MagicMock
 
+from app.models.activity_log import ActivityLog
 from app.models.collection import Collection, CollectionItem
 from app.models.comic import Comic, Volume
 from app.models.credits import ComicCredit, Person
+from app.models.interactions import UserComicRating
 from app.models.library import Library
+from app.models.library_root import LibraryRoot
 from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.series import Series
 from app.models.tags import Character, Location, Team
+from app.models.user import User
 from app.services.maintenance import MaintenanceService
 import app.services.maintenance as maintenance_module
 
 
 def _create_library(db, name: str, tmp_path: Path) -> Library:
-    lib = Library(name=name, path=str(tmp_path / name))
+    lib = Library(name=name)
     db.add(lib)
+    db.flush()
+    root = LibraryRoot(library_id=lib.id, path=str(tmp_path / name), is_active=True)
+    db.add(root)
     db.flush()
     return lib
 
 
-def _create_comic(db, library: Library, slug: str, file_path: str, *, thumbnail_path: str = None) -> Comic:
+def _create_comic(db, library: Library, slug: str, relative_path: str, *, thumbnail_path: str = None) -> Comic:
+    root = library.active_root
     series = Series(name=f"{slug}-series", library_id=library.id)
     volume = Volume(series=series, volume_number=1)
     comic = Comic(
@@ -27,7 +35,8 @@ def _create_comic(db, library: Library, slug: str, file_path: str, *, thumbnail_
         number="1",
         title=f"{slug}-title",
         filename=f"{slug}.cbz",
-        file_path=file_path,
+        library_root_id=root.id,
+        relative_path=relative_path,
         page_count=12,
         thumbnail_path=thumbnail_path,
     )
@@ -47,7 +56,8 @@ def test_cleanup_orphans_global_removes_only_orphans(db, tmp_path):
         number="1",
         title="keep",
         filename="keep.cbz",
-        file_path=str(tmp_path / "keep.cbz"),
+        library_root_id=lib.active_root.id,
+        relative_path="keep.cbz",
         page_count=10,
     )
 
@@ -201,15 +211,15 @@ def test_cleanup_missing_files_scoped_with_batch_commits(db, tmp_path, monkeypat
     # 101 missing files in lib_a to trigger both the modulo-100 commit and final commit
     missing_ids = []
     for i in range(101):
-        comic = _create_comic(db, lib_a, f"a-missing-{i}", str(tmp_path / "missing" / f"a-{i}.cbz"))
+        comic = _create_comic(db, lib_a, f"a-missing-{i}", f"missing/a-{i}.cbz")
         missing_ids.append(comic.id)
 
-    existing_path = tmp_path / "exists" / "a-exists.cbz"
+    existing_path = Path(lib_a.active_root.path) / "exists" / "a-exists.cbz"
     existing_path.parent.mkdir(parents=True, exist_ok=True)
     existing_path.write_bytes(b"ok")
-    keep_comic = _create_comic(db, lib_a, "a-keep", str(existing_path))
+    keep_comic = _create_comic(db, lib_a, "a-keep", "exists/a-exists.cbz")
 
-    other_lib_missing = _create_comic(db, lib_b, "b-missing", str(tmp_path / "missing" / "b.cbz"))
+    other_lib_missing = _create_comic(db, lib_b, "b-missing", "missing/b.cbz")
     db.commit()
 
     service = MaintenanceService(db)
@@ -228,13 +238,64 @@ def test_cleanup_missing_files_scoped_with_batch_commits(db, tmp_path, monkeypat
     assert db.get(Comic, other_lib_missing.id) is not None
 
 
+def test_cleanup_missing_files_reconstructs_path_from_root_instead_of_stale_file_path(db, tmp_path):
+    lib = _create_library(db, "maint-root-reconstruct", tmp_path)
+
+    real_root = tmp_path / "real-root"
+    real_root.mkdir(parents=True, exist_ok=True)
+    root = LibraryRoot(library_id=lib.id, path=str(real_root), is_active=True)
+    db.add(root)
+    db.flush()
+
+    # Comic is initially stamped against the library's default root with a
+    # throwaway relative_path, then re-pointed at a second root belonging to
+    # the same library -- the janitor must resolve via whichever root the
+    # comic is actually stamped with, not assume it's always the "default" one.
+    on_disk = real_root / "issue.cbz"
+    on_disk.write_bytes(b"ok")
+    healthy = _create_comic(db, lib, "healthy", "placeholder.cbz")
+    healthy.library_root_id = root.id
+    healthy.relative_path = "issue.cbz"
+
+    # relative_path doesn't resolve to anything under the library's root.
+    truly_missing = _create_comic(db, lib, "missing", "stale-location/gone.cbz")
+    db.commit()
+
+    service = MaintenanceService(db)
+    deleted_ids = service.cleanup_missing_files(library_id=lib.id)
+
+    assert deleted_ids == [truly_missing.id]
+    assert db.get(Comic, healthy.id) is not None
+    assert db.get(Comic, truly_missing.id) is None
+
+
+def test_cleanup_missing_files_deletes_user_ratings_and_activity_log(db, tmp_path):
+    lib = _create_library(db, "maint-missing-cascade", tmp_path)
+    missing = _create_comic(db, lib, "missing-cascade", "stale-location/gone.cbz")
+
+    user = User(username="maint-cascade-user", email="maint-cascade@test.local", hashed_password="x")
+    db.add(user)
+    db.flush()
+
+    db.add(UserComicRating(user_id=user.id, comic_id=missing.id, rating=4))
+    db.add(ActivityLog(user_id=user.id, comic_id=missing.id, pages_read=1, start_page=0, end_page=1))
+    db.commit()
+
+    service = MaintenanceService(db)
+    deleted_ids = service.cleanup_missing_files(library_id=lib.id)
+
+    assert deleted_ids == [missing.id]
+    assert db.query(UserComicRating).filter_by(comic_id=missing.id).count() == 0
+    assert db.query(ActivityLog).filter_by(comic_id=missing.id).count() == 0
+
+
 def test_cleanup_missing_files_no_deletions_makes_no_commit(db, tmp_path, monkeypatch):
     lib = _create_library(db, "maint-missing-none", tmp_path)
 
-    existing_path = tmp_path / "exists" / "one.cbz"
+    existing_path = Path(lib.active_root.path) / "exists" / "one.cbz"
     existing_path.parent.mkdir(parents=True, exist_ok=True)
     existing_path.write_bytes(b"ok")
-    _create_comic(db, lib, "keep", str(existing_path))
+    _create_comic(db, lib, "keep", "exists/one.cbz")
     db.commit()
 
     service = MaintenanceService(db)
@@ -301,7 +362,7 @@ def test_cleanup_orphaned_thumbnails_deletes_unreferenced_and_logs_errors(db, tm
     (cover_dir / "nested").mkdir()
 
     lib = _create_library(db, "maint-thumb-lib", tmp_path)
-    _create_comic(db, lib, "thumb-comic", str(tmp_path / "thumb.cbz"), thumbnail_path=str(referenced))
+    _create_comic(db, lib, "thumb-comic", "thumb.cbz", thumbnail_path=str(referenced))
     db.commit()
 
     original_unlink = Path.unlink

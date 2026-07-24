@@ -11,7 +11,9 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.core.settings_loader import get_cached_setting
+from app.core.path_utils import compute_relative_path
 from app.models.library import Library
+from app.models.library_root import LibraryRoot
 from app.models.comic import Comic
 from app.models.comic import Volume
 from app.models.series import Series
@@ -43,10 +45,18 @@ class LibraryScanner:
         """
         Parallel metadata extraction + single-writer DB updates.
         """
-        library_path = Path(self.library.path)
+        library_root = (
+            self.db.query(LibraryRoot)
+            .filter(LibraryRoot.library_id == self.library.id, LibraryRoot.is_active == True)
+            .first()
+        )
+        if library_root is None:
+            raise FileNotFoundError(f"Library '{self.library.name}' has no active root configured")
+
+        library_path = Path(library_root.path)
 
         if not library_path.exists():
-            raise FileNotFoundError(f"Library path does not exist: {self.library.path}")
+            raise FileNotFoundError(f"Library path does not exist: {library_root.path}")
 
         self.reconciled_folders.clear()
         self.reconciled_volumes.clear()
@@ -64,27 +74,32 @@ class LibraryScanner:
             .all()
         )
 
-        existing_map = {c.file_path: c for c in db_comics}
+        existing_by_key = {(c.library_root_id, c.relative_path): c for c in db_comics}
 
         # --- Phase 1: Build task list with skip/import/update logic ---
         tasks = []
-        scanned_paths_on_disk = set()
+        scanned_keys = set()
         skipped = 0
 
         for file_path in library_path.rglob("*"):
             if file_path.suffix.lower() not in self.supported_extensions:
                 continue
 
+            file_path_str = str(file_path)
+            # Always resolves: file_path_str is necessarily a child of library_path,
+            # since rglob() only yields files physically nested under it.
+            relative_path = compute_relative_path(library_root.path, file_path_str)
+            key = (library_root.id, relative_path)
+            existing = existing_by_key.get(key)
+
             # --- CONTAINER RECONCILIATION ---
             # This runs for EVERY file, but the logic inside ensures it only
             # performs the disk-check once per folder.
-            self._reconcile_sidecars(file_path, existing_map)
+            self._reconcile_sidecars(file_path, existing, library_root.path)
 
-            file_path_str = str(file_path)
-            scanned_paths_on_disk.add(file_path_str)
+            scanned_keys.add(key)
 
             file_mtime = os.path.getmtime(file_path)
-            existing = existing_map.get(file_path_str)
 
             if existing:
                 # unchanged file -> skip unless force=True
@@ -194,7 +209,7 @@ class LibraryScanner:
                     writer_proc.join(timeout=5)
 
         # --- Phase 3: Cleanup missing files ---
-        deleted = self._cleanup_missing_files(scanned_paths_on_disk, existing_map)
+        deleted = self._cleanup_missing_files(scanned_keys, existing_by_key)
 
         # Cleanup empty containers
         self.reading_list_service.cleanup_empty_lists()
@@ -216,13 +231,12 @@ class LibraryScanner:
             "elapsed": elapsed,
         }
 
-    def _cleanup_missing_files(self, scanned_paths_on_disk: set, existing_map: dict) -> int:
+    def _cleanup_missing_files(self, scanned_keys: set, existing_by_key: dict) -> int:
         """Remove comics from DB whose files no longer exist"""
         deleted = 0
 
-        # Iterate over the map of comics we knew about at start
-        for file_path, comic in existing_map.items():
-            if file_path not in scanned_paths_on_disk:
+        for key, comic in existing_by_key.items():
+            if key not in scanned_keys:
                 self.logger.info(f"Removing deleted comic: {comic.filename}")
                 self.db.delete(comic)
                 deleted += 1
@@ -260,14 +274,14 @@ class LibraryScanner:
 
             current = parent
 
-    def _reconcile_sidecars(self, file_path: Path, existing_map: dict):
+    def _reconcile_sidecars(self, file_path: Path, existing_comic: Optional[Comic], library_root_path: str):
         """
         Sync folder-level sidecars with Series/Volume models.
         Works even if individual comics are skipped.
         """
         folder_path = file_path.parent
         folder_str = str(folder_path)
-        lib_path = Path(self.library.path)
+        lib_path = Path(library_root_path)
 
         # If the comic is in the root, there is no 'Series' or 'Volume' folder to reconcile
         if folder_path == lib_path:
@@ -279,9 +293,6 @@ class LibraryScanner:
         if folder_str in self.reconciled_folders:
             return
 
-        # Identify which Series/Volume this folder belongs to using pre-fetched data
-        # We look at the first comic we know about in this folder
-        existing_comic = existing_map.get(str(file_path))
         if not existing_comic:
             self.logger.debug(
                 "Skipping sidecar reconciliation for unknown comic path; "

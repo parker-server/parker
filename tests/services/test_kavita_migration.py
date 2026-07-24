@@ -1,12 +1,12 @@
 import sqlite3
 from datetime import datetime, timedelta, timezone
 
-from app.models.comic import Comic, Volume
-from app.models.library import Library
+from app.models.comic import Volume
 from app.models.reading_progress import ReadingProgress
 from app.models.series import Series
 from app.models.user import User
 from app.services.kavita_migration import KavitaMigrationService
+from tests.factories import create_comic, create_library_with_root
 
 
 def _create_kavita_db(tmp_path, *, include_user_tables=True, include_mapping_tables=True, include_progress_table=True):
@@ -54,17 +54,16 @@ def _create_kavita_db(tmp_path, *, include_user_tables=True, include_mapping_tab
 
 
 def _seed_parker_series(db, *, prefix: str):
-    lib = Library(name=f"{prefix}-lib", path=f"/tmp/{prefix}-lib")
+    lib = create_library_with_root(db, f"{prefix}-lib", f"/tmp/{prefix}-lib")
     series = Series(name=f"{prefix}-series", library=lib)
     volume = Volume(series=series, volume_number=1)
-    db.add_all([lib, series, volume])
+    db.add_all([series, volume])
     db.flush()
     return lib, series, volume
 
 
 def test_migrate_users_creates_admin_and_syncs_library_permissions(db, tmp_path):
-    parker_lib = Library(name="Main Library", path="/tmp/main-library")
-    db.add(parker_lib)
+    create_library_with_root(db, "Main Library", "/tmp/main-library")
     db.commit()
 
     kavita_path = _create_kavita_db(tmp_path, include_mapping_tables=False, include_progress_table=False)
@@ -124,53 +123,51 @@ def test_migrate_users_creates_admin_and_syncs_library_permissions(db, tmp_path)
 
 
 def test_map_comics_uses_suffix_then_unique_metadata_and_skips_ambiguous(db, tmp_path):
-    _, batman_series, batman_volume = _seed_parker_series(db, prefix="kmap-batman")
+    batman_lib, batman_series, batman_volume = _seed_parker_series(db, prefix="kmap-batman")
     batman_series.name = "Batman"
+    batman_lib.active_root.path = "D:/comics/DC/Batman"
 
-    _, flash_series, flash_volume = _seed_parker_series(db, prefix="kmap-flash")
+    flash_lib, flash_series, flash_volume = _seed_parker_series(db, prefix="kmap-flash")
     flash_series.name = "Flash"
+    flash_lib.active_root.path = "D:/comics/DC/Flash"
 
-    _, ambig_series, ambig_volume = _seed_parker_series(db, prefix="kmap-ambig")
+    ambig_lib, ambig_series, ambig_volume = _seed_parker_series(db, prefix="kmap-ambig")
     ambig_series.name = "X-Men"
+    ambig_lib.active_root.path = "D:/comics/Marvel/X-Men"
 
-    c_suffix = Comic(
-        volume_id=batman_volume.id,
+    c_suffix = create_comic(
+        db, batman_volume, batman_lib.active_root, "Batman #001.cbz",
         number="1",
         format=None,
         title="Batman 1",
         filename="batman-1.cbz",
-        file_path="D:/comics/DC/Batman/Batman #001.cbz",
         page_count=20,
     )
-    c_meta = Comic(
-        volume_id=flash_volume.id,
+    c_meta = create_comic(
+        db, flash_volume, flash_lib.active_root, "Flash Annual #005.cbz",
         number="5",
         format="annual",
         title="Flash Annual 5",
         filename="flash-annual-5.cbz",
-        file_path="D:/comics/DC/Flash/Flash Annual #005.cbz",
         page_count=30,
     )
-    c_ambig_a = Comic(
-        volume_id=ambig_volume.id,
+    c_ambig_a = create_comic(
+        db, ambig_volume, ambig_lib.active_root, "X-Men #007-a.cbz",
         number="7",
         format=None,
         title="X-Men 7A",
         filename="xmen-7a.cbz",
-        file_path="D:/comics/Marvel/X-Men/X-Men #007-a.cbz",
         page_count=22,
     )
-    c_ambig_b = Comic(
-        volume_id=ambig_volume.id,
+    c_ambig_b = create_comic(
+        db, ambig_volume, ambig_lib.active_root, "X-Men #007-b.cbz",
         number="7",
         format=None,
         title="X-Men 7B",
         filename="xmen-7b.cbz",
-        file_path="D:/comics/Marvel/X-Men/X-Men #007-b.cbz",
         page_count=22,
     )
 
-    db.add_all([c_suffix, c_meta, c_ambig_a, c_ambig_b])
     db.commit()
 
     kavita_path = _create_kavita_db(tmp_path, include_user_tables=False, include_progress_table=False)
@@ -227,7 +224,7 @@ def test_map_comics_uses_suffix_then_unique_metadata_and_skips_ambiguous(db, tmp
 
 
 def test_migrate_progress_normalizes_zero_based_and_updates_existing(db, tmp_path):
-    _, series, volume = _seed_parker_series(db, prefix="kprog")
+    lib, series, volume = _seed_parker_series(db, prefix="kprog")
     series.name = "Progress Series"
 
     user = User(
@@ -240,24 +237,21 @@ def test_migrate_progress_normalizes_zero_based_and_updates_existing(db, tmp_pat
     db.add(user)
     db.flush()
 
-    c_new = Comic(
-        volume_id=volume.id,
+    root = lib.active_root
+    c_new = create_comic(
+        db, volume, root, "progress-new.cbz",
         number="1",
         title="Progress New",
         filename="progress-new.cbz",
-        file_path="D:/comics/progress-new.cbz",
         page_count=10,
     )
-    c_existing = Comic(
-        volume_id=volume.id,
+    c_existing = create_comic(
+        db, volume, root, "progress-existing.cbz",
         number="2",
         title="Progress Existing",
         filename="progress-existing.cbz",
-        file_path="D:/comics/progress-existing.cbz",
         page_count=8,
     )
-    db.add_all([c_new, c_existing])
-    db.flush()
 
     existing_progress = ReadingProgress(
         user_id=user.id,

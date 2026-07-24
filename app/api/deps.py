@@ -115,9 +115,11 @@ async def get_current_user(
     except (JWTError, ValidationError):
         raise credentials_exception
 
-    # Eager load accessible libraries relation
+    # Eager load accessible libraries relation (and their roots, since callers
+    # commonly need library.active_root and this User object can outlive the
+    # session that loaded it -- e.g. cached across requests)
     user = db.query(User).options(
-                selectinload(User.accessible_libraries)
+                selectinload(User.accessible_libraries).selectinload(Library.roots)
             ).filter(User.username == username).first()
 
     if user is None:

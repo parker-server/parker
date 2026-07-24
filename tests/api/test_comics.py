@@ -7,20 +7,20 @@ from app.models.bookmark import Bookmark
 from app.models.comic import Comic, Volume
 from app.models.credits import ComicCredit, Person
 from app.models.interactions import UserComicRating
-from app.models.library import Library
 from app.models.pull_list import PullList, PullListItem
 from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.reading_progress import ReadingProgress
 from app.models.series import Series
 from app.models.tags import Character, Genre, Location, Team
 from app.models.user import User
+from tests.factories import create_comic, create_library_with_root
 
 
 def _create_graph(db, *, lib_name: str, series_name: str):
-    library = Library(name=lib_name, path=f"/tmp/{lib_name}")
+    library = create_library_with_root(db, lib_name, f"/tmp/{lib_name}")
     series = Series(name=series_name, library=library)
     volume = Volume(series=series, volume_number=1)
-    db.add_all([library, series, volume])
+    db.add_all([series, volume])
     db.flush()
     return library, series, volume
 
@@ -29,21 +29,18 @@ def test_filter_by_user_access_and_natural_sort_key(db, admin_user, normal_user)
     lib_a, _, vol_a = _create_graph(db, lib_name="comic-access-a", series_name="Access A")
     lib_b, _, vol_b = _create_graph(db, lib_name="comic-access-b", series_name="Access B")
 
-    comic_a = Comic(
-        volume_id=vol_a.id,
+    comic_a = create_comic(
+        db, vol_a, lib_a.active_root, "a-1.cbz",
         number="1",
         title="A #1",
         filename="a-1.cbz",
-        file_path="/tmp/access-a-1.cbz",
     )
-    comic_b = Comic(
-        volume_id=vol_b.id,
+    comic_b = create_comic(
+        db, vol_b, lib_b.active_root, "b-1.cbz",
         number="1",
         title="B #1",
         filename="b-1.cbz",
-        file_path="/tmp/access-b-1.cbz",
     )
-    db.add_all([comic_a, comic_b])
 
     normal_user.accessible_libraries.append(lib_a)
     db.commit()
@@ -109,21 +106,19 @@ def test_search_comics_delegates_to_search_service(auth_client):
 def test_search_comics_can_sort_and_filter_by_parker_rating(auth_client, db, normal_user):
     library, _, volume = _create_graph(db, lib_name="comic-search-rating", series_name="Search Rating Saga")
 
-    top_rated = Comic(
-        volume_id=volume.id,
+    top_rated = create_comic(
+        db, volume, library.active_root, "top-rated.cbz",
         number="1",
         title="Top Rated",
         community_rating=4.8,
         filename="top-rated.cbz",
-        file_path="/tmp/top-rated.cbz",
     )
-    lower_rated = Comic(
-        volume_id=volume.id,
+    lower_rated = create_comic(
+        db, volume, library.active_root, "lower-rated.cbz",
         number="2",
         title="Lower Rated",
         community_rating=4.9,
         filename="lower-rated.cbz",
-        file_path="/tmp/lower-rated.cbz",
     )
     second_user = User(
         username="search-second-rater",
@@ -171,8 +166,8 @@ def test_search_comics_can_sort_and_filter_by_parker_rating(auth_client, db, nor
 def test_get_comic_detail_returns_metadata_and_in_progress_status(auth_client, db, normal_user):
     library, series, volume = _create_graph(db, lib_name="comic-detail", series_name="Detail Saga")
 
-    comic = Comic(
-        volume_id=volume.id,
+    comic = create_comic(
+        db, volume, library.active_root, "detail-7.cbz",
         number="7",
         title="Detail Issue",
         summary="Issue summary",
@@ -184,10 +179,7 @@ def test_get_comic_detail_returns_metadata_and_in_progress_status(auth_client, d
         language_iso="en",
         community_rating=3.8,
         filename="detail-7.cbz",
-        file_path="/tmp/detail-7.cbz",
     )
-    db.add(comic)
-    db.flush()
 
     writer = Person(name="Detail Writer")
     penciller = Person(name="Detail Penciller")
@@ -260,15 +252,13 @@ def test_get_comic_detail_returns_metadata_and_in_progress_status(auth_client, d
 def test_get_comic_detail_returns_completed_read_status(auth_client, db, normal_user):
     library, _, volume = _create_graph(db, lib_name="comic-detail-completed", series_name="Completed Detail Saga")
 
-    comic = Comic(
-        volume_id=volume.id,
+    comic = create_comic(
+        db, volume, library.active_root, "completed-4.cbz",
         number="4",
         title="Completed Issue",
         page_count=18,
         filename="completed-4.cbz",
-        file_path="/tmp/completed-4.cbz",
     )
-    db.add(comic)
     normal_user.accessible_libraries.append(library)
     db.flush()
 
@@ -294,15 +284,12 @@ def test_get_comic_detail_returns_completed_read_status(auth_client, db, normal_
 def test_get_comic_detail_sorts_tag_metadata_alphabetically(auth_client, db, normal_user):
     library, _, volume = _create_graph(db, lib_name="comic-detail-tags", series_name="Sorted Detail Saga")
 
-    comic = Comic(
-        volume_id=volume.id,
+    comic = create_comic(
+        db, volume, library.active_root, "sorted-tags-12.cbz",
         number="12",
         title="Sorted Tags Issue",
         filename="sorted-tags-12.cbz",
-        file_path="/tmp/sorted-tags-12.cbz",
     )
-    db.add(comic)
-    db.flush()
 
     hero_z = Character(name="Zeta Hero")
     hero_a = Character(name="Alpha Hero")
@@ -336,15 +323,13 @@ def test_get_comic_detail_sorts_tag_metadata_alphabetically(auth_client, db, nor
 def test_get_comic_detail_uses_generic_label_for_non_comicvine_web_links(auth_client, db, normal_user):
     library, _, volume = _create_graph(db, lib_name="comic-web-link", series_name="Alt Link Saga")
 
-    comic = Comic(
-        volume_id=volume.id,
+    comic = create_comic(
+        db, volume, library.active_root, "alt-link-11.cbz",
         number="11",
         title="Alt Link Issue",
         web="https://leagueofcomicgeeks.com/comic/123456/alt-link-issue",
         filename="alt-link-11.cbz",
-        file_path="/tmp/alt-link-11.cbz",
     )
-    db.add(comic)
 
     normal_user.accessible_libraries.append(library)
     db.commit()
@@ -361,16 +346,13 @@ def test_get_comic_detail_uses_generic_label_for_non_comicvine_web_links(auth_cl
 def test_get_comic_detail_exposes_opted_in_completed_reader_count(auth_client, db, normal_user):
     library, _, volume = _create_graph(db, lib_name="comic-social", series_name="Social Saga")
 
-    comic = Comic(
-        volume_id=volume.id,
+    comic = create_comic(
+        db, volume, library.active_root, "social-3.cbz",
         number="3",
         title="Social Issue",
         filename="social-3.cbz",
-        file_path="/tmp/social-3.cbz",
         page_count=24,
     )
-    db.add(comic)
-    db.flush()
 
     reader_a = User(
         username="social-reader-a",
@@ -420,14 +402,12 @@ def test_get_comic_detail_exposes_opted_in_completed_reader_count(auth_client, d
 
 def test_set_comic_rating_creates_and_updates_single_user_row(auth_client, db, normal_user):
     library, _, volume = _create_graph(db, lib_name="comic-rate", series_name="Rate Saga")
-    comic = Comic(
-        volume_id=volume.id,
+    comic = create_comic(
+        db, volume, library.active_root, "rate-me.cbz",
         number="1",
         title="Rate Me",
         filename="rate-me.cbz",
-        file_path="/tmp/rate-me.cbz",
     )
-    db.add(comic)
 
     other_user = User(
         username="other-rater",
@@ -473,14 +453,12 @@ def test_set_comic_rating_creates_and_updates_single_user_row(auth_client, db, n
 
 def test_delete_comic_rating_updates_aggregate(auth_client, db, normal_user):
     library, _, volume = _create_graph(db, lib_name="comic-unrate", series_name="Unrate Saga")
-    comic = Comic(
-        volume_id=volume.id,
+    comic = create_comic(
+        db, volume, library.active_root, "unrate-me.cbz",
         number="1",
         title="Unrate Me",
         filename="unrate-me.cbz",
-        file_path="/tmp/unrate-me.cbz",
     )
-    db.add(comic)
 
     other_user = User(
         username="other-unrater",
@@ -516,25 +494,22 @@ def test_delete_comic_rating_updates_aggregate(auth_client, db, normal_user):
 
 def test_rating_endpoints_respect_hidden_and_age_restricted_comics(auth_client, db, normal_user):
     hidden_library, _, hidden_volume = _create_graph(db, lib_name="comic-rate-hidden", series_name="Hidden Rate Saga")
-    hidden_comic = Comic(
-        volume_id=hidden_volume.id,
+    hidden_comic = create_comic(
+        db, hidden_volume, hidden_library.active_root, "hidden-rate.cbz",
         number="1",
         title="Hidden Rate",
         filename="hidden-rate.cbz",
-        file_path="/tmp/hidden-rate.cbz",
     )
 
     safe_library, _, safe_volume = _create_graph(db, lib_name="comic-rate-safe", series_name="Safe Rate Saga")
-    mature_comic = Comic(
-        volume_id=safe_volume.id,
+    mature_comic = create_comic(
+        db, safe_volume, safe_library.active_root, "mature-rate.cbz",
         number="2",
         title="Mature Rate",
         age_rating="Mature 17+",
         filename="mature-rate.cbz",
-        file_path="/tmp/mature-rate.cbz",
     )
 
-    db.add_all([hidden_comic, mature_comic])
     normal_user.accessible_libraries.append(safe_library)
     normal_user.max_age_rating = "Teen"
     normal_user.allow_unknown_age_ratings = False
@@ -555,14 +530,12 @@ def test_get_comic_detail_missing_or_hidden_returns_404(auth_client, db):
     assert response.json() == {"detail": "Comic not found"}
 
     library, _, volume = _create_graph(db, lib_name="comic-hidden", series_name="Hidden Saga")
-    comic = Comic(
-        volume_id=volume.id,
+    comic = create_comic(
+        db, volume, library.active_root, "hidden.cbz",
         number="1",
         title="Hidden",
         filename="hidden.cbz",
-        file_path="/tmp/hidden.cbz",
     )
-    db.add_all([library, comic])
     db.commit()
 
     hidden = auth_client.get(f"/api/comics/{comic.id}")
@@ -576,31 +549,27 @@ def test_get_comic_thumbnail_db_path_and_fallback_and_missing(client, db, tmp_pa
     db_thumb = tmp_path / "db-thumb.webp"
     db_thumb.write_bytes(b"db-thumb")
 
-    comic_db = Comic(
-        volume_id=volume.id,
+    comic_db = create_comic(
+        db, volume, library.active_root, "db-thumb.cbz",
         number="1",
         title="DB Thumb",
         thumbnail_path=str(db_thumb),
         filename="db-thumb.cbz",
-        file_path="/tmp/db-thumb.cbz",
     )
-    comic_std = Comic(
-        volume_id=volume.id,
+    comic_std = create_comic(
+        db, volume, library.active_root, "std-thumb.cbz",
         number="2",
         title="Std Thumb",
         thumbnail_path=None,
         filename="std-thumb.cbz",
-        file_path="/tmp/std-thumb.cbz",
     )
-    comic_missing = Comic(
-        volume_id=volume.id,
+    comic_missing = create_comic(
+        db, volume, library.active_root, "no-thumb.cbz",
         number="3",
         title="No Thumb",
         thumbnail_path=None,
         filename="no-thumb.cbz",
-        file_path="/tmp/no-thumb.cbz",
     )
-    db.add_all([library, comic_db, comic_std, comic_missing])
     db.commit()
 
     db_resp = client.get(f"/api/comics/{comic_db.id}/thumbnail")
@@ -645,10 +614,10 @@ def test_random_backgrounds_handles_empty_and_limit(client, db):
     assert empty.json() == []
 
     library, _, volume = _create_graph(db, lib_name="comic-random", series_name="Random Saga")
-    c1 = Comic(volume_id=volume.id, number="1", title="R1", thumbnail_path="/tmp/r1.webp", filename="r1.cbz", file_path="/tmp/r1.cbz")
-    c2 = Comic(volume_id=volume.id, number="2", title="R2", thumbnail_path="/tmp/r2.webp", filename="r2.cbz", file_path="/tmp/r2.cbz")
-    c3 = Comic(volume_id=volume.id, number="3", title="R3", thumbnail_path="/tmp/r3.webp", filename="r3.cbz", file_path="/tmp/r3.cbz")
-    db.add_all([library, c1, c2, c3])
+    root = library.active_root
+    c1 = create_comic(db, volume, root, "r1.cbz", number="1", title="R1", thumbnail_path="/tmp/r1.webp", filename="r1.cbz")
+    c2 = create_comic(db, volume, root, "r2.cbz", number="2", title="R2", thumbnail_path="/tmp/r2.webp", filename="r2.cbz")
+    c3 = create_comic(db, volume, root, "r3.cbz", number="3", title="R3", thumbnail_path="/tmp/r3.webp", filename="r3.cbz")
     db.commit()
 
     with patch("app.api.comics.random.sample", side_effect=lambda rows, size: rows[:size]):
@@ -664,25 +633,22 @@ def test_random_backgrounds_handles_empty_and_limit(client, db):
 def test_cover_manifest_volume_and_series_reverse_sort(auth_client, db, normal_user):
     library, series, volume = _create_graph(db, lib_name="comic-manifest-rev", series_name="Countdown")
 
-    issue_one = Comic(
-        volume_id=volume.id,
+    issue_one = create_comic(
+        db, volume, library.active_root, "cd-1.cbz",
         number="1",
         year=2020,
         title="Countdown #1",
         thumbnail_path="/tmp/cd-1.webp",
         filename="cd-1.cbz",
-        file_path="/tmp/cd-1.cbz",
     )
-    issue_four = Comic(
-        volume_id=volume.id,
+    issue_four = create_comic(
+        db, volume, library.active_root, "cd-4.cbz",
         number="4",
         year=2020,
         title="Countdown #4",
         thumbnail_path="/tmp/cd-4.webp",
         filename="cd-4.cbz",
-        file_path="/tmp/cd-4.cbz",
     )
-    db.add_all([issue_one, issue_four])
 
     normal_user.accessible_libraries.append(library)
     db.commit()
@@ -699,35 +665,30 @@ def test_cover_manifest_volume_and_series_reverse_sort(auth_client, db, normal_u
 def test_cover_manifest_reading_list_pull_list_and_collection_ordering(auth_client, db, normal_user):
     library, series, volume = _create_graph(db, lib_name="comic-manifest-order", series_name="Manifest Order")
 
-    c1 = Comic(
-        volume_id=volume.id,
+    c1 = create_comic(
+        db, volume, library.active_root, "order-2.cbz",
         number="2",
         year=2022,
         title="Order #2",
         thumbnail_path="/tmp/order-2.webp",
         filename="order-2.cbz",
-        file_path="/tmp/order-2.cbz",
     )
-    c2 = Comic(
-        volume_id=volume.id,
+    c2 = create_comic(
+        db, volume, library.active_root, "order-1.cbz",
         number="1",
         year=2020,
         title="Order #1",
         thumbnail_path="/tmp/order-1.webp",
         filename="order-1.cbz",
-        file_path="/tmp/order-1.cbz",
     )
-    c3 = Comic(
-        volume_id=volume.id,
+    c3 = create_comic(
+        db, volume, library.active_root, "order-3.cbz",
         number="3",
         year=2021,
         title="Order #3",
         thumbnail_path="/tmp/order-3.webp",
         filename="order-3.cbz",
-        file_path="/tmp/order-3.cbz",
     )
-    db.add_all([c1, c2, c3])
-    db.flush()
 
     reading_list = ReadingList(name="Manifest Reading", description="")
     pull_list = PullList(user_id=normal_user.id, name="Manifest Pull")
@@ -769,16 +730,14 @@ def test_cover_manifest_reading_list_pull_list_and_collection_ordering(auth_clie
 
 def test_cover_manifest_hides_items_outside_user_library(auth_client, db):
     library, _, volume = _create_graph(db, lib_name="comic-manifest-hidden", series_name="Hidden Manifest")
-    comic = Comic(
-        volume_id=volume.id,
+    comic = create_comic(
+        db, volume, library.active_root, "hm-1.cbz",
         number="1",
         title="Hidden Manifest #1",
         year=2024,
         thumbnail_path="/tmp/hm-1.webp",
         filename="hm-1.cbz",
-        file_path="/tmp/hm-1.cbz",
     )
-    db.add_all([library, comic])
     db.commit()
 
     response = auth_client.get(f"/api/comics/covers/manifest?context_type=volume&context_id={volume.id}")
