@@ -162,6 +162,13 @@ button:focus {
     white-space: nowrap;
 }
 
+.summary-line-clamp {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    overflow: hidden;
+}
+
 /* Animations */
 @keyframes spin {
     from {

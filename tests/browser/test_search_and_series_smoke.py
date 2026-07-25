@@ -4,7 +4,44 @@ from sqlalchemy import select
 
 from app.models.comic import Volume
 from app.models.interactions import UserVolumeFollow
+from app.models.series import Series
 from tests.factories import create_comic
+
+
+FITTING_SUMMARY = (
+    "On a station in the depths of space, a host of alien facehuggers have just been hatched, "
+    "destined to implant into humans and birth even deadlier Xenomorphs. But not all facehuggers "
+    "have such ill intent! Meet Facehuggie, the friendliest Facehugger!"
+)
+
+LONG_SUMMARY = (
+    "A sprawling space-horror synopsis follows a salvage crew through a station full of sealed "
+    "doors, bad choices, and worse biological surprises. The story tracks every desperate turn as "
+    "the survivors realize the outbreak has already moved through the vents, the command deck, and "
+    "the only shuttle bay still attached to the station."
+)
+
+
+def _set_series_summary(browser_server, summary):
+    seed = browser_server["seed"]
+    session = browser_server["db_factory"]()
+    try:
+        series = session.get(Series, seed["series_id"])
+        series.summary_override = summary
+        session.commit()
+    finally:
+        session.close()
+
+
+def _set_volume_summary(browser_server, summary):
+    seed = browser_server["seed"]
+    session = browser_server["db_factory"]()
+    try:
+        volume = session.get(Volume, seed["volume_id"])
+        volume.summary_override = summary
+        session.commit()
+    finally:
+        session.close()
 
 
 def _insert_following_arrival(browser_server):
@@ -74,6 +111,48 @@ def test_series_detail_page_filters_read_items(page, browser_server):
     page.wait_for_timeout(300)
     assert page.locator(f"text={seed['completed_comic_title']}").first.is_visible()
     assert page.locator(f"text={seed['active_comic_title']}").count() == 0
+
+
+@pytest.mark.browser
+def test_series_detail_read_more_appears_for_long_summary(page, browser_server):
+    seed = browser_server["seed"]
+    _set_series_summary(browser_server, LONG_SUMMARY)
+
+    page.goto(f"{browser_server['base_url']}/series/{seed['series_id']}", wait_until="networkidle")
+
+    page.get_by_role("button", name="Read More").wait_for()
+
+
+@pytest.mark.browser
+def test_series_detail_read_more_stays_hidden_for_short_summary(page, browser_server):
+    seed = browser_server["seed"]
+    _set_series_summary(browser_server, FITTING_SUMMARY)
+
+    page.goto(f"{browser_server['base_url']}/series/{seed['series_id']}", wait_until="networkidle")
+
+    page.get_by_text(FITTING_SUMMARY).wait_for()
+    assert not page.get_by_role("button", name="Read More").is_visible()
+
+
+@pytest.mark.browser
+def test_volume_detail_read_more_appears_for_long_summary(page, browser_server):
+    seed = browser_server["seed"]
+    _set_volume_summary(browser_server, LONG_SUMMARY)
+
+    page.goto(f"{browser_server['base_url']}/volumes/{seed['volume_id']}", wait_until="networkidle")
+
+    page.get_by_role("button", name="Read More").wait_for()
+
+
+@pytest.mark.browser
+def test_volume_detail_read_more_stays_hidden_for_short_summary(page, browser_server):
+    seed = browser_server["seed"]
+    _set_volume_summary(browser_server, FITTING_SUMMARY)
+
+    page.goto(f"{browser_server['base_url']}/volumes/{seed['volume_id']}", wait_until="networkidle")
+
+    page.get_by_text(FITTING_SUMMARY).wait_for()
+    assert not page.get_by_role("button", name="Read More").is_visible()
 
 
 @pytest.mark.browser

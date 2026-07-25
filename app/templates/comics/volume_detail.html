@@ -187,14 +187,13 @@
                             <div x-data="{ expandedSummary: false }">
                                 <div
                                     class="text-sm leading-relaxed whitespace-pre-line text-base transition-all duration-300"
-                                    :class="expandedSummary ? '' : 'line-clamp-3'"
-                                >
-                                    <p x-text="volume?.first_issue_summary"></p>
-                                </div>
+                                    :class="!expandedSummary && (volume?.first_issue_summary || '').length > 280 ? 'summary-line-clamp' : ''"
+                                    x-text="volume?.first_issue_summary"
+                                ></div>
 
                                 <div class="mt-2">
                                     <button
-                                        x-show="volume?.first_issue_summary.length > 280"
+                                        x-show="(volume?.first_issue_summary || '').length > 280"
                                         @click="expandedSummary = !expandedSummary"
                                         class="text-blue-400 hover:text-blue-300 text-xs font-black uppercase transition-colors"
                                         x-text="expandedSummary ? 'Show Less ↑' : 'Read More ↓'"
