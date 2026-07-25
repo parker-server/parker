@@ -1,13 +1,15 @@
 from sqlalchemy.orm import Session
 import multiprocessing
 from app.models.setting import SystemSetting
-from typing import Any, List, Dict
+from typing import Any, List, Dict, Optional
 
 from app.api.deps import SessionDep
 from app.core.settings_loader import invalidate_settings_cache
 from app.core.login_backgrounds import SOLID_COLORS, STATIC_COVERS
 
 SERVER_DISPLAY_NAME_MAX_LENGTH = 32
+SCANNING_BATCH_WINDOW_MIN_SECONDS = 60
+SETTING_RUNTIME_METADATA_FIELDS = ("min_value",)
 
 
 class SettingValidationError(ValueError):
@@ -69,7 +71,10 @@ class SettingsService:
             "key": "scanning.batch_window", "value": "600",
             "category": "scanning", "data_type": "int",
             "label": "Scan Batch Window (Sec)",
-            "description": "Time to wait for file operations to settle."
+            "description": f"Time to wait for file operations to settle. Minimum {SCANNING_BATCH_WINDOW_MIN_SECONDS} seconds.",
+            "min_value": SCANNING_BATCH_WINDOW_MIN_SECONDS,
+            "validation_label": "Scan batch window",
+            "unit_label": "seconds",
         },
         {
             "key": "ui.login_background_style", "value": "random_covers",
@@ -277,6 +282,20 @@ class SettingsService:
 
     ]
 
+    @classmethod
+    def min_value_for(cls, key: str) -> Optional[int]:
+        definition = cls._definition_for(key)
+        if not definition or "min_value" not in definition:
+            return None
+        return int(definition["min_value"])
+
+    @classmethod
+    def _definition_for(cls, key: str) -> Optional[Dict[str, Any]]:
+        for definition in cls.DEFAULTS:
+            if definition["key"] == key:
+                return definition
+        return None
+
     def initialize_defaults(self):
         """
         Seeds default settings and updates metadata (labels, descriptions) for existing ones.
@@ -294,7 +313,7 @@ class SettingsService:
 
             if key not in existing_settings:
                 # Case 1: New Setting -> Create it fully (including default value)
-                obj = SystemSetting(**default)
+                obj = SystemSetting(**self._stored_setting_kwargs(default))
                 self.db.add(obj)
             else:
                 # Case 2: Existing Setting -> Sync metadata only
@@ -316,6 +335,12 @@ class SettingsService:
                 if "depends_on" in default:
                     setting.depends_on = default["depends_on"]
 
+                if "min_value" in default:
+                    try:
+                        setting.value = self._normalize_int_setting(setting, setting.value, default)
+                    except SettingValidationError:
+                        setting.value = str(default["min_value"])
+
                 # NOTE: If we strictly needed to force-update a value (e.g. security patch),
                 # we would need explicit logic here, but usually we leave .value alone.
 
@@ -327,6 +352,7 @@ class SettingsService:
         grouped = {}
         for s in settings:
             s.value = self._cast_value(s.value, s.data_type)  # Cast for API
+            self._attach_runtime_metadata(s)
             if s.category not in grouped:
                 grouped[s.category] = []
             grouped[s.category].append(s)
@@ -345,6 +371,8 @@ class SettingsService:
         if not setting:
             raise ValueError("Setting not found")
 
+        definition = self._definition_for(key) or {}
+
         # Convert to string for storage
         if setting.data_type == "bool":
             setting.value = str(value).lower()  # "true"/"false"
@@ -355,6 +383,9 @@ class SettingsService:
                 raise SettingValidationError(
                     f"Server display name must be {SERVER_DISPLAY_NAME_MAX_LENGTH} characters or fewer"
                 )
+
+            if setting.data_type == "int":
+                normalized_value = self._normalize_int_setting(setting, normalized_value, definition)
 
             setting.value = normalized_value
 
@@ -367,6 +398,7 @@ class SettingsService:
         # Cast the value back to Python type (bool/int) so the API returns
         # actual JSON booleans, not strings like "false".
         setting.value = self._cast_value(setting.value, setting.data_type)
+        self._attach_runtime_metadata(setting)
 
         return setting
 
@@ -378,3 +410,38 @@ class SettingsService:
         if data_type == "bool":
             return value.lower() in ('true', '1', 't', 'yes')
         return value
+
+    def _normalize_int_setting(
+        self,
+        setting: SystemSetting,
+        value: Any,
+        definition: Dict[str, Any],
+    ) -> str:
+        label = definition.get("validation_label", setting.label or setting.key)
+        try:
+            number = int(str(value).strip())
+        except (TypeError, ValueError):
+            raise SettingValidationError(f"{label} must be a whole number")
+
+        min_value = definition.get("min_value")
+        if min_value is not None and number < int(min_value):
+            unit_label = definition.get("unit_label")
+            minimum = f"{min_value} {unit_label}" if unit_label else str(min_value)
+            raise SettingValidationError(
+                f"{label} must be at least {minimum}"
+            )
+
+        return str(number)
+
+    def _attach_runtime_metadata(self, setting: SystemSetting):
+        definition = self._definition_for(setting.key) or {}
+        for field in SETTING_RUNTIME_METADATA_FIELDS:
+            setattr(setting, field, definition.get(field))
+
+    def _stored_setting_kwargs(self, definition: Dict[str, Any]) -> Dict[str, Any]:
+        column_names = set(SystemSetting.__table__.columns.keys())
+        return {
+            key: value
+            for key, value in definition.items()
+            if key in column_names
+        }

@@ -6,11 +6,13 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.core.path_utils import compute_relative_path, paths_overlap, resolve_absolute_path
 from app.models.comic import Comic
+from app.models.job import JobStatus, JobType, ScanJob
 from app.models.library import Library
 from app.models.library_root import LibraryRoot
 
 
 DEFAULT_SAMPLE_LIMIT = 10
+LIBRARY_SCAN_ACTIVE_MESSAGE = "Library cannot be relocated while a scan is queued or running"
 NO_RELOCATION_MATCHES_MESSAGE = (
     "No existing comics were found at the new path. Move the library files first, "
     "preserving the same folder structure, then preview again."
@@ -102,6 +104,8 @@ def preview_library_root_relocation(
     root_id: int | None = None,
     sample_limit: int = DEFAULT_SAMPLE_LIMIT,
 ) -> LibraryRootRelocationPreview:
+    _ensure_library_not_scanning(db, library)
+
     selected_root = _select_relocation_root(library, root_id)
     resolved_proposed_path = _resolve_proposed_path(proposed_path)
     resolved_proposed_path_str = _path_for_storage(resolved_proposed_path)
@@ -207,6 +211,8 @@ def confirm_library_root_relocation(
     if preview.confirm_blocked:
         raise LibraryRelocationError(NO_RELOCATION_MATCHES_MESSAGE)
 
+    _ensure_library_not_scanning(db, library)
+
     selected_root = _select_relocation_root(library, preview.root_id)
     selected_root.path = preview.proposed_path
 
@@ -221,6 +227,23 @@ def confirm_library_root_relocation(
         scan_recommended=True,
         scan_reasons=_scan_reasons(preview),
     )
+
+
+def _ensure_library_not_scanning(db: Session, library: Library) -> None:
+    if library.is_scanning:
+        raise LibraryRelocationError(LIBRARY_SCAN_ACTIVE_MESSAGE)
+
+    active_scan_job = (
+        db.query(ScanJob)
+        .filter(
+            ScanJob.library_id == library.id,
+            ScanJob.job_type.in_([JobType.SCAN, JobType.THUMBNAIL, JobType.CLEANUP]),
+            ScanJob.status.in_([JobStatus.PENDING, JobStatus.RUNNING]),
+        )
+        .first()
+    )
+    if active_scan_job is not None:
+        raise LibraryRelocationError(LIBRARY_SCAN_ACTIVE_MESSAGE)
 
 
 def _select_relocation_root(library: Library, root_id: int | None) -> LibraryRoot:

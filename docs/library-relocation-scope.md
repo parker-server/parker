@@ -19,6 +19,8 @@ The relocation preview/confirmation flow is done:
 - Admin `POST /api/libraries/{library_id}/relocation/confirm` recomputes the same impact summary, updates only the selected `LibraryRoot.path`, and returns `scan_recommended: true` without queuing a scan.
 - The admin library UI exposes a dedicated relocate action with preview counts, sample paths, confirmation, and an explicit post-confirm force-scan option.
 - Confirmation is blocked when a library already has comics and none of them match at the proposed new root. Admins must move the files first, preserving relative paths, then preview again.
+- Preview and confirmation are blocked while a scan pipeline job for the library is queued or running.
+- Watcher-triggered scan churn is limited by a 60-second minimum on the admin-configurable scan batch window.
 - Preview targets a `LibraryRoot`; `root_id` is optional only when the library has one active root, and becomes required when multiple active roots would make the target ambiguous.
 - Path overlap validation is root-level and rejects overlap with the current root or any other root, including roots in the same library.
 
@@ -121,17 +123,18 @@ The first migration should preserve current behavior.
 
 A safe relocation should look like this:
 
-1. Admin selects an existing library root.
-2. Admin chooses a new root path.
-3. Parker computes each existing comic's expected new path from `new_root / relative_path`.
-4. Parker previews:
+1. Admin waits for active or queued scan work to finish.
+2. Admin selects an existing library root.
+3. Admin chooses a new root path.
+4. Parker computes each existing comic's expected new path from `new_root / relative_path`.
+5. Parker previews:
    - matched files at the new root
    - missing files at the new root
    - new files found under the new root
    - conflicts or duplicate candidates
-5. Admin confirms, unless the library has existing comics and zero of them match at the new root.
-6. Parker updates the selected root path.
-7. Parker queues or recommends a scan.
+6. Admin confirms, unless the library has existing comics and zero of them match at the new root.
+7. Parker updates the selected root path.
+8. Parker queues or recommends a scan.
 
 Important rule:
 
@@ -224,10 +227,18 @@ Minimum coverage should include:
 
 ## Open Questions
 
-- Should relocation be allowed while a library scan is running?
+- Should relocation also block on any queued or running library job beyond the scan pipeline?
 - Should Parker eventually require an explicit override when some, but not all, files are missing from the new root?
 - Should relocation update `last_scanned` or require a follow-up scan?
 - Should unmatched files remain in the database as disabled/missing records, or continue using current cleanup behavior after confirmation?
+
+## Residual Concurrency Risk
+
+Relocation preview and confirmation now block while the target library has `is_scanning` set or has a pending/running scan-pipeline job (`scan`, `thumbnail`, or `cleanup`). Confirmation also re-checks immediately before updating `LibraryRoot.path`.
+
+The watcher batch window also has a 60-second floor to prevent admins from configuring near-immediate watcher scans that can create excessive scan churn around filesystem-heavy operations.
+
+There is still a narrow race where a new scan could be queued after confirmation's final guard check but before the root path update commits. Closing that completely would require a relocation lock that scan enqueue/start also honors. For now this is documented as an accepted residual risk because relocation is admin-only, deliberate, and the common active/queued scan cases are guarded.
 
 ## Effort Estimate
 

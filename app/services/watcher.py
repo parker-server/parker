@@ -8,6 +8,7 @@ from watchdog.events import FileSystemEventHandler
 from app.database import SessionLocal
 from app.models.library import Library
 from app.services.scan_manager import scan_manager
+from app.services.settings_service import SettingsService
 
 from app.core.settings_loader import get_cached_setting
 
@@ -141,7 +142,7 @@ class LibraryWatcher:
             # Fetch Dynamic Setting (Default 600s if missing)
             # We fetch it once per refresh so all new watches use the updated value.
             # (Existing watches won't update their timeout until they are restarted, which is fine)
-            batch_window = get_cached_setting("scanning.batch_window", 600)
+            batch_window = _get_batch_window_seconds()
 
             # 2. Add new watches
             for lib in libraries:
@@ -180,3 +181,14 @@ class LibraryWatcher:
 
 # Global Instance
 library_watcher = LibraryWatcher()
+
+
+def _get_batch_window_seconds() -> int:
+    raw_value = get_cached_setting("scanning.batch_window", 600)
+    try:
+        seconds = int(raw_value)
+    except (TypeError, ValueError):
+        return 600
+
+    min_value = SettingsService.min_value_for("scanning.batch_window") or 0
+    return max(seconds, min_value)
