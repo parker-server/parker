@@ -51,6 +51,13 @@ def _add_comic_to_pull_list(db_factory, pull_list_id, comic_id):
 
 
 @pytest.mark.browser
+def test_login_page_focuses_username_field_on_load(page, browser_server):
+    page.goto(f"{browser_server['base_url']}/login", wait_until="networkidle")
+
+    assert page.evaluate("() => document.activeElement?.id") == "username"
+
+
+@pytest.mark.browser
 def test_storage_helper_namespaces_and_migrates_legacy_keys_on_login_page(page, browser_server):
     page.goto(f"{browser_server['base_url']}/login", wait_until="networkidle")
 
