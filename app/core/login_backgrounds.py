@@ -141,6 +141,11 @@ STATIC_COVERS = {
     "new-mutants-98.webp": { "name": "New Mutants #98 (Deadpool)" },
     "sandman-1.webp": { "name": "Sandman #1" },
     "mister-x-1.webp": { "name": "Mister X #1" },
+    "wolverine-27.webp": { "name": "Wolverine #27" },
+    "batman-423.webp": { "name": "Batman #423" },
+    "daredevil-168.webp": { "name": "Daredevil #168 (Elektra)" },
+    "new-mutants-87.webp": { "name": "New Mutants #87 (Cable)" },
+    "new-teen-titans-1.webp": { "name": "New Teen Titans #1" },
 
 
     #"future.webp": { "name": "Future },
