@@ -492,6 +492,42 @@ def test_following_list_reports_new_arrivals_and_filters_hidden_volumes(auth_cli
     assert item["latest_arrival"]["comic_id"] == new_issue.id
     assert item["latest_arrival"]["title"] == "Visible Follow #11"
     assert item["latest_arrival"]["number"] == "11"
+    assert db.query(UserVolumeFollow).filter_by(
+        user_id=normal_user.id,
+        volume_id=hidden["volume"].id,
+    ).first() is not None
+
+
+def test_following_list_filters_age_restricted_volumes_without_pruning_follows(auth_client, db, normal_user):
+    visible = _create_volume_fixture(db, lib_name="following-safe-lib", series_name="Safe Follow")
+    restricted = _create_volume_fixture(db, lib_name="following-restricted-lib", series_name="Restricted Follow")
+
+    normal_user.accessible_libraries.extend([visible["library"], restricted["library"]])
+    normal_user.max_age_rating = "Teen"
+    normal_user.allow_unknown_age_ratings = False
+
+    for comic in visible["comics"]:
+        comic.age_rating = "Teen"
+    for comic in restricted["comics"]:
+        comic.age_rating = "Mature 17+"
+
+    baseline = datetime(2026, 7, 1, 12, 0, tzinfo=timezone.utc)
+    db.add_all([
+        UserVolumeFollow(user_id=normal_user.id, volume_id=visible["volume"].id, followed_at=baseline),
+        UserVolumeFollow(user_id=normal_user.id, volume_id=restricted["volume"].id, followed_at=baseline),
+    ])
+    db.commit()
+
+    response = auth_client.get("/api/volumes/following")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 1
+    assert payload[0]["volume_id"] == visible["volume"].id
+    assert db.query(UserVolumeFollow).filter_by(
+        user_id=normal_user.id,
+        volume_id=restricted["volume"].id,
+    ).first() is not None
 
 
 def test_volume_issues_returns_404_without_access(auth_client, db):

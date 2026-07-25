@@ -609,6 +609,56 @@ def test_home_following_arrivals_respects_baseline_formats_and_progress(auth_cli
     assert completed_plain.id not in [item["id"] for item in payload]
 
 
+def test_home_following_arrivals_hides_inaccessible_follows_without_pruning(auth_client, db, normal_user):
+    visible_library, _, visible_volume = _create_series_graph(
+        db,
+        lib_name="home-follow-visible-lib",
+        series_name="Home Follow Visible",
+    )
+    _, _, hidden_volume = _create_series_graph(
+        db,
+        lib_name="home-follow-hidden-lib",
+        series_name="Home Follow Hidden",
+    )
+
+    normal_user.accessible_libraries.append(visible_library)
+    baseline = datetime(2026, 7, 1, tzinfo=timezone.utc)
+
+    visible_new = _add_comic(
+        db,
+        visible_volume,
+        number="2",
+        title="Visible Follow New",
+        created_at=baseline + timedelta(hours=1),
+        format=None,
+    )
+    hidden_new = _add_comic(
+        db,
+        hidden_volume,
+        number="2",
+        title="Hidden Follow New",
+        created_at=baseline + timedelta(hours=2),
+        format=None,
+    )
+
+    db.add_all([
+        UserVolumeFollow(user_id=normal_user.id, volume_id=visible_volume.id, followed_at=baseline),
+        UserVolumeFollow(user_id=normal_user.id, volume_id=hidden_volume.id, followed_at=baseline),
+    ])
+    db.commit()
+
+    response = auth_client.get("/api/home/following-arrivals?limit=10")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [item["id"] for item in payload] == [visible_new.id]
+    assert hidden_new.id not in [item["id"] for item in payload]
+    assert db.query(UserVolumeFollow).filter_by(
+        user_id=normal_user.id,
+        volume_id=hidden_volume.id,
+    ).first() is not None
+
+
 def test_home_pinned_libraries_returns_recently_updated_series_by_pin_order(auth_client, db, normal_user):
     first_library = create_library_with_root(db, "Pinned First", "/tmp/pinned-first")
     second_library = create_library_with_root(db, "Pinned Second", "/tmp/pinned-second")
