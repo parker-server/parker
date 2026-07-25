@@ -141,7 +141,7 @@ def test_admin_libraries_page_exposes_folder_browser_route(admin_client):
     assert "Showing ${shown.toLocaleString()} of ${total.toLocaleString()}" in body
     assert "Scan Recommended" in body
     assert "startScan(scanLibrary, true)" in body
-    assert "The path is locked for existing libraries" in body
+    assert "Use Relocate to change this library's path safely." in body
 
 
 def test_search_widget_people_results_use_generic_creator_handoff(auth_client):

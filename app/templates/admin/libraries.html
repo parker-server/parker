@@ -85,7 +85,7 @@
             <div class="space-y-4">
                 <div>
                     <label class="block text-sm text-gray-400 mb-1">Name</label>
-                    <input type="text" x-model="form.name" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white focus:border-blue-500 outline-none" placeholder="e.g. DC Comics">
+                    <input type="text" x-model.trim="form.name" required class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white focus:border-blue-500 outline-none" placeholder="e.g. DC Comics">
                 </div>
                 <div>
                     <label class="block text-sm text-gray-400 mb-1">Folder Path</label>
@@ -206,7 +206,11 @@
 
                 <div class="flex justify-end gap-2 mt-6">
                     <button x-on:click="showModal = false" class="text-gray-400 hover:text-white px-4 py-2 transition-colors">Cancel</button>
-                    <button x-on:click="saveLibrary()" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded transition-colors shadow-lg">
+                    <button
+                        x-on:click="saveLibrary()"
+                        class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                        :disabled="!formNameValid()"
+                    >
                         <span x-text="isEditing ? 'Save Changes' : 'Create Library'"></span>
                     </button>
                 </div>
@@ -616,13 +620,22 @@ function libraryManager() {
             this.closeDirectoryBrowser();
         },
 
+        formNameValid() {
+            return !!String(this.form.name || '').trim();
+        },
+
         async saveLibrary() {
+            if (!this.formNameValid()) {
+                await window.parker.dialog.alert('Error', 'Library name is required');
+                return;
+            }
+
             const method = this.isEditing ? 'PATCH' : 'POST';
             const url = this.isEditing ? window.parker.route('libraries.update', { library_id: this.form.id })
                 : window.parker.route('libraries.create');
 
             const payload = {
-                name: this.form.name,
+                name: String(this.form.name || '').trim(),
                 path: this.form.path,
                 watch_mode: this.form.watch_mode,
                 parse_reading_lists: this.form.parse_reading_lists,

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Annotated, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, case
 from sqlalchemy.orm import selectinload
 from datetime import datetime, timezone
@@ -29,6 +29,28 @@ from app.api.deps import PaginationParams, PaginatedResponse, SessionDep, Curren
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+LIBRARY_NAME_REQUIRED_MESSAGE = "Library name is required"
+
+
+def _normalize_library_name(value: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError(LIBRARY_NAME_REQUIRED_MESSAGE)
+    return normalized
+
+
+def _find_library_by_name(
+        db,
+        name: str,
+        *,
+        exclude_library_id: Optional[int] = None,
+) -> Optional[Library]:
+    query = db.query(Library).filter(func.lower(Library.name) == name.lower())
+    if exclude_library_id is not None:
+        query = query.filter(Library.id != exclude_library_id)
+
+    return query.first()
 
 
 def _find_overlapping_library(
@@ -438,6 +460,12 @@ class LibraryCreate(BaseModel):
     parse_collections: bool = True
     parse_story_arcs: bool = True
 
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        return _normalize_library_name(value)
+
+
 @router.post("/", tags=["admin"], name="create")
 async def create_library(lib_in: LibraryCreate,
                          db: SessionDep,
@@ -445,7 +473,7 @@ async def create_library(lib_in: LibraryCreate,
     """Create a new library"""
 
     # Check for duplicates
-    existing = db.query(Library).filter(Library.name == lib_in.name).first()
+    existing = _find_library_by_name(db, lib_in.name)
     if existing:
         raise HTTPException(status_code=400, detail="Library name already exists")
 
@@ -491,6 +519,13 @@ class LibraryUpdate(BaseModel):
     parse_collections: Optional[bool] = None
     parse_story_arcs: Optional[bool] = None
 
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        return _normalize_library_name(value)
+
 
 class LibraryRelocationRequest(BaseModel):
     path: str
@@ -510,9 +545,9 @@ async def update_library(
     if not library:
         raise HTTPException(status_code=404, detail="Library not found")
 
-    if updates.name:
+    if updates.name is not None:
         # Check for duplicate names
-        existing = db.query(Library).filter(Library.name == updates.name).filter(Library.id != library_id).first()
+        existing = _find_library_by_name(db, updates.name, exclude_library_id=library_id)
         if existing:
             raise HTTPException(status_code=400, detail="Library name already exists")
         library.name = updates.name

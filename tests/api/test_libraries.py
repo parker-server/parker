@@ -5,6 +5,7 @@ import pytest
 
 from app.main import app
 from app.api.deps import get_current_user
+from app.api.libraries import LIBRARY_NAME_REQUIRED_MESSAGE
 from app.models.comic import Comic, Volume
 from app.models.collection import Collection, CollectionItem
 from app.models.job import JobStatus, JobType, ScanJob
@@ -103,6 +104,24 @@ def test_admin_can_create_library(admin_client, db):
     assert root.is_active is True
 
 
+def test_create_library_rejects_blank_name(admin_client, db):
+    response = admin_client.post("/api/libraries/", json={"name": "   ", "path": "/data/blank"})
+
+    assert response.status_code == 422
+    assert LIBRARY_NAME_REQUIRED_MESSAGE in response.text
+    assert db.query(LibraryRoot).filter_by(path="/data/blank").first() is None
+
+
+def test_create_library_trims_name_before_saving(admin_client, db):
+    response = admin_client.post("/api/libraries/", json={"name": "  Trimmed Library  ", "path": "/data/trimmed"})
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "Trimmed Library"
+
+    lib = db.query(Library).filter_by(name="Trimmed Library").first()
+    assert lib is not None
+
+
 def test_create_library_rolls_back_if_root_creation_fails(admin_client, db, monkeypatch):
     import app.api.libraries as libraries_module
 
@@ -121,6 +140,15 @@ def test_create_library_duplicate_name_returns_400(admin_client, db):
     create_library_with_root(db, "Duplicate", "/tmp/dup")
 
     response = admin_client.post("/api/libraries/", json={"name": "Duplicate", "path": "/tmp/other"})
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Library name already exists"}
+
+
+def test_create_library_rejects_case_insensitive_duplicate_name(admin_client, db):
+    create_library_with_root(db, "Marvel", "/tmp/marvel")
+
+    response = admin_client.post("/api/libraries/", json={"name": "marvel", "path": "/tmp/marvel-lower"})
 
     assert response.status_code == 400
     assert response.json() == {"detail": "Library name already exists"}
@@ -553,6 +581,54 @@ def test_update_library_rejects_duplicate_name(admin_client, db):
 
     assert response.status_code == 400
     assert response.json() == {"detail": "Library name already exists"}
+
+
+def test_update_library_rejects_case_insensitive_duplicate_name(admin_client, db):
+    original = create_library_with_root(db, "Original", "/tmp/original")
+    create_library_with_root(db, "Marvel", "/tmp/marvel")
+
+    response = admin_client.patch(f"/api/libraries/{original.id}", json={"name": "marvel"})
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Library name already exists"}
+
+
+def test_update_library_allows_case_change_for_same_library(admin_client, db):
+    original = create_library_with_root(db, "Marvel", "/tmp/marvel")
+
+    with patch("app.api.libraries.library_watcher.refresh_watches"):
+        response = admin_client.patch(f"/api/libraries/{original.id}", json={"name": "MARVEL"})
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "MARVEL"
+
+    db.refresh(original)
+    assert original.name == "MARVEL"
+
+
+def test_update_library_rejects_blank_name(admin_client, db):
+    original = create_library_with_root(db, "Original", "/tmp/original")
+
+    response = admin_client.patch(f"/api/libraries/{original.id}", json={"name": "   "})
+
+    assert response.status_code == 422
+    assert LIBRARY_NAME_REQUIRED_MESSAGE in response.text
+
+    db.refresh(original)
+    assert original.name == "Original"
+
+
+def test_update_library_trims_name_before_saving(admin_client, db):
+    original = create_library_with_root(db, "Original", "/tmp/original")
+
+    with patch("app.api.libraries.library_watcher.refresh_watches"):
+        response = admin_client.patch(f"/api/libraries/{original.id}", json={"name": "  Renamed  "})
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "Renamed"
+
+    db.refresh(original)
+    assert original.name == "Renamed"
 
 
 def test_update_library_rejects_changed_path(admin_client, db):
