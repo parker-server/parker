@@ -5,12 +5,12 @@
     title="Browse Publisher"
 >
     <template x-if="{{ publisher_ref }}">
-        <span class="publisher-logo-badge" aria-hidden="true">
+        <span class="metadata-logo-badge" aria-hidden="true">
             <img
                 :src="window.parker.url(`/static/img/publishers/${ {{ publisher_ref }} }.png`)"
                 @error="$el.parentElement.style.display = 'none'"
                 @load="$el.parentElement.style.display = 'inline-flex'"
-                class="publisher-logo-badge__image"
+                class="metadata-logo-badge__image"
                 alt=""
             >
         </span>
