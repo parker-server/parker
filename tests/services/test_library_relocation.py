@@ -1,9 +1,11 @@
 import pytest
 
 from app.models.comic import Comic, Volume
+from app.models.job import JobStatus, JobType, ScanJob
 from app.models.library_root import LibraryRoot
 from app.models.series import Series
 from app.services.library_relocation import (
+    LIBRARY_SCAN_ACTIVE_MESSAGE,
     LibraryRelocationError,
     NO_RELOCATION_MATCHES_MESSAGE,
     confirm_library_root_relocation,
@@ -71,6 +73,44 @@ def test_preview_library_root_relocation_counts_matched_missing_and_new_files(db
 
     db.refresh(root)
     assert root.path == str(current_root_path)
+
+
+def test_preview_library_root_relocation_rejects_scanning_library(db, tmp_path):
+    current_root_path = tmp_path / "scanning-current"
+    proposed_root_path = tmp_path / "scanning-proposed"
+    current_root_path.mkdir()
+    proposed_root_path.mkdir()
+
+    library = create_library_with_root(db, "Scanning Preview", str(current_root_path))
+    library.is_scanning = True
+    db.commit()
+
+    with pytest.raises(LibraryRelocationError, match="scan is queued or running"):
+        preview_library_root_relocation(
+            db,
+            library=library,
+            proposed_path=str(proposed_root_path),
+        )
+
+
+def test_preview_library_root_relocation_rejects_queued_scan_job(db, tmp_path):
+    current_root_path = tmp_path / "queued-current"
+    proposed_root_path = tmp_path / "queued-proposed"
+    current_root_path.mkdir()
+    proposed_root_path.mkdir()
+
+    library = create_library_with_root(db, "Queued Preview", str(current_root_path))
+    db.add(ScanJob(library_id=library.id, job_type=JobType.SCAN, status=JobStatus.PENDING))
+    db.commit()
+
+    with pytest.raises(LibraryRelocationError) as exc_info:
+        preview_library_root_relocation(
+            db,
+            library=library,
+            proposed_path=str(proposed_root_path),
+        )
+
+    assert str(exc_info.value) == LIBRARY_SCAN_ACTIVE_MESSAGE
 
 
 def test_preview_library_root_relocation_requires_root_id_for_multiple_active_roots(db, tmp_path):
@@ -223,6 +263,33 @@ def test_confirm_library_root_relocation_updates_root_and_preserves_comic_identi
     assert refreshed_missing.library_root_id == root_id
     assert refreshed_matched.relative_path == "Alpha/one.cbz"
     assert refreshed_missing.relative_path == "Beta/two.cbz"
+
+
+def test_confirm_library_root_relocation_rejects_running_cleanup_job(db, tmp_path):
+    current_root_path = tmp_path / "cleanup-current"
+    proposed_root_path = tmp_path / "cleanup-proposed"
+    current_root_path.mkdir()
+    proposed_root_path.mkdir()
+
+    library = create_library_with_root(db, "Cleanup Confirm", str(current_root_path))
+    root = library.active_root
+    volume = _create_volume(db, library)
+    create_comic(db, volume, root, "Alpha/one.cbz", filename="one.cbz")
+    db.add(ScanJob(library_id=library.id, job_type=JobType.CLEANUP, status=JobStatus.RUNNING))
+    db.commit()
+
+    _write_file(proposed_root_path / "Alpha" / "one.cbz")
+
+    with pytest.raises(LibraryRelocationError) as exc_info:
+        confirm_library_root_relocation(
+            db,
+            library=library,
+            proposed_path=str(proposed_root_path),
+        )
+
+    assert str(exc_info.value) == LIBRARY_SCAN_ACTIVE_MESSAGE
+    db.refresh(root)
+    assert root.path == str(current_root_path)
 
 
 def test_confirm_library_root_relocation_rejects_when_no_existing_files_match(db, tmp_path):

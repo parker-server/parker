@@ -7,13 +7,14 @@ from app.main import app
 from app.api.deps import get_current_user
 from app.models.comic import Comic, Volume
 from app.models.collection import Collection, CollectionItem
+from app.models.job import JobStatus, JobType, ScanJob
 from app.models.library import Library
 from app.models.library_root import LibraryRoot
 from app.models.interactions import UserLibraryPin
 from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.reading_progress import ReadingProgress
 from app.models.series import Series
-from app.services.library_relocation import NO_RELOCATION_MATCHES_MESSAGE
+from app.services.library_relocation import LIBRARY_SCAN_ACTIVE_MESSAGE, NO_RELOCATION_MATCHES_MESSAGE
 from tests.factories import create_comic, create_library_with_root
 
 
@@ -663,6 +664,44 @@ def test_preview_library_relocation_marks_all_missing_as_not_confirmable(admin_c
     assert root.path == str(current_root_path)
 
 
+def test_preview_library_relocation_rejects_scanning_library(admin_client, db, tmp_path):
+    current_root_path = tmp_path / "api-scanning-current"
+    proposed_root_path = tmp_path / "api-scanning-proposed"
+    current_root_path.mkdir()
+    proposed_root_path.mkdir()
+
+    library = create_library_with_root(db, "API Scanning Preview", str(current_root_path))
+    library.is_scanning = True
+    db.commit()
+
+    response = admin_client.post(
+        f"/api/libraries/{library.id}/relocation/preview",
+        json={"path": str(proposed_root_path)},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": LIBRARY_SCAN_ACTIVE_MESSAGE}
+
+
+def test_preview_library_relocation_rejects_queued_scan_job(admin_client, db, tmp_path):
+    current_root_path = tmp_path / "api-queued-current"
+    proposed_root_path = tmp_path / "api-queued-proposed"
+    current_root_path.mkdir()
+    proposed_root_path.mkdir()
+
+    library = create_library_with_root(db, "API Queued Preview", str(current_root_path))
+    db.add(ScanJob(library_id=library.id, job_type=JobType.SCAN, status=JobStatus.PENDING))
+    db.commit()
+
+    response = admin_client.post(
+        f"/api/libraries/{library.id}/relocation/preview",
+        json={"path": str(proposed_root_path)},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": LIBRARY_SCAN_ACTIVE_MESSAGE}
+
+
 def test_preview_library_relocation_requires_root_id_when_multiple_roots_are_active(admin_client, db, tmp_path):
     first_root_path = tmp_path / "api-first"
     second_root_path = tmp_path / "api-second"
@@ -789,6 +828,43 @@ def test_confirm_library_relocation_updates_root_without_queuing_scan(admin_clie
     assert root.path == proposed_root_path.resolve().as_posix()
     assert db.get(Comic, matched_id).relative_path == "Alpha/one.cbz"
     assert db.get(Comic, missing_id).relative_path == "Beta/two.cbz"
+
+
+def test_confirm_library_relocation_rejects_active_scan_job(admin_client, db, tmp_path):
+    current_root_path = tmp_path / "confirm-api-active-current"
+    proposed_root_path = tmp_path / "confirm-api-active-proposed"
+    current_root_path.mkdir()
+    proposed_root_path.mkdir()
+
+    library = create_library_with_root(db, "API Confirm Active Scan", str(current_root_path))
+    root = library.active_root
+    series = Series(name="API Confirm Active Scan Series", library=library)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
+    db.flush()
+
+    create_comic(db, volume, root, "Alpha/one.cbz", filename="one.cbz")
+    db.add(ScanJob(library_id=library.id, job_type=JobType.CLEANUP, status=JobStatus.RUNNING))
+    db.commit()
+
+    _write_comic_file(proposed_root_path / "Alpha" / "one.cbz")
+
+    with (
+        patch("app.api.libraries.library_watcher.refresh_watches") as mock_refresh_watches,
+        patch("app.api.libraries.scan_manager.add_task") as mock_add_scan_task,
+    ):
+        response = admin_client.post(
+            f"/api/libraries/{library.id}/relocation/confirm",
+            json={"path": str(proposed_root_path)},
+        )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": LIBRARY_SCAN_ACTIVE_MESSAGE}
+    mock_refresh_watches.assert_not_called()
+    mock_add_scan_task.assert_not_called()
+
+    db.refresh(root)
+    assert root.path == str(current_root_path)
 
 
 def test_confirm_library_relocation_rejects_all_missing(admin_client, db, tmp_path):

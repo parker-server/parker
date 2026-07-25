@@ -10,6 +10,7 @@ class SettingBase(BaseModel):
     description: Optional[str] = None
     options: Optional[List[Any]] = None
     depends_on: Optional[Any] = None
+    min_value: Optional[Any] = None
 
 class SettingUpdate(BaseModel):
     value: Any

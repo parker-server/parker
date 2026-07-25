@@ -1,7 +1,11 @@
 from unittest.mock import patch
 
 from app.models.setting import SystemSetting
-from app.services.settings_service import SettingsService, SERVER_DISPLAY_NAME_MAX_LENGTH
+from app.services.settings_service import (
+    SCANNING_BATCH_WINDOW_MIN_SECONDS,
+    SERVER_DISPLAY_NAME_MAX_LENGTH,
+    SettingsService,
+)
 from app.api.deps import get_current_user_optional
 from app.main import app
 
@@ -42,6 +46,21 @@ def test_get_settings_grouped_list_returns_service_payload(admin_client):
     payload = response.json()
     assert payload["ui"][0]["key"] == "ui.background_style"
     assert payload["ui"][0]["value"] == "solid"
+
+
+def test_get_settings_grouped_list_includes_min_value_metadata(admin_client, db):
+    SettingsService(db).initialize_defaults()
+
+    response = admin_client.get("/api/settings/")
+
+    assert response.status_code == 200
+    scanning_settings = response.json()["scanning"]
+    batch_window = next(
+        setting
+        for setting in scanning_settings
+        if setting["key"] == "scanning.batch_window"
+    )
+    assert batch_window["min_value"] == SCANNING_BATCH_WINDOW_MIN_SECONDS
 
 
 def test_get_protected_setting_requires_auth(client):
@@ -100,6 +119,18 @@ def test_update_setting_rejects_server_display_name_that_is_too_long(admin_clien
     assert f"{SERVER_DISPLAY_NAME_MAX_LENGTH} characters or fewer" in response.json()["detail"]
 
 
+def test_update_setting_rejects_scan_batch_window_below_minimum(admin_client, db):
+    SettingsService(db).initialize_defaults()
+
+    response = admin_client.patch(
+        "/api/settings/scanning.batch_window",
+        json={"value": SCANNING_BATCH_WINDOW_MIN_SECONDS - 1},
+    )
+
+    assert response.status_code == 422
+    assert f"at least {SCANNING_BATCH_WINDOW_MIN_SECONDS} seconds" in response.json()["detail"]
+
+
 def test_initialize_defaults_seeds_short_server_display_name(db):
     service = SettingsService(db)
 
@@ -120,6 +151,28 @@ def test_initialize_defaults_seeds_single_volume_redirect_setting(db):
     assert service.get("ui.auto_redirect_single_volume_series") is False
     assert setting.category == "appearance"
     assert setting.data_type == "bool"
+
+
+def test_initialize_defaults_clamps_existing_scan_batch_window_below_minimum(db):
+    db.add(
+        SystemSetting(
+            key="scanning.batch_window",
+            value=str(SCANNING_BATCH_WINDOW_MIN_SECONDS - 1),
+            category="scanning",
+            data_type="int",
+            label="Old Label",
+            description="Old description",
+        )
+    )
+    db.commit()
+
+    service = SettingsService(db)
+    service.initialize_defaults()
+
+    setting = db.query(SystemSetting).filter(SystemSetting.key == "scanning.batch_window").first()
+    assert setting is not None
+    assert service.get("scanning.batch_window") == SCANNING_BATCH_WINDOW_MIN_SECONDS
+    assert setting.label == "Scan Batch Window (Sec)"
 
 
 def test_initialize_defaults_preserves_existing_custom_server_display_name(db):

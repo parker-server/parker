@@ -6,6 +6,7 @@ import pytest
 from watchdog.observers import Observer
 
 import app.services.watcher as watcher
+from app.services.settings_service import SCANNING_BATCH_WINDOW_MIN_SECONDS
 
 
 class DummyTimer:
@@ -163,7 +164,7 @@ def test_refresh_watches_adds_and_removes_and_closes_session(monkeypatch):
     q.all.return_value = [lib]
     monkeypatch.setattr(watcher, "SessionLocal", lambda: db)
 
-    monkeypatch.setattr(watcher, "get_cached_setting", lambda key, default: "45")
+    monkeypatch.setattr(watcher, "get_cached_setting", lambda key, default: "75")
 
     new_handler = MagicMock()
     handler_ctor = MagicMock(return_value=new_handler)
@@ -173,12 +174,47 @@ def test_refresh_watches_adds_and_removes_and_closes_session(monkeypatch):
 
     inst.refresh_watches()
 
-    handler_ctor.assert_called_once_with(2, 45)
+    handler_ctor.assert_called_once_with(2, 75)
     inst.observer.schedule.assert_called_once_with(new_handler, "/library/two", recursive=True)
     old_handler.stop.assert_called_once()
     inst.observer.unschedule.assert_called_once_with(old_watch)
     assert 1 not in inst.watches
     assert 2 in inst.watches
+    db.close.assert_called_once()
+
+
+def test_refresh_watches_clamps_batch_window_to_minimum(monkeypatch):
+    inst = _watcher_instance()
+
+    lib = SimpleNamespace(id=14, active_root=SimpleNamespace(path="/library/minimum"))
+
+    db = MagicMock()
+    q = db.query.return_value
+    q.options.return_value = q
+    q.filter.return_value = q
+    q.all.return_value = [lib]
+    monkeypatch.setattr(watcher, "SessionLocal", lambda: db)
+
+    monkeypatch.setattr(
+        watcher,
+        "get_cached_setting",
+        lambda key, default: str(SCANNING_BATCH_WINDOW_MIN_SECONDS - 1),
+    )
+
+    new_handler = MagicMock()
+    handler_ctor = MagicMock(return_value=new_handler)
+    monkeypatch.setattr(watcher, "LibraryEventHandler", handler_ctor)
+
+    inst.observer.schedule.return_value = "new-watch"
+
+    inst.refresh_watches()
+
+    handler_ctor.assert_called_once_with(14, SCANNING_BATCH_WINDOW_MIN_SECONDS)
+    inst.observer.schedule.assert_called_once_with(
+        new_handler,
+        "/library/minimum",
+        recursive=True,
+    )
     db.close.assert_called_once()
 
 

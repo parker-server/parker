@@ -161,6 +161,7 @@
                                             x-model="setting.tempValue"
                                             x-on:focus="setting.tempValue = setting.value"
                                             :maxlength="inputMaxLength(setting) || null"
+                                            :min="inputMin(setting) || null"
                                             class="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none transition-colors focus:border-blue-500"
                                         >
                                         <button
@@ -301,6 +302,10 @@ function settingsManager() {
             return null;
         },
 
+        inputMin(setting) {
+            return setting.min_value !== undefined && setting.min_value !== null ? setting.min_value : null;
+        },
+
         /**
          * Transforms a flat list of options into a structure for rendering groups.
          * Returns: { orphans: [], groups: { "GroupName": [opt, opt] } }
@@ -339,7 +344,14 @@ function settingsManager() {
                     body: JSON.stringify({ value: newValue })
                 });
                 
-                if(!res.ok) throw new Error();
+                if(!res.ok) {
+                    let message = "Error saving setting";
+                    try {
+                        const payload = await res.json();
+                        if (payload.detail) message = payload.detail;
+                    } catch(parseError) {}
+                    throw new Error(message);
+                }
                 
                 // Refresh local state to match server format
                 const updated = await res.json();
@@ -349,7 +361,7 @@ function settingsManager() {
             } catch(e) {
                 setting.value = oldVal; // Revert
                 setting.tempValue = oldVal;
-                window.parker.showToast("Error saving setting", "error");
+                window.parker.showToast(e.message || "Error saving setting", "error");
             }
         },
         
