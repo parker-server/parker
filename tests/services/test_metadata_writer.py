@@ -949,3 +949,98 @@ def test_metadata_writer_imports_multiple_roots_from_item_context(monkeypatch, d
     assert summary["errors"] == 0
     assert first_comic is not None
     assert second_comic is not None
+
+
+def test_metadata_writer_uses_assigned_root_for_sidecar_boundary(monkeypatch, db, tmp_path):
+    outer_root_path = tmp_path / "writer-overlap-root"
+    nested_root_path = outer_root_path / "Shared"
+    nested_root_path.mkdir(parents=True, exist_ok=True)
+
+    library, outer_root = _seed_library_with_root(db, "writer-overlap-boundary", str(outer_root_path))
+    nested_root = LibraryRoot(library_id=library.id, path=str(nested_root_path), is_active=True)
+    db.add(nested_root)
+    db.commit()
+    library_id = library.id
+    outer_root_id = outer_root.id
+
+    class DummyTagService:
+        def __init__(self, _db):
+            pass
+
+        def get_or_create_characters(self, _vals):
+            return []
+
+        def get_or_create_teams(self, _vals):
+            return []
+
+        def get_or_create_locations(self, _vals):
+            return []
+
+        def get_or_create_genres(self, _vals):
+            return []
+
+    class DummyCreditService:
+        def __init__(self, _db):
+            pass
+
+        def add_credits_to_comic(self, comic, _metadata):
+            return comic
+
+    class DummyReadingListService:
+        def __init__(self, _db):
+            pass
+
+        def update_comic_reading_lists(self, comic, _alt_series, _alt_number):
+            return comic
+
+    class DummyCollectionService:
+        def __init__(self, _db):
+            pass
+
+        def update_comic_collections(self, comic, _series_group):
+            return comic
+
+    sidecar_lookup = MagicMock(side_effect=lambda path, entity: f"{entity}:{Path(path).name}")
+
+    monkeypatch.setattr(database_module.engine, "dispose", MagicMock())
+    monkeypatch.setattr(database_module, "SessionLocal", lambda: db)
+    monkeypatch.setattr("app.services.tags.TagService", DummyTagService)
+    monkeypatch.setattr("app.services.credits.CreditService", DummyCreditService)
+    monkeypatch.setattr("app.services.reading_list.ReadingListService", DummyReadingListService)
+    monkeypatch.setattr("app.services.collection.CollectionService", DummyCollectionService)
+    monkeypatch.setattr("app.services.sidecar_service.SidecarService.get_summary_from_disk", sidecar_lookup)
+
+    result_queue = _ReadQueue([
+        {
+            "file_path": str(nested_root_path / "issue.cbz"),
+            "mtime": 1.0,
+            "size": 100,
+            "metadata": _metadata(series="Overlap Series", volume="1", number="1"),
+            "error": False,
+            "library_root_id": outer_root_id,
+            "library_root_path": str(outer_root_path),
+        },
+        None,
+    ])
+    stats_queue = _WriteQueue()
+
+    metadata_writer_module.metadata_writer(result_queue, stats_queue, library_id=library_id, batch_size=50)
+
+    summary = stats_queue.items[-1]
+    created_volume = (
+        db.query(Volume)
+        .join(Series)
+        .filter(Series.library_id == library_id, Series.name == "Overlap Series")
+        .one()
+    )
+    volume_sidecar_paths = [
+        Path(call.args[0])
+        for call in sidecar_lookup.call_args_list
+        if call.args[1] == "volume"
+    ]
+
+    assert summary["summary"] is True
+    assert summary["imported"] == 1
+    assert summary["errors"] == 0
+    assert created_volume.summary_override == "volume:Shared"
+    assert volume_sidecar_paths == [nested_root_path]

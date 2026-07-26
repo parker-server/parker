@@ -77,7 +77,7 @@ def _apply_metadata_batch(
         except (TypeError, ValueError):
             return 1
 
-    def _accepts_file_path_arg(func) -> bool:
+    def _accepts_positional_args(func, count: int) -> bool:
         try:
             parameters = list(signature(func).parameters.values())
         except (TypeError, ValueError):
@@ -91,14 +91,20 @@ def _apply_metadata_batch(
             for parameter in parameters
             if parameter.kind in (Parameter.POSITIONAL_ONLY, Parameter.POSITIONAL_OR_KEYWORD)
         ]
-        return len(positional_parameters) >= 2
+        return len(positional_parameters) >= count
 
-    get_or_create_series_accepts_path = _accepts_file_path_arg(get_or_create_series)
+    get_or_create_series_accepts_root_path = _accepts_positional_args(get_or_create_series, 2)
+    get_or_create_volume_accepts_root_path = _accepts_positional_args(get_or_create_volume, 4)
 
-    def _get_or_create_series(name: str, file_path: str):
-        if get_or_create_series_accepts_path:
-            return get_or_create_series(name, file_path)
+    def _get_or_create_series(name: str, item_library_root_path: str):
+        if get_or_create_series_accepts_root_path:
+            return get_or_create_series(name, item_library_root_path)
         return get_or_create_series(name)
+
+    def _get_or_create_volume(series, volume_num: int, file_path: str, item_library_root_path: str):
+        if get_or_create_volume_accepts_root_path:
+            return get_or_create_volume(series, volume_num, file_path, item_library_root_path)
+        return get_or_create_volume(series, volume_num, file_path)
 
     imported = 0
     updated = 0
@@ -161,11 +167,11 @@ def _apply_metadata_batch(
         # Robust 'Unknown' handling for Series Name to prevent NOT NULL errors
         # If metadata['series'] is None or "", default to "Unknown Series"
         series_name = metadata.get("series") or "Unknown Series"
-        series = _get_or_create_series(series_name, file_path)
+        series = _get_or_create_series(series_name, item_library_root_path)
 
         # Get or create volume (Uses Cache)
         volume_num = _normalize_volume_number(metadata.get("volume"))
-        volume = get_or_create_volume(series, volume_num, file_path)
+        volume = _get_or_create_volume(series, volume_num, file_path, item_library_root_path)
         comic.volume_id = volume.id
 
         comic.library_root_id = item_library_root_id
@@ -291,7 +297,6 @@ def metadata_writer(
         from app.services.credits import CreditService
         from app.services.reading_list import ReadingListService
         from app.services.collection import CollectionService
-        from app.core.path_utils import compute_relative_path
         from app.services.sidecar_service import SidecarService
         from pathlib import Path
 
@@ -311,17 +316,10 @@ def metadata_writer(
             raise ValueError(f"Library '{library.name}' has no active root configured")
 
         root_paths_by_id = {root.id: root.path for root in library_roots}
-        root_paths_for_matching = sorted(root_paths_by_id.values(), key=len, reverse=True)
         default_root = library_roots[0] if len(library_roots) == 1 else None
         default_library_root_id = default_root.id if default_root else None
         default_library_root_path = default_root.path if default_root else None
-
-        def root_path_for_file(file_path_str: str) -> Path:
-            for root_path in root_paths_for_matching:
-                if compute_relative_path(root_path, file_path_str) is not None:
-                    return Path(root_path)
-
-            return Path(default_library_root_path or root_paths_for_matching[0])
+        fallback_library_root_path = default_library_root_path or library_roots[0].path
 
         # Preload existing comics
         existing_comics = (
@@ -344,7 +342,7 @@ def metadata_writer(
 
         batch = []
 
-        def get_or_create_series(name: str, file_path_str: str | None = None):
+        def get_or_create_series(name: str, item_library_root_path: str | None = None):
             """Get existing series or create new one with Caching"""
 
             # 1. Check local cache
@@ -360,7 +358,7 @@ def metadata_writer(
 
                 # Boundary Protection: Don't check root or "Unknown"
                 if name != "Unknown Series":
-                    lib_path = root_path_for_file(file_path_str) if file_path_str else Path(default_library_root_path or root_paths_for_matching[0])
+                    lib_path = Path(item_library_root_path or fallback_library_root_path)
                     series_path = lib_path / name
                     # Physical Guard: Ensure it's a valid subfolder, not the root
                     if series_path != lib_path and lib_path in series_path.parents:
@@ -373,7 +371,7 @@ def metadata_writer(
             series_cache[name] = series
             return series
 
-        def get_or_create_volume(series, num, file_path_str: str):
+        def get_or_create_volume(series, num, file_path_str: str, item_library_root_path: str | None = None):
             """Get existing volume or create new one with Caching"""
 
             # Composite key for cache
@@ -391,7 +389,7 @@ def metadata_writer(
                 # --- BOUNDARY PROTECTION ---
                 folder_path = Path(file_path_str).parent
 
-                lib_path = root_path_for_file(file_path_str)
+                lib_path = Path(item_library_root_path or fallback_library_root_path)
 
                 # Only look for a sidecar if the folder is NOT the containing library root.
                 if folder_path != lib_path:
