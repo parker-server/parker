@@ -28,3 +28,7 @@ class Library(Base):
     @property
     def active_root(self) -> Optional["LibraryRoot"]:
         return next((r for r in self.roots if r.is_active), None)
+
+    @property
+    def active_roots(self) -> list["LibraryRoot"]:
+        return [r for r in self.roots if r.is_active]

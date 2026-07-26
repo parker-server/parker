@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from app.models.comic import Comic, Volume
+from app.models.library_root import LibraryRoot
 from app.models.series import Series
 import app.database as database_module
 import app.services.workers.metadata_writer as metadata_writer_module
@@ -46,10 +47,15 @@ class _FakeQuery:
     def filter_by(self, **_kwargs):
         return self
 
+    def order_by(self, *_args, **_kwargs):
+        return self
+
     def first(self):
         return self.library_root_obj
 
     def all(self):
+        if getattr(self.model, "__name__", "") == "LibraryRoot":
+            return [self.library_root_obj]
         return []
 
 
@@ -279,6 +285,144 @@ def test_apply_metadata_batch_matches_existing_comic_by_identity_when_path_diffe
     db.refresh(existing_comic)
     assert existing_comic.title == "Renamed On Disk"
     assert db.query(Comic).count() == 1
+
+
+def test_apply_metadata_batch_uses_item_root_identity(db, tmp_path):
+    first_root_path = tmp_path / "first"
+    second_root_path = tmp_path / "second"
+    first_root_path.mkdir()
+    second_root_path.mkdir()
+
+    library, first_root = _seed_library_with_root(db, "writer-multi-root-lib", str(first_root_path))
+    second_root = LibraryRoot(library_id=library.id, path=str(second_root_path), is_active=True)
+    db.add(second_root)
+    db.flush()
+
+    def get_or_create_series(name: str, _file_path: str):
+        series = db.query(Series).filter_by(name=name, library_id=library.id).first()
+        if not series:
+            series = Series(name=name, library_id=library.id)
+            db.add(series)
+            db.flush()
+        return series
+
+    def get_or_create_volume(series, volume_num: int, _file_path: str):
+        volume = db.query(Volume).filter_by(series_id=series.id, volume_number=volume_num).first()
+        if not volume:
+            volume = Volume(series_id=series.id, volume_number=volume_num)
+            db.add(volume)
+            db.flush()
+        return volume
+
+    tag_service = SimpleNamespace(
+        get_or_create_characters=MagicMock(return_value=[]),
+        get_or_create_teams=MagicMock(return_value=[]),
+        get_or_create_locations=MagicMock(return_value=[]),
+        get_or_create_genres=MagicMock(return_value=[]),
+    )
+    credit_service = SimpleNamespace(add_credits_to_comic=MagicMock())
+    reading_list_service = SimpleNamespace(update_comic_reading_lists=MagicMock())
+    collection_service = SimpleNamespace(update_comic_collections=MagicMock())
+
+    batch = [
+        {
+            "file_path": str(first_root_path / "Shared" / "issue.cbz"),
+            "mtime": 1.0,
+            "size": 100,
+            "metadata": _metadata(series="Shared Series", volume="1", number="1"),
+            "error": False,
+            "library_root_id": first_root.id,
+            "library_root_path": str(first_root_path),
+        },
+        {
+            "file_path": str(second_root_path / "Shared" / "issue.cbz"),
+            "mtime": 2.0,
+            "size": 200,
+            "metadata": _metadata(series="Shared Series", volume="1", number="2"),
+            "error": False,
+            "library_root_id": second_root.id,
+            "library_root_path": str(second_root_path),
+        },
+    ]
+
+    stats = metadata_writer_module._apply_metadata_batch(
+        db,
+        batch,
+        {},
+        get_or_create_series,
+        get_or_create_volume,
+        tag_service,
+        credit_service,
+        reading_list_service,
+        collection_service,
+        root_paths_by_id={
+            first_root.id: str(first_root_path),
+            second_root.id: str(second_root_path),
+        },
+    )
+
+    first_comic = db.query(Comic).filter_by(
+        library_root_id=first_root.id,
+        relative_path="Shared/issue.cbz",
+    ).first()
+    second_comic = db.query(Comic).filter_by(
+        library_root_id=second_root.id,
+        relative_path="Shared/issue.cbz",
+    ).first()
+
+    assert stats["imported"] == 2
+    assert stats["updated"] == 0
+    assert stats["errors"] == 0
+    assert first_comic is not None
+    assert second_comic is not None
+    assert first_comic.number == "1"
+    assert second_comic.number == "2"
+
+
+def test_apply_metadata_batch_reports_unknown_item_root(db, tmp_path):
+    library, root = _seed_library_with_root(db, "writer-unknown-root-lib", str(tmp_path))
+
+    get_or_create_series = MagicMock()
+    get_or_create_volume = MagicMock()
+    tag_service = SimpleNamespace(
+        get_or_create_characters=MagicMock(return_value=[]),
+        get_or_create_teams=MagicMock(return_value=[]),
+        get_or_create_locations=MagicMock(return_value=[]),
+        get_or_create_genres=MagicMock(return_value=[]),
+    )
+    credit_service = SimpleNamespace(add_credits_to_comic=MagicMock())
+    reading_list_service = SimpleNamespace(update_comic_reading_lists=MagicMock())
+    collection_service = SimpleNamespace(update_comic_collections=MagicMock())
+
+    stats = metadata_writer_module._apply_metadata_batch(
+        db,
+        [{
+            "file_path": str(tmp_path / "issue.cbz"),
+            "mtime": 1.0,
+            "size": 100,
+            "metadata": _metadata(),
+            "error": False,
+            "library_root_id": root.id + 1000,
+        }],
+        {},
+        get_or_create_series,
+        get_or_create_volume,
+        tag_service,
+        credit_service,
+        reading_list_service,
+        collection_service,
+        root_paths_by_id={root.id: str(tmp_path)},
+    )
+
+    assert stats["imported"] == 0
+    assert stats["updated"] == 0
+    assert stats["errors"] == 1
+    assert stats["error_details"] == [{
+        "file_path": str(tmp_path / "issue.cbz"),
+        "message": "Metadata item references unknown library root",
+    }]
+    get_or_create_series.assert_not_called()
+    get_or_create_volume.assert_not_called()
 
 
 def test_apply_metadata_batch_disables_optional_metadata_flows(db):
@@ -699,3 +843,109 @@ def test_metadata_writer_populates_library_root_and_relative_path(monkeypatch, d
     assert new_comic is not None
     assert new_comic.library_root_id == root_id
     assert new_comic.relative_path == "Fresh/fresh.cbz"
+
+
+def test_metadata_writer_imports_multiple_roots_from_item_context(monkeypatch, db, tmp_path):
+    first_root_path = tmp_path / "writer-root-a"
+    second_root_path = tmp_path / "writer-root-b"
+    first_root_path.mkdir(parents=True, exist_ok=True)
+    second_root_path.mkdir(parents=True, exist_ok=True)
+
+    library, first_root = _seed_library_with_root(db, "writer-context-multi-root", str(first_root_path))
+    second_root = LibraryRoot(library_id=library.id, path=str(second_root_path), is_active=True)
+    db.add(second_root)
+    db.commit()
+    library_id = library.id
+    first_root_id = first_root.id
+    second_root_id = second_root.id
+
+    class DummyTagService:
+        def __init__(self, _db):
+            pass
+
+        def get_or_create_characters(self, _vals):
+            return []
+
+        def get_or_create_teams(self, _vals):
+            return []
+
+        def get_or_create_locations(self, _vals):
+            return []
+
+        def get_or_create_genres(self, _vals):
+            return []
+
+    class DummyCreditService:
+        def __init__(self, _db):
+            pass
+
+        def add_credits_to_comic(self, comic, _metadata):
+            return comic
+
+    class DummyReadingListService:
+        def __init__(self, _db):
+            pass
+
+        def update_comic_reading_lists(self, comic, _alt_series, _alt_number):
+            return comic
+
+    class DummyCollectionService:
+        def __init__(self, _db):
+            pass
+
+        def update_comic_collections(self, comic, _series_group):
+            return comic
+
+    monkeypatch.setattr(database_module.engine, "dispose", MagicMock())
+    monkeypatch.setattr(database_module, "SessionLocal", lambda: db)
+    monkeypatch.setattr("app.services.tags.TagService", DummyTagService)
+    monkeypatch.setattr("app.services.credits.CreditService", DummyCreditService)
+    monkeypatch.setattr("app.services.reading_list.ReadingListService", DummyReadingListService)
+    monkeypatch.setattr("app.services.collection.CollectionService", DummyCollectionService)
+    monkeypatch.setattr(
+        "app.services.sidecar_service.SidecarService.get_summary_from_disk",
+        MagicMock(return_value=None),
+    )
+
+    relative_path = "Shared/issue.cbz"
+    result_queue = _ReadQueue([
+        {
+            "file_path": str(first_root_path / relative_path),
+            "mtime": 1.0,
+            "size": 100,
+            "metadata": _metadata(series="Shared Series", volume="1", number="1"),
+            "error": False,
+            "library_root_id": first_root_id,
+            "library_root_path": str(first_root_path),
+        },
+        {
+            "file_path": str(second_root_path / relative_path),
+            "mtime": 2.0,
+            "size": 200,
+            "metadata": _metadata(series="Shared Series", volume="1", number="2"),
+            "error": False,
+            "library_root_id": second_root_id,
+            "library_root_path": str(second_root_path),
+        },
+        None,
+    ])
+    stats_queue = _WriteQueue()
+
+    metadata_writer_module.metadata_writer(result_queue, stats_queue, library_id=library_id, batch_size=50)
+
+    summary = stats_queue.items[-1]
+    first_comic = db.query(Comic).filter_by(
+        library_root_id=first_root_id,
+        relative_path=relative_path,
+    ).first()
+    second_comic = db.query(Comic).filter_by(
+        library_root_id=second_root_id,
+        relative_path=relative_path,
+    ).first()
+
+    assert summary["summary"] is True
+    assert summary["imported"] == 2
+    assert summary["updated"] == 0
+    assert summary["errors"] == 0
+    assert first_comic is not None
+    assert second_comic is not None

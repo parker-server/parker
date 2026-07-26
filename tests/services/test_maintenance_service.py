@@ -1,6 +1,8 @@
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 from app.models.activity_log import ActivityLog
 from app.models.collection import Collection, CollectionItem
 from app.models.comic import Comic, Volume
@@ -20,7 +22,9 @@ def _create_library(db, name: str, tmp_path: Path) -> Library:
     lib = Library(name=name)
     db.add(lib)
     db.flush()
-    root = LibraryRoot(library_id=lib.id, path=str(tmp_path / name), is_active=True)
+    root_path = tmp_path / name
+    root_path.mkdir(parents=True, exist_ok=True)
+    root = LibraryRoot(library_id=lib.id, path=str(root_path), is_active=True)
     db.add(root)
     db.flush()
     return lib
@@ -267,6 +271,39 @@ def test_cleanup_missing_files_reconstructs_path_from_root_instead_of_stale_file
     assert deleted_ids == [truly_missing.id]
     assert db.get(Comic, healthy.id) is not None
     assert db.get(Comic, truly_missing.id) is None
+
+
+def test_cleanup_missing_files_scoped_aborts_when_active_root_missing(db, tmp_path, monkeypatch):
+    lib = _create_library(db, "maint-missing-active-root", tmp_path)
+    missing = _create_comic(db, lib, "missing", "stale-location/gone.cbz")
+    db.add(LibraryRoot(library_id=lib.id, path=str(tmp_path / "offline-root"), is_active=True))
+    db.commit()
+
+    service = MaintenanceService(db)
+    original_commit = db.commit
+    commit_spy = MagicMock(side_effect=original_commit)
+    monkeypatch.setattr(db, "commit", commit_spy)
+
+    with pytest.raises(FileNotFoundError, match="Janitor cleanup aborted"):
+        service.cleanup_missing_files(library_id=lib.id)
+
+    assert db.get(Comic, missing.id) is not None
+    commit_spy.assert_not_called()
+
+
+def test_cleanup_missing_files_global_aborts_when_any_active_root_missing(db, tmp_path):
+    healthy_lib = _create_library(db, "maint-global-healthy-root", tmp_path)
+    offline_lib = _create_library(db, "maint-global-offline-root", tmp_path)
+    missing = _create_comic(db, healthy_lib, "missing", "stale-location/gone.cbz")
+    offline_lib.active_root.path = str(tmp_path / "offline-global-root")
+    db.commit()
+
+    service = MaintenanceService(db)
+
+    with pytest.raises(FileNotFoundError, match="Janitor cleanup aborted"):
+        service.cleanup_missing_files()
+
+    assert db.get(Comic, missing.id) is not None
 
 
 def test_cleanup_missing_files_deletes_user_ratings_and_activity_log(db, tmp_path):

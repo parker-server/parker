@@ -1,6 +1,6 @@
 import time
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 import pytest
 from watchdog.observers import Observer
@@ -153,9 +153,9 @@ def test_refresh_watches_adds_and_removes_and_closes_session(monkeypatch):
 
     old_watch = object()
     old_handler = MagicMock()
-    inst.watches = {1: (old_watch, old_handler)}
+    inst.watches = {(1, 10): (old_watch, old_handler)}
 
-    lib = SimpleNamespace(id=2, active_root=SimpleNamespace(path="/library/two"))
+    lib = SimpleNamespace(id=2, active_roots=[SimpleNamespace(id=20, path="/library/two")])
 
     db = MagicMock()
     q = db.query.return_value
@@ -178,15 +178,15 @@ def test_refresh_watches_adds_and_removes_and_closes_session(monkeypatch):
     inst.observer.schedule.assert_called_once_with(new_handler, "/library/two", recursive=True)
     old_handler.stop.assert_called_once()
     inst.observer.unschedule.assert_called_once_with(old_watch)
-    assert 1 not in inst.watches
-    assert 2 in inst.watches
+    assert (1, 10) not in inst.watches
+    assert (2, 20) in inst.watches
     db.close.assert_called_once()
 
 
 def test_refresh_watches_clamps_batch_window_to_minimum(monkeypatch):
     inst = _watcher_instance()
 
-    lib = SimpleNamespace(id=14, active_root=SimpleNamespace(path="/library/minimum"))
+    lib = SimpleNamespace(id=14, active_roots=[SimpleNamespace(id=140, path="/library/minimum")])
 
     db = MagicMock()
     q = db.query.return_value
@@ -218,17 +218,52 @@ def test_refresh_watches_clamps_batch_window_to_minimum(monkeypatch):
     db.close.assert_called_once()
 
 
-def test_refresh_watches_keeps_existing_watch_without_reschedule(monkeypatch):
+def test_refresh_watches_schedules_all_active_roots_for_library(monkeypatch):
     inst = _watcher_instance()
-    keep_watch = object()
-    keep_handler = MagicMock()
-    inst.watches = {9: (keep_watch, keep_handler)}
+
+    lib = SimpleNamespace(
+        id=21,
+        active_roots=[
+            SimpleNamespace(id=210, path="/library/root-a"),
+            SimpleNamespace(id=211, path="/library/root-b"),
+        ],
+    )
 
     db = MagicMock()
     q = db.query.return_value
     q.options.return_value = q
     q.filter.return_value = q
-    q.all.return_value = [SimpleNamespace(id=9, active_root=SimpleNamespace(path="/library/nine"))]
+    q.all.return_value = [lib]
+    monkeypatch.setattr(watcher, "SessionLocal", lambda: db)
+    monkeypatch.setattr(watcher, "get_cached_setting", lambda key, default: 60)
+
+    handlers = [MagicMock(), MagicMock()]
+    handler_ctor = MagicMock(side_effect=handlers)
+    monkeypatch.setattr(watcher, "LibraryEventHandler", handler_ctor)
+    inst.observer.schedule.side_effect = ["watch-a", "watch-b"]
+
+    inst.refresh_watches()
+
+    assert handler_ctor.call_args_list == [call(21, 60), call(21, 60)]
+    assert inst.observer.schedule.call_args_list == [
+        call(handlers[0], "/library/root-a", recursive=True),
+        call(handlers[1], "/library/root-b", recursive=True),
+    ]
+    assert set(inst.watches.keys()) == {(21, 210), (21, 211)}
+    db.close.assert_called_once()
+
+
+def test_refresh_watches_keeps_existing_watch_without_reschedule(monkeypatch):
+    inst = _watcher_instance()
+    keep_watch = object()
+    keep_handler = MagicMock()
+    inst.watches = {(9, 90): (keep_watch, keep_handler)}
+
+    db = MagicMock()
+    q = db.query.return_value
+    q.options.return_value = q
+    q.filter.return_value = q
+    q.all.return_value = [SimpleNamespace(id=9, active_roots=[SimpleNamespace(id=90, path="/library/nine")])]
 
     monkeypatch.setattr(watcher, "SessionLocal", lambda: db)
     monkeypatch.setattr(watcher, "get_cached_setting", lambda key, default: 600)
@@ -238,7 +273,7 @@ def test_refresh_watches_keeps_existing_watch_without_reschedule(monkeypatch):
     inst.observer.schedule.assert_not_called()
     inst.observer.unschedule.assert_not_called()
     keep_handler.stop.assert_not_called()
-    assert 9 in inst.watches
+    assert (9, 90) in inst.watches
 
 
 def test_refresh_watches_logs_schedule_errors(monkeypatch):
@@ -248,7 +283,7 @@ def test_refresh_watches_logs_schedule_errors(monkeypatch):
     q = db.query.return_value
     q.options.return_value = q
     q.filter.return_value = q
-    q.all.return_value = [SimpleNamespace(id=12, active_root=SimpleNamespace(path="/library/bad"))]
+    q.all.return_value = [SimpleNamespace(id=12, active_roots=[SimpleNamespace(id=120, path="/library/bad")])]
 
     monkeypatch.setattr(watcher, "SessionLocal", lambda: db)
     monkeypatch.setattr(watcher, "get_cached_setting", lambda key, default: 10)
