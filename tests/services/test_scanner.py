@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.models.comic import Comic, Volume
+from app.models.library_root import LibraryRoot
 from app.models.series import Series
 from app.services.scanner import LibraryScanner
 import app.services.scanner as scanner_module
@@ -27,6 +28,92 @@ def test_scan_parallel_raises_when_library_path_missing(db, tmp_path):
 
     with pytest.raises(FileNotFoundError):
         scanner.scan_parallel()
+
+
+def test_scan_parallel_raises_before_cleanup_when_any_active_root_missing(db, tmp_path):
+    first_root_path = tmp_path / "first"
+    missing_root_path = tmp_path / "missing"
+    first_root_path.mkdir()
+
+    scanner, library = _build_scanner(db, first_root_path, name="scanner-missing-root-lib")
+    db.add(LibraryRoot(library_id=library.id, path=str(missing_root_path), is_active=True))
+    db.commit()
+
+    scanner._cleanup_missing_files = MagicMock()
+
+    with pytest.raises(FileNotFoundError, match="Library path does not exist"):
+        scanner.scan_parallel()
+
+    scanner._cleanup_missing_files.assert_not_called()
+
+
+def test_scan_parallel_cleans_up_missing_files_across_all_active_roots(db, tmp_path):
+    first_root_path = tmp_path / "first"
+    second_root_path = tmp_path / "second"
+    first_root_path.mkdir()
+    second_root_path.mkdir()
+
+    scanner, library = _build_scanner(db, first_root_path, name="scanner-multi-root-lib")
+    first_root = library.active_root
+    second_root = LibraryRoot(library_id=library.id, path=str(second_root_path), is_active=True)
+    db.add(second_root)
+    db.flush()
+
+    series = Series(name="Multi Root Cleanup", library_id=library.id)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
+    db.flush()
+
+    first_file = first_root_path / "first.cbz"
+    second_file = second_root_path / "second.cbz"
+    first_file.write_bytes(b"first")
+    second_file.write_bytes(b"second")
+
+    future_mtime = max(first_file.stat().st_mtime, second_file.stat().st_mtime) + 60
+    first_comic = create_comic(
+        db,
+        volume,
+        first_root,
+        "first.cbz",
+        number="1",
+        filename="first.cbz",
+        file_modified_at=future_mtime,
+        page_count=10,
+    )
+    second_comic = create_comic(
+        db,
+        volume,
+        second_root,
+        "second.cbz",
+        number="2",
+        filename="second.cbz",
+        file_modified_at=future_mtime,
+        page_count=10,
+    )
+    missing_comic = create_comic(
+        db,
+        volume,
+        second_root,
+        "missing.cbz",
+        number="3",
+        filename="missing.cbz",
+        file_modified_at=future_mtime,
+        page_count=10,
+    )
+    db.commit()
+
+    result = scanner.scan_parallel(force=False, worker_limit=1)
+
+    assert result["skipped"] == 2
+    assert result["deleted"] == 1
+    assert db.get(Comic, first_comic.id) is not None
+    assert db.get(Comic, second_comic.id) is not None
+    assert db.get(Comic, missing_comic.id) is None
+
+    db.refresh(first_root)
+    db.refresh(second_root)
+    assert first_root.last_scanned_at is not None
+    assert second_root.last_scanned_at is not None
 
 
 def test_cleanup_missing_files_deletes_and_commits(db, tmp_path):

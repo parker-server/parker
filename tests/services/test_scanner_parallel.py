@@ -13,6 +13,7 @@ from app.models import (
     Collection,
     CollectionItem,
     Comic,
+    LibraryRoot,
     ReadingList,
     ReadingListItem,
     Series,
@@ -23,9 +24,10 @@ from tests.factories import create_comic, create_library_with_root
 
 
 class DummyQuery:
-    def __init__(self, existing, library_root):
+    def __init__(self, model, existing, library_roots):
+        self._model = model
         self._existing = existing
-        self._library_root = library_root
+        self._library_roots = library_roots
 
     def join(self, *_args, **_kwargs):
         return self
@@ -33,21 +35,31 @@ class DummyQuery:
     def filter(self, *_args, **_kwargs):
         return self
 
+    def order_by(self, *_args, **_kwargs):
+        return self
+
     def all(self):
+        if self._model is LibraryRoot:
+            return list(self._library_roots)
         return list(self._existing)
 
     def first(self):
-        return self._library_root
+        return self._library_roots[0] if self._library_roots else None
 
 
 class DummyDB:
     def __init__(self, existing, library_root=None):
         self._existing = existing
-        self._library_root = library_root
+        if library_root is None:
+            self._library_roots = []
+        elif isinstance(library_root, list):
+            self._library_roots = library_root
+        else:
+            self._library_roots = [library_root]
         self.commit_calls = 0
 
-    def query(self, *_args, **_kwargs):
-        return DummyQuery(self._existing, self._library_root)
+    def query(self, model, *_args, **_kwargs):
+        return DummyQuery(model, self._existing, self._library_roots)
 
     def commit(self):
         self.commit_calls += 1
@@ -121,13 +133,25 @@ class TimeoutQueue(FakeQueue):
         raise Empty()
 
 
-def fake_worker(file_path):
+def fake_worker(file_input):
+    if isinstance(file_input, dict):
+        file_path = file_input["file_path"]
+        context = {
+            key: file_input[key]
+            for key in ("library_root_id", "library_root_path")
+            if key in file_input
+        }
+    else:
+        file_path = file_input
+        context = {}
+
     return {
         "file_path": file_path,
         "mtime": 1.0,
         "size": 123,
         "metadata": {"page_count": 1, "raw_metadata": {}},
         "error": False,
+        **context,
     }
 
 
@@ -180,7 +204,7 @@ def test_scan_parallel_orchestrates_pool_writer_and_summary(monkeypatch, tmp_pat
     library_path = tmp_path / "library"
     unchanged = _create_file(library_path / "unchanged.cbz")
     changed = _create_file(library_path / "changed.cbz")
-    _create_file(library_path / "new.cbz")
+    new_file = _create_file(library_path / "new.cbz")
 
     library_root = SimpleNamespace(id=1, path=str(library_path))
     existing = [
@@ -235,6 +259,9 @@ def test_scan_parallel_orchestrates_pool_writer_and_summary(monkeypatch, tmp_pat
 
     queued_payloads = [item for item in result_queue.put_items if item is not None]
     assert len(queued_payloads) == 2
+    assert {payload["file_path"] for payload in queued_payloads} == {str(changed), str(new_file)}
+    assert {payload["library_root_id"] for payload in queued_payloads} == {1}
+    assert {payload["library_root_path"] for payload in queued_payloads} == {str(library_path)}
     assert result_queue.put_items[-1] is None
 
 

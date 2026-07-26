@@ -1,334 +1,198 @@
 # Multi-Root Library Scope
 
-Status: Draft
+Status: Foundation in place, product surface pending
 
-This note captures a possible future enhancement where one Parker library can aggregate comics from multiple filesystem roots instead of a single configured folder.
+This note tracks Parker's path from one physical folder per library to one logical library with multiple configured filesystem roots.
 
 Related design note: `docs/library-relocation-scope.md`.
 
-Recommended sequencing: build graceful library-root relocation before full multi-root support. Relocation introduces the root identity and relative-path model that multi-root support should reuse.
-
-The goal is to document the likely impact area before real user demand exists, so the work can be evaluated intentionally later instead of being estimated from memory.
-
 ## Why This Exists
 
-Some users may eventually want one logical library to span more than one folder location.
-
-Examples:
+Some users may want one logical library to span more than one storage location:
 
 - comics split across multiple drives
 - NAS and local-storage hybrids
-- "active" and "archive" roots that should still appear as one library
+- active and archive folders that should still appear as one library
 - staged imports that should belong to an existing library instead of a second library tile
 
-This is not currently a known blocker for Parker adoption.
-It is mainly a parity observation against tools like Kavita and a reminder that Parker was originally designed around one library path per library.
+The useful framing is:
+
+- one logical library
+- many explicit storage roots
+
+Parker should not auto-discover arbitrary storage locations. Admins should intentionally attach each root to a library.
 
 ## Current System Shape
 
-Today Parker models one library as one root path.
+The relocation groundwork has already moved Parker away from `Library.path` as the physical identity:
 
-That assumption appears directly in several places:
+- `Library` is the logical library.
+- `LibraryRoot` represents a physical filesystem root.
+- `Library.roots` stores all configured roots.
+- `Library.active_root` remains a compatibility helper for single-root surfaces.
+- `Library.active_roots` returns every active root for services that can process multiple roots.
+- `Series.library_id` remains attached to the logical library.
+- `Comic.library_root_id` identifies the root containing the archive.
+- `Comic.relative_path` identifies the archive under that root.
 
-- `Library.path` is a single string field in `app/models/library.py`
-- library create/update validation checks one path and rejects overlapping library paths in `app/api/libraries.py`
-- library scans walk exactly one root with `Path(self.library.path).rglob("*")` in `app/services/scanner.py`
-- watch mode schedules one watchdog subscription per library in `app/services/watcher.py`
-- metadata-sidecar reconciliation uses the library path as a boundary in `app/services/scanner.py` and `app/services/workers/metadata_writer.py`
-- startup diagnostics sample one path per library in `app/services/startup_diagnostics.py`
+Physical file identity is:
 
-This means multi-root support is not just an admin-form change.
-It would change one of Parker's basic storage assumptions.
+- `(library_root_id, relative_path)`
 
-## Non-Goals
+That identity must remain the backbone for scanner cleanup, metadata writes, and future root lifecycle operations.
 
-Out of scope for an initial multi-root implementation:
+## Foundation Behavior
 
-- support for loose image reading outside Parker's existing archive model
-- merging separate libraries at the metadata/entity level
-- deduplicating identical comics by page/hash/content fingerprint
-- automatic unioning of arbitrary folders without admin configuration
-- changing user permissions from library-based access to root-based access
+The foundation layer should behave as if multiple active roots can already exist, even before the admin UI exposes full root management.
 
-## Product Framing
+Scanner behavior:
 
-If Parker adds this feature, the better framing is likely:
-
-- one logical library
-- many storage roots
-
-Not:
-
-- one library automatically discovers storage everywhere
-
-The admin should still explicitly decide which roots belong to a library.
-
-## Suggested Data Model
-
-Recommended direction: add a dedicated child table rather than overloading `Library.path`.
-
-This should align with the relocation design:
-
-- `Library` stays the logical library
-- `LibraryRoot` represents a physical filesystem root
-- `Series.library_id` remains attached to the logical library
-- `Comic.library_root_id` identifies the root containing the physical archive
-- `Comic.relative_path` identifies the archive under that root
-
-In other words, the hierarchy remains:
-
-- `Library -> Series -> Volume -> Comic`
-
-Storage roots sit beside that hierarchy:
-
-- `Library -> LibraryRoot`
-- `Comic -> LibraryRoot`
-
-Example shape:
-
-- keep `libraries` as the logical library record
-- add `library_roots`
-- each root belongs to one library
-- each root stores a normalized path string plus any root-specific metadata we eventually need
-
-Possible columns:
-
-- `id`
-- `library_id`
-- `path`
-- `created_at`
-- `updated_at`
-
-Optional future columns if needed:
-
-- `enabled`
-- `last_scan_error`
-- `last_seen_at`
-
-Why this is preferable:
-
-- preserves the existing meaning of `Library`
-- allows one-to-many roots cleanly
-- gives watcher/scanner code a first-class structure to target
-- avoids stuffing serialized path arrays into one column
-
-## Migration Strategy
-
-The least risky migration would be shared with the library relocation work:
-
-1. create `library_roots`
-2. backfill one root row from each existing `libraries.path`
-3. add `Comic.library_root_id` and `Comic.relative_path`
-4. backfill each comic's root and relative path
-5. keep `libraries.path` and `comics.file_path` temporarily for compatibility during the transition
-6. update application code to read roots from the new table
-7. remove or deprecate direct `Library.path` usage after the codebase is fully migrated
-
-The exact length of the compatibility period is a product decision.
-If the code churn is manageable, it may be cleaner to migrate quickly rather than support dual behavior for too long.
-
-## Scanner Impact
-
-The scanner is one of the main change points.
-
-Today `LibraryScanner.scan_parallel()` in `app/services/scanner.py`:
-
-- resolves one `library_path`
-- walks one root recursively
-- builds one set of `scanned_paths_on_disk`
-- treats any missing previously known file as deleted
-
-With multi-root support, Parker would likely need to:
-
-- resolve all roots for the library
-- scan each root recursively
-- compute `relative_path` under the current root for each archive
+- load all active roots for the library
+- verify every active root path exists before discovery or cleanup
+- walk each active root independently
+- compute `relative_path` under the root being scanned
 - match existing comics by `(library_root_id, relative_path)`
-- preserve one cleanup pass that understands root identity
+- pass root context into metadata worker jobs
+- cleanup only after all active roots were reachable
+- mark each active root with the completed scan timestamp
 
-Important nuance:
+Metadata behavior:
 
-- cleanup should treat a file as missing only within the root that owns that comic
-- moving a file between roots is a different operation from a normal scan and should require a deliberate relocation or reconciliation flow
+- preserve scanner-provided root context through worker results
+- write comics using the item root identity
+- use the matching physical root as the sidecar boundary
+- allow the same `relative_path` to exist under different roots
 
-## Watcher Impact
+Watcher behavior:
 
-Watch mode would also need a structural change.
+- schedule one watchdog subscription per active root
+- key watch bookkeeping by `(library_id, root_id)`
+- keep queueing scan jobs by `library_id`
+- let existing scan coalescing handle events from multiple roots
 
-Today `LibraryWatcher` in `app/services/watcher.py` effectively keeps:
+Diagnostics behavior:
 
-- one library id
-- one scheduled watch
-- one event handler
+- report root counts
+- include per-root path, active state, and existence checks
+- retain the legacy primary `path`/`path_exists` fields while single-root admin surfaces still depend on them
 
-Multi-root support would likely require:
+Janitor cleanup behavior:
 
-- one library id
-- many scheduled watch objects
-- possibly one handler per root, all queueing the same library scan
+- resolve physical comic paths from `library_root_id` plus `relative_path`
+- verify active roots for the cleanup scope before deleting missing-file records
+- abort missing-file cleanup if any active root in that scope is unreachable
 
-Recommended behavior:
+## Safety Rules
 
-- keep queueing scans by `library_id`, not by root
-- let multiple root events coalesce into the same existing batch-window behavior
+An active root that is offline is different from a deleted comic.
 
-The bookkeeping changes are not conceptually hard, but they are easy to get subtly wrong.
-
-## Sidecar Boundary Impact
-
-Parker currently uses the library root as a boundary when reconciling series and volume sidecars.
-
-Relevant code lives in:
-
-- `app/services/scanner.py`
-- `app/services/workers/metadata_writer.py`
-
-This means multi-root support should define:
-
-- sidecars only apply within the root that contains the file being processed
-- parent walking stops at that specific root boundary, not a generic library-wide virtual boundary
-
-That is probably the cleanest rule and stays close to current behavior.
-
-## Admin API And UI Impact
-
-The admin library flows in `app/api/libraries.py` currently assume:
-
-- one path on create
-- one path on edit
-- overlap validation against other libraries using one candidate path
-
-Multi-root support would need:
-
-- create/edit APIs that expose a collection of roots
-- explicit root actions such as add, relocate, disable, and remove
-- root add/remove/update UI
-- validation that checks every candidate root against every existing root in the system
-
-Recommended guardrails:
-
-- reject roots that overlap one another, even inside the same library
-- reject roots that overlap another library's roots
-- normalize path comparisons before validating
-- avoid silently changing root paths through a generic library edit form
-
-This keeps the mental model simple and avoids ambiguous ownership of the same subtree.
-
-## Duplicate Policy
-
-Duplicate imports are not unique to multi-root libraries.
-They can already happen today when the same archive exists in different subfolders under one root.
-
-What multi-root changes is the importance of defining the policy clearly across all scanned paths.
-
-Questions Parker should answer before implementation:
-
-- if the same file appears in two configured roots, should both imports be allowed?
-- should Parker warn only, or block overlapping/duplicate-looking roots up front?
-- should Parker eventually detect likely duplicates by normalized file path, filename, size, archive hash, or not at all?
-
-Recommended initial stance:
-
-- do not attempt content-level deduplication as part of the first multi-root release
-- keep prevention focused on root-overlap validation
-- treat broader duplicate detection as a separate problem
-- use `(library_root_id, relative_path)` as the physical file identity, not absolute path alone
-
-## Diagnostics And Support Impact
-
-Startup and support diagnostics currently report one path per library in `app/services/startup_diagnostics.py`.
-
-Multi-root support would likely need:
-
-- library root counts
-- a per-root sample instead of one path string
-- per-root existence checks
-- clearer support messaging when only some roots are reachable
-
-This matters because "library exists but one root is offline" becomes a valid operational state.
-
-## Permissions And User Access
-
-The current permission model is library-based, not path-based.
-
-That is a strength here.
-Parker likely should not introduce root-level permissions in an MVP.
+Scanner and janitor missing-file cleanup should fail safely if any active root in scope is unreachable. They should not prune comics from reachable roots or unreachable roots during that run, because the missing root may be an offline drive, unmounted share, or temporary permissions issue.
 
 Recommended rule:
 
-- if a user can access the library, they can access content imported from any of that library's configured roots
+- all active roots reachable: scan and cleanup normally
+- any active root in scope unreachable: fail before cleanup and leave database rows untouched
 
-This keeps the feature focused on storage aggregation rather than access-control redesign.
+This is intentionally conservative. It protects users from accidental mass deletes caused by partial storage availability.
 
-## Background Jobs And Fairness
+## Sidecar Boundary Rule
 
-Multi-root support should continue to behave like one library from the job scheduler's perspective.
+Sidecars apply within the physical root containing the file being processed.
 
-That means:
+For a comic in root A, parent walking stops at root A. For a comic in root B, parent walking stops at root B. There is no virtual library-wide filesystem boundary across every root.
 
-- scan jobs are still queued per library
+This keeps multi-root behavior close to existing single-root behavior.
+
+## Permissions
+
+Parker's access model remains library-based.
+
+Recommended MVP rule:
+
+- if a user can access the library, they can access content imported from any active root attached to that library
+
+Root-level permissions are out of scope for the initial multi-root feature.
+
+## Non-Goals
+
+Out of scope for initial multi-root support:
+
+- loose image reading outside Parker's existing archive model
+- metadata/entity-level merging of separate libraries
+- root-level user permissions
+- automatic discovery of arbitrary folders
+- content-hash deduplication
+- automatic file moves between roots
+
+## Remaining Product Work
+
+The foundation does not complete multi-root as an admin-facing feature.
+
+Remaining work:
+
+- add root management API actions
+- add admin UI for listing roots
+- add explicit add, disable, relocate, and remove flows
+- validate new roots against every configured root in the system
+- reject overlapping roots within the same library
+- reject overlapping roots across libraries
+- decide whether zero-root libraries are allowed during editing
+- define what happens to comics when a root is disabled or removed
+- update support/admin views so partial root failures are understandable
+
+Root lifecycle actions should be explicit. A generic library edit form should not silently change or remove storage roots.
+
+## Duplicate Policy
+
+Duplicate-looking comics can already exist inside one root. Multi-root support makes the policy more visible but does not require content-level deduplication.
+
+Recommended MVP stance:
+
+- prevent root overlap up front
+- treat `(library_root_id, relative_path)` as the physical file identity
+- allow the same relative path under different non-overlapping roots
+- do not attempt archive hash or page hash deduplication in the first release
+- consider duplicate reporting later if users need it
+
+## Background Jobs
+
+Multi-root libraries should still behave like one library to the scheduler:
+
+- scan jobs are queued per library
 - thumbnail jobs remain library-scoped
 - metadata rehydrate remains library-scoped
 
-The nuance is performance fairness:
-
-- a library with many large roots may become heavier than a single-root library
-- this is mostly an operational concern, not a reason to block the feature
-
-It may eventually justify better scan progress reporting or per-root progress visibility, but that should not be required for an MVP.
-
-## Suggested MVP
-
-The smallest useful implementation would likely be:
-
-- support multiple configured roots per library
-- update scanner to walk all roots and union results
-- update watcher to monitor all roots and still queue by library
-- update admin create/edit flows for multiple roots
-- update diagnostics to surface roots clearly
-- keep permissions library-based
-- keep duplicate handling conservative and simple
-
-This MVP assumes the relocation groundwork exists first. If it does not, the MVP should begin by introducing `library_roots`, `Comic.library_root_id`, and `Comic.relative_path` before adding multiple roots to the UI.
-
-## Open Questions
-
-- Should an empty library be allowed to exist temporarily with zero roots during editing?
-- Should root ordering matter in the UI or for future diagnostics?
-- Should Parker allow disabling one root without removing it?
-- Should the library detail API continue to expose one legacy `path` field during transition, or move directly to `roots`?
-- How much backward compatibility is worth carrying for older clients or templates that expect `library.path`?
+A library with several large roots may be operationally heavier than a small single-root library. That may eventually justify better scan progress reporting, but it should not block the MVP.
 
 ## Recommended Implementation Order
 
-If Parker ever decides to build this, a safe order would likely be:
+1. Keep the relocation/root-identity foundation in place.
+2. Make scanner, metadata writer, watcher, diagnostics, and janitor cleanup root-list aware.
+3. Add root management API actions.
+4. Add admin UI for root list and root lifecycle operations.
+5. Add overlap validation across all roots.
+6. Decide disable/remove/offline root policy.
+7. Improve diagnostics and support messaging for partial root failures.
+8. Add broader browser coverage once the UI exists.
 
-1. implement safe single-root relocation as described in `docs/library-relocation-scope.md`
-2. keep one root per library until scanner, reader, watcher, and diagnostics understand root identity
-3. add admin UI/API support for adding more roots to an existing library
-4. update scanner cleanup behavior across root identities
-5. update watcher scheduling/bookkeeping
-6. update diagnostics and support surfaces
-7. add regression coverage
+Items 1 and 2 are the service foundation. Items 3 through 8 are the remaining product feature.
 
 ## Testing Notes
 
-Minimum coverage should include:
+Foundation coverage should include:
 
-- migration/backfill behavior from one path to one root row
-- scanner imports across multiple roots in one library
-- cleanup only deleting comics absent from all roots
-- watcher refresh registering and unregistering multiple watches for one library
-- sidecar reconciliation stopping at the correct root boundary
-- admin validation rejecting overlapping roots
+- scanner imports and cleanup across multiple active roots
+- scanner failing before cleanup when any active root is unreachable
+- janitor missing-file cleanup failing before deletion when any active root in scope is unreachable
+- metadata worker preserving root context
+- metadata writer importing the same relative path under different roots
+- sidecar resolution stopping at the current physical root
+- watcher registering and unregistering one watch per active root
+- diagnostics reporting root counts and per-root existence checks
 
-## Effort Estimate
+Product/UI coverage should later include:
 
-This looks like a medium-to-large feature rather than a quick enhancement.
-
-Rough estimate:
-
-- MVP: moderate project with several touching systems
-- polished release: larger due to migration, watcher edge cases, admin UX, diagnostics, and regression coverage
-
-In practical terms, this is probably best treated as a deliberate feature project with a design pass first, not something to casually slip into a small release.
+- root add/disable/remove APIs
+- overlap validation against same-library and cross-library roots
+- admin root list rendering
+- browser coverage for expected root lifecycle flows

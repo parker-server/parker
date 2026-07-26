@@ -1,9 +1,24 @@
 from pathlib import Path
 
-def metadata_worker(file_path) -> dict:
+def _worker_context(file_input) -> tuple[str, dict]:
+    if isinstance(file_input, dict):
+        file_path = file_input["file_path"]
+        context = {
+            key: file_input[key]
+            for key in ("library_root_id", "library_root_path")
+            if key in file_input
+        }
+        return file_path, context
+
+    return file_input, {}
+
+
+def metadata_worker(file_input) -> dict:
     from app.services.archive import ComicArchive
     from app.services.metadata import parse_comicinfo
     import os
+
+    file_path, context = _worker_context(file_input)
 
     try:
         path = Path(file_path)
@@ -14,7 +29,12 @@ def metadata_worker(file_path) -> dict:
         with ComicArchive(path) as archive:
             pages = archive.get_pages()
             if not isinstance(pages, list) or len(pages) == 0:
-                return {"file_path": file_path, "error": True, "message": "No valid pages found (archive unreadable)"}
+                return {
+                    "file_path": file_path,
+                    "error": True,
+                    "message": "No valid pages found (archive unreadable)",
+                    **context,
+                }
 
             xml = archive.get_comicinfo()
 
@@ -23,7 +43,8 @@ def metadata_worker(file_path) -> dict:
                 return {
                     "file_path": file_path,
                     "error": True,
-                    "message": "Missing ComicInfo.xml"
+                    "message": "Missing ComicInfo.xml",
+                    **context,
                 }
 
             # 1. Establish Physical Truth of page count
@@ -46,8 +67,9 @@ def metadata_worker(file_path) -> dict:
             "size": size,
             "metadata": metadata,
             "error": False,
+            **context,
         }
 
     except Exception as e:
         #print(e)
-        return {"file_path": file_path, "error": True, "message": str(e)}
+        return {"file_path": file_path, "error": True, "message": str(e), **context}

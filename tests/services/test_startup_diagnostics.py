@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from app.models.comic import Comic, Volume
+from app.models.library_root import LibraryRoot
 from app.models.series import Series
 from app.models.user import User
 from tests.factories import create_library_with_root
@@ -101,11 +102,7 @@ def test_log_startup_diagnostics_logs_populated_database_summary(db, caplog, tmp
     )
 
     assert any("status=healthy counts users=1 libraries=1 series=1 comics=1" in record.message for record in caplog.records)
-    assert any(
-        "library_sample=[{'name': 'Main Library', 'path': '/comics/main', 'path_exists': False}]"
-        in record.message
-        for record in caplog.records
-    )
+    assert any("Main Library" in record.message and "root_count" in record.message for record in caplog.records)
     assert not any(
         "active database has no libraries configured" in record.message
         for record in caplog.records
@@ -250,3 +247,28 @@ def test_collect_startup_diagnostics_tracks_library_path_existence(db, tmp_path)
     assert by_name["Existing"]["path_exists"] is True
     assert by_name["Missing"]["path_exists"] is False
     assert diagnostics["database"]["size_display"] == "2.0 KB"
+
+
+def test_collect_startup_diagnostics_reports_multiple_library_roots(db, tmp_path):
+    first_root = tmp_path / "First"
+    second_root = tmp_path / "Second"
+    first_root.mkdir()
+
+    library = create_library_with_root(db, "Multi Root", str(first_root))
+    db.add(LibraryRoot(library_id=library.id, path=str(second_root), is_active=True))
+    db.commit()
+
+    db_path = tmp_path / "comics.db"
+    db_path.write_bytes(b"x" * 128)
+
+    diagnostics = collect_startup_diagnostics(
+        db,
+        database_url=f"sqlite:///{db_path.as_posix()}",
+        comics_root=tmp_path / "probe",
+    )
+
+    sample = diagnostics["library_sample"][0]
+    assert sample["name"] == "Multi Root"
+    assert sample["root_count"] == 2
+    assert sample["active_root_count"] == 2
+    assert [root["path_exists"] for root in sample["roots"]] == [True, False]

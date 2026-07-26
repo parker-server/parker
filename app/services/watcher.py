@@ -105,7 +105,7 @@ class LibraryWatcher:
 
         self.logger = logging.getLogger(__name__)
         self.observer = Observer()
-        self.watches = {}  # Map library_id -> watch_object
+        self.watches = {}  # Map (library_id, root_id) -> (watch_object, handler)
         self.is_running = False
         self._initialized = True
 
@@ -136,8 +136,13 @@ class LibraryWatcher:
                 .filter(Library.watch_mode == True)
                 .all()
             )
-            active_ids = {lib.id for lib in libraries}
-            current_ids = set(self.watches.keys())
+            active_roots = {
+                (lib.id, root.id): (lib, root)
+                for lib in libraries
+                for root in lib.active_roots
+            }
+            active_keys = set(active_roots.keys())
+            current_keys = set(self.watches.keys())
 
             # Fetch Dynamic Setting (Default 600s if missing)
             # We fetch it once per refresh so all new watches use the updated value.
@@ -146,34 +151,36 @@ class LibraryWatcher:
 
             # 2. Add new watches
             for lib in libraries:
-                if lib.id not in self.watches:
-                    active_root = lib.active_root
-                    if active_root is None:
-                        self.logger.error(f"Library {lib.id} ('{lib.name}') has no active root; skipping watch")
-                        continue
+                if not lib.active_roots:
+                    self.logger.error(f"Library {lib.id} ('{lib.name}') has no active roots; skipping watch")
 
-                    try:
-                        self.logger.info(f"Starting watch for: {active_root.path}")
-                        handler = LibraryEventHandler(lib.id, int(batch_window))
-                        watch = self.observer.schedule(handler, active_root.path, recursive=True)
+            for key, (lib, active_root) in active_roots.items():
+                if key in self.watches:
+                    continue
 
-                        # Store both so we can cancel the handler later
-                        self.watches[lib.id] = (watch, handler)
-                    except Exception as e:
-                        self.logger.error(f"Failed to watch {active_root.path}: {e}")
+                try:
+                    self.logger.info(f"Starting watch for: {active_root.path}")
+                    handler = LibraryEventHandler(lib.id, int(batch_window))
+                    watch = self.observer.schedule(handler, active_root.path, recursive=True)
+
+                    # Store both so we can cancel the handler later
+                    self.watches[key] = (watch, handler)
+                except Exception as e:
+                    self.logger.error(f"Failed to watch {active_root.path}: {e}")
 
             # 3. Remove old watches (if disabled in DB)
-            for lib_id in current_ids:
-                if lib_id not in active_ids:
-                    self.logger.info(f"Stopping watch for Library {lib_id}")
-                    watch, handler = self.watches[lib_id]
+            for key in current_keys:
+                if key not in active_keys:
+                    lib_id, root_id = key
+                    self.logger.info(f"Stopping watch for Library {lib_id} root {root_id}")
+                    watch, handler = self.watches[key]
 
                     # Cancel any pending timer
                     handler.stop()
 
                     # Unschedule from watchdog
                     self.observer.unschedule(watch)
-                    del self.watches[lib_id]
+                    del self.watches[key]
 
         finally:
             db.close()

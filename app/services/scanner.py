@@ -45,18 +45,20 @@ class LibraryScanner:
         """
         Parallel metadata extraction + single-writer DB updates.
         """
-        library_root = (
+        library_roots = (
             self.db.query(LibraryRoot)
             .filter(LibraryRoot.library_id == self.library.id, LibraryRoot.is_active == True)
-            .first()
+            .order_by(LibraryRoot.id)
+            .all()
         )
-        if library_root is None:
-            raise FileNotFoundError(f"Library '{self.library.name}' has no active root configured")
+        if not library_roots:
+            raise FileNotFoundError(f"Library '{self.library.name}' has no active roots configured")
 
-        library_path = Path(library_root.path)
+        root_paths = [(library_root, Path(library_root.path)) for library_root in library_roots]
 
-        if not library_path.exists():
-            raise FileNotFoundError(f"Library path does not exist: {library_root.path}")
+        for library_root, library_path in root_paths:
+            if not library_path.exists():
+                raise FileNotFoundError(f"Library path does not exist: {library_root.path}")
 
         self.reconciled_folders.clear()
         self.reconciled_volumes.clear()
@@ -81,37 +83,46 @@ class LibraryScanner:
         scanned_keys = set()
         skipped = 0
 
-        for file_path in library_path.rglob("*"):
-            if file_path.suffix.lower() not in self.supported_extensions:
-                continue
-
-            file_path_str = str(file_path)
-            # Always resolves: file_path_str is necessarily a child of library_path,
-            # since rglob() only yields files physically nested under it.
-            relative_path = compute_relative_path(library_root.path, file_path_str)
-            key = (library_root.id, relative_path)
-            existing = existing_by_key.get(key)
-
-            # --- CONTAINER RECONCILIATION ---
-            # This runs for EVERY file, but the logic inside ensures it only
-            # performs the disk-check once per folder.
-            self._reconcile_sidecars(file_path, existing, library_root.path)
-
-            scanned_keys.add(key)
-
-            file_mtime = os.path.getmtime(file_path)
-
-            if existing:
-                # unchanged file -> skip unless force=True
-                if not force and existing.file_modified_at and existing.file_modified_at >= file_mtime:
-                    skipped += 1
+        for library_root, library_path in root_paths:
+            for file_path in library_path.rglob("*"):
+                if file_path.suffix.lower() not in self.supported_extensions:
                     continue
 
-                # changed file -> update
-                tasks.append(file_path_str)
-            else:
-                # new file -> import
-                tasks.append(file_path_str)
+                file_path_str = str(file_path)
+                # Always resolves: file_path_str is necessarily a child of this
+                # library_path, since rglob() only yields files physically nested under it.
+                relative_path = compute_relative_path(library_root.path, file_path_str)
+                key = (library_root.id, relative_path)
+                existing = existing_by_key.get(key)
+
+                # --- CONTAINER RECONCILIATION ---
+                # This runs for EVERY file, but the logic inside ensures it only
+                # performs the disk-check once per folder.
+                self._reconcile_sidecars(file_path, existing, library_root.path)
+
+                scanned_keys.add(key)
+
+                file_mtime = os.path.getmtime(file_path)
+
+                if existing:
+                    # unchanged file -> skip unless force=True
+                    if not force and existing.file_modified_at and existing.file_modified_at >= file_mtime:
+                        skipped += 1
+                        continue
+
+                    # changed file -> update
+                    tasks.append({
+                        "file_path": file_path_str,
+                        "library_root_id": library_root.id,
+                        "library_root_path": library_root.path,
+                    })
+                else:
+                    # new file -> import
+                    tasks.append({
+                        "file_path": file_path_str,
+                        "library_root_id": library_root.id,
+                        "library_root_path": library_root.path,
+                    })
 
         # Persist any sidecar reconciliation updates found during discovery.
         self.db.commit()
@@ -216,7 +227,11 @@ class LibraryScanner:
         self.collection_service.cleanup_empty_collections()
 
         # Update library scan time
-        self.library.last_scanned = datetime.now(timezone.utc)
+        scanned_at = datetime.now(timezone.utc)
+        self.library.last_scanned = scanned_at
+        for library_root in library_roots:
+            library_root.last_scanned_at = scanned_at
+            library_root.last_scan_error = None
         self.db.commit()
 
         elapsed = round(time.time() - start_time, 2)

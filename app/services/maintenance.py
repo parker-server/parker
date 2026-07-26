@@ -23,6 +23,22 @@ class MaintenanceService:
         self.logger = logging.getLogger(__name__)
         self.enrichment = EnrichmentService()
 
+    def _active_root_paths_for_cleanup(self, library_id: int = None) -> dict[int, str]:
+        query = self.db.query(LibraryRoot).filter(LibraryRoot.is_active == True)
+        if library_id:
+            query = query.filter(LibraryRoot.library_id == library_id)
+
+        roots = query.order_by(LibraryRoot.id).all()
+        missing_roots = [root for root in roots if not os.path.exists(root.path)]
+        if missing_roots:
+            missing_root = missing_roots[0]
+            raise FileNotFoundError(
+                "Janitor cleanup aborted because active library root path "
+                f"does not exist: {missing_root.path}"
+            )
+
+        return {root.id: root.path for root in roots}
+
     def cleanup_orphans(self, library_id: int = None) -> dict:
         """
         Delete metadata entities that are no longer associated with any comics.
@@ -104,15 +120,14 @@ class MaintenanceService:
         """
         Removes dead records and returns a list of their IDs for thumbnail cleanup.
         """
+        root_paths = self._active_root_paths_for_cleanup(library_id)
+
         query = self.db.query(Comic)
         if library_id:
             query = query.join(Volume).join(Series).filter(Series.library_id == library_id)
 
         comics = query.all()
         deleted_ids = []
-
-        # Cache root paths since many comics typically share the same root(s).
-        root_paths: dict[int, str] = {}
 
         for comic in comics:
             if comic.library_root_id not in root_paths:
@@ -209,4 +224,3 @@ class MaintenanceService:
             self.db.commit()
 
         return {"updated": updated_count, "total_scanned": len(lists)}
-    

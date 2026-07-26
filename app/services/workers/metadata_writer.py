@@ -1,3 +1,33 @@
+def _item_root_context(
+    item,
+    *,
+    default_library_root_id,
+    default_library_root_path,
+    root_paths_by_id,
+):
+    library_root_id = item.get("library_root_id", default_library_root_id)
+    library_root_path = item.get("library_root_path")
+
+    if library_root_id is not None:
+        try:
+            library_root_id = int(library_root_id)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Metadata item has invalid library root identity") from exc
+
+    if root_paths_by_id and library_root_id is not None:
+        library_root_path = root_paths_by_id.get(library_root_id)
+        if library_root_path is None:
+            raise ValueError("Metadata item references unknown library root")
+
+    if library_root_path is None:
+        library_root_path = default_library_root_path
+
+    if library_root_id is None or library_root_path is None:
+        raise ValueError("Metadata item is missing library root identity")
+
+    return library_root_id, library_root_path
+
+
 def _apply_metadata_batch(
     db,
     batch,
@@ -8,8 +38,9 @@ def _apply_metadata_batch(
     credit_service,
     reading_list_service,
     collection_service,
-    library_root_id,
-    library_root_path,
+    library_root_id=None,
+    library_root_path=None,
+    root_paths_by_id=None,
     parse_reading_lists=True,
     parse_collections=True,
     parse_story_arcs=True,
@@ -19,6 +50,7 @@ def _apply_metadata_batch(
     from app.models.comic import Comic
     from app.core.path_utils import compute_relative_path
     from datetime import datetime, timezone
+    from inspect import Parameter, signature
     import json
 
     def _normalize_number(number: str) -> str:
@@ -45,6 +77,35 @@ def _apply_metadata_batch(
         except (TypeError, ValueError):
             return 1
 
+    def _accepts_positional_args(func, count: int) -> bool:
+        try:
+            parameters = list(signature(func).parameters.values())
+        except (TypeError, ValueError):
+            return True
+
+        if any(parameter.kind == Parameter.VAR_POSITIONAL for parameter in parameters):
+            return True
+
+        positional_parameters = [
+            parameter
+            for parameter in parameters
+            if parameter.kind in (Parameter.POSITIONAL_ONLY, Parameter.POSITIONAL_OR_KEYWORD)
+        ]
+        return len(positional_parameters) >= count
+
+    get_or_create_series_accepts_root_path = _accepts_positional_args(get_or_create_series, 2)
+    get_or_create_volume_accepts_root_path = _accepts_positional_args(get_or_create_volume, 4)
+
+    def _get_or_create_series(name: str, item_library_root_path: str):
+        if get_or_create_series_accepts_root_path:
+            return get_or_create_series(name, item_library_root_path)
+        return get_or_create_series(name)
+
+    def _get_or_create_volume(series, volume_num: int, file_path: str, item_library_root_path: str):
+        if get_or_create_volume_accepts_root_path:
+            return get_or_create_volume(series, volume_num, file_path, item_library_root_path)
+        return get_or_create_volume(series, volume_num, file_path)
+
     imported = 0
     updated = 0
     errors = 0
@@ -66,11 +127,33 @@ def _apply_metadata_batch(
         mtime = item["mtime"]
         size = item["size"]
         updated_at = datetime.now(timezone.utc)
+        try:
+            item_library_root_id, item_library_root_path = _item_root_context(
+                item,
+                default_library_root_id=library_root_id,
+                default_library_root_path=library_root_path,
+                root_paths_by_id=root_paths_by_id,
+            )
+        except ValueError as exc:
+            errors += 1
+            error_details.append({
+                "file_path": file_path,
+                "message": str(exc),
+            })
+            continue
 
-        # Always resolves: the scanner only ever sends paths physically nested
-        # under the library's active root.
-        relative_path = compute_relative_path(library_root_path, file_path)
-        existing = existing_by_key.get((library_root_id, relative_path))
+        # Always resolves for scanner-provided tasks: the scanner only sends
+        # paths physically nested under the selected library root.
+        relative_path = compute_relative_path(item_library_root_path, file_path)
+        if relative_path is None:
+            errors += 1
+            error_details.append({
+                "file_path": file_path,
+                "message": "File is not under its assigned library root",
+            })
+            continue
+
+        existing = existing_by_key.get((item_library_root_id, relative_path))
 
         # --- Determine Import vs Update ---
         if existing:
@@ -84,14 +167,14 @@ def _apply_metadata_batch(
         # Robust 'Unknown' handling for Series Name to prevent NOT NULL errors
         # If metadata['series'] is None or "", default to "Unknown Series"
         series_name = metadata.get("series") or "Unknown Series"
-        series = get_or_create_series(series_name)
+        series = _get_or_create_series(series_name, item_library_root_path)
 
         # Get or create volume (Uses Cache)
         volume_num = _normalize_volume_number(metadata.get("volume"))
-        volume = get_or_create_volume(series, volume_num, file_path)
+        volume = _get_or_create_volume(series, volume_num, file_path, item_library_root_path)
         comic.volume_id = volume.id
 
-        comic.library_root_id = library_root_id
+        comic.library_root_id = item_library_root_id
         comic.relative_path = relative_path
 
         # --- Basic fields ---
@@ -175,7 +258,7 @@ def _apply_metadata_batch(
         if action == "import":
             comic.is_dirty = True
             imported += 1
-            existing_by_key[(library_root_id, relative_path)] = comic
+            existing_by_key[(item_library_root_id, relative_path)] = comic
 
         elif action == "update":
             # If the scanner sent it, we *know* it changed (or force=True)
@@ -220,20 +303,23 @@ def metadata_writer(
         engine.dispose()
         db = SessionLocal()
 
-        # Get library path for sidecars
+        # Get library roots for physical identity and sidecar boundaries.
         library = db.get(Library, library_id)
 
-        library_root = (
+        library_roots = (
             db.query(LibraryRoot)
             .filter(LibraryRoot.library_id == library_id, LibraryRoot.is_active == True)
-            .first()
+            .order_by(LibraryRoot.id)
+            .all()
         )
-        if library_root is None:
+        if not library_roots:
             raise ValueError(f"Library '{library.name}' has no active root configured")
 
-        library_root_id = library_root.id
-        library_root_path = library_root.path
-        lib_path = Path(library_root.path)
+        root_paths_by_id = {root.id: root.path for root in library_roots}
+        default_root = library_roots[0] if len(library_roots) == 1 else None
+        default_library_root_id = default_root.id if default_root else None
+        default_library_root_path = default_root.path if default_root else None
+        fallback_library_root_path = default_library_root_path or library_roots[0].path
 
         # Preload existing comics
         existing_comics = (
@@ -256,7 +342,7 @@ def metadata_writer(
 
         batch = []
 
-        def get_or_create_series(name: str):
+        def get_or_create_series(name: str, item_library_root_path: str | None = None):
             """Get existing series or create new one with Caching"""
 
             # 1. Check local cache
@@ -272,6 +358,7 @@ def metadata_writer(
 
                 # Boundary Protection: Don't check root or "Unknown"
                 if name != "Unknown Series":
+                    lib_path = Path(item_library_root_path or fallback_library_root_path)
                     series_path = lib_path / name
                     # Physical Guard: Ensure it's a valid subfolder, not the root
                     if series_path != lib_path and lib_path in series_path.parents:
@@ -284,7 +371,7 @@ def metadata_writer(
             series_cache[name] = series
             return series
 
-        def get_or_create_volume(series, num, file_path_str: str):
+        def get_or_create_volume(series, num, file_path_str: str, item_library_root_path: str | None = None):
             """Get existing volume or create new one with Caching"""
 
             # Composite key for cache
@@ -302,7 +389,9 @@ def metadata_writer(
                 # --- BOUNDARY PROTECTION ---
                 folder_path = Path(file_path_str).parent
 
-                # Only look for a sidecar if the folder is NOT the library root
+                lib_path = Path(item_library_root_path or fallback_library_root_path)
+
+                # Only look for a sidecar if the folder is NOT the containing library root.
                 if folder_path != lib_path:
                     v.summary_override = SidecarService.get_summary_from_disk(folder_path, "volume")
 
@@ -331,8 +420,9 @@ def metadata_writer(
                     parse_reading_lists=parse_reading_lists,
                     parse_collections=parse_collections,
                     parse_story_arcs=parse_story_arcs,
-                    library_root_id=library_root_id,
-                    library_root_path=library_root_path,
+                    library_root_id=default_library_root_id,
+                    library_root_path=default_library_root_path,
+                    root_paths_by_id=root_paths_by_id,
                 )
                 for key in ("imported", "updated", "errors", "skipped"):
                     processed[key] += stats.get(key, 0)
@@ -350,8 +440,9 @@ def metadata_writer(
                     parse_reading_lists=parse_reading_lists,
                     parse_collections=parse_collections,
                     parse_story_arcs=parse_story_arcs,
-                    library_root_id=library_root_id,
-                    library_root_path=library_root_path,
+                    library_root_id=default_library_root_id,
+                    library_root_path=default_library_root_path,
+                    root_paths_by_id=root_paths_by_id,
             )
             for key in ("imported", "updated", "errors", "skipped"):
                 processed[key] += stats.get(key, 0)

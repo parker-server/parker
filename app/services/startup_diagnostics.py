@@ -114,7 +114,13 @@ def _detect_runtime_mode(
     if comics_root_exists:
         return RUNTIME_MODE_CONTAINER
 
-    if any(_looks_like_container_library_path(item.get("path", "")) for item in library_sample):
+    library_paths = []
+    for item in library_sample:
+        if item.get("path"):
+            library_paths.append(item["path"])
+        library_paths.extend(root.get("path", "") for root in item.get("roots", []))
+
+    if any(_looks_like_container_library_path(path) for path in library_paths):
         return RUNTIME_MODE_CONTAINER
 
     return RUNTIME_MODE_LOCAL
@@ -215,10 +221,22 @@ def collect_startup_diagnostics(
     ):
         active_root = library.active_root
         root_path = active_root.path if active_root else None
+        roots = [
+            {
+                "id": root.id,
+                "path": root.path,
+                "is_active": root.is_active,
+                "path_exists": _safe_path_exists(root.path),
+            }
+            for root in sorted(library.roots, key=lambda row: row.id)
+        ]
         library_sample.append({
             "name": library.name,
             "path": root_path,
             "path_exists": _safe_path_exists(root_path),
+            "root_count": len(roots),
+            "active_root_count": sum(1 for root in roots if root["is_active"]),
+            "roots": roots,
         })
 
     comics_root_exists = comics_root.exists()

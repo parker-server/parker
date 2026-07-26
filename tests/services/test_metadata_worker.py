@@ -41,6 +41,40 @@ def test_metadata_worker_success_overrides_xml_page_count(monkeypatch, tmp_path)
     assert payload["size"] == file_path.stat().st_size
 
 
+def test_metadata_worker_preserves_library_root_context(monkeypatch, tmp_path):
+    file_path = _write_comic_file(tmp_path, name="root-context.cbz")
+
+    class ArchiveWithXml:
+        def __init__(self, _path):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def get_pages(self):
+            return ["p1"]
+
+        def get_comicinfo(self):
+            return "<xml/>"
+
+    monkeypatch.setattr("app.services.archive.ComicArchive", ArchiveWithXml)
+    monkeypatch.setattr("app.services.metadata.parse_comicinfo", lambda _xml: {"title": "Parsed"})
+
+    payload = metadata_worker_module.metadata_worker({
+        "file_path": str(file_path),
+        "library_root_id": 42,
+        "library_root_path": "/library/root",
+    })
+
+    assert payload["error"] is False
+    assert payload["file_path"] == str(file_path)
+    assert payload["library_root_id"] == 42
+    assert payload["library_root_path"] == "/library/root"
+
+
 def test_metadata_worker_returns_error_when_pages_missing(monkeypatch, tmp_path):
     file_path = _write_comic_file(tmp_path, name="no-pages.cbz")
 

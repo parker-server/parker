@@ -41,8 +41,8 @@ This file captures follow-up work that should not get lost between releases.
   Follow-up goal: Decide whether to replace ColorThief, patch/vendor the small palette extraction path, or move Parker's palette generation to a maintained Pillow-based quantization approach before upgrading to Pillow 14.
   Guardrail: This is not a `0.1.24` release blocker while Parker remains pinned to Pillow 12.x and tests pass.
 
-- Design support for multi-root libraries after relocation groundwork exists.
-  Context: Parker currently assumes one configured filesystem root per library, but some users may want a single logical library to aggregate comics from multiple folder locations across disks, shares, or staged/import storage.
-  Scope risk: This is likely a medium-to-large architectural change rather than a simple admin-form enhancement because it would affect the data model, scanning, file watching, duplicate handling, library stats, and background-job fairness assumptions. It should build on `library_roots`, `Comic.library_root_id`, and `Comic.relative_path` rather than inventing a separate root model.
-  Follow-up goal: Define root add/relocate/disable/remove flows, how root-level failures and duplicate files should be handled, and what scanner/watcher changes would be required before implementation work begins.
+- Finish product support for multi-root libraries.
+  Context: The relocation/root-identity groundwork exists: Parker has `library_roots`, comics are identified by `Comic.library_root_id` plus `Comic.relative_path`, and the scanner/writer/watcher/diagnostics/janitor foundation is multi-root-aware. The admin/API surface still largely treats one active root as the editable path for a library.
+  Scope risk: The remaining work is still product-facing and needs careful root lifecycle policy, validation, and UX rather than just another scanner change.
+  Follow-up goal: Add explicit root add/disable/remove flows, decide the inaccessible/offline root policy, validate overlapping roots across all libraries, and update admin/UI surfaces to manage multiple roots intentionally.
   Design note: `docs/multi-root-library-scope.md`
