@@ -29,6 +29,7 @@ from app.models.saved_search import SavedSearch
 from app.models.series import Series
 from app.models.tags import Character
 from app.models.user import User
+from app.routers import pages as pages_router
 
 from tests.factories import create_library_with_root
 
@@ -239,6 +240,16 @@ def browser_server(browser_db_factory, browser_seed_data, monkeypatch_session):
             session.close()
 
     monkeypatch_session.setattr("app.api.reader.ImageService", BrowserImageService)
+    original_get_cached_setting = pages_router.get_cached_setting
+
+    def browser_get_cached_setting(key: str, default: Any = None) -> Any:
+        # This setting helper bypasses dependency overrides, so keep the
+        # browser server isolated from whatever the local app database contains.
+        if key == "ui.auto_redirect_single_volume_series":
+            return False
+        return original_get_cached_setting(key, default)
+
+    monkeypatch_session.setattr(pages_router, "get_cached_setting", browser_get_cached_setting)
 
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_current_user] = override_get_current_user
