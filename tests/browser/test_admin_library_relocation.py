@@ -50,37 +50,123 @@ def test_admin_library_relocation_preview_and_confirm_flow(page, browser_server,
 
         row = page.get_by_role("row").filter(has_text="Relocation UI Library").first
         row.wait_for()
-        row.get_by_role("button", name="Relocate").click()
+        row.get_by_role("button", name="Roots").click()
+        page.get_by_role("heading", name="Library Roots").wait_for()
+        page.get_by_test_id("library-root-row").first.get_by_role("button", name="Relocate").click()
 
-        page.get_by_role("heading", name="Relocate Library Path").wait_for()
-        page.get_by_role("button", name="Browse").click()
-        page.get_by_role("button", name="../").click()
-        page.get_by_role("button", name=f"/{proposed_root.name}").click()
-        page.get_by_role("button", name="Use This Folder").click()
-        path_input = page.get_by_placeholder("/comics/relocated")
+        relocation_modal = page.locator('[x-show="showRelocationModal"]')
+        relocation_modal.get_by_role("heading", name="Relocate Library Path").wait_for()
+        relocation_modal.get_by_role("button", name="Browse").click()
+        relocation_modal.get_by_role("button", name="../").click()
+        relocation_modal.get_by_role("button", name=f"/{proposed_root.name}").click()
+        relocation_modal.get_by_role("button", name="Use This Folder").click()
+        path_input = relocation_modal.get_by_placeholder("/comics/relocated")
         path_input.wait_for(state="visible")
         assert path_input.input_value() == proposed_root.resolve().as_posix()
-        page.get_by_role("button", name="Preview").click()
+        relocation_modal.get_by_role("button", name="Preview").click()
 
-        page.get_by_text("Matched Files").wait_for()
-        page.get_by_text("Alpha/one.cbz").wait_for()
-        page.get_by_text("Beta/two.cbz").wait_for()
-        page.get_by_text("Extra/three.cbz").wait_for()
+        relocation_modal.get_by_text("Matched Files").wait_for()
+        relocation_modal.get_by_text("Alpha/one.cbz").wait_for()
+        relocation_modal.get_by_text("Beta/two.cbz").wait_for()
+        relocation_modal.get_by_text("Extra/three.cbz").wait_for()
 
-        page.get_by_role("button", name="Confirm Relocation").click()
+        relocation_modal.get_by_role("button", name="Confirm Relocation").click()
         page.get_by_role("heading", name="Relocate Relocation UI Library?").wait_for()
         page.locator('[x-data="globalDialog()"]').get_by_role("button", name="Relocate").click()
 
         page.get_by_role("heading", name="Scan Recommended").wait_for()
         page.locator('[x-data="globalDialog()"]').get_by_role("button", name="Not Now").click()
-        page.get_by_text("Relocation complete. Scan recommended.").wait_for()
-        page.get_by_role("main").get_by_role("button", name="Run Force Scan").wait_for()
+        relocation_modal.get_by_text("Relocation complete. Scan recommended.").wait_for()
+        relocation_modal.get_by_role("button", name="Run Force Scan").wait_for()
         assert path_input.input_value() == proposed_root.resolve().as_posix()
 
         session = browser_server["db_factory"]()
         try:
             relocated_root = session.get(LibraryRoot, root_id)
             assert relocated_root.path == proposed_root.resolve().as_posix()
+        finally:
+            session.close()
+    finally:
+        settings.comics_path = original_comics_path
+        session = browser_server["db_factory"]()
+        try:
+            user = session.get(User, browser_server["seed"]["user_id"])
+            if user is not None:
+                user.is_superuser = False
+                session.commit()
+        finally:
+            session.close()
+
+
+@pytest.mark.browser
+def test_admin_library_root_lifecycle_flow(page, browser_server, tmp_path):
+    current_root = tmp_path / "roots-ui-current"
+    archive_root = tmp_path / "roots-ui-archive"
+    current_root.mkdir()
+    archive_root.mkdir()
+
+    session = browser_server["db_factory"]()
+    try:
+        user = session.get(User, browser_server["seed"]["user_id"])
+        user.is_superuser = True
+        library = create_library_with_root(session, "Roots UI Library", str(current_root))
+        session.commit()
+        library_id = library.id
+    finally:
+        session.close()
+
+    original_comics_path = settings.comics_path
+    settings.comics_path = tmp_path
+    browser_errors = []
+    page.on("pageerror", lambda exc: browser_errors.append(str(exc)))
+    page.on(
+        "console",
+        lambda msg: browser_errors.append(msg.text)
+        if "Cannot read properties of undefined" in msg.text
+        else None,
+    )
+    try:
+        page.goto(f"{browser_server['base_url']}/admin/libraries", wait_until="networkidle")
+
+        row = page.get_by_role("row").filter(has_text="Roots UI Library").first
+        row.wait_for()
+        row.get_by_role("button", name="Roots").click()
+
+        roots_modal = page.locator('[x-show="showRootsModal"]')
+        roots_modal.get_by_role("heading", name="Library Roots").wait_for()
+        archive_path = archive_root.resolve().as_posix()
+        roots_modal.get_by_role("button", name="Browse").click()
+        roots_modal.get_by_role("button", name="../").click()
+        roots_modal.get_by_role("button", name=f"/{current_root.name}").click()
+        roots_modal.get_by_role("button", name="../").click()
+        roots_modal.get_by_role("button", name=f"/{archive_root.name}").click()
+        roots_modal.get_by_role("button", name="Use This Folder").click()
+        assert roots_modal.get_by_placeholder("/comics/archive").input_value() == archive_path
+        assert browser_errors == []
+
+        roots_modal.get_by_role("button", name="Add Root").click()
+
+        archive_row = page.get_by_test_id("library-root-row").filter(has_text=archive_path)
+        archive_row.wait_for()
+        archive_row.get_by_role("button", name="Disable").click()
+        archive_row.get_by_text("Disabled").wait_for()
+
+        archive_row.get_by_role("button", name="Remove").click()
+        page.get_by_role("heading", name="Remove Root?").wait_for()
+        page.locator('[x-data="globalDialog()"]').get_by_role("button", name="Remove Root").click()
+        page.get_by_text(archive_path).wait_for(state="detached")
+
+        session = browser_server["db_factory"]()
+        try:
+            roots = (
+                session.query(LibraryRoot)
+                .filter(LibraryRoot.library_id == library_id)
+                .order_by(LibraryRoot.id)
+                .all()
+            )
+            assert len(roots) == 1
+            assert roots[0].path == str(current_root)
+            assert roots[0].is_active is True
         finally:
             session.close()
     finally:

@@ -1,6 +1,6 @@
 # Multi-Root Library Scope
 
-Status: Foundation in place, product surface pending
+Status: Root lifecycle product surface in place
 
 This note tracks Parker's path from one physical folder per library to one logical library with multiple configured filesystem roots.
 
@@ -39,11 +39,11 @@ Physical file identity is:
 
 - `(library_root_id, relative_path)`
 
-That identity must remain the backbone for scanner cleanup, metadata writes, and future root lifecycle operations.
+That identity must remain the backbone for scanner cleanup, metadata writes, and root lifecycle operations.
 
 ## Foundation Behavior
 
-The foundation layer should behave as if multiple active roots can already exist, even before the admin UI exposes full root management.
+The foundation layer behaves as if multiple active roots can exist.
 
 Scanner behavior:
 
@@ -81,6 +81,7 @@ Janitor cleanup behavior:
 - resolve physical comic paths from `library_root_id` plus `relative_path`
 - verify active roots for the cleanup scope before deleting missing-file records
 - abort missing-file cleanup if any active root in that scope is unreachable
+- skip comics tied to inactive roots during missing-file cleanup
 
 ## Safety Rules
 
@@ -107,9 +108,9 @@ This keeps multi-root behavior close to existing single-root behavior.
 
 Parker's access model remains library-based.
 
-Recommended MVP rule:
+MVP rule:
 
-- if a user can access the library, they can access content imported from any active root attached to that library
+- if a user can access the library, they can access content imported from any root attached to that library
 
 Root-level permissions are out of scope for the initial multi-root feature.
 
@@ -124,23 +125,20 @@ Out of scope for initial multi-root support:
 - content-hash deduplication
 - automatic file moves between roots
 
-## Remaining Product Work
+## Root Lifecycle Policy
 
-The foundation does not complete multi-root as an admin-facing feature.
+Root lifecycle actions are explicit. A generic library edit form does not silently change or remove storage roots.
 
-Remaining work:
+Implemented admin/API behavior:
 
-- add root management API actions
-- add admin UI for listing roots
-- add explicit add, disable, relocate, and remove flows
-- validate new roots against every configured root in the system
-- reject overlapping roots within the same library
-- reject overlapping roots across libraries
-- decide whether zero-root libraries are allowed during editing
-- define what happens to comics when a root is disabled or removed
-- update support/admin views so partial root failures are understandable
+- Add root: creates a new active `LibraryRoot`, rejects overlap with any configured root in any library, preserves existing comics, and does not start a scan automatically.
+- Disable root: marks the root inactive for scanner and watcher discovery. Existing comics tied to that root remain in the database and remain visible through normal library access.
+- Enable root: marks a disabled root active again after validating that its stored path does not overlap another configured root.
+- Relocate root: updates one selected root path through the relocation preview/confirm flow. Existing comic records are preserved and no scan is started automatically.
+- Remove root: empty roots can be removed directly. Roots with comics are rejected unless `delete_comics=true`, which deletes those comic records and prunes now-empty volumes and series. Files on disk are never deleted.
+- Zero active roots: allowed. This lets an admin temporarily pause an offline or intentionally detached library without inventing a fake path.
 
-Root lifecycle actions should be explicit. A generic library edit form should not silently change or remove storage roots.
+Overlap validation applies to active and inactive roots so a disabled historical root cannot silently conflict with a future attachment.
 
 ## Duplicate Policy
 
@@ -164,18 +162,19 @@ Multi-root libraries should still behave like one library to the scheduler:
 
 A library with several large roots may be operationally heavier than a small single-root library. That may eventually justify better scan progress reporting, but it should not block the MVP.
 
-## Recommended Implementation Order
+## Implementation Status
 
-1. Keep the relocation/root-identity foundation in place.
-2. Make scanner, metadata writer, watcher, diagnostics, and janitor cleanup root-list aware.
-3. Add root management API actions.
-4. Add admin UI for root list and root lifecycle operations.
-5. Add overlap validation across all roots.
-6. Decide disable/remove/offline root policy.
-7. Improve diagnostics and support messaging for partial root failures.
-8. Add broader browser coverage once the UI exists.
+Completed:
 
-Items 1 and 2 are the service foundation. Items 3 through 8 are the remaining product feature.
+- relocation/root-identity foundation
+- scanner, metadata writer, watcher, diagnostics, and janitor cleanup root-list awareness
+- root management API actions
+- admin UI for root listing and lifecycle operations
+- overlap validation across active and inactive roots
+- disable/remove/offline root policy
+- browser coverage for relocation and root lifecycle flows
+
+Future refinements should be driven by real use, especially around duplicate reporting, scan progress for very large multi-root libraries, and support messaging for unusual partial-storage failures.
 
 ## Testing Notes
 
@@ -190,7 +189,7 @@ Foundation coverage should include:
 - watcher registering and unregistering one watch per active root
 - diagnostics reporting root counts and per-root existence checks
 
-Product/UI coverage should later include:
+Product/UI coverage includes:
 
 - root add/disable/remove APIs
 - overlap validation against same-library and cross-library roots

@@ -132,6 +132,14 @@ class MaintenanceService:
         for comic in comics:
             if comic.library_root_id not in root_paths:
                 root = self.db.get(LibraryRoot, comic.library_root_id)
+                if root is not None and not root.is_active:
+                    self.logger.info(
+                        "Janitor: Skipping inactive library root for %s (%s)",
+                        comic.filename,
+                        root.path,
+                    )
+                    continue
+
                 root_paths[comic.library_root_id] = root.path if root else None
 
             root_path = root_paths[comic.library_root_id]
