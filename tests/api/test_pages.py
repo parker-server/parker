@@ -83,6 +83,32 @@ def test_admin_dashboard_links_to_diagnostics(admin_client):
     assert "Inspect the active database" in body
 
 
+def test_admin_about_page_exposes_wiki_and_git_commit(admin_client, monkeypatch):
+    monkeypatch.setattr("app.routers.admin.get_git_commit_hash", lambda: "abc123def456")
+
+    response = admin_client.get("/admin/about")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "https://github.com/parker-server/parker/wiki" in body
+    assert "Wiki" in body
+    assert "Application Version" in body
+    assert "Git Commit" in body
+    assert "abc123def456" in body
+
+
+def test_admin_build_commit_hash_prefers_environment(monkeypatch):
+    from app.routers import admin
+
+    admin.get_git_commit_hash.cache_clear()
+    monkeypatch.setenv("PARKER_BUILD_COMMIT", "feedface1234")
+
+    try:
+        assert admin.get_git_commit_hash() == "feedface1234"
+    finally:
+        admin.get_git_commit_hash.cache_clear()
+
+
 def test_admin_diagnostics_page_exposes_support_snapshot_actions(admin_client):
     response = admin_client.get("/admin/diagnostics")
 
