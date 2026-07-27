@@ -40,9 +40,3 @@ This file captures follow-up work that should not get lost between releases.
   Context: Full pytest coverage currently emits `DeprecationWarning` from `colorthief==0.2.1` because it calls Pillow's deprecated `Image.Image.getdata`, which is scheduled for removal in Pillow 14 on 2027-10-15.
   Follow-up goal: Decide whether to replace ColorThief, patch/vendor the small palette extraction path, or move Parker's palette generation to a maintained Pillow-based quantization approach before upgrading to Pillow 14.
   Guardrail: This is not a `0.1.24` release blocker while Parker remains pinned to Pillow 12.x and tests pass.
-
-- Finish product support for multi-root libraries.
-  Context: The relocation/root-identity groundwork exists: Parker has `library_roots`, comics are identified by `Comic.library_root_id` plus `Comic.relative_path`, and the scanner/writer/watcher/diagnostics/janitor foundation is multi-root-aware. The admin/API surface still largely treats one active root as the editable path for a library.
-  Scope risk: The remaining work is still product-facing and needs careful root lifecycle policy, validation, and UX rather than just another scanner change.
-  Follow-up goal: Add explicit root add/disable/remove flows, decide the inaccessible/offline root policy, validate overlapping roots across all libraries, and update admin/UI surfaces to manage multiple roots intentionally.
-  Design note: `docs/multi-root-library-scope.md`

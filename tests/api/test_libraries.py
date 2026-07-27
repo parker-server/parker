@@ -659,6 +659,238 @@ def test_update_library_allows_unchanged_path(admin_client, db):
     assert response.json()["path"] == "/tmp/original"
 
 
+def test_library_payload_includes_roots_and_root_counts(admin_client, db):
+    library = create_library_with_root(db, "Root Payload", "/tmp/root-payload/active")
+    active_root = library.active_root
+    disabled_root = LibraryRoot(
+        library_id=library.id,
+        path="/tmp/root-payload/disabled",
+        is_active=False,
+    )
+    db.add(disabled_root)
+    series = Series(name="Root Payload Series", library=library)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
+    db.flush()
+
+    create_comic(db, volume, active_root, "active.cbz", filename="active.cbz")
+    create_comic(db, volume, disabled_root, "disabled.cbz", filename="disabled.cbz")
+    db.commit()
+
+    detail = admin_client.get(f"/api/libraries/{library.id}")
+
+    assert detail.status_code == 200
+    payload = detail.json()
+    assert payload["path"] == "/tmp/root-payload/active"
+    assert payload["active_root_count"] == 1
+    assert [(root["path"], root["is_active"], root["comic_count"]) for root in payload["roots"]] == [
+        ("/tmp/root-payload/active", True, 1),
+        ("/tmp/root-payload/disabled", False, 1),
+    ]
+
+    listed = admin_client.get("/api/libraries/").json()[0]
+    assert listed["roots"][0]["comic_count"] == 1
+    assert listed["roots"][1]["comic_count"] == 1
+
+
+def test_admin_can_add_library_root_without_queueing_scan(admin_client, db):
+    library = create_library_with_root(db, "Add Root", "/tmp/add-root/main", watch_mode=True)
+
+    with (
+        patch("app.api.libraries.library_watcher.refresh_watches") as mock_refresh,
+        patch("app.api.libraries.scan_manager.add_task") as mock_scan,
+    ):
+        response = admin_client.post(
+            f"/api/libraries/{library.id}/roots",
+            json={"path": "  /tmp/add-root/archive  "},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["library_id"] == library.id
+    assert payload["path"] == "/tmp/add-root/archive"
+    assert payload["is_active"] is True
+    assert payload["comic_count"] == 0
+    mock_refresh.assert_called_once()
+    mock_scan.assert_not_called()
+
+    roots = db.query(LibraryRoot).filter(LibraryRoot.library_id == library.id).order_by(LibraryRoot.id).all()
+    assert [root.path for root in roots] == ["/tmp/add-root/main", "/tmp/add-root/archive"]
+
+
+def test_add_library_root_rejects_same_library_overlap(admin_client, db):
+    library = create_library_with_root(db, "Same Library Overlap", "/tmp/same-overlap")
+
+    response = admin_client.post(
+        f"/api/libraries/{library.id}/roots",
+        json={"path": "/tmp/same-overlap/child"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "Library root path overlaps with existing root for library 'Same Library Overlap'"
+    }
+
+
+def test_add_library_root_rejects_cross_library_overlap(admin_client, db):
+    create_library_with_root(db, "Other Library Overlap", "/tmp/cross-overlap")
+    target = create_library_with_root(db, "Target Library", "/tmp/target-overlap")
+
+    response = admin_client.post(
+        f"/api/libraries/{target.id}/roots",
+        json={"path": "/tmp/cross-overlap/child"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "Library root path overlaps with existing library 'Other Library Overlap'"
+    }
+
+
+def test_disable_library_root_preserves_existing_comics(admin_client, db):
+    library = create_library_with_root(db, "Disable Root", "/tmp/disable-root/main", watch_mode=True)
+    second_root = LibraryRoot(library_id=library.id, path="/tmp/disable-root/archive", is_active=True)
+    db.add(second_root)
+    series = Series(name="Disable Root Series", library=library)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
+    db.flush()
+
+    comic = create_comic(db, volume, second_root, "archive.cbz", filename="archive.cbz")
+    db.commit()
+
+    with patch("app.api.libraries.library_watcher.refresh_watches") as mock_refresh:
+        response = admin_client.patch(
+            f"/api/libraries/{library.id}/roots/{second_root.id}",
+            json={"is_active": False},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["is_active"] is False
+    assert payload["comic_count"] == 1
+    mock_refresh.assert_called_once()
+
+    db.refresh(second_root)
+    assert second_root.is_active is False
+    assert db.get(Comic, comic.id) is not None
+
+
+def test_enable_library_root_rejects_legacy_overlap(admin_client, db):
+    library = create_library_with_root(db, "Enable Root Overlap", "/tmp/enable-root")
+    disabled_root = LibraryRoot(
+        library_id=library.id,
+        path="/tmp/enable-root/child",
+        is_active=False,
+    )
+    db.add(disabled_root)
+    db.commit()
+
+    response = admin_client.patch(
+        f"/api/libraries/{library.id}/roots/{disabled_root.id}",
+        json={"is_active": True},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "Library root path overlaps with existing root for library 'Enable Root Overlap'"
+    }
+
+
+def test_remove_empty_library_root(admin_client, db):
+    library = create_library_with_root(db, "Remove Empty Root", "/tmp/remove-empty/main", watch_mode=True)
+    empty_root = LibraryRoot(library_id=library.id, path="/tmp/remove-empty/archive", is_active=True)
+    db.add(empty_root)
+    db.commit()
+
+    with patch("app.api.libraries.library_watcher.refresh_watches") as mock_refresh:
+        response = admin_client.delete(f"/api/libraries/{library.id}/roots/{empty_root.id}")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "library_id": library.id,
+        "root_id": empty_root.id,
+        "removed": True,
+        "deleted_comics": 0,
+        "deleted_volumes": 0,
+        "deleted_series": 0,
+    }
+    assert db.get(LibraryRoot, empty_root.id) is None
+    mock_refresh.assert_called_once()
+
+
+def test_remove_library_root_with_comics_requires_explicit_delete(admin_client, db):
+    library = create_library_with_root(db, "Remove Guard Root", "/tmp/remove-guard")
+    root = library.active_root
+    series = Series(name="Remove Guard Series", library=library)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
+    db.flush()
+    create_comic(db, volume, root, "guard.cbz", filename="guard.cbz")
+    db.commit()
+
+    response = admin_client.delete(f"/api/libraries/{library.id}/roots/{root.id}")
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": (
+            "Library root has 1 comic records. "
+            "Pass delete_comics=true to remove the root and delete those records."
+        )
+    }
+    assert db.get(LibraryRoot, root.id) is not None
+
+
+def test_remove_library_root_with_delete_comics_prunes_empty_containers(admin_client, db):
+    library = create_library_with_root(db, "Remove Comics Root", "/tmp/remove-comics")
+    root = library.active_root
+    series = Series(name="Remove Comics Series", library=library)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
+    db.flush()
+
+    comic = create_comic(db, volume, root, "delete-me.cbz", filename="delete-me.cbz")
+    db.commit()
+
+    response = admin_client.delete(f"/api/libraries/{library.id}/roots/{root.id}?delete_comics=true")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "library_id": library.id,
+        "root_id": root.id,
+        "removed": True,
+        "deleted_comics": 1,
+        "deleted_volumes": 1,
+        "deleted_series": 1,
+    }
+    assert db.get(LibraryRoot, root.id) is None
+    assert db.get(Comic, comic.id) is None
+    assert db.get(Volume, volume.id) is None
+    assert db.get(Series, series.id) is None
+
+
+def test_root_lifecycle_rejects_scanning_library(admin_client, db):
+    library = create_library_with_root(db, "Busy Root", "/tmp/busy-root")
+    library.is_scanning = True
+    db.commit()
+
+    response = admin_client.post(
+        f"/api/libraries/{library.id}/roots",
+        json={"path": "/tmp/busy-root/archive"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Library roots cannot be changed while a scan is queued or running"}
+
+
+def test_library_root_endpoints_require_admin(auth_client, db):
+    library = create_library_with_root(db, "Root Admin Only", "/tmp/root-admin-only")
+
+    response = auth_client.get(f"/api/libraries/{library.id}/roots")
+
+    assert response.status_code == 400
+
+
 def test_preview_library_relocation_returns_counts_without_updating_root(admin_client, db, tmp_path):
     current_root_path = tmp_path / "api-current"
     proposed_root_path = tmp_path / "api-proposed"

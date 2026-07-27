@@ -66,13 +66,17 @@ class LibraryScanner:
 
         start_time = time.time()
 
-        # 0. Prefetch existing comics (same as old scan)
+        # 0. Prefetch existing comics for roots this scan can actually see.
         self.logger.debug("Pre-fetching existing file list for parallel scan...")
+        active_root_ids = [library_root.id for library_root in library_roots]
         db_comics = (
             self.db.query(Comic)
             .join(Volume)
             .join(Series)
-            .filter(Series.library_id == self.library.id)
+            .filter(
+                Series.library_id == self.library.id,
+                Comic.library_root_id.in_(active_root_ids),
+            )
             .all()
         )
 

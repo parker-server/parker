@@ -18,8 +18,8 @@
             <thead class="bg-gray-900 text-gray-400 uppercase text-xs">
                 <tr>
                     <th class="px-6 py-3">Name</th>
-                    <th class="px-6 py-3">Path</th>
-                    <th class="px-6 py-3">Status</th>
+                    <th class="px-6 py-3">Storage</th>
+                    <th class="px-6 py-3">Last Scanned</th>
                     <th class="px-6 py-3 text-right">Actions</th>
                 </tr>
             </thead>
@@ -29,7 +29,14 @@
                         <td class="px-6 py-4 font-bold text-white">
                             <a :href="window.parker.route('pages.library_detail', { library_id: lib.id })" class="hover:text-blue-400 transition-colors" x-text="lib.name"></a>
                         </td>
-                        <td class="px-6 py-4 text-sm text-gray-400 font-mono" x-text="lib.path"></td>
+                        <td class="px-6 py-4 text-sm text-gray-400">
+                            <div class="font-mono break-all" x-text="libraryPrimaryPath(lib)"></div>
+                            <div
+                                x-show="(lib.roots || []).length !== 1"
+                                class="mt-1 text-xs text-gray-500"
+                                x-text="rootSummary(lib)"
+                            ></div>
+                        </td>
                         <td class="px-6 py-4 text-sm text-gray-400">
                             <div x-show="lib.is_scanning" class="flex items-center text-blue-400 text-xs font-bold animate-pulse">
                                 <span class="mr-2">↻</span> Working...
@@ -56,14 +63,7 @@
 
                             <div class="h-4 w-px bg-gray-700 mx-1"></div>
 
-                            <button
-                                x-on:click="openRelocateModal(lib)"
-                                class="text-amber-300 hover:text-white text-sm font-medium px-2 disabled:opacity-30 disabled:cursor-not-allowed"
-                                :disabled="lib.is_scanning"
-                                title="Relocate library path"
-                            >
-                                Relocate
-                            </button>
+                            <button x-on:click="openRootsModal(lib)" class="text-purple-300 hover:text-white text-sm font-medium px-2">Roots</button>
                             <button x-on:click="openEditModal(lib)" class="text-blue-400 hover:text-white text-sm font-medium px-2">Edit</button>
                             <button x-on:click="deleteLibrary(lib)" class="text-red-400 hover:text-white text-sm font-medium px-2">Delete</button>
                         </td>
@@ -87,13 +87,12 @@
                     <label class="block text-sm text-gray-400 mb-1">Name</label>
                     <input type="text" x-model.trim="form.name" required class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white focus:border-blue-500 outline-none" placeholder="e.g. DC Comics">
                 </div>
-                <div>
+                <div x-show="!isEditing">
                     <label class="block text-sm text-gray-400 mb-1">Folder Path</label>
                     <div class="flex gap-2">
-                        <input type="text" x-model="form.path" :disabled="isEditing" :class="isEditing ? 'opacity-60 cursor-not-allowed' : ''" class="flex-1 bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white focus:border-blue-500 outline-none" placeholder="/comics/dc">
+                        <input type="text" x-model="form.path" class="flex-1 bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white focus:border-blue-500 outline-none" placeholder="/comics/dc">
                         <button
                             type="button"
-                            x-show="!isEditing"
                             x-on:click="openDirectoryBrowser()"
                             class="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded transition-colors text-sm font-medium"
                         >
@@ -101,65 +100,46 @@
                         </button>
                     </div>
                     <p class="text-xs text-gray-500 mt-1">Server-side path where files are located.</p>
-                    <div x-show="isEditing" class="mt-2 rounded border border-amber-500/30 bg-amber-950/30 px-3 py-2 text-xs text-amber-100" style="display: none;">
-                        Use Relocate to change this library's path safely.
-                    </div>
 
-                    <div x-show="!isEditing && pathBrowser.open" class="mt-3 border border-gray-700 rounded bg-gray-900 overflow-hidden" style="display: none;">
-                        <div class="flex items-center justify-between gap-3 px-3 py-2 border-b border-gray-700">
-                            <div class="min-w-0">
-                                <p class="text-[10px] uppercase tracking-wide text-gray-500">Browsing</p>
-                                <p class="text-xs text-gray-300 font-mono truncate" x-text="pathBrowser.current || 'Loading...'"></p>
-                            </div>
-                            <button
-                                type="button"
-                                x-on:click="closeDirectoryBrowser()"
-                                class="text-gray-500 hover:text-white text-sm"
-                            >
-                                Close
-                            </button>
-                        </div>
-
-                        <div x-show="pathBrowser.error" class="px-3 py-3 text-sm text-red-300 bg-red-950/30 border-b border-red-900/50" x-text="pathBrowser.error"></div>
-                        <div x-show="pathBrowser.notice" class="px-3 py-3 text-sm text-amber-200 bg-amber-950/30 border-b border-amber-900/50" x-text="pathBrowser.notice"></div>
-                        <div x-show="pathBrowser.loading" class="px-3 py-4 text-sm text-gray-400">Loading folders...</div>
-
-                        <div x-show="!pathBrowser.loading && !pathBrowser.error" class="max-h-64 overflow-y-auto">
-                            <button
-                                type="button"
-                                x-show="pathBrowser.parent"
-                                x-on:click="browseDirectory(pathBrowser.parent)"
-                                class="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-800 border-b border-gray-800"
-                            >
-                                ../
-                            </button>
-
-                            <template x-for="entry in pathBrowser.entries" :key="entry.path">
+                    <template x-if="!isEditing && pathBrowser.open && pathBrowser.target === 'form'">
+                        <div class="mt-3 border border-gray-700 rounded bg-gray-900 overflow-hidden">
+                            <div class="flex items-center justify-between gap-3 px-3 py-2 border-b border-gray-700">
+                                <div class="min-w-0">
+                                    <p class="text-[10px] uppercase tracking-wide text-gray-500">Browsing</p>
+                                    <p class="text-xs text-gray-300 font-mono truncate" x-text="pathBrowser.current || 'Loading...'"></p>
+                                </div>
                                 <button
                                     type="button"
-                                    x-on:click="browseDirectory(entry.path)"
-                                    class="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-800 border-b border-gray-800 last:border-b-0"
+                                    x-on:click="closeDirectoryBrowser()"
+                                    class="text-gray-500 hover:text-white text-sm"
                                 >
-                                    <span class="text-blue-300 mr-2">/</span><span x-text="entry.name"></span>
+                                    Close
                                 </button>
-                            </template>
+                            </div>
 
-                            <div x-show="pathBrowser.entries.length === 0" class="px-3 py-4 text-sm text-gray-500">
-                                No subfolders found.
+                            <div x-show="pathBrowser.error" class="px-3 py-3 text-sm text-red-300 bg-red-950/30 border-b border-red-900/50" x-text="pathBrowser.error"></div>
+                            <div x-show="pathBrowser.notice" class="px-3 py-3 text-sm text-amber-200 bg-amber-950/30 border-b border-amber-900/50" x-text="pathBrowser.notice"></div>
+                            <div x-show="pathBrowser.loading" class="px-3 py-4 text-sm text-gray-400">Loading folders...</div>
+
+                            <div
+                                x-show="!pathBrowser.loading && !pathBrowser.error"
+                                class="max-h-64 overflow-y-auto"
+                                x-on:click="handleDirectoryBrowserClick($event)"
+                                x-html="pathBrowserRowsHtml()"
+                            ></div>
+
+                            <div class="flex justify-end gap-2 px-3 py-2 border-t border-gray-700 bg-gray-950/50">
+                                <button
+                                    type="button"
+                                    x-on:click="useBrowsedDirectory()"
+                                    class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded text-sm transition-colors"
+                                    :disabled="!pathBrowser.current"
+                                >
+                                    Use This Folder
+                                </button>
                             </div>
                         </div>
-
-                        <div class="flex justify-end gap-2 px-3 py-2 border-t border-gray-700 bg-gray-950/50">
-                            <button
-                                type="button"
-                                x-on:click="useBrowsedDirectory()"
-                                class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded text-sm transition-colors"
-                                :disabled="!pathBrowser.current"
-                            >
-                                Use This Folder
-                            </button>
-                        </div>
-                    </div>
+                    </template>
                 </div>
                 <div>
                     <label class="flex items-center gap-2 cursor-pointer">
@@ -169,8 +149,8 @@
                             class="rounded bg-gray-900 border-gray-700 text-blue-600 focus:ring-blue-500 w-5 h-5"
                         >
                         <div>
-                            <span class="block text-sm text-gray-300">Watch Folder</span>
-                            <span class="block text-xs text-gray-500">Automatically scan when files are added or changed.</span>
+                            <span class="block text-sm text-gray-300">Watch Library</span>
+                            <span class="block text-xs text-gray-500">Automatically scan active roots when files are added or changed.</span>
                         </div>
                     </label>
                 </div>
@@ -218,6 +198,132 @@
         </div>
     </div>
 
+    <div x-show="showRootsModal" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 px-4" style="display: none;" x-transition.opacity>
+        <div class="bg-gray-800 p-6 rounded-lg w-full max-w-3xl max-h-[90vh] overflow-y-auto border border-gray-700 shadow-2xl">
+            <div class="flex items-start justify-between gap-4 mb-5">
+                <div class="min-w-0">
+                    <h2 class="text-xl font-bold text-white">Library Roots</h2>
+                    <p class="text-sm text-gray-400 truncate" x-text="roots.library?.name"></p>
+                </div>
+                <button x-on:click="closeRootsModal()" class="text-gray-500 hover:text-white text-sm">Close</button>
+            </div>
+
+            <div class="space-y-4">
+                <div class="space-y-2">
+                    <template x-for="root in roots.library?.roots || []" :key="root.id">
+                        <div data-testid="library-root-row" class="border border-gray-700 rounded bg-gray-900/60 px-3 py-3">
+                            <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                <div class="min-w-0">
+                                    <div class="flex flex-wrap items-center gap-2 mb-1">
+                                        <span
+                                            class="rounded px-2 py-0.5 text-[10px] font-bold uppercase"
+                                            :class="root.is_active ? 'bg-green-900/60 text-green-200' : 'bg-gray-700 text-gray-300'"
+                                            x-text="root.is_active ? 'Active' : 'Disabled'"
+                                        ></span>
+                                        <span class="text-xs text-gray-500" x-text="rootComicLabel(root)"></span>
+                                    </div>
+                                    <p class="font-mono text-sm text-gray-200 break-all" x-text="root.path"></p>
+                                </div>
+                                <div class="flex flex-wrap items-center gap-2 shrink-0">
+                                    <button
+                                        x-on:click="toggleRoot(root)"
+                                        class="bg-gray-700 hover:bg-gray-600 text-white text-xs px-3 py-1.5 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                        :disabled="roots.busyRootId === root.id || roots.library?.is_scanning"
+                                        x-text="root.is_active ? 'Disable' : 'Enable'"
+                                    ></button>
+                                    <button
+                                        x-on:click="openRelocateModal(roots.library, root)"
+                                        class="text-amber-300 hover:text-white text-xs font-medium px-2 disabled:opacity-30 disabled:cursor-not-allowed"
+                                        :disabled="roots.library?.is_scanning"
+                                    >
+                                        Relocate
+                                    </button>
+                                    <button
+                                        x-on:click="removeRoot(root)"
+                                        class="text-red-400 hover:text-white text-xs font-medium px-2 disabled:opacity-30 disabled:cursor-not-allowed"
+                                        :disabled="roots.busyRootId === root.id || roots.library?.is_scanning"
+                                    >
+                                        Remove
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                    <div x-show="(roots.library?.roots || []).length === 0" class="rounded border border-gray-700 bg-gray-900/60 px-3 py-4 text-sm text-gray-500">
+                        No roots configured.
+                    </div>
+                </div>
+
+                <div class="border-t border-gray-700 pt-4">
+                    <label class="block text-sm text-gray-400 mb-1">Add Root</label>
+                    <div class="flex flex-col gap-2 sm:flex-row">
+                        <input
+                            type="text"
+                            x-model="roots.path"
+                            class="flex-1 bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white focus:border-blue-500 outline-none"
+                            placeholder="/comics/archive"
+                        >
+                        <button
+                            type="button"
+                            x-on:click="openDirectoryBrowser('root')"
+                            class="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded transition-colors text-sm font-medium"
+                        >
+                            Browse
+                        </button>
+                        <button
+                            x-on:click="addRoot()"
+                            class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                            :disabled="roots.library?.is_scanning || roots.adding || !String(roots.path || '').trim()"
+                        >
+                            <span x-text="roots.adding ? 'Adding...' : 'Add Root'"></span>
+                        </button>
+                    </div>
+                    <div x-show="roots.error" class="mt-3 rounded border border-red-900/60 bg-red-950/30 px-3 py-2 text-sm text-red-200" x-text="roots.error"></div>
+
+                    <template x-if="pathBrowser.open && pathBrowser.target === 'root'">
+                        <div class="mt-3 border border-gray-700 rounded bg-gray-900 overflow-hidden">
+                            <div class="flex items-center justify-between gap-3 px-3 py-2 border-b border-gray-700">
+                                <div class="min-w-0">
+                                    <p class="text-[10px] uppercase tracking-wide text-gray-500">Browsing</p>
+                                    <p class="text-xs text-gray-300 font-mono truncate" x-text="pathBrowser.current || 'Loading...'"></p>
+                                </div>
+                                <button
+                                    type="button"
+                                    x-on:click="closeDirectoryBrowser()"
+                                    class="text-gray-500 hover:text-white text-sm"
+                                >
+                                    Close
+                                </button>
+                            </div>
+
+                            <div x-show="pathBrowser.error" class="px-3 py-3 text-sm text-red-300 bg-red-950/30 border-b border-red-900/50" x-text="pathBrowser.error"></div>
+                            <div x-show="pathBrowser.notice" class="px-3 py-3 text-sm text-amber-200 bg-amber-950/30 border-b border-amber-900/50" x-text="pathBrowser.notice"></div>
+                            <div x-show="pathBrowser.loading" class="px-3 py-4 text-sm text-gray-400">Loading folders...</div>
+
+                            <div
+                                x-show="!pathBrowser.loading && !pathBrowser.error"
+                                class="max-h-64 overflow-y-auto"
+                                x-on:click="handleDirectoryBrowserClick($event)"
+                                x-html="pathBrowserRowsHtml()"
+                            ></div>
+
+                            <div class="flex justify-end gap-2 px-3 py-2 border-t border-gray-700 bg-gray-950/50">
+                                <button
+                                    type="button"
+                                    x-on:click="useBrowsedDirectory()"
+                                    class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded text-sm transition-colors"
+                                    :disabled="!pathBrowser.current"
+                                >
+                                    Use This Folder
+                                </button>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div x-show="showRelocationModal" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 px-4" style="display: none;" x-transition.opacity>
         <div class="bg-gray-800 p-6 rounded-lg w-full max-w-3xl max-h-[90vh] overflow-y-auto border border-gray-700 shadow-2xl">
             <div class="flex items-start justify-between gap-4 mb-5">
@@ -255,61 +361,45 @@
                     </div>
                 </div>
 
-                <div x-show="pathBrowser.open && pathBrowser.target === 'relocation'" class="border border-gray-700 rounded bg-gray-900 overflow-hidden" style="display: none;">
-                    <div class="flex items-center justify-between gap-3 px-3 py-2 border-b border-gray-700">
-                        <div class="min-w-0">
-                            <p class="text-[10px] uppercase tracking-wide text-gray-500">Browsing</p>
-                            <p class="text-xs text-gray-300 font-mono truncate" x-text="pathBrowser.current || 'Loading...'"></p>
-                        </div>
-                        <button
-                            type="button"
-                            x-on:click="closeDirectoryBrowser()"
-                            class="text-gray-500 hover:text-white text-sm"
-                        >
-                            Close
-                        </button>
-                    </div>
-
-                    <div x-show="pathBrowser.error" class="px-3 py-3 text-sm text-red-300 bg-red-950/30 border-b border-red-900/50" x-text="pathBrowser.error"></div>
-                    <div x-show="pathBrowser.notice" class="px-3 py-3 text-sm text-amber-200 bg-amber-950/30 border-b border-amber-900/50" x-text="pathBrowser.notice"></div>
-                    <div x-show="pathBrowser.loading" class="px-3 py-4 text-sm text-gray-400">Loading folders...</div>
-
-                    <div x-show="!pathBrowser.loading && !pathBrowser.error" class="max-h-64 overflow-y-auto">
-                        <button
-                            type="button"
-                            x-show="pathBrowser.parent"
-                            x-on:click="browseDirectory(pathBrowser.parent)"
-                            class="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-800 border-b border-gray-800"
-                        >
-                            ../
-                        </button>
-
-                        <template x-for="entry in pathBrowser.entries" :key="entry.path">
+                <template x-if="pathBrowser.open && pathBrowser.target === 'relocation'">
+                    <div class="border border-gray-700 rounded bg-gray-900 overflow-hidden">
+                        <div class="flex items-center justify-between gap-3 px-3 py-2 border-b border-gray-700">
+                            <div class="min-w-0">
+                                <p class="text-[10px] uppercase tracking-wide text-gray-500">Browsing</p>
+                                <p class="text-xs text-gray-300 font-mono truncate" x-text="pathBrowser.current || 'Loading...'"></p>
+                            </div>
                             <button
                                 type="button"
-                                x-on:click="browseDirectory(entry.path)"
-                                class="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-800 border-b border-gray-800 last:border-b-0"
+                                x-on:click="closeDirectoryBrowser()"
+                                class="text-gray-500 hover:text-white text-sm"
                             >
-                                <span class="text-blue-300 mr-2">/</span><span x-text="entry.name"></span>
+                                Close
                             </button>
-                        </template>
+                        </div>
 
-                        <div x-show="pathBrowser.entries.length === 0" class="px-3 py-4 text-sm text-gray-500">
-                            No subfolders found.
+                        <div x-show="pathBrowser.error" class="px-3 py-3 text-sm text-red-300 bg-red-950/30 border-b border-red-900/50" x-text="pathBrowser.error"></div>
+                        <div x-show="pathBrowser.notice" class="px-3 py-3 text-sm text-amber-200 bg-amber-950/30 border-b border-amber-900/50" x-text="pathBrowser.notice"></div>
+                        <div x-show="pathBrowser.loading" class="px-3 py-4 text-sm text-gray-400">Loading folders...</div>
+
+                        <div
+                            x-show="!pathBrowser.loading && !pathBrowser.error"
+                            class="max-h-64 overflow-y-auto"
+                            x-on:click="handleDirectoryBrowserClick($event)"
+                            x-html="pathBrowserRowsHtml()"
+                        ></div>
+
+                        <div class="flex justify-end gap-2 px-3 py-2 border-t border-gray-700 bg-gray-950/50">
+                            <button
+                                type="button"
+                                x-on:click="useBrowsedDirectory()"
+                                class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded text-sm transition-colors"
+                                :disabled="!pathBrowser.current"
+                            >
+                                Use This Folder
+                            </button>
                         </div>
                     </div>
-
-                    <div class="flex justify-end gap-2 px-3 py-2 border-t border-gray-700 bg-gray-950/50">
-                        <button
-                            type="button"
-                            x-on:click="useBrowsedDirectory()"
-                            class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded text-sm transition-colors"
-                            :disabled="!pathBrowser.current"
-                        >
-                            Use This Folder
-                        </button>
-                    </div>
-                </div>
+                </template>
 
                 <div x-show="relocation.error" class="rounded border border-red-900/60 bg-red-950/30 px-3 py-2 text-sm text-red-200" x-text="relocation.error"></div>
 
@@ -429,6 +519,7 @@ function libraryManager() {
     return {
         libraries: [],
         showModal: false,
+        showRootsModal: false,
         showRelocationModal: false,
         isEditing: false,
         form: {
@@ -442,6 +533,7 @@ function libraryManager() {
         },
         relocation: {
             library: null,
+            rootId: null,
             path: '',
             preview: null,
             confirmation: null,
@@ -450,9 +542,17 @@ function libraryManager() {
             confirming: false,
             completed: false,
         },
+        roots: {
+            library: null,
+            path: '',
+            error: '',
+            adding: false,
+            busyRootId: null,
+        },
         pathBrowser: {
             open: false,
             target: 'form',
+            requestId: 0,
             loading: false,
             error: '',
             notice: '',
@@ -479,8 +579,51 @@ function libraryManager() {
         async loadLibraries() {
             try {
                 const res = await fetch(window.parker.route('libraries.list'));
-                if (res.ok) this.libraries = await res.json();
+                if (res.ok) {
+                    this.libraries = await res.json();
+                    this.syncOpenLibraryRefs();
+                }
             } catch(e) { console.error(e); }
+        },
+
+        syncOpenLibraryRefs() {
+            if (this.roots.library) {
+                const updated = this.libraries.find((lib) => lib.id === this.roots.library.id);
+                if (updated) this.roots.library = updated;
+            }
+
+            if (this.relocation.library) {
+                const updated = this.libraries.find((lib) => lib.id === this.relocation.library.id);
+                if (updated) this.relocation.library = updated;
+            }
+        },
+
+        activeRoots(lib) {
+            return (lib?.roots || []).filter((root) => root.is_active);
+        },
+
+        libraryPrimaryPath(lib) {
+            if (lib?.path) return lib.path;
+            if ((lib?.roots || []).length > 0) return 'No active roots';
+            return 'No roots configured';
+        },
+
+        rootSummary(lib) {
+            const roots = lib?.roots || [];
+            if (roots.length === 0) return 'No roots configured';
+
+            const activeCount = this.activeRoots(lib).length;
+            if (activeCount === 0) {
+                return `0 active of ${roots.length} ${roots.length === 1 ? 'root' : 'roots'}`;
+            }
+
+            const additionalRootCount = roots.length - 1;
+            return `Primary root shown + ${additionalRootCount} more`;
+        },
+
+        rootComicLabel(root) {
+            const count = Number(root?.comic_count || 0);
+            return `${count.toLocaleString()} ${count === 1 ? 'comic' : 'comics'}`;
         },
 
         openAddModal() {
@@ -516,6 +659,7 @@ function libraryManager() {
         resetRelocationState() {
             this.relocation = {
                 library: null,
+                rootId: null,
                 path: '',
                 preview: null,
                 confirmation: null,
@@ -526,12 +670,21 @@ function libraryManager() {
             };
         },
 
-        openRelocateModal(lib) {
+        openRelocateModal(lib, root = null) {
+            const roots = this.activeRoots(lib);
+            const selectedRoot = root || (roots.length === 1 ? roots[0] : null);
+            if (!selectedRoot) {
+                this.openRootsModal(lib);
+                return;
+            }
+
             this.showModal = false;
+            this.showRootsModal = false;
             this.closeDirectoryBrowser();
             this.relocation = {
                 library: lib,
-                path: lib.path || '',
+                rootId: selectedRoot.id,
+                path: selectedRoot.path || '',
                 preview: null,
                 confirmation: null,
                 error: '',
@@ -555,12 +708,151 @@ function libraryManager() {
             this.relocation.completed = false;
         },
 
+        openRootsModal(lib) {
+            this.showModal = false;
+            this.showRelocationModal = false;
+            this.closeDirectoryBrowser();
+            const updated = this.libraries.find((candidate) => candidate.id === lib.id) || lib;
+            this.roots = {
+                library: updated,
+                path: '',
+                error: '',
+                adding: false,
+                busyRootId: null,
+            };
+            this.showRootsModal = true;
+        },
+
+        closeRootsModal() {
+            this.showRootsModal = false;
+            this.closeDirectoryBrowser();
+            this.roots = {
+                library: null,
+                path: '',
+                error: '',
+                adding: false,
+                busyRootId: null,
+            };
+        },
+
+        async addRoot() {
+            if (!this.roots.library || !String(this.roots.path || '').trim()) return;
+
+            this.roots.adding = true;
+            this.roots.error = '';
+
+            try {
+                const res = await fetch(
+                    window.parker.route('libraries.roots_create', { library_id: this.roots.library.id }),
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ path: String(this.roots.path || '').trim() })
+                    }
+                );
+                const payload = await res.json();
+
+                if (!res.ok) {
+                    throw new Error(payload.detail || 'Unable to add root');
+                }
+
+                this.roots.path = '';
+                await this.loadLibraries();
+                window.parker.showToast('Root added', 'success');
+            } catch (e) {
+                console.error(e);
+                this.roots.error = e.message || 'Unable to add root';
+            } finally {
+                this.roots.adding = false;
+            }
+        },
+
+        async toggleRoot(root) {
+            if (!this.roots.library || !root) return;
+
+            const nextActive = !root.is_active;
+            this.roots.busyRootId = root.id;
+            this.roots.error = '';
+
+            try {
+                const res = await fetch(
+                    window.parker.route('libraries.roots_update', {
+                        library_id: this.roots.library.id,
+                        root_id: root.id,
+                    }),
+                    {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ is_active: nextActive })
+                    }
+                );
+                const payload = await res.json();
+
+                if (!res.ok) {
+                    throw new Error(payload.detail || 'Unable to update root');
+                }
+
+                await this.loadLibraries();
+                window.parker.showToast(nextActive ? 'Root enabled' : 'Root disabled', 'success');
+            } catch (e) {
+                console.error(e);
+                this.roots.error = e.message || 'Unable to update root';
+            } finally {
+                this.roots.busyRootId = null;
+            }
+        },
+
+        async removeRoot(root) {
+            if (!this.roots.library || !root) return;
+
+            const comicCount = Number(root.comic_count || 0);
+            const confirmed = await window.parker.dialog.confirm(
+                `Remove Root?`,
+                comicCount > 0
+                    ? `This removes the root and deletes ${comicCount.toLocaleString()} comic records from the database. Files remain intact.`
+                    : 'This removes the root from the library. Files remain intact.',
+                { isDestructive: true, confirmText: comicCount > 0 ? 'Delete Comics and Remove' : 'Remove Root' }
+            );
+
+            if (!confirmed) return;
+
+            this.roots.busyRootId = root.id;
+            this.roots.error = '';
+
+            try {
+                const query = comicCount > 0 ? 'delete_comics=true' : '';
+                const res = await fetch(
+                    window.parker.route('libraries.roots_delete', {
+                        library_id: this.roots.library.id,
+                        root_id: root.id,
+                    }, query),
+                    { method: 'DELETE' }
+                );
+                const payload = await res.json();
+
+                if (!res.ok) {
+                    throw new Error(payload.detail || 'Unable to remove root');
+                }
+
+                await this.loadLibraries();
+                window.parker.showToast('Root removed', 'success');
+            } catch (e) {
+                console.error(e);
+                this.roots.error = e.message || 'Unable to remove root';
+            } finally {
+                this.roots.busyRootId = null;
+            }
+        },
+
         async openDirectoryBrowser(target = 'form') {
             this.pathBrowser.target = target;
             this.pathBrowser.open = true;
-            const requestedPath = target === 'relocation'
-                ? (this.relocation.path || this.relocation.library?.path || null)
-                : (this.form.path || null);
+            let requestedPath = this.form.path || null;
+            if (target === 'relocation') {
+                requestedPath = this.relocation.path || this.relocation.library?.path || null;
+            } else if (target === 'root') {
+                requestedPath = this.roots.path || this.roots.library?.path || null;
+            }
             const openedRequestedPath = await this.browseDirectory(requestedPath);
 
             if (!openedRequestedPath && requestedPath) {
@@ -573,6 +865,7 @@ function libraryManager() {
         },
 
         closeDirectoryBrowser() {
+            this.pathBrowser.requestId += 1;
             this.pathBrowser.open = false;
             this.pathBrowser.target = 'form';
             this.pathBrowser.loading = false;
@@ -580,7 +873,54 @@ function libraryManager() {
             this.pathBrowser.notice = '';
         },
 
+        escapePathBrowserText(value) {
+            const replacements = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;',
+            };
+            return String(value ?? '').replace(/[&<>"']/g, (char) => replacements[char]);
+        },
+
+        pathBrowserButtonHtml(label, path, isFolder = false) {
+            const safeLabel = this.escapePathBrowserText(label);
+            const safePath = this.escapePathBrowserText(path);
+            const prefix = isFolder ? '<span class="text-blue-300 mr-2">/</span>' : '';
+            return `<button type="button" data-browser-path="${safePath}" class="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-800 border-b border-gray-800 last:border-b-0">${prefix}<span>${safeLabel}</span></button>`;
+        },
+
+        pathBrowserRowsHtml() {
+            const rows = [];
+            if (this.pathBrowser.parent) {
+                rows.push(this.pathBrowserButtonHtml('../', this.pathBrowser.parent));
+            }
+
+            for (const entry of this.pathBrowser.entries || []) {
+                rows.push(this.pathBrowserButtonHtml(entry.name, entry.path, true));
+            }
+
+            if (rows.length === 0) {
+                return '<div class="px-3 py-4 text-sm text-gray-500">No subfolders found.</div>';
+            }
+
+            return rows.join('');
+        },
+
+        handleDirectoryBrowserClick(event) {
+            const button = event.target.closest('button[data-browser-path]');
+            if (!button) return;
+
+            const path = button.getAttribute('data-browser-path');
+            if (path) {
+                this.browseDirectory(path);
+            }
+        },
+
         async browseDirectory(path) {
+            const requestId = this.pathBrowser.requestId + 1;
+            this.pathBrowser.requestId = requestId;
             this.pathBrowser.loading = true;
             this.pathBrowser.error = '';
             this.pathBrowser.notice = '';
@@ -594,18 +934,32 @@ function libraryManager() {
                     throw new Error(payload.detail || 'Unable to browse folders');
                 }
 
+                if (requestId !== this.pathBrowser.requestId) {
+                    return false;
+                }
+
+                const entries = Array.isArray(payload.entries) ? payload.entries : [];
                 this.pathBrowser.root = payload.root;
                 this.pathBrowser.current = payload.current;
                 this.pathBrowser.parent = payload.parent;
-                this.pathBrowser.entries = payload.entries || [];
+                this.pathBrowser.entries = entries.map((entry) => ({
+                    name: entry.name,
+                    path: entry.path,
+                }));
                 return true;
             } catch (e) {
+                if (requestId !== this.pathBrowser.requestId) {
+                    return false;
+                }
+
                 console.error(e);
                 this.pathBrowser.error = e.message || 'Unable to browse folders';
                 this.pathBrowser.entries = [];
                 return false;
             } finally {
-                this.pathBrowser.loading = false;
+                if (requestId === this.pathBrowser.requestId) {
+                    this.pathBrowser.loading = false;
+                }
             }
         },
 
@@ -614,6 +968,8 @@ function libraryManager() {
             if (this.pathBrowser.target === 'relocation') {
                 this.relocation.path = this.pathBrowser.current;
                 this.resetRelocationPreview();
+            } else if (this.pathBrowser.target === 'root') {
+                this.roots.path = this.pathBrowser.current;
             } else {
                 this.form.path = this.pathBrowser.current;
             }
@@ -704,7 +1060,7 @@ function libraryManager() {
                     {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ path: this.relocation.path })
+                        body: JSON.stringify({ path: this.relocation.path, root_id: this.relocation.rootId })
                     }
                 );
                 const payload = await res.json();
@@ -768,7 +1124,7 @@ function libraryManager() {
                     {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ path: this.relocation.path })
+                        body: JSON.stringify({ path: this.relocation.path, root_id: this.relocation.rootId })
                     }
                 );
                 const payload = await res.json();
@@ -782,10 +1138,15 @@ function libraryManager() {
                 this.relocation.preview = payload;
                 this.relocation.completed = true;
                 this.relocation.path = payload.current_path;
-                this.relocation.library.path = payload.current_path;
+                const relocatedRoot = (this.relocation.library.roots || []).find((root) => root.id === payload.root_id);
+                if (relocatedRoot) relocatedRoot.path = payload.current_path;
 
                 const updated = this.libraries.find((lib) => lib.id === payload.library_id);
-                if (updated) updated.path = payload.current_path;
+                if (updated) {
+                    const updatedRoot = (updated.roots || []).find((root) => root.id === payload.root_id);
+                    if (updatedRoot) updatedRoot.path = payload.current_path;
+                    updated.path = this.activeRoots(updated)[0]?.path || null;
+                }
 
                 await this.loadLibraries();
                 window.parker.showToast('Library relocated', 'success');

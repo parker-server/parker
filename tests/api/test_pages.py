@@ -141,7 +141,19 @@ def test_admin_libraries_page_exposes_folder_browser_route(admin_client):
     assert "Showing ${shown.toLocaleString()} of ${total.toLocaleString()}" in body
     assert "Scan Recommended" in body
     assert "startScan(scanLibrary, true)" in body
-    assert "Use Relocate to change this library's path safely." in body
+    assert "Watch Library" in body
+    assert "Automatically scan active roots when files are added or changed." in body
+    assert "Watch Folder" not in body
+    assert "Use Roots to relocate or manage this library's paths safely." not in body
+    assert "Library Roots" in body
+    assert "libraries.roots_create" in body
+    assert "libraries.roots_update" in body
+    assert "libraries.roots_delete" in body
+    assert "openRootsModal" in body
+    assert 'x-on:click="openRelocateModal(lib)"' not in body
+    assert "openRelocateModal(roots.library, root)" in body
+    assert "delete_comics=true" in body
+    assert "roots.library?.is_scanning || roots.adding" in body
 
 
 def test_search_widget_people_results_use_generic_creator_handoff(auth_client):

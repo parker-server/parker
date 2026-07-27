@@ -116,6 +116,65 @@ def test_scan_parallel_cleans_up_missing_files_across_all_active_roots(db, tmp_p
     assert second_root.last_scanned_at is not None
 
 
+def test_scan_parallel_preserves_comics_on_disabled_roots(db, tmp_path):
+    active_root_path = tmp_path / "active"
+    disabled_root_path = tmp_path / "disabled"
+    active_root_path.mkdir()
+
+    scanner, library = _build_scanner(db, active_root_path, name="scanner-disabled-root-lib")
+    active_root = library.active_root
+    disabled_root = LibraryRoot(
+        library_id=library.id,
+        path=str(disabled_root_path),
+        is_active=False,
+    )
+    db.add(disabled_root)
+    db.flush()
+
+    series = Series(name="Disabled Root Cleanup", library_id=library.id)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
+    db.flush()
+
+    active_file = active_root_path / "active.cbz"
+    active_file.write_bytes(b"active")
+    future_mtime = active_file.stat().st_mtime + 60
+
+    active_comic = create_comic(
+        db,
+        volume,
+        active_root,
+        "active.cbz",
+        number="1",
+        filename="active.cbz",
+        file_modified_at=future_mtime,
+        page_count=10,
+    )
+    disabled_comic = create_comic(
+        db,
+        volume,
+        disabled_root,
+        "archived.cbz",
+        number="2",
+        filename="archived.cbz",
+        file_modified_at=future_mtime,
+        page_count=10,
+    )
+    db.commit()
+
+    result = scanner.scan_parallel(force=False, worker_limit=1)
+
+    assert result["skipped"] == 1
+    assert result["deleted"] == 0
+    assert db.get(Comic, active_comic.id) is not None
+    assert db.get(Comic, disabled_comic.id) is not None
+
+    db.refresh(active_root)
+    db.refresh(disabled_root)
+    assert active_root.last_scanned_at is not None
+    assert disabled_root.last_scanned_at is None
+
+
 def test_cleanup_missing_files_deletes_and_commits(db, tmp_path):
     scanner, library = _build_scanner(db, tmp_path, name="scanner-cleanup-lib")
     root = library.active_root

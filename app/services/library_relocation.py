@@ -17,6 +17,8 @@ NO_RELOCATION_MATCHES_MESSAGE = (
     "No existing comics were found at the new path. Move the library files first, "
     "preserving the same folder structure, then preview again."
 )
+ROOT_CHANGE_BLOCKING_JOB_TYPES = (JobType.SCAN, JobType.THUMBNAIL, JobType.CLEANUP)
+ROOT_CHANGE_BLOCKING_JOB_STATUSES = (JobStatus.PENDING, JobStatus.RUNNING)
 
 
 class LibraryRelocationError(ValueError):
@@ -104,7 +106,7 @@ def preview_library_root_relocation(
     root_id: int | None = None,
     sample_limit: int = DEFAULT_SAMPLE_LIMIT,
 ) -> LibraryRootRelocationPreview:
-    _ensure_library_not_scanning(db, library)
+    ensure_library_root_changes_allowed(db, library)
 
     selected_root = _select_relocation_root(library, root_id)
     resolved_proposed_path = _resolve_proposed_path(proposed_path)
@@ -211,7 +213,7 @@ def confirm_library_root_relocation(
     if preview.confirm_blocked:
         raise LibraryRelocationError(NO_RELOCATION_MATCHES_MESSAGE)
 
-    _ensure_library_not_scanning(db, library)
+    ensure_library_root_changes_allowed(db, library)
 
     selected_root = _select_relocation_root(library, preview.root_id)
     selected_root.path = preview.proposed_path
@@ -229,21 +231,26 @@ def confirm_library_root_relocation(
     )
 
 
-def _ensure_library_not_scanning(db: Session, library: Library) -> None:
+def ensure_library_root_changes_allowed(
+    db: Session,
+    library: Library,
+    *,
+    message: str = LIBRARY_SCAN_ACTIVE_MESSAGE,
+) -> None:
     if library.is_scanning:
-        raise LibraryRelocationError(LIBRARY_SCAN_ACTIVE_MESSAGE)
+        raise LibraryRelocationError(message)
 
     active_scan_job = (
         db.query(ScanJob)
         .filter(
             ScanJob.library_id == library.id,
-            ScanJob.job_type.in_([JobType.SCAN, JobType.THUMBNAIL, JobType.CLEANUP]),
-            ScanJob.status.in_([JobStatus.PENDING, JobStatus.RUNNING]),
+            ScanJob.job_type.in_(ROOT_CHANGE_BLOCKING_JOB_TYPES),
+            ScanJob.status.in_(ROOT_CHANGE_BLOCKING_JOB_STATUSES),
         )
         .first()
     )
     if active_scan_job is not None:
-        raise LibraryRelocationError(LIBRARY_SCAN_ACTIVE_MESSAGE)
+        raise LibraryRelocationError(message)
 
 
 def _select_relocation_root(library: Library, root_id: int | None) -> LibraryRoot:

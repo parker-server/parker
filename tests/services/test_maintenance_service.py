@@ -273,6 +273,39 @@ def test_cleanup_missing_files_reconstructs_path_from_root_instead_of_stale_file
     assert db.get(Comic, truly_missing.id) is None
 
 
+def test_cleanup_missing_files_skips_inactive_root_comics(db, tmp_path):
+    lib = _create_library(db, "maint-inactive-root", tmp_path)
+    inactive_root = LibraryRoot(
+        library_id=lib.id,
+        path=str(tmp_path / "offline-inactive-root"),
+        is_active=False,
+    )
+    db.add(inactive_root)
+    db.flush()
+
+    inactive_series = Series(name="inactive-root-series", library_id=lib.id)
+    inactive_volume = Volume(series=inactive_series, volume_number=1)
+    inactive_comic = Comic(
+        volume=inactive_volume,
+        number="1",
+        title="inactive-root-title",
+        filename="inactive-root.cbz",
+        library_root_id=inactive_root.id,
+        relative_path="offline/inactive-root.cbz",
+        page_count=12,
+    )
+    active_missing = _create_comic(db, lib, "active-missing", "missing/active.cbz")
+    db.add_all([inactive_series, inactive_volume, inactive_comic])
+    db.commit()
+
+    service = MaintenanceService(db)
+    deleted_ids = service.cleanup_missing_files(library_id=lib.id)
+
+    assert deleted_ids == [active_missing.id]
+    assert db.get(Comic, inactive_comic.id) is not None
+    assert db.get(Comic, active_missing.id) is None
+
+
 def test_cleanup_missing_files_scoped_aborts_when_active_root_missing(db, tmp_path, monkeypatch):
     lib = _create_library(db, "maint-missing-active-root", tmp_path)
     missing = _create_comic(db, lib, "missing", "stale-location/gone.cbz")
