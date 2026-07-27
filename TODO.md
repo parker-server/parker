@@ -4,6 +4,12 @@ This file captures follow-up work that should not get lost between releases.
 
 ## Technical Debt
 
+- Evaluate whether Parker needs a library-level publication or visibility flag.
+  Context: Parker already has per-user library access and age restrictions, and disabled library roots intentionally do not hide existing catalog content. A separate "published to users" concept could be useful for staging imports, repairing messy libraries, temporarily parking archive/offline libraries, or keeping test libraries admin-only, but its real-world frequency is uncertain.
+  Follow-up goal: If actual admin workflows show a need for this, design it deliberately as a library-level publication state rather than overloading root activity or access permissions.
+  Candidate direction: Admins always see hidden/unpublished libraries, while non-admin user-facing surfaces exclude them regardless of assigned library access or age eligibility. Scans, watchers, maintenance, and admin reports would continue to operate unless separately disabled.
+  Guardrail: Treat this as a possible future feature, not a committed roadmap item. It would touch nearly every user-facing query and route, so do not sneak it into root lifecycle work without a dedicated design pass.
+
 - Explore container-level Continue behavior for reader contexts.
   Context: Reader navigation currently preserves launch-time context for reading lists, collections, stacks, series, volumes, and story arcs, but persisted progress is comic-level. Home rails resume the comic and page only, while container "Start reading" actions begin at the first item instead of resuming the user's last position within that container.
   Follow-up goal: Decide whether container pages should offer a context-aware Continue action that finds the best in-progress or next unread item within that specific container and launches the reader with that container context.
