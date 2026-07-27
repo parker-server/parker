@@ -232,6 +232,8 @@ def test_admin_libraries_page_exposes_folder_browser_route(admin_client):
     assert "libraries.roots_create" in body
     assert "libraries.roots_update" in body
     assert "libraries.roots_delete" in body
+    assert "Additional roots can be managed after creation with the Roots link." in body
+    assert "This initial path becomes the library's first active root." in body
     assert "openRootsModal" in body
     assert 'x-on:click="openRelocateModal(lib)"' not in body
     assert "openRelocateModal(roots.library, root)" in body

@@ -99,7 +99,10 @@
                             Browse
                         </button>
                     </div>
-                    <p class="text-xs text-gray-500 mt-1">Server-side path where files are located.</p>
+                    <div class="mt-3 rounded border border-blue-500/30 bg-blue-950/30 px-3 py-2 text-xs text-blue-100">
+                        <p class="font-semibold text-blue-200">Additional roots can be managed after creation with the Roots link.</p>
+                        <p class="mt-1 text-blue-100/80">This initial path becomes the library's first active root.</p>
+                    </div>
 
                     <template x-if="!isEditing && pathBrowser.open && pathBrowser.target === 'form'">
                         <div class="mt-3 border border-gray-700 rounded bg-gray-900 overflow-hidden">
