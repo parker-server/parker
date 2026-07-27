@@ -4,6 +4,11 @@ This file captures follow-up work that should not get lost between releases.
 
 ## Technical Debt
 
+- Add CBL reading list support.
+  Context: Many users do not maintain complete ComicInfo `AlternateSeries` / `AlternateNumber` metadata, and Docker deployments commonly mount comic libraries read-only. CBL files can provide filesystem-backed event reading orders without requiring Parker to mutate archives, and those events often span multiple comic series folders.
+  Follow-up goal: Implement the staged plan in `docs/cbl-reading-list-support-scope.md`, starting with reading-list provenance (`manual`, `comicinfo`, `cbl`) and dedicated Parker-managed CBL storage so CBL-derived lists can coexist with metadata-generated and manual lists safely. Include uploads/direct URL imports, a curated DieselTech/CBL-ReadingLists catalog browser, and optional import/copy discovery for `.cbl` files found under comic library roots.
+  Guardrail: CBL support should remain a derived source-file feature backed by Parker-managed CBL storage. Do not write back archive metadata, guess ambiguous matches, or let CBL scans overwrite manual reading lists.
+
 - Evaluate whether Parker needs a library-level publication or visibility flag.
   Context: Parker already has per-user library access and age restrictions, and disabled library roots intentionally do not hide existing catalog content. A separate "published to users" concept could be useful for staging imports, repairing messy libraries, temporarily parking archive/offline libraries, or keeping test libraries admin-only, but its real-world frequency is uncertain.
   Follow-up goal: If actual admin workflows show a need for this, design it deliberately as a library-level publication state rather than overloading root activity or access permissions.
