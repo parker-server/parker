@@ -237,6 +237,8 @@ def test_admin_libraries_page_exposes_folder_browser_route(admin_client):
     assert "openRelocateModal(roots.library, root)" in body
     assert "delete_comics=true" in body
     assert "roots.library?.is_scanning || roots.adding" in body
+    assert "Disable Last Active Root?" in body
+    assert "Existing comics will remain visible and readable if their files are reachable" in body
 
 
 def test_search_widget_people_results_use_generic_creator_handoff(auth_client):

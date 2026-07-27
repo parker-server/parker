@@ -771,6 +771,16 @@ function libraryManager() {
             if (!this.roots.library || !root) return;
 
             const nextActive = !root.is_active;
+            if (!nextActive && this.activeRoots(this.roots.library).length === 1) {
+                const confirmed = await window.parker.dialog.confirm(
+                    `Disable Last Active Root?`,
+                    `This will leave "${this.roots.library.name}" with no active roots. Existing comics will remain visible and readable if their files are reachable, but Parker will not scan, watch, import new files, or reconcile missing files for this library until a root is enabled again.`,
+                    { isDestructive: false, confirmText: 'Disable Root' }
+                );
+
+                if (!confirmed) return;
+            }
+
             this.roots.busyRootId = root.id;
             this.roots.error = '';
 

@@ -156,6 +156,14 @@ def test_admin_library_root_lifecycle_flow(page, browser_server, tmp_path):
         page.locator('[x-data="globalDialog()"]').get_by_role("button", name="Remove Root").click()
         page.get_by_text(archive_path).wait_for(state="detached")
 
+        current_row = page.get_by_test_id("library-root-row").filter(has_text=str(current_root))
+        current_row.get_by_role("button", name="Disable").click()
+        dialog = page.locator('[x-data="globalDialog()"]')
+        dialog.get_by_role("heading", name="Disable Last Active Root?").wait_for()
+        dialog.get_by_text("Existing comics will remain visible and readable if their files are reachable").wait_for()
+        dialog.get_by_role("button", name="Cancel").click()
+        current_row.get_by_text("Active").wait_for()
+
         session = browser_server["db_factory"]()
         try:
             roots = (
