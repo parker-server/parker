@@ -1,5 +1,9 @@
 FROM python:3.11-slim
 
+ARG PARKER_BUILD_COMMIT=
+ENV PARKER_BUILD_COMMIT=${PARKER_BUILD_COMMIT}
+LABEL org.opencontainers.image.revision="${PARKER_BUILD_COMMIT}"
+
 # Set working directory
 WORKDIR /app
 

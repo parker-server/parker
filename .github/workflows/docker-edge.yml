@@ -24,10 +24,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Resolve build commit
+        id: vars
+        run: echo "commit=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
       - name: Build and push edge image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
+          build-args: |
+            PARKER_BUILD_COMMIT=${{ steps.vars.outputs.commit }}
           tags: |
             ghcr.io/${{ github.repository_owner }}/parker:edge
