@@ -95,6 +95,63 @@ def test_admin_diagnostics_page_exposes_support_snapshot_actions(admin_client):
     assert "document.execCommand('copy')" in body
 
 
+def test_admin_diagnostics_page_renders_configured_library_roots(admin_client, monkeypatch):
+    monkeypatch.setattr(
+        "app.routers.admin.collect_startup_diagnostics",
+        lambda db, database_url: {
+            "status": "healthy",
+            "status_title": "Healthy",
+            "status_summary": "Everything looks good.",
+            "is_suspicious": False,
+            "recommended_actions": [],
+            "runtime": {"mode": "local_filesystem", "label": "Local filesystem"},
+            "database": {
+                "url": "sqlite:///test.db",
+                "path": "test.db",
+                "exists": True,
+                "size_bytes": 0,
+                "size_display": "0 B",
+                "wal_size_bytes": None,
+                "wal_size_display": None,
+                "shm_size_bytes": None,
+                "shm_size_display": None,
+                "alembic_version": "head",
+            },
+            "counts": {"users": 1, "libraries": 1, "series": 0, "comics": 0},
+            "default_admin_present": True,
+            "library_sample": [
+                {
+                    "name": "Multi Root Library",
+                    "path": "C:/Comics/Main",
+                    "path_exists": True,
+                    "root_count": 3,
+                    "active_root_count": 2,
+                    "roots": [
+                        {"id": 1, "path": "C:/Comics/Main", "is_active": True, "path_exists": True},
+                        {"id": 2, "path": "D:/Comics/Archive", "is_active": True, "path_exists": False},
+                        {"id": 3, "path": "E:/Comics/Offline", "is_active": False, "path_exists": None},
+                    ],
+                }
+            ],
+            "comics_root": {"path": "/comics", "exists": False, "sample": []},
+        },
+    )
+
+    response = admin_client.get("/admin/diagnostics")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "Multi Root Library" in body
+    assert "2 active / 3 roots" in body
+    assert "C:/Comics/Main" in body
+    assert "D:/Comics/Archive" in body
+    assert "E:/Comics/Offline" in body
+    assert "Inactive" in body
+    assert "Path Found" in body
+    assert "Path Missing" in body
+    assert "Path Unknown" in body
+
+
 def test_login_page_uses_server_display_name_but_keeps_parker_branding(client, monkeypatch):
     def fake_get_system_setting(key, default=None):
         if key == "general.app_name":
