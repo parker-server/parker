@@ -85,9 +85,10 @@ def test_cleanup_orphans_global_removes_only_orphans(db, tmp_path):
     person_keep = Person(name="person-keep")
     person_orphan = Person(name="person-orphan")
 
-    rl_auto_empty = ReadingList(name="rl-auto-empty", auto_generated=1)
-    rl_manual_empty = ReadingList(name="rl-manual-empty", auto_generated=0)
-    rl_auto_filled = ReadingList(name="rl-auto-filled", auto_generated=1)
+    rl_auto_empty = ReadingList(name="rl-auto-empty", source="comicinfo")
+    rl_manual_empty = ReadingList(name="rl-manual-empty", source="manual")
+    rl_auto_filled = ReadingList(name="rl-auto-filled", source="comicinfo")
+    rl_cbl_empty = ReadingList(name="rl-cbl-empty", source="cbl")
 
     col_auto_empty = Collection(name="col-auto-empty", auto_generated=1)
     col_manual_empty = Collection(name="col-manual-empty", auto_generated=0)
@@ -111,6 +112,7 @@ def test_cleanup_orphans_global_removes_only_orphans(db, tmp_path):
         rl_auto_empty,
         rl_manual_empty,
         rl_auto_filled,
+        rl_cbl_empty,
         col_auto_empty,
         col_manual_empty,
         col_auto_filled,
@@ -151,6 +153,10 @@ def test_cleanup_orphans_global_removes_only_orphans(db, tmp_path):
     assert db.query(ReadingList).filter(ReadingList.name == "rl-auto-empty").count() == 0
     assert db.query(ReadingList).filter(ReadingList.name == "rl-manual-empty").count() == 1
     assert db.query(ReadingList).filter(ReadingList.name == "rl-auto-filled").count() == 1
+    # Empty CBL lists must survive this generic cleanup too -- CBL list lifecycle
+    # is owned by CBLSourceService.rebuild()/delete(), and nothing here rebuilds
+    # CBL sources afterward, so deleting an empty one here would orphan it.
+    assert db.query(ReadingList).filter(ReadingList.name == "rl-cbl-empty").count() == 1
 
     assert db.query(Collection).filter(Collection.name == "col-auto-empty").count() == 0
     assert db.query(Collection).filter(Collection.name == "col-manual-empty").count() == 1
@@ -454,7 +460,7 @@ def test_cleanup_orphaned_thumbnails_deletes_unreferenced_and_logs_errors(db, tm
 
 
 def test_refresh_reading_list_descriptions_batches_and_commits(db, monkeypatch):
-    lists = [ReadingList(name=f"auto-{i}", auto_generated=1, description=None) for i in range(52)]
+    lists = [ReadingList(name=f"auto-{i}", source="comicinfo", description=None) for i in range(52)]
     db.add_all(lists)
     db.commit()
 
@@ -474,9 +480,9 @@ def test_refresh_reading_list_descriptions_batches_and_commits(db, monkeypatch):
 
 def test_refresh_reading_list_descriptions_no_updates(db, monkeypatch):
     db.add_all([
-        ReadingList(name="same-a", auto_generated=1, description="desc-same-a"),
-        ReadingList(name="same-b", auto_generated=1, description="desc-same-b"),
-        ReadingList(name="none-c", auto_generated=1, description="existing"),
+        ReadingList(name="same-a", source="comicinfo", description="desc-same-a"),
+        ReadingList(name="same-b", source="comicinfo", description="desc-same-b"),
+        ReadingList(name="none-c", source="comicinfo", description="existing"),
     ])
     db.commit()
 

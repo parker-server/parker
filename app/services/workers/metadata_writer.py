@@ -48,24 +48,11 @@ def _apply_metadata_batch(
 
     from pathlib import Path
     from app.models.comic import Comic
+    from app.core.comic_helpers import normalize_issue_number
     from app.core.path_utils import compute_relative_path
     from datetime import datetime, timezone
     from inspect import Parameter, signature
     import json
-
-    def _normalize_number(number: str) -> str:
-        """Normalize weird comic numbers"""
-        if not number:
-            return number
-
-        # Handle "½" -> "0.5"
-        if number == "½" or number == "1/2":
-            return "0.5"
-
-        # Handle "-1" (ensure it stays -1, though our casting handles it)
-        # Handle variants if needed in future
-
-        return number
 
     def _normalize_volume_number(raw_volume) -> int:
         """Normalize volume metadata, falling back to volume 1 on invalid input."""
@@ -184,7 +171,7 @@ def _apply_metadata_batch(
 
         # Normalize number
         raw_number = metadata.get("number")
-        comic.number = _normalize_number(raw_number)
+        comic.number = normalize_issue_number(raw_number)
 
         comic.filename = Path(file_path).name
         comic.title = metadata.get("title")

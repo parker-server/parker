@@ -10,6 +10,7 @@ from sqlalchemy.orm import sessionmaker
 import app.services.scanner as scanner_module
 from app.database import Base
 from app.models import (
+    CBLSource,
     Collection,
     CollectionItem,
     Comic,
@@ -41,6 +42,8 @@ class DummyQuery:
     def all(self):
         if self._model is LibraryRoot:
             return list(self._library_roots)
+        if self._model is CBLSource:
+            return []
         return list(self._existing)
 
     def first(self):

@@ -42,8 +42,8 @@ def test_list_reading_lists_admin_shows_counts(admin_client, db):
     c1 = _create_comic(db, volume_id=vol.id, prefix="reading-lists-admin", number="1", year=2021)
     c2 = _create_comic(db, volume_id=vol.id, prefix="reading-lists-admin", number="2", year=2022)
 
-    alpha = ReadingList(name="Alpha Reading List", description="A", auto_generated=0)
-    beta = ReadingList(name="Beta Reading List", description="B", auto_generated=1)
+    alpha = ReadingList(name="Alpha Reading List", description="A", source="manual")
+    beta = ReadingList(name="Beta Reading List", description="B", source="comicinfo")
     db.add_all([alpha, beta])
     db.flush()
     db.add_all([
@@ -109,9 +109,9 @@ def test_list_reading_lists_applies_library_and_banned_filters(auth_client, db, 
         age_rating="Teen",
     )
 
-    visible_list = ReadingList(name="Visible Reading List", auto_generated=0)
-    mature_list = ReadingList(name="Mature Reading List", auto_generated=0)
-    hidden_list = ReadingList(name="Hidden Reading List", auto_generated=0)
+    visible_list = ReadingList(name="Visible Reading List", source="manual")
+    mature_list = ReadingList(name="Mature Reading List", source="manual")
+    hidden_list = ReadingList(name="Hidden Reading List", source="manual")
     db.add_all([visible_list, mature_list, hidden_list])
     db.flush()
     db.add_all([
@@ -149,7 +149,7 @@ def test_list_reading_lists_hides_entries_when_library_parsing_disabled(admin_cl
         number="1",
         year=2024,
     )
-    reading_list = ReadingList(name="Parse Off Reading List", auto_generated=0)
+    reading_list = ReadingList(name="Parse Off Reading List", source="manual")
     db.add(reading_list)
     db.flush()
     db.add(ReadingListItem(reading_list_id=reading_list.id, comic_id=comic.id, position=1))
@@ -171,7 +171,7 @@ def test_get_reading_list_success_returns_position_order_and_details(auth_client
     c1 = _create_comic(db, volume_id=vol.id, prefix="reading-lists-detail", number="1", year=2020)
     c2 = _create_comic(db, volume_id=vol.id, prefix="reading-lists-detail", number="2", year=2021)
 
-    reading_list = ReadingList(name="Detail Reading List", description="Detail", auto_generated=0)
+    reading_list = ReadingList(name="Detail Reading List", description="Detail", source="manual")
     db.add(reading_list)
     db.flush()
     db.add_all([
@@ -215,7 +215,7 @@ def test_get_reading_list_404_when_user_has_no_visible_comics(auth_client, db):
     )
     comic = _create_comic(db, volume_id=vol.id, prefix="reading-lists-hidden-detail", number="1", year=2020)
 
-    reading_list = ReadingList(name="Hidden Detail Reading List", auto_generated=0)
+    reading_list = ReadingList(name="Hidden Detail Reading List", source="manual")
     db.add(reading_list)
     db.flush()
     db.add(ReadingListItem(reading_list_id=reading_list.id, comic_id=comic.id, position=1))
@@ -243,7 +243,7 @@ def test_get_reading_list_restriction_blocks_banned_content(auth_client, db, nor
         age_rating="Mature 17+",
     )
 
-    reading_list = ReadingList(name="Restricted Reading List", auto_generated=0)
+    reading_list = ReadingList(name="Restricted Reading List", source="manual")
     db.add(reading_list)
     db.flush()
     db.add(ReadingListItem(reading_list_id=reading_list.id, comic_id=mature.id, position=1))
@@ -259,15 +259,115 @@ def test_get_reading_list_restriction_blocks_banned_content(auth_client, db, nor
     assert "age-restricted" in response.json()["detail"].lower()
 
 
-def test_delete_reading_list_success_and_missing(auth_client, db):
-    reading_list = ReadingList(name="Delete Reading List", auto_generated=0)
+def test_delete_reading_list_success_and_missing(admin_client, db):
+    reading_list = ReadingList(name="Delete Reading List", source="manual")
     db.add(reading_list)
     db.commit()
 
-    deleted = auth_client.delete(f"/api/reading-lists/{reading_list.id}")
+    deleted = admin_client.delete(f"/api/reading-lists/{reading_list.id}")
     assert deleted.status_code == 200
     assert deleted.json() == {"message": "Reading list 'Delete Reading List' deleted"}
 
-    missing = auth_client.delete(f"/api/reading-lists/{reading_list.id}")
+    missing = admin_client.delete(f"/api/reading-lists/{reading_list.id}")
     assert missing.status_code == 404
     assert missing.json()["detail"] == "Reading list not found"
+
+
+def test_delete_rejects_cbl_reading_list(admin_client, db):
+    reading_list = ReadingList(name="CBL Delete Attempt", source="cbl", source_cbl_id=None)
+    db.add(reading_list)
+    db.commit()
+
+    response = admin_client.delete(f"/api/reading-lists/{reading_list.id}")
+
+    assert response.status_code == 400
+    assert "cbl-sources" in response.json()["detail"]
+    assert db.query(ReadingList).filter(ReadingList.id == reading_list.id).count() == 1
+
+
+def test_delete_reading_list_requires_admin(auth_client, db):
+    reading_list = ReadingList(name="Non-Admin Delete Attempt", source="manual")
+    db.add(reading_list)
+    db.commit()
+
+    response = auth_client.delete(f"/api/reading-lists/{reading_list.id}")
+
+    assert response.status_code == 400  # get_current_active_superuser rejects non-admins
+    assert db.query(ReadingList).filter(ReadingList.id == reading_list.id).count() == 1
+
+
+def test_rename_cbl_reading_list_success(admin_client, db):
+    reading_list = ReadingList(name="Old CBL Name", source="cbl", source_cbl_id=None)
+    db.add(reading_list)
+    db.commit()
+
+    response = admin_client.patch(f"/api/reading-lists/{reading_list.id}", json={"name": "New CBL Name"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["name"] == "New CBL Name"
+    assert payload["source"] == "cbl"
+
+    db.refresh(reading_list)
+    assert reading_list.name == "New CBL Name"
+
+
+def test_rename_requires_admin(auth_client, db):
+    reading_list = ReadingList(name="Needs Admin CBL List", source="cbl")
+    db.add(reading_list)
+    db.commit()
+
+    response = auth_client.patch(f"/api/reading-lists/{reading_list.id}", json={"name": "New Name"})
+
+    assert response.status_code == 400  # get_current_active_superuser rejects non-admins
+
+
+def test_rename_rejects_comicinfo_reading_list(admin_client, db):
+    reading_list = ReadingList(name="Auto Generated List", source="comicinfo")
+    db.add(reading_list)
+    db.commit()
+
+    response = admin_client.patch(f"/api/reading-lists/{reading_list.id}", json={"name": "New Name"})
+
+    assert response.status_code == 400
+    assert "CBL-derived" in response.json()["detail"]
+
+
+def test_rename_rejects_manual_reading_list(admin_client, db):
+    reading_list = ReadingList(name="Manual List", source="manual")
+    db.add(reading_list)
+    db.commit()
+
+    response = admin_client.patch(f"/api/reading-lists/{reading_list.id}", json={"name": "New Name"})
+
+    assert response.status_code == 400
+    assert "CBL-derived" in response.json()["detail"]
+
+
+def test_rename_rejects_duplicate_name(admin_client, db):
+    db.add(ReadingList(name="Taken Name", source="manual"))
+    reading_list = ReadingList(name="Rename Me", source="cbl")
+    db.add(reading_list)
+    db.commit()
+
+    response = admin_client.patch(f"/api/reading-lists/{reading_list.id}", json={"name": "Taken Name"})
+
+    assert response.status_code == 400
+    assert "already exists" in response.json()["detail"]
+
+
+def test_rename_rejects_empty_name(admin_client, db):
+    reading_list = ReadingList(name="Rename Me Too", source="cbl")
+    db.add(reading_list)
+    db.commit()
+
+    response = admin_client.patch(f"/api/reading-lists/{reading_list.id}", json={"name": "   "})
+
+    assert response.status_code == 400
+    assert "empty" in response.json()["detail"].lower()
+
+
+def test_rename_404_for_missing_list(admin_client):
+    response = admin_client.patch("/api/reading-lists/999999", json={"name": "Whatever"})
+
+    assert response.status_code == 404

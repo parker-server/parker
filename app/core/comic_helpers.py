@@ -203,6 +203,17 @@ def check_container_restriction(db, user, item_model, fk_column, container_id: i
 
 
 
+def normalize_issue_number(number: str) -> str:
+    """Normalize weird comic numbers (e.g. the '½' / '1/2' half-issue glyph)."""
+    if not number:
+        return number
+
+    if number == "½" or number == "1/2":
+        return "0.5"
+
+    return number
+
+
 def get_format_filters():
     """
     Returns SQL expressions to categorize comics.

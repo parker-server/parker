@@ -21,6 +21,7 @@ python-dotenv==1.2.2
 aiofiles==25.1.0
 portalocker==3.2.0
 concurrent-log-handler==0.9.29
+httpx==0.28.1
 
 # Templating
 jinja2==3.1.6

@@ -119,6 +119,12 @@ async def admin_migration_page(request: Request, admin_user: AdminUser):
     return templates.TemplateResponse(request=request, name="admin/migration.html")
 
 
+@router.get("/cbl-sources", response_class=HTMLResponse, name="cbl_sources", tags=['admin'])
+async def admin_cbl_sources_page(request: Request, admin_user: AdminUser):
+    """Serve the Admin CBL Reading Lists page"""
+    return templates.TemplateResponse(request=request, name="admin/cbl_sources.html")
+
+
 @router.get("/about", response_class=HTMLResponse, name="about", tags=['admin'])
 async def admin_about_page(request: Request, admin_user: AdminUser):
     """Serve the Admin About page"""

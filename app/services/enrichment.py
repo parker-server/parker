@@ -1,7 +1,8 @@
 import json
-import re
 from pathlib import Path
 from typing import Optional
+
+from app.core.text_utils import normalize_title
 
 
 class EnrichmentService:
@@ -20,18 +21,7 @@ class EnrichmentService:
             print(f"Failed to load event descriptions: {e}")
 
     def _normalize(self, text: str) -> str:
-        """
-        Normalize text for matching:
-        'The Infinity Gauntlet' -> 'infinity gauntlet'
-        """
-        if not text: return ""
-        text = text.lower()
-        # Remove 'the ' from start
-        if text.startswith("the "):
-            text = text[4:]
-        # Remove special chars
-        text = re.sub(r'[^a-z0-9\s]', '', text)
-        return text.strip()
+        return normalize_title(text)
 
     def get_description(self, event_name: str) -> Optional[str]:
         """

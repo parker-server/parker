@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import joinedload, aliased
 from sqlalchemy import func, select, and_, or_, not_
 from typing import Annotated, List
 
-from app.api.deps import SessionDep, CurrentUser, PaginationParams, PaginatedResponse
+from app.api.deps import SessionDep, CurrentUser, AdminUser, PaginationParams, PaginatedResponse
 from app.core.comic_helpers import (get_aggregated_metadata,
                                     get_thumbnail_url, get_banned_comic_condition,
                                     check_container_restriction)
@@ -13,8 +14,23 @@ from app.models.library import Library
 from app.models.tags import Character, Team, Location
 from app.models.credits import Person, ComicCredit
 from app.models.reading_list import ReadingList, ReadingListItem
+from app.models.cbl_source import CBLSource
 
 router = APIRouter()
+
+SOURCE_LABELS = {
+    "manual": "Manual",
+    "comicinfo": "Auto-Generated",
+    "cbl": "CBL Derived",
+}
+
+
+def _source_label(source: str) -> str:
+    return SOURCE_LABELS.get(source, source)
+
+
+class ReadingListRenameRequest(BaseModel):
+    name: str
 
 
 @router.get("/", response_model=PaginatedResponse, name="list")
@@ -82,7 +98,8 @@ async def list_reading_lists(db: SessionDep,
             "id": rl.id,
             "name": rl.name,
             "description": rl.description,
-            "auto_generated": bool(rl.auto_generated),
+            "source": rl.source,
+            "source_label": _source_label(rl.source),
             "comic_count": v_count,  # Use the SQL calculated count
             "created_at": rl.created_at,
             "updated_at": rl.updated_at
@@ -167,11 +184,12 @@ async def get_reading_list(list_id: int, db: SessionDep, current_user: CurrentUs
                                              allowed_library_ids=allowed_ids)
     }
 
-    return {
+    payload = {
         "id": reading_list.id,
         "name": reading_list.name,
         "description": reading_list.description,
-        "auto_generated": bool(reading_list.auto_generated),
+        "source": reading_list.source,
+        "source_label": _source_label(reading_list.source),
         "comic_count": len(comics),
         "comics": comics,
         "created_at": reading_list.created_at,
@@ -179,12 +197,81 @@ async def get_reading_list(list_id: int, db: SessionDep, current_user: CurrentUs
         "details": details
     }
 
+    if current_user.is_superuser and reading_list.source_cbl_id:
+        cbl_source = db.get(CBLSource, reading_list.source_cbl_id)
+        if cbl_source:
+            payload["cbl_source"] = {
+                "id": cbl_source.id,
+                "origin": cbl_source.origin,
+                "last_refresh_status": cbl_source.last_refresh_status,
+                "last_refreshed_at": cbl_source.last_refreshed_at,
+            }
+
+    return payload
+
+
+@router.patch("/{list_id}", name="rename")
+async def rename_reading_list(list_id: int, payload: ReadingListRenameRequest, db: SessionDep, admin: AdminUser):
+    """
+    Rename a reading list. Only CBL-derived lists can be renamed here --
+    ComicInfo-derived names are entirely driven by embedded metadata, so fixing
+    one means fixing the comic's ComicInfo.xml and rescanning, not editing the
+    derived list directly. Manual lists have no creation UI yet either, so
+    there's nothing to rename there today.
+    """
+    reading_list = db.query(ReadingList).filter(ReadingList.id == list_id).first()
+    if not reading_list:
+        raise HTTPException(status_code=404, detail="Reading list not found")
+
+    if reading_list.source != "cbl":
+        raise HTTPException(status_code=400, detail="Only CBL-derived reading lists can be renamed")
+
+    new_name = payload.name.strip()
+    if not new_name:
+        raise HTTPException(status_code=400, detail="Name cannot be empty")
+
+    existing = db.query(ReadingList).filter(
+        ReadingList.name == new_name, ReadingList.id != list_id
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="A reading list with that name already exists")
+
+    reading_list.name = new_name
+    db.commit()
+
+    return {
+        "id": reading_list.id,
+        "name": reading_list.name,
+        "source": reading_list.source,
+        "source_label": _source_label(reading_list.source),
+    }
+
 
 @router.delete("/{list_id}", name="delete")
-async def delete_reading_list(list_id: int, db: SessionDep, current_user: CurrentUser):
-    """Delete a reading list"""
+async def delete_reading_list(list_id: int, db: SessionDep, admin: AdminUser):
+    """Delete a reading list. Admin-only: there's no self-service reading-list
+    creation today, and comicinfo-derived lists are system-managed (deleting one
+    just gets it silently recreated the next time that comic's metadata is
+    reprocessed, so this was never a safe or durable action for a regular user).
+
+    CBL-derived lists can't be deleted here at all -- CBLSourceService.delete()
+    (DELETE /api/cbl-sources/{source_id}) is the only coherent lifecycle path:
+    it removes the managed file and CBLSource row along with the ReadingList,
+    instead of leaving an orphaned CBLSource that just gets rebuilt right back
+    on the next scan."""
     reading_list = db.query(ReadingList).filter(ReadingList.id == list_id).first()
     if not reading_list: raise HTTPException(status_code=404, detail="Reading list not found")
+
+    if reading_list.source == "cbl":
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "This is a CBL-derived reading list. Delete the CBL source instead "
+                f"(DELETE /api/cbl-sources/{reading_list.source_cbl_id}) to remove it "
+                "and its managed file together."
+            ),
+        )
+
     db.delete(reading_list)
     db.commit()
 

@@ -1,6 +1,7 @@
 from app.models import (
     CollectionItem,
     Comic,
+    ReadingList,
     ReadingListItem,
     Series,
     Volume,
@@ -139,3 +140,58 @@ def test_update_comic_reading_lists_clears_membership_when_number_is_invalid(db)
     db.commit()
 
     assert db.query(ReadingListItem).filter(ReadingListItem.comic_id == comic.id).count() == 0
+
+
+def test_update_comic_reading_lists_skips_when_name_collides_with_manual_list(db):
+    comic = _create_comic(db, "list-collision")
+    manual_list = ReadingList(name="Crisis", source="manual")
+    db.add(manual_list)
+    db.commit()
+
+    service = ReadingListService(db)
+    service.update_comic_reading_lists(comic, "Crisis", "1")
+    db.commit()
+
+    # The comic gets no membership at all -- it must not be silently written
+    # into the manual list, and no second "Crisis" list gets created either
+    # (ComicInfo-derived names are never renamed/disambiguated).
+    assert db.query(ReadingListItem).filter(ReadingListItem.comic_id == comic.id).count() == 0
+    lists = db.query(ReadingList).filter(ReadingList.name == "Crisis").all()
+    assert len(lists) == 1
+    assert lists[0].id == manual_list.id
+    assert lists[0].source == "manual"
+
+
+def test_update_comic_reading_lists_skips_repeated_collision_via_cache(db):
+    comic_a = _create_comic(db, "list-collision-a")
+    comic_b = _create_comic(db, "list-collision-b")
+    db.add(ReadingList(name="Crisis", source="manual"))
+    db.commit()
+
+    service = ReadingListService(db)
+    service.update_comic_reading_lists(comic_a, "Crisis", "1")
+    service.update_comic_reading_lists(comic_b, "Crisis", "2")
+    db.commit()
+
+    assert db.query(ReadingListItem).filter(ReadingListItem.comic_id == comic_a.id).count() == 0
+    assert db.query(ReadingListItem).filter(ReadingListItem.comic_id == comic_b.id).count() == 0
+    assert db.query(ReadingList).filter(ReadingList.name == "Crisis").count() == 1
+
+
+def test_cleanup_empty_lists_only_removes_comicinfo_lists(db):
+    manual_empty = ReadingList(name="Manual Empty", source="manual")
+    cbl_empty = ReadingList(name="CBL Empty", source="cbl")
+    comicinfo_empty = ReadingList(name="Comicinfo Empty", source="comicinfo")
+    db.add_all([manual_empty, cbl_empty, comicinfo_empty])
+    db.commit()
+
+    service = ReadingListService(db)
+    service.cleanup_empty_lists()
+    db.commit()
+
+    # CBL list lifecycle is owned by CBLSourceService.rebuild()/delete() --
+    # deleting an empty one here (e.g. from a rehydrate pass that never
+    # rebuilds CBL sources) would orphan its CBLSource until the next scan.
+    assert db.query(ReadingList).filter(ReadingList.id == manual_empty.id).count() == 1
+    assert db.query(ReadingList).filter(ReadingList.id == cbl_empty.id).count() == 1
+    assert db.query(ReadingList).filter(ReadingList.id == comicinfo_empty.id).count() == 0
