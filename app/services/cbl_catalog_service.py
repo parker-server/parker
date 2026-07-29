@@ -6,7 +6,7 @@ import httpx
 from sqlalchemy.orm import Session
 
 from app.models.cbl_source import CBLSource
-from app.services.cbl_parser import parse_cbl
+from app.services.cbl_parser import CBLEntry, parse_cbl
 from app.services.cbl_source_service import MAX_CBL_SIZE_BYTES, CBLSourceError, CBLSourceService
 
 CATALOG_PROVIDER = "dieseltech"
@@ -14,11 +14,17 @@ GITHUB_API_BASE = "https://api.github.com/repos/DieselTech/CBL-ReadingLists"
 GITHUB_RAW_HOST = "raw.githubusercontent.com"
 FETCH_TIMEOUT = httpx.Timeout(connect=5.0, read=10.0, write=10.0, pool=5.0)
 CACHE_TTL_SECONDS = 15 * 60
+PREVIEW_SAMPLE_SIZE = 10
 _REQUEST_HEADERS = {
     "Accept": "application/vnd.github+json",
     # GitHub's REST API 403s unauthenticated requests that omit a User-Agent.
     "User-Agent": "Parker-CBL-Catalog",
 }
+
+
+def _format_entry_summary(entry: CBLEntry) -> str:
+    label = f"{entry.series or 'Unknown Series'} #{entry.number}" if entry.number else (entry.series or "Unknown Series")
+    return f"{label} ({entry.year})" if entry.year else label
 
 
 class CBLCatalogError(Exception):
@@ -119,7 +125,17 @@ class CBLCatalogService:
     async def preview(self, path: str) -> dict:
         content, name = await self._get_file_bytes(path)
         parsed = parse_cbl(content, filename_stem=Path(name).stem)
-        return {"name": parsed.name, "entry_count": len(parsed.entries), "warnings": parsed.warnings}
+        return {
+            "name": parsed.name,
+            "entry_count": len(parsed.entries),
+            "warnings": parsed.warnings,
+            # Raw CBL order/metadata, not yet matched against the local library
+            # (matching only happens on import, via rebuild()) -- capped so a
+            # multi-hundred-entry "Master Reading Order" doesn't dump a wall of
+            # text into the preview.
+            "sample_entries": [_format_entry_summary(e) for e in parsed.entries[:PREVIEW_SAMPLE_SIZE]],
+            "sample_truncated": len(parsed.entries) > PREVIEW_SAMPLE_SIZE,
+        }
 
     async def import_file(self, path: str) -> CBLSource:
         content, name = await self._get_file_bytes(path)

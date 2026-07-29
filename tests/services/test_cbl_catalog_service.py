@@ -191,6 +191,28 @@ def test_preview_returns_name_entry_count_and_warnings(db, monkeypatch):
     assert result["name"] == "Catalog Test List"
     assert result["entry_count"] == 1
     assert result["warnings"] == []
+    assert result["sample_entries"] == ["A #1"]
+    assert result["sample_truncated"] is False
+
+
+def test_preview_caps_sample_entries_and_flags_truncation(db, monkeypatch):
+    books = "".join(f'<Book Series="Series" Number="{i}" Year="199{i % 9}" />' for i in range(1, 16))
+    big_cbl = (
+        b'<?xml version="1.0"?><ReadingList><Name>Big Event</Name>'
+        + f"<Books>{books}</Books></ReadingList>".encode()
+    )
+    _patch_client_sequence(monkeypatch, [
+        _FakeCatalogClient(get_response=_FakeGetResponse(200, FILE_META_JSON)),
+        _FakeCatalogClient(stream_chunks=[big_cbl]),
+    ])
+    service = CBLCatalogService(db)
+
+    result = run_async(service.preview("Marvel/Infinity-Gauntlet.cbl"))
+
+    assert result["entry_count"] == 15
+    assert len(result["sample_entries"]) == 10
+    assert result["sample_entries"][0] == "Series #1 (1991)"
+    assert result["sample_truncated"] is True
 
 
 def test_import_file_sets_catalog_origin_and_metadata(db, monkeypatch, tmp_path):

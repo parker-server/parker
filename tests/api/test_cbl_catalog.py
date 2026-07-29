@@ -141,6 +141,8 @@ def test_preview_success(admin_client, monkeypatch):
     payload = response.json()
     assert payload["name"] == "API Catalog List"
     assert payload["entry_count"] == 1
+    assert payload["sample_entries"] == ["Catalog Series #1"]
+    assert payload["sample_truncated"] is False
 
 
 def test_import_creates_source_and_reading_list(admin_client, db, tmp_path, monkeypatch):

@@ -129,6 +129,23 @@
         <div x-show="catalog.preview" class="mb-4 rounded border border-blue-500/30 bg-blue-950/30 px-4 py-3 text-sm text-blue-100">
             <p class="font-semibold text-blue-200" x-text="catalog.preview?.name"></p>
             <p class="text-blue-100/80 mt-1" x-text="`${catalog.preview?.entry_count ?? 0} entries · ${catalog.preview?.path ?? ''}`"></p>
+
+            <template x-if="catalog.preview?.sample_entries?.length">
+                <div class="mt-2">
+                    <p class="text-xs uppercase tracking-wide text-blue-300/70 mb-1">
+                        First <span x-text="catalog.preview.sample_entries.length"></span> entries (CBL order, not yet matched to your library)
+                    </p>
+                    <ol class="text-xs text-blue-100/90 list-decimal list-inside space-y-0.5">
+                        <template x-for="(sample, index) in catalog.preview.sample_entries" :key="index">
+                            <li x-text="sample"></li>
+                        </template>
+                    </ol>
+                    <p x-show="catalog.preview?.sample_truncated" class="text-xs text-blue-100/60 mt-1">
+                        + <span x-text="catalog.preview.entry_count - catalog.preview.sample_entries.length"></span> more
+                    </p>
+                </div>
+            </template>
+
             <template x-if="catalog.preview?.warnings?.length">
                 <ul class="mt-2 text-xs text-amber-200 list-disc list-inside">
                     <template x-for="warning in catalog.preview.warnings" :key="warning">
