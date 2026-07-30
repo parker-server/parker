@@ -1,0 +1,583 @@
+{% extends "base.html" %}
+
+{% block title %}CBL Reading Lists - Parker{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto" x-data="cblSourcesManager()">
+
+    {% from "partials/admin_header.html" import admin_header %}
+    {{ admin_header(
+        title="CBL Reading Lists",
+        description="Manage CBL-derived reading lists and browse the DieselTech catalog.",
+        action_label="+ Upload CBL",
+        action_func="openUploadModal()"
+    ) }}
+
+    <div class="border-b border-gray-700 mb-6 flex gap-6">
+        <button
+            x-on:click="activeTab = 'sources'"
+            class="pb-3 px-1 border-b-2 font-medium transition-colors"
+            :class="activeTab === 'sources' ? 'border-blue-500 text-white' : 'border-transparent text-gray-400 hover:text-white'"
+        >
+            Managed Sources
+        </button>
+        <button
+            x-on:click="activeTab = 'catalog'; if (!catalog.loaded) browseCatalog('')"
+            class="pb-3 px-1 border-b-2 font-medium transition-colors"
+            :class="activeTab === 'catalog' ? 'border-blue-500 text-white' : 'border-transparent text-gray-400 hover:text-white'"
+        >
+            Browse Catalog
+        </button>
+    </div>
+
+    <div x-show="activeTab === 'sources'">
+        <div class="flex justify-end mb-4">
+            <button x-on:click="openUrlModal()" class="text-sm text-blue-400 hover:text-white font-medium">+ Import from URL</button>
+        </div>
+
+        <div class="bg-gray-800 rounded-lg overflow-hidden shadow-lg border border-gray-700">
+            <table class="w-full text-left">
+                <thead class="bg-gray-900 text-gray-400 uppercase text-xs">
+                    <tr>
+                        <th class="px-6 py-3">Name</th>
+                        <th class="px-6 py-3">Origin</th>
+                        <th class="px-6 py-3">Entries</th>
+                        <th class="px-6 py-3">Match Summary</th>
+                        <th class="px-6 py-3">Last Refresh</th>
+                        <th class="px-6 py-3 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-700">
+                    <template x-for="source in sources" :key="source.id">
+                        <tr class="hover:bg-gray-750">
+                            <td class="px-6 py-4">
+                                <div class="font-bold text-white" x-text="source.reading_list_name || source.display_name"></div>
+                                <div
+                                    x-show="source.reading_list_name && source.reading_list_name !== source.display_name"
+                                    class="text-xs text-gray-500"
+                                    x-text="source.display_name"
+                                ></div>
+                            </td>
+                            <td class="px-6 py-4 text-sm">
+                                <span class="text-xs px-2 py-1 rounded uppercase font-bold" :class="originBadgeClass(source.origin)" x-text="source.origin"></span>
+                            </td>
+                            <td class="px-6 py-4 text-sm text-gray-400" x-text="source.entry_count ?? '-'"></td>
+                            <td class="px-6 py-4 text-xs text-gray-400" x-text="matchSummaryText(source)"></td>
+                            <td class="px-6 py-4 text-sm text-gray-400" x-text="formatDate(source.last_refreshed_at)"></td>
+                            <td class="px-6 py-4 text-right flex justify-end items-center gap-2">
+                                <button
+                                    x-show="source.reading_list_id"
+                                    x-on:click="openRenameModal(source)"
+                                    class="text-purple-300 hover:text-white text-sm font-medium px-2"
+                                >
+                                    Rename
+                                </button>
+                                <button
+                                    x-show="source.source_url || source.origin === 'catalog'"
+                                    x-on:click="refreshSource(source)"
+                                    class="text-blue-400 hover:text-white text-sm font-medium px-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    :disabled="busySourceId === source.id"
+                                >
+                                    Refresh
+                                </button>
+                                <button
+                                    x-on:click="deleteSource(source)"
+                                    class="text-red-400 hover:text-white text-sm font-medium px-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    :disabled="busySourceId === source.id"
+                                >
+                                    Delete
+                                </button>
+                            </td>
+                        </tr>
+                    </template>
+                    <tr x-show="sources.length === 0">
+                        <td colspan="6" class="px-6 py-8 text-center text-gray-500">
+                            No CBL sources yet. Upload one to get started.
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div x-show="activeTab === 'catalog'">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <div class="flex-1 min-w-0">
+                <p class="text-xs uppercase tracking-wide text-gray-500 mb-1">DieselTech/CBL-ReadingLists</p>
+                <p class="font-mono text-sm text-gray-300 truncate" x-text="'/' + catalog.path"></p>
+            </div>
+            <div class="flex items-center gap-2">
+                <input
+                    type="text"
+                    x-model="catalog.filterQuery"
+                    placeholder="Filter this folder..."
+                    class="bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm text-white focus:border-blue-500 outline-none"
+                >
+                <button
+                    x-on:click="browseCatalog(catalog.path, true)"
+                    class="bg-gray-700 hover:bg-gray-600 text-white text-sm px-3 py-1.5 rounded transition-colors disabled:opacity-50"
+                    :disabled="catalog.loading"
+                >
+                    Refresh Listing
+                </button>
+            </div>
+        </div>
+
+        <div x-show="catalog.error" class="mb-4 rounded border border-red-900/60 bg-red-950/30 px-3 py-2 text-sm text-red-200" x-text="catalog.error"></div>
+        <div x-show="catalog.loading" class="text-sm text-gray-400 mb-4">Loading...</div>
+
+        <div x-show="catalog.preview" class="mb-4 rounded border border-blue-500/30 bg-blue-950/30 px-4 py-3 text-sm text-blue-100">
+            <p class="font-semibold text-blue-200" x-text="catalog.preview?.name"></p>
+            <p class="text-blue-100/80 mt-1" x-text="`${catalog.preview?.entry_count ?? 0} entries · ${catalog.preview?.path ?? ''}`"></p>
+
+            <template x-if="catalog.preview?.sample_entries?.length">
+                <div class="mt-2">
+                    <p class="text-xs uppercase tracking-wide text-blue-300/70 mb-1">
+                        First <span x-text="catalog.preview.sample_entries.length"></span> entries (CBL order, not yet matched to your library)
+                    </p>
+                    <ol class="text-xs text-blue-100/90 list-decimal list-inside space-y-0.5">
+                        <template x-for="(sample, index) in catalog.preview.sample_entries" :key="index">
+                            <li x-text="sample"></li>
+                        </template>
+                    </ol>
+                    <p x-show="catalog.preview?.sample_truncated" class="text-xs text-blue-100/60 mt-1">
+                        + <span x-text="catalog.preview.entry_count - catalog.preview.sample_entries.length"></span> more
+                    </p>
+                </div>
+            </template>
+
+            <template x-if="catalog.preview?.warnings?.length">
+                <ul class="mt-2 text-xs text-amber-200 list-disc list-inside">
+                    <template x-for="warning in catalog.preview.warnings" :key="warning">
+                        <li x-text="warning"></li>
+                    </template>
+                </ul>
+            </template>
+        </div>
+
+        <div class="bg-gray-800 rounded-lg overflow-hidden shadow-lg border border-gray-700" x-show="!catalog.loading">
+            <div class="divide-y divide-gray-700">
+                <div
+                    x-show="catalog.path"
+                    x-on:click="browseCatalog(catalogParentPath())"
+                    class="px-6 py-3 text-sm text-gray-400 hover:bg-gray-750 cursor-pointer flex items-center gap-2"
+                >
+                    <span class="text-blue-300">../</span> Up one level
+                </div>
+
+                <template x-for="entry in filteredCatalogEntries()" :key="entry.path">
+                    <div class="px-6 py-3 flex items-center justify-between gap-4 hover:bg-gray-750">
+                        <div
+                            class="flex items-center gap-2 min-w-0 flex-1"
+                            :class="entry.type === 'dir' ? 'cursor-pointer' : ''"
+                            x-on:click="entry.type === 'dir' && browseCatalog(entry.path)"
+                        >
+                            <span x-text="entry.type === 'dir' ? '📁' : '📄'"></span>
+                            <span class="text-sm text-gray-200 truncate" x-text="entry.name"></span>
+                        </div>
+                        <div x-show="entry.type === 'file'" class="flex items-center gap-3 shrink-0">
+                            <button
+                                x-on:click="previewCatalogFile(entry)"
+                                class="text-blue-400 hover:text-white text-sm font-medium disabled:opacity-50"
+                                :disabled="catalog.previewLoading"
+                            >
+                                Preview
+                            </button>
+                            <button
+                                x-on:click="importCatalogFile(entry)"
+                                class="bg-blue-600 hover:bg-blue-500 text-white text-xs px-3 py-1.5 rounded transition-colors disabled:opacity-50"
+                                :disabled="catalog.importingPath === entry.path"
+                            >
+                                <span x-text="catalog.importingPath === entry.path ? 'Importing...' : 'Import'"></span>
+                            </button>
+                        </div>
+                    </div>
+                </template>
+
+                <div x-show="filteredCatalogEntries().length === 0 && !catalog.path" class="px-6 py-8 text-center text-gray-500">
+                    No folders or .cbl files found here.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div x-show="showUploadModal" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50" style="display: none;" x-transition.opacity>
+        <div class="bg-gray-800 p-6 rounded-lg w-full max-w-md border border-gray-700 shadow-2xl" x-on:click.away="showUploadModal = false">
+            <h2 class="text-xl font-bold mb-4">Upload CBL File</h2>
+
+            <input
+                type="file"
+                accept=".cbl,.xml"
+                @change="fileChange($event)"
+                class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-500/20 file:text-blue-400 hover:file:bg-blue-500/30"
+            >
+
+            <div x-show="uploadError" class="mt-3 text-sm text-red-300" x-text="uploadError"></div>
+
+            <div class="flex justify-end gap-2 mt-6">
+                <button x-on:click="showUploadModal = false" class="text-gray-400 hover:text-white px-4 py-2 transition-colors">Cancel</button>
+                <button
+                    x-on:click="uploadFile()"
+                    class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                    :disabled="!uploadFileObj || uploading"
+                >
+                    <span x-text="uploading ? 'Uploading...' : 'Upload'"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div x-show="showUrlModal" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50" style="display: none;" x-transition.opacity>
+        <div class="bg-gray-800 p-6 rounded-lg w-full max-w-md border border-gray-700 shadow-2xl" x-on:click.away="showUrlModal = false">
+            <h2 class="text-xl font-bold mb-4">Import CBL From URL</h2>
+
+            <label class="block text-sm text-gray-400 mb-1">URL (https:// only)</label>
+            <input
+                type="text"
+                x-model="urlInput"
+                placeholder="https://example.com/events/list.cbl"
+                class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white focus:border-blue-500 outline-none"
+            >
+
+            <div x-show="urlError" class="mt-3 text-sm text-red-300" x-text="urlError"></div>
+
+            <div class="flex justify-end gap-2 mt-6">
+                <button x-on:click="showUrlModal = false" class="text-gray-400 hover:text-white px-4 py-2 transition-colors">Cancel</button>
+                <button
+                    x-on:click="importUrl()"
+                    class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                    :disabled="!urlInput.trim() || urlImporting"
+                >
+                    <span x-text="urlImporting ? 'Importing...' : 'Import'"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div x-show="showRenameModal" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50" style="display: none;" x-transition.opacity>
+        <div class="bg-gray-800 p-6 rounded-lg w-full max-w-md border border-gray-700 shadow-2xl" x-on:click.away="showRenameModal = false">
+            <h2 class="text-xl font-bold mb-4">Rename Reading List</h2>
+
+            <label class="block text-sm text-gray-400 mb-1">Name</label>
+            <input
+                type="text"
+                x-model="renameInput"
+                class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-white focus:border-blue-500 outline-none"
+            >
+
+            <div x-show="renameError" class="mt-3 text-sm text-red-300" x-text="renameError"></div>
+
+            <div class="flex justify-end gap-2 mt-6">
+                <button x-on:click="showRenameModal = false" class="text-gray-400 hover:text-white px-4 py-2 transition-colors">Cancel</button>
+                <button
+                    x-on:click="saveRename()"
+                    class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                    :disabled="!renameInput.trim() || renaming"
+                >
+                    <span x-text="renaming ? 'Saving...' : 'Save'"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+function cblSourcesManager() {
+    return {
+        activeTab: 'sources',
+        sources: [],
+        busySourceId: null,
+
+        showUploadModal: false,
+        uploadFileObj: null,
+        uploadError: '',
+        uploading: false,
+
+        showUrlModal: false,
+        urlInput: '',
+        urlError: '',
+        urlImporting: false,
+
+        showRenameModal: false,
+        renameTarget: null,
+        renameInput: '',
+        renameError: '',
+        renaming: false,
+
+        catalog: {
+            loaded: false,
+            loading: false,
+            error: '',
+            path: '',
+            entries: [],
+            filterQuery: '',
+            preview: null,
+            previewLoading: false,
+            importingPath: null,
+        },
+
+        init() {
+            this.loadSources();
+        },
+
+        async loadSources() {
+            try {
+                const res = await fetch(window.parker.route('cbl_sources.list'));
+                if (res.ok) {
+                    const data = await res.json();
+                    this.sources = data.items;
+                }
+            } catch (e) { console.error(e); }
+        },
+
+        originBadgeClass(origin) {
+            return {
+                upload: 'bg-blue-900/50 text-blue-300',
+                url: 'bg-purple-900/50 text-purple-300',
+                catalog: 'bg-pink-900/50 text-pink-300',
+                library_import: 'bg-green-900/50 text-green-300',
+            }[origin] || 'bg-gray-700 text-gray-300';
+        },
+
+        matchSummaryText(source) {
+            if (!source.last_match_summary) return '—';
+            try {
+                const summary = JSON.parse(source.last_match_summary);
+                if (summary.error) return `Parse error: ${summary.error}`;
+                const matched = (summary.matched_by_metadata || 0) + (summary.matched_by_metadata_year || 0) + (summary.matched_by_relaxed_metadata || 0);
+                const parts = [`${matched} matched`];
+                if (summary.unmatched) parts.push(`${summary.unmatched} unmatched`);
+                if (summary.ambiguous) parts.push(`${summary.ambiguous} ambiguous`);
+                return parts.join(' · ');
+            } catch (e) {
+                return '—';
+            }
+        },
+
+        formatDate(dateStr) {
+            if (!dateStr) return 'Never';
+            return new Date(dateStr).toLocaleString();
+        },
+
+        openUploadModal() {
+            this.uploadFileObj = null;
+            this.uploadError = '';
+            this.showUploadModal = true;
+        },
+
+        fileChange(event) {
+            this.uploadFileObj = event.target.files[0];
+        },
+
+        async uploadFile() {
+            if (!this.uploadFileObj) return;
+
+            this.uploading = true;
+            this.uploadError = '';
+
+            try {
+                const formData = new FormData();
+                formData.append('file', this.uploadFileObj);
+                const res = await fetch(window.parker.route('cbl_sources.upload'), { method: 'POST', body: formData });
+                const payload = await res.json();
+
+                if (!res.ok) throw new Error(payload.detail || 'Upload failed');
+
+                this.showUploadModal = false;
+                await this.loadSources();
+                window.parker.showToast('CBL file imported', 'success');
+            } catch (e) {
+                this.uploadError = e.message || 'Upload failed';
+            } finally {
+                this.uploading = false;
+            }
+        },
+
+        openUrlModal() {
+            this.urlInput = '';
+            this.urlError = '';
+            this.showUrlModal = true;
+        },
+
+        async importUrl() {
+            if (!this.urlInput.trim()) return;
+
+            this.urlImporting = true;
+            this.urlError = '';
+
+            try {
+                const res = await fetch(window.parker.route('cbl_sources.import_url'), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: this.urlInput.trim() }),
+                });
+                const payload = await res.json();
+
+                if (!res.ok) throw new Error(payload.detail || 'Import failed');
+
+                this.showUrlModal = false;
+                await this.loadSources();
+                window.parker.showToast('CBL file imported', 'success');
+            } catch (e) {
+                this.urlError = e.message || 'Import failed';
+            } finally {
+                this.urlImporting = false;
+            }
+        },
+
+        openRenameModal(source) {
+            this.renameTarget = source;
+            this.renameInput = source.reading_list_name || '';
+            this.renameError = '';
+            this.showRenameModal = true;
+        },
+
+        async saveRename() {
+            if (!this.renameInput.trim() || !this.renameTarget) return;
+
+            this.renaming = true;
+            this.renameError = '';
+
+            try {
+                const res = await fetch(window.parker.route('reading_lists.rename', { list_id: this.renameTarget.reading_list_id }), {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: this.renameInput.trim() }),
+                });
+                const payload = await res.json();
+
+                if (!res.ok) throw new Error(payload.detail || 'Rename failed');
+
+                this.showRenameModal = false;
+                await this.loadSources();
+                window.parker.showToast('Reading list renamed', 'success');
+            } catch (e) {
+                this.renameError = e.message || 'Rename failed';
+            } finally {
+                this.renaming = false;
+            }
+        },
+
+        async refreshSource(source) {
+            this.busySourceId = source.id;
+
+            try {
+                const res = await fetch(window.parker.route('cbl_sources.refresh', { source_id: source.id }), { method: 'POST' });
+                const payload = await res.json();
+
+                if (!res.ok) throw new Error(payload.detail || 'Refresh failed');
+
+                await this.loadSources();
+                const ok = payload.last_refresh_status === 'ok';
+                window.parker.showToast(ok ? 'Refreshed' : 'Refresh failed — keeping last good list', ok ? 'success' : 'warning');
+            } catch (e) {
+                await window.parker.dialog.alert('Error', e.message || 'Refresh failed');
+            } finally {
+                this.busySourceId = null;
+            }
+        },
+
+        async deleteSource(source) {
+            const confirmed = await window.parker.dialog.confirm(
+                `Delete "${source.display_name}"?`,
+                'This removes the managed CBL file and its derived reading list.',
+                { isDestructive: true, confirmText: 'Delete' }
+            );
+
+            if (!confirmed) return;
+
+            this.busySourceId = source.id;
+
+            try {
+                const res = await fetch(window.parker.route('cbl_sources.delete', { source_id: source.id }), { method: 'DELETE' });
+                if (res.ok) {
+                    await this.loadSources();
+                    window.parker.showToast('CBL source deleted', 'success');
+                }
+            } catch (e) {
+                await window.parker.dialog.alert('Error', 'Failed to delete CBL source');
+            } finally {
+                this.busySourceId = null;
+            }
+        },
+
+        async browseCatalog(path, forceRefresh = false) {
+            this.catalog.loading = true;
+            this.catalog.error = '';
+            this.catalog.preview = null;
+
+            try {
+                const query = `path=${encodeURIComponent(path || '')}${forceRefresh ? '&force_refresh=true' : ''}`;
+                const res = await fetch(window.parker.route('cbl_catalog.browse', {}, query));
+                const payload = await res.json();
+
+                if (!res.ok) throw new Error(payload.detail || 'Failed to browse catalog');
+
+                this.catalog.path = payload.path;
+                this.catalog.entries = payload.entries;
+                this.catalog.filterQuery = '';
+                this.catalog.loaded = true;
+            } catch (e) {
+                this.catalog.error = e.message || 'Failed to browse catalog';
+            } finally {
+                this.catalog.loading = false;
+            }
+        },
+
+        catalogParentPath() {
+            if (!this.catalog.path) return '';
+            const parts = this.catalog.path.split('/');
+            parts.pop();
+            return parts.join('/');
+        },
+
+        filteredCatalogEntries() {
+            const query = this.catalog.filterQuery.trim().toLowerCase();
+            if (!query) return this.catalog.entries;
+            return this.catalog.entries.filter((entry) => entry.name.toLowerCase().includes(query));
+        },
+
+        async previewCatalogFile(entry) {
+            this.catalog.previewLoading = true;
+
+            try {
+                const res = await fetch(window.parker.route('cbl_catalog.preview', {}, `path=${encodeURIComponent(entry.path)}`));
+                const payload = await res.json();
+
+                if (!res.ok) throw new Error(payload.detail || 'Failed to preview file');
+
+                this.catalog.preview = { path: entry.path, ...payload };
+            } catch (e) {
+                await window.parker.dialog.alert('Error', e.message || 'Failed to preview file');
+            } finally {
+                this.catalog.previewLoading = false;
+            }
+        },
+
+        async importCatalogFile(entry) {
+            this.catalog.importingPath = entry.path;
+
+            try {
+                const res = await fetch(window.parker.route('cbl_catalog.import_file'), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: entry.path }),
+                });
+                const payload = await res.json();
+
+                if (!res.ok) throw new Error(payload.detail || 'Failed to import file');
+
+                await this.loadSources();
+                this.activeTab = 'sources';
+                window.parker.showToast(`Imported "${payload.display_name}"`, 'success');
+            } catch (e) {
+                await window.parker.dialog.alert('Error', e.message || 'Failed to import file');
+            } finally {
+                this.catalog.importingPath = null;
+            }
+        },
+    }
+}
+</script>
+{% endblock %}

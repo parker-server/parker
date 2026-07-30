@@ -6,6 +6,7 @@ from app.models.comic import Volume, Comic  # Both Volume and Comic are in comic
 from app.models.tags import Character, Team, Location, Genre
 from app.models.credits import Person, ComicCredit
 from app.models.reading_list import ReadingList, ReadingListItem
+from app.models.cbl_source import CBLSource
 from app.models.collection import Collection, CollectionItem
 from app.models.reading_progress import ReadingProgress
 from app.models.bookmark import Bookmark
@@ -24,6 +25,7 @@ __all__ = [
     'Character', 'Team', 'Location', 'Genre',
     'Person', 'ComicCredit',
     'ReadingList', 'ReadingListItem',
+    'CBLSource',
     'Collection', 'CollectionItem',
     'ReadingProgress', 'ActivityLog', 'Bookmark',
     'ScanJob',

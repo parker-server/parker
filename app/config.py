@@ -56,6 +56,7 @@ class Settings(BaseSettings):
     cover_dir: Path = Path("storage/cover")
     backup_dir: Path = Path("storage/backup")
     avatar_dir: Path = Path("storage/avatars")
+    cbl_dir: Path = Path("storage/cbl")
     thumbnail_size: tuple[float, float] = (320, 455)
     avatar_size: tuple[float, float] = (400, 400)  # standard avatar box
 

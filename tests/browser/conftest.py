@@ -104,7 +104,7 @@ def browser_seed_data(browser_db_factory):
     reading_list = ReadingList(
         name="Smoke Crossover",
         description="A compact browser-test event list.",
-        auto_generated=0,
+        source="manual",
     )
     writer = Person(name="Casey Smoke")
     character = Character(name="Captain Smoke")

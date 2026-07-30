@@ -33,7 +33,7 @@ from app.services.watcher import library_watcher
 
 # API Routes
 from app.api import libraries, comics, reader, progress, series, volumes, search, bookmarks
-from app.api import reading_lists, collections
+from app.api import reading_lists, collections, cbl_sources, cbl_catalog
 from app.api import auth, users, saved_searches, smart_lists
 from app.api import tasks, jobs, stats, settings as settings_api
 from app.api import pull_lists
@@ -72,6 +72,7 @@ async def lifespan(app: FastAPI):
     settings.cache_dir.mkdir(parents=True, exist_ok=True)
     settings.cover_dir.mkdir(parents=True, exist_ok=True)
     settings.avatar_dir.mkdir(parents=True, exist_ok=True)
+    settings.cbl_dir.mkdir(parents=True, exist_ok=True)
 
     # -- Init DB defaults when necessary (Safe, idempotent)
     db = SessionLocal()
@@ -256,6 +257,8 @@ app.include_router(tasks.router, prefix="/api/tasks", tags=["tasks", "admin"])
 app.include_router(stats.router, prefix="/api/stats", tags=["stats", "admin"])
 app.include_router(reports.router, prefix="/api/reports", tags=["reports", "admin"])
 app.include_router(migration.router, prefix="/api/migration", tags=["migration", "admin"])
+app.include_router(cbl_sources.router, prefix="/api/cbl-sources", tags=["cbl-sources", "admin"])
+app.include_router(cbl_catalog.router, prefix="/api/cbl-catalog", tags=["cbl-catalog", "admin"])
 
 
 

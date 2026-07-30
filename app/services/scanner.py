@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Optional
+import hashlib
 import os
 import time
 import logging
@@ -17,12 +18,14 @@ from app.models.library_root import LibraryRoot
 from app.models.comic import Comic
 from app.models.comic import Volume
 from app.models.series import Series
+from app.models.cbl_source import CBLSource
 
 from app.services.workers.metadata_worker import metadata_worker
 from app.services.workers.metadata_writer import metadata_writer
 from app.services.sidecar_service import SidecarService
 from app.services.reading_list import ReadingListService
 from app.services.collection import CollectionService
+from app.services.cbl_source_service import CBLSourceService, CBLSourceError
 
 
 class LibraryScanner:
@@ -40,6 +43,7 @@ class LibraryScanner:
 
         self.reading_list_service = ReadingListService(db)
         self.collection_service = CollectionService(db)
+        self.cbl_source_service = CBLSourceService(db)
 
     def scan_parallel(self, force: bool = False, worker_limit: int = 0) -> dict:
         """
@@ -86,9 +90,14 @@ class LibraryScanner:
         tasks = []
         scanned_keys = set()
         skipped = 0
+        discovered_cbl_files: list[tuple] = []
 
         for library_root, library_path in root_paths:
             for file_path in library_path.rglob("*"):
+                if file_path.suffix.lower() == ".cbl":
+                    discovered_cbl_files.append((library_root, file_path))
+                    continue
+
                 if file_path.suffix.lower() not in self.supported_extensions:
                     continue
 
@@ -127,6 +136,29 @@ class LibraryScanner:
                         "library_root_id": library_root.id,
                         "library_root_path": library_root.path,
                     })
+
+        # --- Optional CBL discovery: import any .cbl files found under active
+        # roots into Parker-managed storage. This is an import source, not
+        # canonical storage -- the managed copy becomes the thing Parker
+        # re-parses/re-matches from here on, so already-known fingerprints are
+        # skipped silently rather than re-imported every scan.
+        for library_root, cbl_path in discovered_cbl_files:
+            try:
+                content = cbl_path.read_bytes()
+            except OSError as exc:
+                self.logger.warning("Could not read discovered CBL file %s: %s", cbl_path, exc)
+                continue
+
+            fingerprint = hashlib.sha256(content).hexdigest()
+            if self.db.query(CBLSource).filter(CBLSource.fingerprint == fingerprint).first():
+                continue
+
+            relative_path = compute_relative_path(library_root.path, str(cbl_path)) or cbl_path.name
+            try:
+                self.cbl_source_service.import_upload(content, relative_path, origin="library_import")
+                self.logger.info(f"Discovered and imported CBL file: {relative_path}")
+            except CBLSourceError as exc:
+                self.logger.warning("Skipping invalid discovered CBL file %s: %s", cbl_path, exc)
 
         # Persist any sidecar reconciliation updates found during discovery.
         self.db.commit()
@@ -229,6 +261,16 @@ class LibraryScanner:
         # Cleanup empty containers
         self.reading_list_service.cleanup_empty_lists()
         self.collection_service.cleanup_empty_collections()
+
+        # Rebuild/rematch every managed CBL source -- not just ones tied to this
+        # library, since CBL events can span comics from multiple libraries and
+        # this scan's newly-imported comics may resolve previously-unmatched
+        # entries from any of them. One bad source shouldn't sink the scan.
+        for cbl_source in self.db.query(CBLSource).all():
+            try:
+                self.cbl_source_service.rebuild(cbl_source.id)
+            except Exception as exc:
+                self.logger.error(f"Failed to rebuild CBL source {cbl_source.id}: {exc}")
 
         # Update library scan time
         scanned_at = datetime.now(timezone.utc)

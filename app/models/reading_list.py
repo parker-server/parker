@@ -12,8 +12,10 @@ class ReadingList(Base):
     name = Column(String, unique=True, nullable=False, index=True)
     description = Column(Text)
 
-    # Track if this was auto-generated from AlternateSeries
-    auto_generated = Column(Integer, default=1)  # SQLite uses 1/0 for boolean
+    # Provenance: "manual" (user-created), "comicinfo" (derived from embedded
+    # AlternateSeries/AlternateNumber), or "cbl" (derived from a managed .cbl file).
+    source = Column(String, nullable=False, default="manual", index=True)
+    source_cbl_id = Column(Integer, ForeignKey("cbl_sources.id", ondelete="SET NULL"), nullable=True, index=True)
 
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

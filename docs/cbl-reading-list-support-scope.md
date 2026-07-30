@@ -226,23 +226,39 @@ Implementation should include real fixture files before finalizing field mapping
 
 ## Matching Strategy
 
-Matching should favor filesystem identity when available, then fall back to metadata.
+Implemented in `app/services/cbl_matching.py`.
 
-Recommended order:
+Real ComicRack-style CBL `<Book>` entries carry only `Series`/`Number`/`Volume`/`Year`/`Format`
+attributes -- no filesystem path or filename -- so a path/filename tier (as originally
+considered here) has nothing to match against for real-world CBL files and was not built.
+Matching goes straight to metadata, in three tiers:
 
-1. Path match, if the CBL entry provides a file path and it can be normalized against known Parker library roots.
-2. Filename match, only when unique within the target matching scope.
-3. Metadata match using normalized series, issue number, volume, and year.
-4. Optional relaxed metadata match using series and number only when unique.
+1. `series + number + volume + year`, normalized. Only works when the library's `Volume`
+   tagging convention agrees with the CBL file's -- both usually meaning "the year this
+   print run started."
+2. `series + number + year`, dropping the volume comparison. Needed because plenty of
+   libraries tag `Volume` as a plain sequential index (1, 2, 3...) instead of a start year,
+   which would otherwise never agree with a CBL file's `Volume` value and silently degrade
+   every match in that library to tier 3.
+3. `series + number` only, as a last resort when no year is available on either side.
+
+Each tier only ever compares values the tagger/CBL file actually asserted -- never a
+derived or inferred one (e.g. approximating a volume's start year from the earliest
+issue's publication year was considered and rejected: it can be confidently *wrong* for
+any issue published after a volume's first year, which is worse than not matching).
 
 Ambiguity policy:
 
-- never guess when multiple comics match
-- skip unmatched or ambiguous entries
-- keep the rest of the list usable
-- surface skipped entries in scan summary/admin reporting
+- never guess when multiple comics match a tier's key
+- an ambiguous result at any tier is terminal for that entry -- it does not fall through
+  to a looser tier, since every later tier is a strict superset of the same match space
+  and can only be equally or more ambiguous, never less
+- skip unmatched or ambiguous entries; keep the rest of the list usable
+- surface skipped entries in scan summary/admin reporting (`CBLSource.last_match_summary`)
 
-Matching should reuse existing path normalization helpers from `app/core/path_utils.py` and existing issue-number parsing/sort behavior where practical.
+Series-name normalization (`app/core/text_utils.py::normalize_title`) and issue-number
+normalization (`app/core/comic_helpers.py::normalize_issue_number`) are shared with the
+ComicInfo-derived matching path rather than duplicated.
 
 ## Generated List Naming
 
@@ -288,9 +304,9 @@ Useful scan/report fields:
 - CBL parse failures
 - reading lists created
 - reading lists updated
-- entries matched by path
-- entries matched by filename
-- entries matched by metadata
+- entries matched by metadata (series + number + volume + year)
+- entries matched by metadata (series + number + year)
+- entries matched by relaxed metadata (series + number only)
 - unmatched entries
 - ambiguous entries
 
@@ -351,9 +367,9 @@ Derived list edit/delete behavior should be deliberate:
 
 ### 5. Matching Service
 
-- implement deterministic matching by path, filename, then metadata
+- implement deterministic matching: series+number+volume+year, then series+number+year, then series+number only
 - collect unmatched and ambiguous entries
-- add tests for duplicate filenames, duplicate metadata, missing years, and multi-root relative paths
+- add tests for duplicate metadata, missing years, and mismatched volume-tagging conventions (sequential vs. year-based)
 
 ### 6. Scan Integration
 
@@ -397,7 +413,7 @@ Unit coverage:
 - URL import safety checks
 - managed CBL file lifecycle
 - catalog listing cache behavior
-- matching by path, filename, and metadata
+- matching by metadata (strict volume+year, year-only, and relaxed series+number tiers)
 - ambiguous/unmatched entry handling
 - CBL delete/stale behavior for managed source deletion and failed refresh
 

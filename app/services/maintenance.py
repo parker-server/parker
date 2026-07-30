@@ -103,8 +103,13 @@ class MaintenanceService:
             self.db.commit()  # Yield Lock
 
             # 7. Clean Empty Containers
+            # Scoped to "comicinfo" only -- never "manual" (a user may deliberately
+            # keep an empty one) and never "cbl" (CBL list lifecycle is owned by
+            # CBLSourceService.rebuild()/delete(); this cleanup job never rebuilds
+            # CBL sources afterward, so deleting an empty CBL list here would just
+            # orphan its CBLSource until the next full scan).
             stats["empty_lists"] = self.db.query(ReadingList).filter(~ReadingList.items.any()).filter(
-                ReadingList.auto_generated == True).delete(synchronize_session=False)
+                ReadingList.source == "comicinfo").delete(synchronize_session=False)
             self.db.commit()  # Yield Lock
 
             stats["empty_collections"] = self.db.query(Collection).filter(~Collection.items.any()).filter(
@@ -214,8 +219,13 @@ class MaintenanceService:
         return deleted_count
 
     def refresh_reading_list_descriptions(self) -> dict:
-        """Populate missing descriptions for auto-generated lists."""
-        lists = self.db.query(ReadingList).filter(ReadingList.auto_generated == True).all()
+        """Populate missing descriptions for ComicInfo-derived lists.
+
+        Scoped to source == "comicinfo" only -- a CBL-derived list's description
+        comes from the .cbl file itself and must not be clobbered by a Wikipedia
+        lookup here.
+        """
+        lists = self.db.query(ReadingList).filter(ReadingList.source == "comicinfo").all()
         updated_count = 0
 
         for r_list in lists:
