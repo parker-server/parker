@@ -9,7 +9,7 @@ from app.core.login_backgrounds import SOLID_COLORS, STATIC_COVERS
 
 SERVER_DISPLAY_NAME_MAX_LENGTH = 32
 SCANNING_BATCH_WINDOW_MIN_SECONDS = 60
-SETTING_RUNTIME_METADATA_FIELDS = ("min_value",)
+SETTING_RUNTIME_METADATA_FIELDS = ("min_value", "display_group")
 
 
 class SettingValidationError(ValueError):
@@ -81,6 +81,7 @@ class SettingsService:
             "category": "appearance", "data_type": "select",
             "label": "Login Background Style",
             "description": "Choose what appears behind the login form.",
+            "display_group": "Login Page",
             "options": [
                 {"label": "None (Gradient only)", "value": "none"},
                 {"label": "Random library covers", "value": "random_covers"},
@@ -96,6 +97,7 @@ class SettingsService:
             "data_type": "select",
             "label": "Login Solid Color",
             "description": "Choose a color gradient.",
+            "display_group": "Login Page",
             "depends_on": { "key": "ui.login_background_style", "value": "solid_color" },
             "options": generate_color_options()
         },
@@ -106,6 +108,7 @@ class SettingsService:
             "data_type": "select",
             "label": "Login Static Cover",
             "description": "Choose an iconic comic cover.",
+            "display_group": "Login Page",
             "depends_on": { "key": "ui.login_background_style", "value": "static_cover" },
             "options": generate_cover_options()
         },
@@ -114,6 +117,7 @@ class SettingsService:
             "key": "ui.background_style", "value": "NONE",
             "category": "appearance", "data_type": "select",
             "label": "Background Style",
+            "display_group": "Library Presentation",
             "options": [
                 {"label": "No background style", "value": "NONE"},
                 {"label": "Hero backdrop style", "value": "HERO"},
@@ -128,6 +132,7 @@ class SettingsService:
             "data_type": "select",
             "label": "Pagination Style",
             "description": "How lists of series / issues are loaded.",
+            "display_group": "Browsing Behavior",
             "options": [
                 {"label": "Infinite Scroll (Load on scroll)", "value": "infinite"},
                 {"label": "Classic (Page numbers)", "value": "classic"}
@@ -139,13 +144,15 @@ class SettingsService:
             "category": "appearance",
             "data_type": "bool",
             "label": "Open Single-Volume Series as Volume",
-            "description": "When enabled, opening a series with exactly one volume sends readers directly to that volume page."
+            "description": "When enabled, opening a series with exactly one volume sends readers directly to that volume page.",
+            "display_group": "Browsing Behavior",
         },
         {
             "key": "ui.on_deck.staleness_weeks", "value": "4",
             "category": "appearance", "data_type": "int",
             "label": "On Deck Staleness (Weeks)",
-            "description": "Hide 'Continue Reading' items if not touched for this many weeks. Set to 0 to disable."
+            "description": "Hide 'Continue Reading' items if not touched for this many weeks. Set to 0 to disable.",
+            "display_group": "Browsing Behavior",
         },
         {
             "key": "system.task.backup.interval",
@@ -154,6 +161,7 @@ class SettingsService:
             "data_type": "select",
             "label": "Auto-Backup Interval",
             "description": "How often to perform a full database backup.",
+            "display_group": "Scheduled Tasks",
             "options": [
                 {"label": "Daily", "value": "daily"},
                 {"label": "Weekly", "value": "weekly"},
@@ -168,77 +176,12 @@ class SettingsService:
             "data_type": "select",
             "label": "Auto-Cleanup Interval",
             "description": "How often to clear orphaned metadata (unused characters, tags, etc).",
+            "display_group": "Scheduled Tasks",
             "options": [
                 {"label": "Daily", "value": "daily"},
                 {"label": "Weekly", "value": "weekly"},
                 {"label": "Monthly", "value": "monthly"}
             ]
-        },
-        {
-            "key": "system.parallel_metadata_processing",
-            "value": "false",
-            "category": "system",
-            "data_type": "bool",
-            "label": "Enable Parallel Metadata Processing",
-            "description": "Use multiple CPU cores to speed up comic metadata extraction / parsing. May increase system load."
-        },
-        {
-            "key": "system.parallel_metadata_workers",
-            "value": "0",
-            "category": "system",
-            "data_type": "select",
-            "label": "Parallel Metadata Worker Count",
-            "description": "Control how many CPU cores are used for comic metadata extraction / parsing.",
-            "options": generate_worker_options()
-        },
-        {
-            "key": "system.parallel_metadata_writer_summary_timeout_seconds",
-            "value": "180",
-            "category": "system",
-            "data_type": "int",
-            "label": "Metadata Writer Summary Timeout (Sec)",
-            "description": "Maximum time to wait for the metadata writer to return final scan stats before failing the scan job."
-        },
-        {
-            "key": "system.parallel_metadata_writer_join_timeout_seconds",
-            "value": "30",
-            "category": "system",
-            "data_type": "int",
-            "label": "Metadata Writer Join Timeout (Sec)",
-            "description": "Grace period to wait for the metadata writer process to exit cleanly before force termination."
-        },
-        {
-            "key": "system.parallel_image_processing",
-            "value": "false",
-            "category": "system",
-            "data_type": "bool",
-            "label": "Enable Parallel Image Processing",
-            "description": "Use multiple CPU cores to speed up thumbnail generation. May increase system load."
-        },
-        {
-            "key": "system.parallel_image_workers",
-            "value": "0",
-            "category": "system",
-            "data_type": "select",
-            "label": "Parallel Image Worker Count",
-            "description": "Control how many CPU cores are used for thumbnail generation.",
-            "options": generate_worker_options()
-        },
-        {
-            "key": "system.parallel_image_writer_summary_timeout_seconds",
-            "value": "180",
-            "category": "system",
-            "data_type": "int",
-            "label": "Thumbnail Writer Summary Timeout (Sec)",
-            "description": "Maximum time to wait for the thumbnail writer to return final stats before failing the job."
-        },
-        {
-            "key": "system.parallel_image_writer_join_timeout_seconds",
-            "value": "30",
-            "category": "system",
-            "data_type": "int",
-            "label": "Thumbnail Writer Join Timeout (Sec)",
-            "description": "Grace period to wait for the thumbnail writer process to exit cleanly before force termination."
         },
         {
             "key": "system.task.scan.interval",
@@ -247,11 +190,86 @@ class SettingsService:
             "data_type": "select",
             "label": "Scheduled Library Scan",
             "description": "Safety net scan for all libraries (useful if folder watching is unreliable).",
+            "display_group": "Scheduled Tasks",
             "options": [
                 {"label": "Daily", "value": "daily"},
                 {"label": "Weekly", "value": "weekly"},
                 {"label": "Disabled", "value": "disabled"}
             ]
+        },
+        {
+            "key": "system.parallel_metadata_processing",
+            "value": "false",
+            "category": "system",
+            "data_type": "bool",
+            "label": "Enable Parallel Metadata Processing",
+            "description": "Use multiple CPU cores to speed up comic metadata extraction / parsing. May increase system load.",
+            "display_group": "Metadata Processing",
+        },
+        {
+            "key": "system.parallel_metadata_workers",
+            "value": "0",
+            "category": "system",
+            "data_type": "select",
+            "label": "Parallel Metadata Worker Count",
+            "description": "Control how many CPU cores are used for comic metadata extraction / parsing.",
+            "display_group": "Metadata Processing",
+            "options": generate_worker_options()
+        },
+        {
+            "key": "system.parallel_metadata_writer_summary_timeout_seconds",
+            "value": "180",
+            "category": "system",
+            "data_type": "int",
+            "label": "Metadata Writer Summary Timeout (Sec)",
+            "description": "Maximum time to wait for the metadata writer to return final scan stats before failing the scan job.",
+            "display_group": "Metadata Processing",
+        },
+        {
+            "key": "system.parallel_metadata_writer_join_timeout_seconds",
+            "value": "30",
+            "category": "system",
+            "data_type": "int",
+            "label": "Metadata Writer Join Timeout (Sec)",
+            "description": "Grace period to wait for the metadata writer process to exit cleanly before force termination.",
+            "display_group": "Metadata Processing",
+        },
+        {
+            "key": "system.parallel_image_processing",
+            "value": "false",
+            "category": "system",
+            "data_type": "bool",
+            "label": "Enable Parallel Image Processing",
+            "description": "Use multiple CPU cores to speed up thumbnail generation. May increase system load.",
+            "display_group": "Thumbnail Processing",
+        },
+        {
+            "key": "system.parallel_image_workers",
+            "value": "0",
+            "category": "system",
+            "data_type": "select",
+            "label": "Parallel Image Worker Count",
+            "description": "Control how many CPU cores are used for thumbnail generation.",
+            "display_group": "Thumbnail Processing",
+            "options": generate_worker_options()
+        },
+        {
+            "key": "system.parallel_image_writer_summary_timeout_seconds",
+            "value": "180",
+            "category": "system",
+            "data_type": "int",
+            "label": "Thumbnail Writer Summary Timeout (Sec)",
+            "description": "Maximum time to wait for the thumbnail writer to return final stats before failing the job.",
+            "display_group": "Thumbnail Processing",
+        },
+        {
+            "key": "system.parallel_image_writer_join_timeout_seconds",
+            "value": "30",
+            "category": "system",
+            "data_type": "int",
+            "label": "Thumbnail Writer Join Timeout (Sec)",
+            "description": "Grace period to wait for the thumbnail writer process to exit cleanly before force termination.",
+            "display_group": "Thumbnail Processing",
         },
 
         {
@@ -296,6 +314,13 @@ class SettingsService:
             if definition["key"] == key:
                 return definition
         return None
+
+    @classmethod
+    def _definition_order(cls) -> Dict[str, int]:
+        return {
+            definition["key"]: index
+            for index, definition in enumerate(cls.DEFAULTS)
+        }
 
     def initialize_defaults(self):
         """
@@ -353,6 +378,9 @@ class SettingsService:
     def get_all_grouped(self) -> Dict[str, List[SystemSetting]]:
         """Returns settings grouped by category for the UI"""
         settings = self.db.query(SystemSetting).filter(SystemSetting.is_hidden == False).all()
+        definition_order = self._definition_order()
+        settings.sort(key=lambda setting: definition_order.get(setting.key, len(definition_order)))
+
         grouped = {}
         for s in settings:
             s.value = self._cast_value(s.value, s.data_type)  # Cast for API

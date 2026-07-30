@@ -274,6 +274,7 @@ def test_admin_settings_page_exposes_quick_navigation(admin_client):
     body = response.text
     assert "Settings Overview" in body
     assert "Jump To" in body
+    assert "categorySettingGroups(category)" in body
     assert "Expand All" in body
     assert "Collapse All" in body
     assert 'x-text="setting.key"' not in body

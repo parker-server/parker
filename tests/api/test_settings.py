@@ -66,6 +66,59 @@ def test_get_settings_grouped_list_includes_min_value_metadata(admin_client, db)
     assert batch_window["min_value"] == SCANNING_BATCH_WINDOW_MIN_SECONDS
 
 
+def test_system_settings_include_display_groups_and_definition_order(admin_client, db):
+    SettingsService(db).initialize_defaults()
+
+    response = admin_client.get("/api/settings/")
+
+    assert response.status_code == 200
+    system_settings = response.json()["system"]
+    keys = [setting["key"] for setting in system_settings]
+    groups = {
+        setting["key"]: setting["display_group"]
+        for setting in system_settings
+    }
+
+    assert keys[:3] == [
+        "system.task.backup.interval",
+        "system.task.cleanup.interval",
+        "system.task.scan.interval",
+    ]
+    assert groups["system.task.backup.interval"] == "Scheduled Tasks"
+    assert groups["system.task.scan.interval"] == "Scheduled Tasks"
+    assert groups["system.parallel_metadata_processing"] == "Metadata Processing"
+    assert groups["system.parallel_metadata_workers"] == "Metadata Processing"
+    assert groups["system.parallel_image_processing"] == "Thumbnail Processing"
+    assert groups["system.parallel_image_workers"] == "Thumbnail Processing"
+
+
+def test_appearance_settings_include_display_groups_and_definition_order(admin_client, db):
+    SettingsService(db).initialize_defaults()
+
+    response = admin_client.get("/api/settings/")
+
+    assert response.status_code == 200
+    appearance_settings = response.json()["appearance"]
+    keys = [setting["key"] for setting in appearance_settings]
+    groups = {
+        setting["key"]: setting["display_group"]
+        for setting in appearance_settings
+    }
+
+    assert keys[:3] == [
+        "ui.login_background_style",
+        "ui.login_solid_color",
+        "ui.login_static_cover",
+    ]
+    assert groups["ui.login_background_style"] == "Login Page"
+    assert groups["ui.login_solid_color"] == "Login Page"
+    assert groups["ui.login_static_cover"] == "Login Page"
+    assert groups["ui.background_style"] == "Library Presentation"
+    assert groups["ui.pagination_mode"] == "Browsing Behavior"
+    assert groups["ui.auto_redirect_single_volume_series"] == "Browsing Behavior"
+    assert groups["ui.on_deck.staleness_weeks"] == "Browsing Behavior"
+
+
 def test_login_background_style_options_include_static_cover_cycling(admin_client, db):
     SettingsService(db).initialize_defaults()
 

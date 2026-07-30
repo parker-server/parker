@@ -100,78 +100,87 @@
             </button>
 
             <div x-show="isSectionOpen(category)" x-cloak class="border-t border-gray-800 p-5">
-                <div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                    <template x-for="setting in settings[category]" :key="setting.key">
-                        <div
-                            x-show="!setting.depends_on || isDependent(setting)"
-                            class="rounded-xl border border-gray-700 bg-gray-950/70 p-4"
-                        >
-                            <div class="flex flex-col gap-3">
-                                <div>
-                                    <div>
-                                        <label class="block text-sm font-semibold text-white" x-text="setting.label"></label>
-                                    </div>
+                <div class="space-y-6">
+                    <template x-for="group in categorySettingGroups(category)" :key="`${category}-${group.name || 'settings'}`">
+                        <div class="space-y-3">
+                            <template x-if="group.name">
+                                <div class="border-b border-gray-800 pb-2">
+                                    <h3 class="text-sm font-bold uppercase tracking-[0.2em] text-gray-400" x-text="group.name"></h3>
                                 </div>
+                            </template>
 
-                                <template x-if="setting.data_type === 'bool'">
-                                    <div class="flex items-center justify-between gap-4 rounded-xl border border-gray-800 bg-gray-900/80 px-4 py-3">
-                                        <div>
-                                            <div class="text-sm font-medium text-gray-200" x-text="setting.value ? 'Enabled' : 'Disabled'"></div>
-                                            <p class="mt-1 text-xs text-gray-500">Applies immediately after saving.</p>
+                            <div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                                <template x-for="setting in group.settings" :key="setting.key">
+                                    <div class="rounded-xl border border-gray-700 bg-gray-950/70 p-4">
+                                        <div class="flex flex-col gap-3">
+                                            <div>
+                                                <div>
+                                                    <label class="block text-sm font-semibold text-white" x-text="setting.label"></label>
+                                                </div>
+                                            </div>
+
+                                            <template x-if="setting.data_type === 'bool'">
+                                                <div class="flex items-center justify-between gap-4 rounded-xl border border-gray-800 bg-gray-900/80 px-4 py-3">
+                                                    <div>
+                                                        <div class="text-sm font-medium text-gray-200" x-text="setting.value ? 'Enabled' : 'Disabled'"></div>
+                                                        <p class="mt-1 text-xs text-gray-500">Applies immediately after saving.</p>
+                                                    </div>
+                                                    <button
+                                                        x-on:click="update(setting, !setting.value)"
+                                                        class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
+                                                        :class="setting.value ? 'bg-blue-600' : 'bg-gray-700'"
+                                                    >
+                                                        <span
+                                                            class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
+                                                            :class="setting.value ? 'translate-x-5' : 'translate-x-0'"
+                                                        ></span>
+                                                    </button>
+                                                </div>
+                                            </template>
+
+                                            <template x-if="setting.data_type === 'select'">
+                                                <div class="flex flex-col gap-2 sm:flex-row">
+                                                    <select
+                                                        x-model="setting.tempValue"
+                                                        x-on:change="update(setting, $event.target.value)"
+                                                        class="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none transition-colors focus:border-blue-500"
+                                                    >
+                                                        <template x-for="opt in getGroupedOptions(setting.options).orphans" :key="opt.value">
+                                                            <option :value="opt.value" x-text="opt.label" :selected="opt.value == setting.value"></option>
+                                                        </template>
+
+                                                        <template x-for="groupName in getGroupedOptions(setting.options).groupOrder" :key="groupName">
+                                                            <optgroup :label="groupName">
+                                                                <template x-for="opt in getGroupedOptions(setting.options).groups[groupName]" :key="opt.value">
+                                                                    <option :value="opt.value" x-text="opt.label" :selected="opt.value == setting.value"></option>
+                                                                </template>
+                                                            </optgroup>
+                                                        </template>
+                                                    </select>
+                                                </div>
+                                            </template>
+
+                                            <template x-if="setting.data_type !== 'bool' && setting.data_type !== 'select'">
+                                                <div class="flex flex-col gap-2 sm:flex-row">
+                                                    <input
+                                                        :type="setting.data_type === 'int' ? 'number' : 'text'"
+                                                        x-model="setting.tempValue"
+                                                        x-on:focus="setting.tempValue = setting.value"
+                                                        :maxlength="inputMaxLength(setting) || null"
+                                                        :min="inputMin(setting) || null"
+                                                        class="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none transition-colors focus:border-blue-500"
+                                                    >
+                                                    <button
+                                                        x-on:click="update(setting, setting.tempValue)"
+                                                        class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-500 sm:w-auto"
+                                                    >Save</button>
+                                                </div>
+                                            </template>
+
+                                            <p class="text-sm leading-relaxed text-gray-400" x-text="setting.description || 'No additional description provided.'"></p>
                                         </div>
-                                        <button
-                                            x-on:click="update(setting, !setting.value)"
-                                            class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
-                                            :class="setting.value ? 'bg-blue-600' : 'bg-gray-700'"
-                                        >
-                                            <span
-                                                class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
-                                                :class="setting.value ? 'translate-x-5' : 'translate-x-0'"
-                                            ></span>
-                                        </button>
                                     </div>
                                 </template>
-
-                                <template x-if="setting.data_type === 'select'">
-                                    <div class="flex flex-col gap-2 sm:flex-row">
-                                        <select
-                                            x-model="setting.tempValue"
-                                            x-on:change="update(setting, $event.target.value)"
-                                            class="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none transition-colors focus:border-blue-500"
-                                        >
-                                            <template x-for="opt in getGroupedOptions(setting.options).orphans" :key="opt.value">
-                                                <option :value="opt.value" x-text="opt.label" :selected="opt.value == setting.value"></option>
-                                            </template>
-
-                                            <template x-for="groupName in getGroupedOptions(setting.options).groupOrder" :key="groupName">
-                                                <optgroup :label="groupName">
-                                                    <template x-for="opt in getGroupedOptions(setting.options).groups[groupName]" :key="opt.value">
-                                                        <option :value="opt.value" x-text="opt.label" :selected="opt.value == setting.value"></option>
-                                                    </template>
-                                                </optgroup>
-                                            </template>
-                                        </select>
-                                    </div>
-                                </template>
-
-                                <template x-if="setting.data_type !== 'bool' && setting.data_type !== 'select'">
-                                    <div class="flex flex-col gap-2 sm:flex-row">
-                                        <input
-                                            :type="setting.data_type === 'int' ? 'number' : 'text'"
-                                            x-model="setting.tempValue"
-                                            x-on:focus="setting.tempValue = setting.value"
-                                            :maxlength="inputMaxLength(setting) || null"
-                                            :min="inputMin(setting) || null"
-                                            class="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none transition-colors focus:border-blue-500"
-                                        >
-                                        <button
-                                            x-on:click="update(setting, setting.tempValue)"
-                                            class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-500 sm:w-auto"
-                                        >Save</button>
-                                    </div>
-                                </template>
-
-                                <p class="text-sm leading-relaxed text-gray-400" x-text="setting.description || 'No additional description provided.'"></p>
                             </div>
                         </div>
                     </template>
@@ -289,12 +298,32 @@ function settingsManager() {
         },
 
         availableSettingsCount(category) {
-            const group = this.settings[category] || [];
-            return group.filter(setting => !setting.depends_on || this.isDependent(setting)).length;
+            return this.visibleSettings(category).length;
         },
 
         availableSettingTotal() {
             return this.categoryList.reduce((total, category) => total + this.availableSettingsCount(category), 0);
+        },
+
+        visibleSettings(category) {
+            return (this.settings[category] || [])
+                .filter(setting => !setting.depends_on || this.isDependent(setting));
+        },
+
+        categorySettingGroups(category) {
+            const groups = [];
+            const byName = {};
+
+            this.visibleSettings(category).forEach(setting => {
+                const name = setting.display_group || '';
+                if (!byName[name]) {
+                    byName[name] = { name, settings: [] };
+                    groups.push(byName[name]);
+                }
+                byName[name].settings.push(setting);
+            });
+
+            return groups;
         },
 
         inputMaxLength(setting) {
