@@ -403,7 +403,12 @@ def test_volume_page_series_breadcrumb_uses_series_escape_hatch(admin_client, db
     response = admin_client.get(f"/volumes/{volumes[0].id}")
 
     assert response.status_code == 200
-    assert "?show_series=1" in response.text
+    body = response.text
+    assert "?show_series=1" in body
+    assert "recommendationLanes" in body
+    assert "loadRecommendationsForSingleVolumeSeries()" in body
+    assert "series_volume_count !== 1" in body
+    assert "series.recommendations" in body
 
 
 def test_user_settings_page_renders_for_authenticated_user(auth_client):

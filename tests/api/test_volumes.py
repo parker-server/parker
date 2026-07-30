@@ -232,6 +232,7 @@ def test_volume_detail_reports_missing_zero_index_and_metadata(auth_client, db, 
 
     assert payload["id"] == volume.id
     assert payload["series_id"] == series.id
+    assert payload["series_volume_count"] == 1
     assert payload["library_id"] == library.id
     assert payload["total_issues"] == 3
     assert payload["annual_count"] == 1
@@ -252,6 +253,34 @@ def test_volume_detail_reports_missing_zero_index_and_metadata(auth_client, db, 
     assert payload["details"]["locations"] == ["Location A"]
     assert [arc["name"] for arc in payload["story_arcs"]] == ["Alpha Arc", "Omega Arc"]
     assert payload["is_reverse_numbering"] is False
+
+
+def test_volume_detail_reports_parent_series_volume_count(auth_client, db, normal_user):
+    library = create_library_with_root(db, "vol-count-lib", "/tmp/vol-count-lib")
+    root = library.active_root
+    series = Series(name="Volume Count Series", library=library)
+    first_volume = Volume(series=series, volume_number=1)
+    second_volume = Volume(series=series, volume_number=2)
+    db.add_all([series, first_volume, second_volume])
+    db.flush()
+
+    create_comic(
+        db,
+        first_volume,
+        root,
+        "volume-count-1.cbz",
+        number="1",
+        title="Volume Count #1",
+        filename="volume-count-1.cbz",
+    )
+
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    response = auth_client.get(f"/api/volumes/{first_volume.id}")
+
+    assert response.status_code == 200
+    assert response.json()["series_volume_count"] == 2
 
 
 def test_volume_detail_hides_story_arcs_when_parsing_disabled(auth_client, db, normal_user):

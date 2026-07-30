@@ -445,12 +445,16 @@ async def get_volume_detail(volume: VolumeDep, db: SessionDep, current_user: Cur
         UserVolumeFollow.user_id == current_user.id,
         UserVolumeFollow.volume_id == volume.id,
     ).first()
+    series_volume_count = db.query(func.count(Volume.id)).filter(
+        Volume.series_id == volume.series_id
+    ).scalar() or 0
 
     return {
         "id": volume.id,
         "volume_number": volume.volume_number,
         "series_id": volume.series.id,
         "series_name": volume.series.name,
+        "series_volume_count": series_volume_count,
         "library_id": volume.series.library_id,
         "library_name": volume.series.library.name,
 
