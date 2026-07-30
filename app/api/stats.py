@@ -3,6 +3,7 @@ from sqlalchemy import func, case, desc
 
 from app.api.deps import SessionDep, AdminUser
 from app.config import settings
+from app.core.build_info import get_build_commit_hash
 from app.models.comic import Comic, Volume
 from app.models.series import Series
 from app.models.library import Library
@@ -43,6 +44,7 @@ async def get_startup_support_snapshot(
     return build_support_snapshot(
         diagnostics,
         app_version=settings.version,
+        git_commit_hash=get_build_commit_hash(),
     )
 
 

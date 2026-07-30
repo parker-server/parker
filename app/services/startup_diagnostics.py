@@ -318,6 +318,7 @@ def build_support_snapshot(
     diagnostics: dict,
     *,
     app_version: str,
+    git_commit_hash: str | None = None,
     generated_at: datetime | None = None,
 ) -> dict:
     timestamp = generated_at or datetime.now(timezone.utc)
@@ -327,6 +328,10 @@ def build_support_snapshot(
         "schema_version": 1,
         "generated_at_utc": timestamp.isoformat(),
         "app_version": app_version,
+        "build": {
+            "app_version": app_version,
+            "git_commit_hash": git_commit_hash,
+        },
         "status": {
             "code": diagnostics["status"],
             "title": diagnostics["status_title"],

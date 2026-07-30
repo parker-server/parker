@@ -72,7 +72,11 @@ def test_startup_support_snapshot_endpoint_returns_structured_snapshot(admin_cli
     snapshot = {"snapshot_type": "parker_startup_diagnostics", "schema_version": 1}
 
     monkeypatch.setattr("app.api.stats.collect_startup_diagnostics", lambda db, database_url: sentinel)
-    monkeypatch.setattr("app.api.stats.build_support_snapshot", lambda diagnostics, app_version: snapshot)
+    monkeypatch.setattr("app.api.stats.get_build_commit_hash", lambda: "abc123def456")
+    monkeypatch.setattr(
+        "app.api.stats.build_support_snapshot",
+        lambda diagnostics, app_version, git_commit_hash: snapshot,
+    )
 
     response = admin_client.get("/api/stats/startup/support-snapshot")
 

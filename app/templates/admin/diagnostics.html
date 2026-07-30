@@ -102,9 +102,21 @@
 
     <div class="grid gap-6 lg:grid-cols-2">
         <section class="rounded-2xl border border-gray-700 bg-gray-800/60 p-6 shadow-xl space-y-4">
-            <h2 class="text-lg font-bold text-white">Configured Libraries</h2>
+            {% set shown_library_count = diagnostics.library_sample|length if diagnostics.library_sample else 0 %}
+            <div class="flex flex-wrap items-start justify-between gap-3">
+                <h2 class="text-lg font-bold text-white">Configured Libraries</h2>
+                {% if diagnostics.counts.libraries %}
+                <p class="text-xs uppercase tracking-[0.18em] text-gray-500">
+                    {% if shown_library_count < diagnostics.counts.libraries %}
+                    Showing {{ shown_library_count }} of {{ diagnostics.counts.libraries }} libraries
+                    {% else %}
+                    Showing all {{ diagnostics.counts.libraries }} {{ 'library' if diagnostics.counts.libraries == 1 else 'libraries' }}
+                    {% endif %}
+                </p>
+                {% endif %}
+            </div>
             {% if diagnostics.library_sample %}
-            <ul class="space-y-3 text-sm text-gray-300">
+            <ul class="max-h-96 space-y-3 overflow-y-auto pr-1 text-sm text-gray-300">
                 {% for library in diagnostics.library_sample %}
                 <li class="rounded-lg border border-gray-700 bg-gray-900/40 px-4 py-3">
                     {% set roots = library.roots if library.roots is defined else [] %}

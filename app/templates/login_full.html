@@ -41,8 +41,8 @@
     <!-- Background Images Layer (z-0) -->
     <div class="absolute inset-0 z-0">
 
-        {% if login_bg_style == 'random_covers' %}
-            <!-- Cycling Random Covers -->
+        {% if login_bg_style == 'random_covers' or login_bg_style == 'cycling_static_covers' %}
+            <!-- Cycling Covers -->
             <div class="absolute inset-0 bg-cover bg-center"
                  :style="`background-image: url('${currentImage}')`">
             </div>
@@ -161,8 +161,20 @@ function loginCycler() {
         fxEnabled: window.parker.storage.get('fx.enabled', true) !== false,
 
         init() {
-            if (this.bgStyle === 'random_covers') {
+            if (this.bgStyle === 'cycling_static_covers') {
+                this.loadStaticCovers();
+            } else if (this.bgStyle === 'random_covers') {
                 this.fetchBackgrounds();
+            }
+        },
+
+        loadStaticCovers() {
+            this.images = {{ login_static_cover_urls | default([]) | tojson }};
+            if (this.images.length > 0) {
+                this.currentImage = this.images[0];
+                if (this.images.length > 1) {
+                    this.startCycling();
+                }
             }
         },
 

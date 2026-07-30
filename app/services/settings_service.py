@@ -85,7 +85,8 @@ class SettingsService:
                 {"label": "None (Gradient only)", "value": "none"},
                 {"label": "Random library covers", "value": "random_covers"},
                 {"label": "Solid Color", "value": "solid_color"},
-                {"label": "Static Cover", "value": "static_cover"}
+                {"label": "Static Cover", "value": "static_cover"},
+                {"label": "Cycle Static Covers", "value": "cycling_static_covers"},
             ]
         },
         {
@@ -100,7 +101,7 @@ class SettingsService:
         },
         {
             "key": "ui.login_static_cover",
-            "value": "amazing-fantasy-15.jpg",
+            "value": "amazing-fantasy-15.webp",
             "category": "appearance",
             "data_type": "select",
             "label": "Login Static Cover",
@@ -334,6 +335,9 @@ class SettingsService:
 
                 if "depends_on" in default:
                     setting.depends_on = default["depends_on"]
+
+                if key == "ui.login_static_cover" and setting.value not in STATIC_COVERS:
+                    setting.value = default["value"]
 
                 if "min_value" in default:
                     try:

@@ -1,10 +1,13 @@
+from pathlib import Path
 from unittest.mock import patch
 
+from app.core.login_backgrounds import STATIC_COVERS
 from app.models.setting import SystemSetting
 from app.services.settings_service import (
     SCANNING_BATCH_WINDOW_MIN_SECONDS,
     SERVER_DISPLAY_NAME_MAX_LENGTH,
     SettingsService,
+    generate_cover_options,
 )
 from app.api.deps import get_current_user_optional
 from app.main import app
@@ -61,6 +64,61 @@ def test_get_settings_grouped_list_includes_min_value_metadata(admin_client, db)
         if setting["key"] == "scanning.batch_window"
     )
     assert batch_window["min_value"] == SCANNING_BATCH_WINDOW_MIN_SECONDS
+
+
+def test_login_background_style_options_include_static_cover_cycling(admin_client, db):
+    SettingsService(db).initialize_defaults()
+
+    response = admin_client.get("/api/settings/")
+
+    assert response.status_code == 200
+    appearance_settings = response.json()["appearance"]
+    login_style = next(
+        setting
+        for setting in appearance_settings
+        if setting["key"] == "ui.login_background_style"
+    )
+    assert {"label": "Cycle Static Covers", "value": "cycling_static_covers"} in login_style["options"]
+
+
+def test_login_static_cover_default_uses_existing_webp_asset(db):
+    SettingsService(db).initialize_defaults()
+
+    setting = db.query(SystemSetting).filter(SystemSetting.key == "ui.login_static_cover").first()
+
+    assert setting.value == "amazing-fantasy-15.webp"
+
+
+def test_login_static_cover_stale_default_is_normalized_to_webp(db):
+    db.add(
+        SystemSetting(
+            key="ui.login_static_cover",
+            value="amazing-fantasy-15.jpg",
+            category="appearance",
+            data_type="select",
+            label="Login Static Cover",
+        )
+    )
+    db.commit()
+
+    SettingsService(db).initialize_defaults()
+
+    setting = db.query(SystemSetting).filter(SystemSetting.key == "ui.login_static_cover").first()
+    assert setting.value == "amazing-fantasy-15.webp"
+
+
+def test_login_static_cover_options_are_alphabetized_by_label():
+    options = generate_cover_options()
+    labels = [option["label"] for option in options]
+
+    assert labels == sorted(labels, key=str.casefold)
+
+
+def test_all_bundled_login_cover_assets_are_selectable():
+    cover_dir = Path(__file__).resolve().parents[2] / "static" / "img" / "login-covers"
+    asset_filenames = {path.name for path in cover_dir.glob("*.webp")}
+
+    assert asset_filenames == set(STATIC_COVERS)
 
 
 def test_get_protected_setting_requires_auth(client):

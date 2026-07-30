@@ -207,11 +207,17 @@ async def login_page(request: Request, db: SessionDep):
         context["login_solid_color"] = color_data["gradient"]
 
     elif login_background_style == "static_cover":
-        cover_filename = svc.get("ui.login_static_cover") or "amazing-fantasy-15.jpg"
+        cover_filename = svc.get("ui.login_static_cover") or "amazing-fantasy-15.webp"
         if cover_filename not in STATIC_COVERS:
-            cover_filename = "amazing-fantasy-15.jpg"  # Handle stale DB values
+            cover_filename = "amazing-fantasy-15.webp"  # Handle stale DB values
         context["login_static_cover"] = cover_filename
 
+    elif login_background_style == "cycling_static_covers":
+        base_url = settings.clean_base_url
+        context["login_static_cover_urls"] = [
+            f"{base_url}/static/img/login-covers/{filename}"
+            for filename in STATIC_COVERS
+        ]
 
     return templates.TemplateResponse(request=request, name="login_full.html", context=context)
 

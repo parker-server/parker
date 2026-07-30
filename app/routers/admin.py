@@ -1,51 +1,20 @@
 import platform
 import sys
 import os
-import subprocess
-from functools import lru_cache
-from pathlib import Path
 
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse
 
 from app.api.deps import AdminUser, SessionDep
 from app.config import settings
+from app.core.build_info import get_build_commit_hash
 from app.core.templates import templates
 from app.services.startup_diagnostics import build_support_snapshot, collect_startup_diagnostics
 
 router = APIRouter()
 
-BUILD_COMMIT_ENV_KEYS = (
-    "PARKER_BUILD_COMMIT",
-    "PARKER_GIT_COMMIT",
-    "GIT_COMMIT",
-    "SOURCE_COMMIT",
-    "COMMIT_SHA",
-)
 GITHUB_URL = "https://github.com/parker-server/parker"
 WIKI_URL = "https://github.com/parker-server/parker/wiki"
-
-
-@lru_cache(maxsize=1)
-def get_git_commit_hash() -> str | None:
-    for key in BUILD_COMMIT_ENV_KEYS:
-        value = os.getenv(key)
-        if value and value.strip():
-            return value.strip()
-
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=Path(__file__).resolve().parents[2],
-            capture_output=True,
-            check=True,
-            text=True,
-            timeout=2,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-
-    return result.stdout.strip() or None
 
 
 @router.get("/", response_class=HTMLResponse, name="dashboard", tags=['admin'])
@@ -135,7 +104,7 @@ async def admin_about_page(request: Request, admin_user: AdminUser):
         "platform": platform.system(),
         "platform_release": platform.release(),
         "architecture": platform.machine(),
-        "git_commit_hash": get_git_commit_hash(),
+        "git_commit_hash": get_build_commit_hash(),
         "github_url": GITHUB_URL,
         "wiki_url": WIKI_URL,
     }
@@ -157,6 +126,7 @@ async def admin_diagnostics_page(request: Request, db: SessionDep, admin_user: A
     support_snapshot = build_support_snapshot(
         diagnostics,
         app_version=settings.version,
+        git_commit_hash=get_build_commit_hash(),
     )
 
     return templates.TemplateResponse(

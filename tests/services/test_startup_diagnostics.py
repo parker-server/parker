@@ -185,6 +185,7 @@ def test_build_support_snapshot_wraps_diagnostics_with_metadata():
     snapshot = build_support_snapshot(
         diagnostics,
         app_version="0.1.18",
+        git_commit_hash="abc123def456",
         generated_at=datetime(2026, 7, 13, 12, 0, tzinfo=timezone.utc),
     )
 
@@ -192,6 +193,10 @@ def test_build_support_snapshot_wraps_diagnostics_with_metadata():
     assert snapshot["schema_version"] == 1
     assert snapshot["generated_at_utc"] == "2026-07-13T12:00:00+00:00"
     assert snapshot["app_version"] == "0.1.18"
+    assert snapshot["build"] == {
+        "app_version": "0.1.18",
+        "git_commit_hash": "abc123def456",
+    }
     assert snapshot["status"]["code"] == "healthy"
     assert snapshot["configured_library_sample"] == [{"name": "Main", "path": "C:/Comics"}]
 

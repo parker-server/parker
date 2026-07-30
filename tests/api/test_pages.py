@@ -1,6 +1,7 @@
 from app.core.templates import templates
 from app.models.comic import Comic, Volume
 from app.models.series import Series
+from app.services.settings_service import SettingsService
 from tests.factories import create_library_with_root
 
 
@@ -84,7 +85,7 @@ def test_admin_dashboard_links_to_diagnostics(admin_client):
 
 
 def test_admin_about_page_exposes_wiki_and_git_commit(admin_client, monkeypatch):
-    monkeypatch.setattr("app.routers.admin.get_git_commit_hash", lambda: "abc123def456")
+    monkeypatch.setattr("app.routers.admin.get_build_commit_hash", lambda: "abc123def456")
 
     response = admin_client.get("/admin/about")
 
@@ -98,15 +99,15 @@ def test_admin_about_page_exposes_wiki_and_git_commit(admin_client, monkeypatch)
 
 
 def test_admin_build_commit_hash_prefers_environment(monkeypatch):
-    from app.routers import admin
+    from app.core import build_info
 
-    admin.get_git_commit_hash.cache_clear()
+    build_info.get_build_commit_hash.cache_clear()
     monkeypatch.setenv("PARKER_BUILD_COMMIT", "feedface1234")
 
     try:
-        assert admin.get_git_commit_hash() == "feedface1234"
+        assert build_info.get_build_commit_hash() == "feedface1234"
     finally:
-        admin.get_git_commit_hash.cache_clear()
+        build_info.get_build_commit_hash.cache_clear()
 
 
 def test_admin_diagnostics_page_exposes_support_snapshot_actions(admin_client):
@@ -118,6 +119,7 @@ def test_admin_diagnostics_page_exposes_support_snapshot_actions(admin_client):
     assert "Download JSON" in body
     assert "Open Raw JSON" in body
     assert "parker_startup_diagnostics" in body
+    assert "git_commit_hash" in body
     assert "document.execCommand('copy')" in body
 
 
@@ -168,6 +170,8 @@ def test_admin_diagnostics_page_renders_configured_library_roots(admin_client, m
     assert response.status_code == 200
     body = response.text
     assert "Multi Root Library" in body
+    assert "Showing all 1 library" in body
+    assert "max-h-96" in body
     assert "2 active / 3 roots" in body
     assert "C:/Comics/Main" in body
     assert "D:/Comics/Archive" in body
@@ -176,6 +180,44 @@ def test_admin_diagnostics_page_renders_configured_library_roots(admin_client, m
     assert "Path Found" in body
     assert "Path Missing" in body
     assert "Path Unknown" in body
+
+
+def test_admin_diagnostics_page_labels_sampled_library_count(admin_client, monkeypatch):
+    monkeypatch.setattr(
+        "app.routers.admin.collect_startup_diagnostics",
+        lambda db, database_url: {
+            "status": "healthy",
+            "status_title": "Healthy",
+            "status_summary": "Everything looks good.",
+            "is_suspicious": False,
+            "recommended_actions": [],
+            "runtime": {"mode": "local_filesystem", "label": "Local filesystem"},
+            "database": {
+                "url": "sqlite:///test.db",
+                "path": "test.db",
+                "exists": True,
+                "size_bytes": 0,
+                "size_display": "0 B",
+                "wal_size_bytes": None,
+                "wal_size_display": None,
+                "shm_size_bytes": None,
+                "shm_size_display": None,
+                "alembic_version": "head",
+            },
+            "counts": {"users": 1, "libraries": 12, "series": 0, "comics": 0},
+            "default_admin_present": True,
+            "library_sample": [
+                {"name": f"Library {index}", "path": f"C:/Comics/{index}", "path_exists": True, "roots": []}
+                for index in range(1, 6)
+            ],
+            "comics_root": {"path": "/comics", "exists": False, "sample": []},
+        },
+    )
+
+    response = admin_client.get("/admin/diagnostics")
+
+    assert response.status_code == 200
+    assert "Showing 5 of 12 libraries" in response.text
 
 
 def test_login_page_uses_server_display_name_but_keeps_parker_branding(client, monkeypatch):
@@ -193,6 +235,36 @@ def test_login_page_uses_server_display_name_but_keeps_parker_branding(client, m
     assert "Fortress Comics" in body
     assert "Powered by" in body
     assert "Parker" in body
+
+
+def test_login_page_cycles_static_covers(client, db):
+    settings_service = SettingsService(db)
+    settings_service.initialize_defaults()
+    settings_service.update("ui.login_background_style", "cycling_static_covers")
+
+    response = client.get("/login")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "cycling_static_covers" in body
+    assert "/static/img/login-covers/action-comics-1.webp" in body
+    assert "/static/img/login-covers/amazing-fantasy-15.webp" in body
+    assert "fetchBackgrounds()" in body
+    assert "loadStaticCovers()" in body
+
+
+def test_login_page_static_cover_fallback_uses_webp_asset(client, db):
+    settings_service = SettingsService(db)
+    settings_service.initialize_defaults()
+    settings_service.update("ui.login_background_style", "static_cover")
+    settings_service.update("ui.login_static_cover", "amazing-fantasy-15.jpg")
+
+    response = client.get("/login")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "/static/img/login-covers/amazing-fantasy-15.webp" in body
+    assert "/static/img/login-covers/amazing-fantasy-15.jpg" not in body
 
 
 def test_admin_settings_page_exposes_quick_navigation(admin_client):

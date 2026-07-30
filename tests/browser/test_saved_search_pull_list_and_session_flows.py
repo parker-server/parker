@@ -8,6 +8,7 @@ from app.models.bookmark import Bookmark
 from app.models.pull_list import PullList, PullListItem
 from app.models.reading_progress import ReadingProgress
 from app.models.user import User
+from app.services.settings_service import SettingsService
 
 
 def _create_pull_list(db_factory, user_id, name, description=None):
@@ -110,6 +111,37 @@ def test_storage_helper_namespaces_and_migrates_legacy_keys_on_login_page(page, 
         "namespacedBrokenJson": None,
         "legacyBrokenJson": None,
     }
+
+
+@pytest.mark.browser
+def test_login_page_cycles_static_cover_backgrounds(page, browser_server):
+    session = browser_server["db_factory"]()
+    try:
+        service = SettingsService(session)
+        service.initialize_defaults()
+        service.update("ui.login_background_style", "cycling_static_covers")
+    finally:
+        session.close()
+
+    page.goto(f"{browser_server['base_url']}/login", wait_until="networkidle")
+
+    state = page.evaluate(
+        """
+        () => {
+            const data = Alpine.$data(document.body);
+            return {
+                bgStyle: data.bgStyle,
+                images: data.images,
+                currentImage: data.currentImage,
+            };
+        }
+        """
+    )
+
+    assert state["bgStyle"] == "cycling_static_covers"
+    assert len(state["images"]) > 1
+    assert "/static/img/login-covers/action-comics-1.webp" in state["images"]
+    assert state["currentImage"] == state["images"][0]
 
 
 @pytest.mark.browser
