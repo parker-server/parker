@@ -39,6 +39,8 @@ def _seed_comics(db, prefix="pull"):
 
 
 def test_pull_lists_list_create_and_owner_filter(auth_client, db, normal_user):
+    comics = _seed_comics(db, "list-count")
+
     other_user = User(
         username="otherpulluser",
         email="otherpull@example.com",
@@ -53,13 +55,25 @@ def test_pull_lists_list_create_and_owner_filter(auth_client, db, normal_user):
     mine_a = PullList(user_id=normal_user.id, name="A List")
     not_mine = PullList(user_id=other_user.id, name="Other List")
     db.add_all([mine_b, mine_a, not_mine])
+    db.flush()
+    db.add_all([
+        PullListItem(pull_list_id=mine_a.id, comic_id=comics[0].id, sort_order=0),
+        PullListItem(pull_list_id=mine_a.id, comic_id=comics[1].id, sort_order=1),
+        PullListItem(pull_list_id=mine_b.id, comic_id=comics[2].id, sort_order=0),
+        PullListItem(pull_list_id=not_mine.id, comic_id=comics[0].id, sort_order=0),
+    ])
     db.commit()
 
     response = auth_client.get("/api/pull-lists/")
 
     assert response.status_code == 200
-    names = [item["name"] for item in response.json()]
+    payload = response.json()
+    names = [item["name"] for item in payload]
     assert names == ["A List", "B List"]
+    assert {item["name"]: item["comic_count"] for item in payload} == {
+        "A List": 2,
+        "B List": 1,
+    }
 
     create = auth_client.post(
         "/api/pull-lists/",
@@ -70,6 +84,70 @@ def test_pull_lists_list_create_and_owner_filter(auth_client, db, normal_user):
     payload = create.json()
     assert payload["name"] == "Created List"
     assert payload["description"] == "for reading"
+
+
+def test_pull_lists_list_counts_only_age_visible_items(auth_client, db, normal_user):
+    normal_user.max_age_rating = "Teen"
+    normal_user.allow_unknown_age_ratings = False
+
+    lib = create_library_with_root(db, "pull-age-lib", "/tmp/pull-age-lib")
+    root = lib.active_root
+
+    safe_series = Series(name="pull-age-safe", library=lib)
+    safe_volume = Volume(series=safe_series, volume_number=1)
+    poisoned_series = Series(name="pull-age-poisoned", library=lib)
+    poisoned_volume = Volume(series=poisoned_series, volume_number=1)
+    db.add_all([safe_series, safe_volume, poisoned_series, poisoned_volume])
+    db.flush()
+
+    safe_comic = create_comic(
+        db,
+        safe_volume,
+        root,
+        "pull-age-safe.cbz",
+        number="1",
+        title="Safe Stack Item",
+        filename="pull-age-safe.cbz",
+        age_rating="Teen",
+    )
+    poisoned_comic = create_comic(
+        db,
+        poisoned_volume,
+        root,
+        "pull-age-poisoned.cbz",
+        number="1",
+        title="Poisoned Stack Item",
+        filename="pull-age-poisoned.cbz",
+        age_rating="Teen",
+    )
+    create_comic(
+        db,
+        poisoned_volume,
+        root,
+        "pull-age-mature.cbz",
+        number="2",
+        title="Mature Stack Sibling",
+        filename="pull-age-mature.cbz",
+        age_rating="Mature 17+",
+    )
+
+    mixed = PullList(user_id=normal_user.id, name="Mixed Stack")
+    hidden_only = PullList(user_id=normal_user.id, name="Hidden Stack")
+    db.add_all([mixed, hidden_only])
+    db.flush()
+    db.add_all([
+        PullListItem(pull_list_id=mixed.id, comic_id=safe_comic.id, sort_order=0),
+        PullListItem(pull_list_id=mixed.id, comic_id=poisoned_comic.id, sort_order=1),
+        PullListItem(pull_list_id=hidden_only.id, comic_id=poisoned_comic.id, sort_order=0),
+    ])
+    db.commit()
+
+    response = auth_client.get("/api/pull-lists/")
+
+    assert response.status_code == 200
+    counts = {item["name"]: item["comic_count"] for item in response.json()}
+    assert counts["Mixed Stack"] == 1
+    assert counts["Hidden Stack"] == 0
 
 
 def test_pull_list_detail_returns_items_and_metadata(auth_client, db, normal_user):

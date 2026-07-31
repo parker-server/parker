@@ -136,6 +136,7 @@ def test_pull_list_create_modal_focuses_name_and_delete_confirms_with_keyboard(p
     desc_input.press("Enter")
 
     page.wait_for_selector("text=Browser Stack")
+    page.locator("div.group").filter(has_text="Browser Stack").first.get_by_text("0 comics").wait_for()
 
     list_card = page.locator("div.group").filter(has_text="Browser Stack").first
     menu_button = list_card.locator("button").first

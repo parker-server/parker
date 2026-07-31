@@ -1,16 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException, Body
-from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func, not_
+from fastapi import APIRouter, HTTPException
+from sqlalchemy.orm import joinedload, aliased
+from sqlalchemy import func, select
 
 from app.core.comic_helpers import (get_aggregated_metadata, get_series_age_restriction,
-                                    get_thumbnail_url, get_banned_comic_condition)
+                                    get_thumbnail_url)
 from app.api.deps import SessionDep, CurrentUser
 from app.models.pull_list import PullList, PullListItem
 from app.models.comic import Comic
 from app.models.series import Series
 from app.models.comic import Volume
 from app.models.tags import Character, Team, Location
-from app.models.credits import Person, ComicCredit
+from app.models.credits import Person
 
 
 from app.schemas.pull_list import PullListCreate, PullListUpdate, AddComicRequest, ReorderRequest, BatchAddComicRequest
@@ -24,9 +24,40 @@ def get_my_lists(db: SessionDep, current_user: CurrentUser):
 
     # Don't hide the list just because of one bad apple.
     # We return all lists, and filter the items inside the detail view.
-    query = db.query(PullList).filter(PullList.user_id == current_user.id)
+    item_alias = aliased(PullListItem)
+    count_stmt = (
+        select(func.count(item_alias.id))
+        .join(Comic, item_alias.comic_id == Comic.id)
+        .join(Volume, Comic.volume_id == Volume.id)
+        .join(Series, Volume.series_id == Series.id)
+        .where(item_alias.pull_list_id == PullList.id)
+    )
 
-    return query.order_by(PullList.name).all()
+    series_filter = get_series_age_restriction(current_user)
+    if series_filter is not None:
+        count_stmt = count_stmt.where(series_filter)
+
+    visible_count_col = count_stmt.scalar_subquery()
+
+    results = (
+        db.query(PullList, visible_count_col.label("comic_count"))
+        .filter(PullList.user_id == current_user.id)
+        .order_by(PullList.name)
+        .all()
+    )
+
+    return [
+        {
+            "id": plist.id,
+            "name": plist.name,
+            "description": plist.description,
+            "comic_count": int(comic_count or 0),
+            "created_at": plist.created_at,
+            "updated_at": plist.updated_at,
+        }
+        for plist, comic_count in results
+    ]
+
 
 @router.post("/", name="create")
 def create_list(list_data: PullListCreate, db: SessionDep, current_user: CurrentUser):
