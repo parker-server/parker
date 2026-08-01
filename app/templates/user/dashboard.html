@@ -83,7 +83,7 @@
 
         <!-- Avatar -->
         <div class="flex items-center gap-3 md:gap-4 flex-1 z-10 min-w-0">
-            <div class="relative group flex-shrink-0">
+            <div class="relative group flex-shrink-0" x-on:mouseleave="avatarCueSuppressed = false">
                 <div class="w-14 h-14 md:w-24 md:h-24 rounded-full overflow-hidden border-2 md:border-4 border-gray-700 bg-gray-900 flex items-center justify-center shadow-lg">
                     <template x-if="data?.user?.avatar_url">
                         <img :src="data.user.avatar_url" class="w-full h-full object-cover">
@@ -92,8 +92,20 @@
                         <span class="text-xl md:text-3xl font-bold text-gray-500" x-text="data?.user?.username?.charAt(0).toUpperCase()"></span>
                     </template>
                 </div>
-                <label class="absolute inset-0 bg-black/60 flex items-center justify-center rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
-                    <input type="file" class="hidden" accept="image/*" @change="uploadAvatar($event)">
+                <label
+                    class="absolute inset-0 bg-black/70 flex items-center justify-center rounded-full transition-opacity cursor-pointer"
+                    :class="avatarCueSuppressed ? 'opacity-0' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'"
+                    title="Update Avatar"
+                    @click="avatarCueSuppressed = true"
+                >
+                    <input
+                        type="file"
+                        class="sr-only"
+                        accept="image/*"
+                        @cancel="clearAvatarPicker($event)"
+                        @change="uploadAvatar($event)"
+                    >
+                    <span class="px-2 text-center text-[10px] md:text-xs font-bold uppercase text-white leading-tight">Update Avatar</span>
                 </label>
             </div>
 
@@ -694,6 +706,7 @@ function dashboard() {
     return {
         data: null,
         detailedStatsExpanded: false,  // Collapsed by default
+        avatarCueSuppressed: false,
         heatmapDays: [], // Array of {date, count}
         reviewYear:activeReviewYear,
 
@@ -716,7 +729,10 @@ function dashboard() {
 
         async uploadAvatar(e) {
             const file = e.target.files[0];
-            if(!file) return;
+            if(!file) {
+                this.clearAvatarPicker(e);
+                return;
+            }
 
             const formData = new FormData();
             formData.append('file', file);
@@ -734,7 +750,15 @@ function dashboard() {
                 }
             } catch(e) {
                 console.error(e);
+            } finally {
+                this.clearAvatarPicker(e);
             }
+        },
+
+        clearAvatarPicker(e) {
+            this.avatarCueSuppressed = true;
+            e.target.value = '';
+            e.target.blur();
         },
 
         fallbackCopyText(text) {
