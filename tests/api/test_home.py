@@ -136,6 +136,130 @@ def test_home_random_empty_and_skips_series_without_comics(auth_client, db):
     assert no_comics_series.id not in [item["id"] for item in payload]
 
 
+def test_home_recently_added_series_uses_latest_added_volume_cover(auth_client, db, normal_user):
+    library, series, volume_one = _create_series_graph(
+        db,
+        lib_name="home-recent-added-volume-lib",
+        series_name="Home Recent Added Volume",
+    )
+    volume_two = Volume(series=series, volume_number=2)
+    db.add(volume_two)
+    db.flush()
+
+    _, hidden_series, hidden_volume = _create_series_graph(
+        db,
+        lib_name="home-recent-added-hidden-lib",
+        series_name="Home Recent Added Hidden",
+    )
+
+    old_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    new_at = datetime(2026, 7, 1, tzinfo=timezone.utc)
+
+    volume_one_cover = _add_comic(
+        db,
+        volume_one,
+        number="1",
+        title="Added Volume One Cover",
+        year=1988,
+        created_at=old_at,
+        updated_at=old_at,
+    )
+    volume_two_cover = _add_comic(
+        db,
+        volume_two,
+        number="1",
+        title="Added Volume Two Cover",
+        year=2026,
+        created_at=new_at,
+        updated_at=new_at,
+    )
+    _add_comic(
+        db,
+        volume_two,
+        number="2",
+        title="Added Volume Two Latest",
+        year=2026,
+        created_at=new_at + timedelta(minutes=1),
+        updated_at=new_at + timedelta(minutes=1),
+    )
+    _add_comic(
+        db,
+        hidden_volume,
+        number="1",
+        title="Hidden Latest Added",
+        created_at=new_at + timedelta(days=1),
+        updated_at=new_at + timedelta(days=1),
+    )
+
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    response = auth_client.get("/api/home/recently-added-series?limit=10")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload[0]["id"] == series.id
+    assert payload[0]["start_year"] == 2026
+    assert payload[0]["thumbnail_path"].startswith(f"/api/comics/{volume_two_cover.id}/thumbnail?v=")
+    assert not payload[0]["thumbnail_path"].startswith(f"/api/comics/{volume_one_cover.id}/thumbnail")
+    assert hidden_series.id not in [item["id"] for item in payload]
+
+
+def test_home_recently_updated_series_uses_latest_updated_volume_cover(auth_client, db, normal_user):
+    library, series, volume_one = _create_series_graph(
+        db,
+        lib_name="home-recent-updated-volume-lib",
+        series_name="Home Recent Updated Volume",
+    )
+    volume_two = Volume(series=series, volume_number=2)
+    db.add(volume_two)
+    db.flush()
+
+    old_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    new_at = datetime(2026, 7, 1, tzinfo=timezone.utc)
+
+    volume_one_cover = _add_comic(
+        db,
+        volume_one,
+        number="1",
+        title="Updated Volume One Cover",
+        year=1988,
+        created_at=old_at,
+        updated_at=old_at,
+    )
+    volume_two_cover = _add_comic(
+        db,
+        volume_two,
+        number="1",
+        title="Updated Volume Two Cover",
+        year=2026,
+        created_at=old_at,
+        updated_at=old_at,
+    )
+    updated_issue = _add_comic(
+        db,
+        volume_two,
+        number="5",
+        title="Updated Volume Two Latest",
+        year=2026,
+        created_at=old_at,
+        updated_at=new_at,
+    )
+
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    response = auth_client.get("/api/home/recently-updated-series?limit=10")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload[0]["id"] == series.id
+    assert payload[0]["start_year"] == 2026
+    assert payload[0]["thumbnail_path"].startswith(f"/api/comics/{volume_two_cover.id}/thumbnail?v=")
+    assert not payload[0]["thumbnail_path"].startswith(f"/api/comics/{volume_one_cover.id}/thumbnail")
+    assert not payload[0]["thumbnail_path"].startswith(f"/api/comics/{updated_issue.id}/thumbnail")
+
+
 def test_home_rated_orders_by_rating(auth_client, db):
     _, _, volume = _create_series_graph(db, lib_name="home-rated-lib", series_name="Home Rated")
 
@@ -712,6 +836,60 @@ def test_home_pinned_libraries_returns_recently_updated_series_by_pin_order(auth
     assert [item["name"] for item in payload[1]["items"]] == ["Second Newer", "Second Older"]
     assert "Pinned Empty" not in [rail["name"] for rail in payload]
     assert "Pinned Hidden" not in [rail["name"] for rail in payload]
+
+
+def test_home_pinned_libraries_uses_latest_updated_volume_cover(auth_client, db, normal_user):
+    library, series, volume_one = _create_series_graph(
+        db,
+        lib_name="home-pinned-updated-volume-lib",
+        series_name="Home Pinned Updated Volume",
+    )
+    volume_two = Volume(series=series, volume_number=2)
+    db.add(volume_two)
+    db.flush()
+
+    old_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    new_at = datetime(2026, 7, 1, tzinfo=timezone.utc)
+
+    _add_comic(
+        db,
+        volume_one,
+        number="1",
+        title="Pinned Volume One Cover",
+        year=1988,
+        created_at=old_at,
+        updated_at=old_at,
+    )
+    volume_two_cover = _add_comic(
+        db,
+        volume_two,
+        number="1",
+        title="Pinned Volume Two Cover",
+        year=2026,
+        created_at=old_at,
+        updated_at=old_at,
+    )
+    updated_issue = _add_comic(
+        db,
+        volume_two,
+        number="5",
+        title="Pinned Volume Two Latest",
+        year=2026,
+        created_at=old_at,
+        updated_at=new_at,
+    )
+
+    normal_user.accessible_libraries.append(library)
+    db.add(UserLibraryPin(user_id=normal_user.id, library_id=library.id, pinned_at=old_at))
+    db.commit()
+
+    response = auth_client.get("/api/home/pinned-libraries?limit=10")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload[0]["items"][0]["id"] == series.id
+    assert payload[0]["items"][0]["thumbnail_path"].startswith(f"/api/comics/{volume_two_cover.id}/thumbnail?v=")
+    assert not payload[0]["items"][0]["thumbnail_path"].startswith(f"/api/comics/{updated_issue.id}/thumbnail")
 
 
 def test_home_up_next_handles_duplicates_reverse_and_non_numeric(auth_client, db, normal_user):

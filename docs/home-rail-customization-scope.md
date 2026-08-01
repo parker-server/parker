@@ -27,7 +27,7 @@ The current home page is assembled client-side:
 - `app/templates/index.html` owns the fixed visual order
 - the `homePage()` Alpine component fetches each rail independently
 - core home rail endpoints live in `app/api/home.py`
-- `Recent` and `Updated` currently come from the series list endpoint
+- `Recent` and `Updated` come from dedicated home endpoints that rank series by comic add/update timestamps
 - smart-list rails are fetched from `/api/smart-lists` and filtered client-side by `show_on_dashboard`
 - pinned-library rails come from `/api/home/pinned-libraries` and are already per-user
 

@@ -411,11 +411,9 @@ function homePage(bootstrap = {}) {
 
         async fetchRecent() {
             try {
-                // Fetch top 10 created descending
-                const res = await fetch(window.parker.route('series.list', {}, 'sort_by=created&sort_desc=true&size=10'));
+                const res = await fetch(window.parker.route('home.recently_added_series', {}, 'limit=10'));
                 if (res.ok) {
-                    const data = await res.json();
-                    this.recentSeries = data.items;
+                    this.recentSeries = await res.json();
                 }
             } catch(e) { console.error(e); }
             finally { this.loading.recent = false; }
@@ -423,11 +421,9 @@ function homePage(bootstrap = {}) {
 
         async fetchUpdated() {
             try {
-                // Fetch top 10 updated descending
-                const res = await fetch(window.parker.route('series.list', {}, 'sort_by=updated&sort_desc=true&size=10'));
+                const res = await fetch(window.parker.route('home.recently_updated_series', {}, 'limit=10'));
                 if (res.ok) {
-                    const data = await res.json();
-                    this.updatedSeries = data.items;
+                    this.updatedSeries = await res.json();
                 }
             } catch(e) { console.error(e); }
             finally { this.loading.updated = false; }

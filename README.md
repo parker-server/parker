@@ -42,7 +42,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
   - Pinned library rails for recently updated series from favorite libraries
   - Library Timeline for character and team histories generated from embedded metadata
   - Recommendations by creator or metadata
-  - Random gems, recently updated series
+  - Random gems, recently added/updated series with recency-aware volume covers
 
 - **Reports Dashboard**
   - Missing Issues

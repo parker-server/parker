@@ -109,7 +109,34 @@ def _pick_best_cover(series_obj, comics_list):
         return pool[0]   # Lowest Number (e.g. Spider-Man #10)
 
 
-def _serialize_series_rail_items(db: Session, series_list):
+def _latest_event_volume_by_series_id(db: Session, series_ids: list[int], timestamp_column):
+    if not series_ids:
+        return {}
+
+    rows = (
+        db.query(
+            Volume.series_id,
+            Comic.volume_id,
+            timestamp_column.label("event_at"),
+        )
+        .join(Volume)
+        .filter(Volume.series_id.in_(series_ids))
+        .order_by(
+            desc(timestamp_column),
+            desc(Volume.volume_number),
+            desc(Comic.id),
+        )
+        .all()
+    )
+
+    latest_volume_by_series_id = {}
+    for row in rows:
+        latest_volume_by_series_id.setdefault(row.series_id, row.volume_id)
+
+    return latest_volume_by_series_id
+
+
+def _serialize_series_rail_items(db: Session, series_list, cover_volume_by_series_id: dict[int, int] | None = None):
     if not series_list:
         return []
 
@@ -123,6 +150,7 @@ def _serialize_series_rail_items(db: Session, series_list):
             Comic.format,
             Comic.publisher,
             Comic.updated_at,
+            Comic.volume_id,
             Volume.series_id
         )
         .join(Volume)
@@ -145,7 +173,9 @@ def _serialize_series_rail_items(db: Session, series_list):
     results = []
     for s in series_list:
         s_comics = series_map.get(s.id, [])
-        first_issue = _pick_best_cover(s, s_comics)
+        cover_volume_id = cover_volume_by_series_id.get(s.id) if cover_volume_by_series_id else None
+        cover_candidates = [c for c in s_comics if c.volume_id == cover_volume_id] if cover_volume_id else s_comics
+        first_issue = _pick_best_cover(s, cover_candidates) or _pick_best_cover(s, s_comics)
 
         if not first_issue:
             continue
@@ -161,6 +191,97 @@ def _serialize_series_rail_items(db: Session, series_list):
         })
 
     return results
+
+
+def _get_recent_series_by_comic_timestamp(
+        db: Session,
+        current_user: User,
+        *,
+        timestamp_column,
+        limit: int,
+):
+    limit = max(1, min(limit, 50))
+
+    latest_event = (
+        db.query(
+            Volume.series_id.label("series_id"),
+            func.max(timestamp_column).label("event_at"),
+        )
+        .select_from(Comic)
+        .join(Volume)
+        .group_by(Volume.series_id)
+        .subquery()
+    )
+
+    query = (
+        db.query(Series)
+        .join(latest_event, latest_event.c.series_id == Series.id)
+    )
+
+    if not current_user.is_superuser:
+        allowed_ids = [lib.id for lib in current_user.accessible_libraries]
+        if not allowed_ids:
+            return []
+        query = query.filter(Series.library_id.in_(allowed_ids))
+
+    age_filter = get_series_age_restriction(current_user)
+    if age_filter is not None:
+        query = query.filter(age_filter)
+
+    recent_series = (
+        query
+        .order_by(desc(latest_event.c.event_at), Series.name.asc())
+        .limit(limit)
+        .all()
+    )
+
+    cover_volumes = _latest_event_volume_by_series_id(
+        db,
+        [series.id for series in recent_series],
+        timestamp_column,
+    )
+
+    return _serialize_series_rail_items(
+        db,
+        recent_series,
+        cover_volume_by_series_id=cover_volumes,
+    )
+
+
+@router.get("/recently-added-series", response_model=List[dict], name="recently_added_series")
+def get_recently_added_series(
+        db: SessionDep,
+        current_user: CurrentUser,
+        limit: int = 10,
+):
+    """
+    Get series with recently imported comics, using the latest added volume as
+    the representative cover.
+    """
+    return _get_recent_series_by_comic_timestamp(
+        db,
+        current_user,
+        timestamp_column=Comic.created_at,
+        limit=limit,
+    )
+
+
+@router.get("/recently-updated-series", response_model=List[dict], name="recently_updated_series")
+def get_recently_updated_series(
+        db: SessionDep,
+        current_user: CurrentUser,
+        limit: int = 10,
+):
+    """
+    Get series with recently updated comics, using the latest updated volume as
+    the representative cover.
+    """
+    return _get_recent_series_by_comic_timestamp(
+        db,
+        current_user,
+        timestamp_column=Comic.updated_at,
+        limit=limit,
+    )
 
 
 
@@ -445,7 +566,16 @@ def get_pinned_libraries(
             .all()
         )
 
-        items = _serialize_series_rail_items(db, recent_series)
+        cover_volumes = _latest_event_volume_by_series_id(
+            db,
+            [series.id for series in recent_series],
+            Comic.updated_at,
+        )
+        items = _serialize_series_rail_items(
+            db,
+            recent_series,
+            cover_volume_by_series_id=cover_volumes,
+        )
         if not items:
             continue
 
