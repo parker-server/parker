@@ -11,7 +11,7 @@
             <a :href="window.parker.route('pages.comic_detail', { comic_id: item.comic_id })" class="hover:text-blue-400 transition-colors" x-text="`#${item.number} ${item.title || ''}`"></a>
         </h3>
 
-        <div class="text-xs text-gray-500 mb-3" x-text="new Date(item.last_read_at).toLocaleDateString()"></div>
+        <div class="text-xs text-gray-500 mb-3" x-text="window.parker.formatLocalDate(item.last_read_at)"></div>
 
         <div class="w-full bg-gray-700 rounded-full h-2.5 mb-1">
             <div class="bg-blue-600 h-2.5 rounded-full transition-all duration-500" :style="`width: ${item.progress_percentage}%`"></div>

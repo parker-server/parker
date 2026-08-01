@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from app.core.templates import templates
 from app.models.comic import Comic, Volume
 from app.models.series import Series
@@ -314,6 +316,33 @@ def test_admin_libraries_page_exposes_folder_browser_route(admin_client):
     assert "roots.library?.is_scanning || roots.adding" in body
     assert "Disable Last Active Root?" in body
     assert "Existing comics will remain visible and readable if their files are reachable" in body
+
+
+def test_timestamp_views_use_shared_utc_local_date_helpers(admin_client):
+    checks = [
+        ("/admin/users", "window.parker.formatLocalDateTime(dateStr)"),
+        ("/admin/jobs", "window.parker.formatLocalDateTime(dateStr)"),
+        ("/admin/libraries", "window.parker.formatLocalDateTime(dateStr)"),
+        ("/admin/cbl-sources", "window.parker.formatLocalDateTime(dateStr)"),
+        ("/user/dashboard", "window.parker.formatLocalDate(dateStr"),
+        ("/user/following", "window.parker.formatLocalDate(value"),
+        ("/continue-reading", "window.parker.formatLocalDate(item.last_read_at)"),
+    ]
+
+    for path, expected in checks:
+        response = admin_client.get(path)
+        assert response.status_code == 200
+        assert expected in response.text
+
+
+def test_shared_datetime_helpers_assume_naive_api_timestamps_are_utc():
+    script = Path("static/js/app.js").read_text(encoding="utf-8")
+
+    assert "const parseUtcDate" in script
+    assert "normalized = `${trimmed}T00:00:00Z`;" in script
+    assert "normalized = `${trimmed.replace(' ', 'T')}Z`;" in script
+    assert "formatLocalDateTime" in script
+    assert "formatLocalDate" in script
 
 
 def test_search_widget_people_results_use_generic_creator_handoff(auth_client):

@@ -117,7 +117,7 @@ function followingPage() {
 
         formatFollowedAt(value) {
             if (!value) return 'recently';
-            return new Date(value).toLocaleDateString(undefined, {
+            return window.parker.formatLocalDate(value, {
                 year: 'numeric',
                 month: 'short',
                 day: 'numeric',

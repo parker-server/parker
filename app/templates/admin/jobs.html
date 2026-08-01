@@ -322,7 +322,7 @@
                 return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
             },
 
-            formatDate(dateStr) { return new Date(dateStr).toLocaleString(); }
+            formatDate(dateStr) { return window.parker.formatLocalDateTime(dateStr); }
         }))
     })
 </script>

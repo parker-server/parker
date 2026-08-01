@@ -856,7 +856,7 @@ function dashboard() {
 
         formatDate(dateStr) {
             if(!dateStr) return '';
-            return new Date(dateStr).toLocaleDateString(undefined, { year: 'numeric', month: 'long' });
+            return window.parker.formatLocalDate(dateStr, { year: 'numeric', month: 'long' });
         },
 
         formatNumber(num) {

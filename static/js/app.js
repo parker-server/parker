@@ -542,10 +542,56 @@ document.addEventListener('error', function(e) {
         return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
     }
 
+    const UTC_OFFSET_PATTERN = /(?:[zZ]|[+-]\d{2}:?\d{2})$/;
+    const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+    const API_DATETIME_PATTERN = /^\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/;
+
+    const parseUtcDate = (value) => {
+
+        if (!value) return null;
+        if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+
+        if (typeof value === 'number') {
+            const date = new Date(value);
+            return Number.isNaN(date.getTime()) ? null : date;
+        }
+
+        if (typeof value !== 'string') {
+            const date = new Date(value);
+            return Number.isNaN(date.getTime()) ? null : date;
+        }
+
+        const trimmed = value.trim();
+        if (!trimmed) return null;
+
+        let normalized = trimmed;
+        if (DATE_ONLY_PATTERN.test(trimmed)) {
+            normalized = `${trimmed}T00:00:00Z`;
+        } else if (API_DATETIME_PATTERN.test(trimmed) && !UTC_OFFSET_PATTERN.test(trimmed)) {
+            normalized = `${trimmed.replace(' ', 'T')}Z`;
+        }
+
+        const date = new Date(normalized);
+        return Number.isNaN(date.getTime()) ? null : date;
+    };
+
+    const formatLocalDateTime = (dateString, options = {}) => {
+
+        const date = parseUtcDate(dateString);
+        return date ? date.toLocaleString(undefined, options) : '';
+    };
+
+    const formatLocalDate = (dateString, options = {}) => {
+
+        const date = parseUtcDate(dateString);
+        return date ? date.toLocaleDateString(undefined, options) : '';
+    };
+
     // Format date
     const formatDate = (dateString) => {
 
-        const date = new Date(dateString);
+        const date = parseUtcDate(dateString);
+        if (!date) return '';
         const now = new Date();
         const diff = now - date;
         const days = Math.floor(diff / (1000 * 60 * 60 * 24));
@@ -817,6 +863,9 @@ document.addEventListener('error', function(e) {
         debounce,
         formatFileSize,
         formatBytes,
+        parseUtcDate,
+        formatLocalDateTime,
+        formatLocalDate,
         formatDate,
         paginationMixin,
         storage,

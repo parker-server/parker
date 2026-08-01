@@ -1250,7 +1250,7 @@ function libraryManager() {
 
         formatDate(dateStr) {
             if (!dateStr) return 'Never';
-            return new Date(dateStr).toLocaleString();
+            return window.parker.formatLocalDateTime(dateStr);
         }
     }
 }
