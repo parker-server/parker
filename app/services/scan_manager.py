@@ -409,6 +409,9 @@ class ScanManager:
             self.logger.info(f"Starting CLEANUP job {job_id} ({scope_name})")
 
             maintenance = MaintenanceService(db_clean)
+            old_jobs_removed = 0
+            if library_id is None:
+                old_jobs_removed = maintenance.cleanup_old_jobs()
 
             # Pass 1: Remove DB records for files that no longer exist (e.g., your old CBRs)
             removed_ids = maintenance.cleanup_missing_files(library_id=library_id)
@@ -422,6 +425,8 @@ class ScanManager:
             # Pass 2: Delete orphaned Series/Volumes/Tags
             stats = maintenance.cleanup_orphans(library_id=library_id)
             stats["missing_files_removed"] = len(removed_ids)
+            if library_id is None:
+                stats["old_jobs"] = old_jobs_removed
 
             # Pass 3: Physical Thumbnail Purge (Only on Global Cleanups)
             # Walking the entire thumb directory is expensive, so we keep it to global runs.

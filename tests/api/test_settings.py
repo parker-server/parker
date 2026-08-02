@@ -86,6 +86,7 @@ def test_system_settings_include_display_groups_and_definition_order(admin_clien
     ]
     assert groups["system.task.backup.interval"] == "Scheduled Tasks"
     assert groups["system.task.scan.interval"] == "Scheduled Tasks"
+    assert groups["jobs.retention_days"] == "Scheduled Tasks"
     assert groups["system.parallel_metadata_processing"] == "Metadata Processing"
     assert groups["system.parallel_metadata_workers"] == "Metadata Processing"
     assert groups["system.parallel_image_processing"] == "Thumbnail Processing"
@@ -242,6 +243,18 @@ def test_update_setting_rejects_scan_batch_window_below_minimum(admin_client, db
     assert f"at least {SCANNING_BATCH_WINDOW_MIN_SECONDS} seconds" in response.json()["detail"]
 
 
+def test_update_setting_rejects_zero_job_history_retention(admin_client, db):
+    SettingsService(db).initialize_defaults()
+
+    response = admin_client.patch(
+        "/api/settings/jobs.retention_days",
+        json={"value": 0},
+    )
+
+    assert response.status_code == 422
+    assert "Job history retention must be at least 1 day" in response.json()["detail"]
+
+
 def test_initialize_defaults_seeds_short_server_display_name(db):
     service = SettingsService(db)
 
@@ -262,6 +275,40 @@ def test_initialize_defaults_seeds_single_volume_redirect_setting(db):
     assert service.get("ui.auto_redirect_single_volume_series") is False
     assert setting.category == "appearance"
     assert setting.data_type == "bool"
+
+
+def test_initialize_defaults_seeds_job_history_retention_setting(db):
+    service = SettingsService(db)
+
+    service.initialize_defaults()
+
+    setting = db.query(SystemSetting).filter(SystemSetting.key == "jobs.retention_days").first()
+    assert setting is not None
+    assert service.get("jobs.retention_days") == 30
+    assert setting.category == "system"
+    assert setting.data_type == "int"
+
+
+def test_initialize_defaults_clamps_existing_job_history_retention_to_minimum(db):
+    db.add(
+        SystemSetting(
+            key="jobs.retention_days",
+            value="0",
+            category="system",
+            data_type="int",
+            label="Old Label",
+            description="Old description",
+        )
+    )
+    db.commit()
+
+    service = SettingsService(db)
+    service.initialize_defaults()
+
+    setting = db.query(SystemSetting).filter(SystemSetting.key == "jobs.retention_days").first()
+    assert setting is not None
+    assert service.get("jobs.retention_days") == 1
+    assert setting.label == "Job History Retention (Days)"
 
 
 def test_initialize_defaults_clamps_existing_scan_batch_window_below_minimum(db):

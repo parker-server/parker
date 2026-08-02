@@ -53,6 +53,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
 
 - **Scanning**
   - Background ScanManager with priority queues
+  - Configurable job history retention for completed and failed background jobs
   - Timestamp bubbling for updated series
   - Physical page count validation
   - ⚡ Parallel Thumbnail Generation (Optional)

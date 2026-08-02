@@ -1,4 +1,5 @@
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
 import pytest
@@ -8,6 +9,7 @@ from app.models.collection import Collection, CollectionItem
 from app.models.comic import Comic, Volume
 from app.models.credits import ComicCredit, Person
 from app.models.interactions import UserComicRating
+from app.models.job import JobStatus, JobType, ScanJob
 from app.models.library import Library
 from app.models.library_root import LibraryRoot
 from app.models.reading_list import ReadingList, ReadingListItem
@@ -457,6 +459,53 @@ def test_cleanup_orphaned_thumbnails_deletes_unreferenced_and_logs_errors(db, tm
     assert not orphan.exists()
     assert error_file.exists()
     service.logger.error.assert_called_once()
+
+
+def test_cleanup_old_jobs_prunes_only_terminal_jobs_outside_retention(db, monkeypatch):
+    now = datetime.now(timezone.utc)
+    old = now - timedelta(days=31)
+    recent = now - timedelta(days=3)
+
+    jobs = [
+        ScanJob(job_type=JobType.SCAN, status=JobStatus.COMPLETED, created_at=old, completed_at=old),
+        ScanJob(job_type=JobType.THUMBNAIL, status=JobStatus.FAILED, created_at=old, completed_at=old),
+        ScanJob(job_type=JobType.CLEANUP, status=JobStatus.FAILED, created_at=old, completed_at=None),
+        ScanJob(job_type=JobType.SCAN, status=JobStatus.COMPLETED, created_at=recent, completed_at=recent),
+        ScanJob(job_type=JobType.SCAN, status=JobStatus.RUNNING, created_at=old, completed_at=None),
+        ScanJob(job_type=JobType.SCAN, status=JobStatus.PENDING, created_at=old, completed_at=None),
+    ]
+    db.add_all(jobs)
+    db.commit()
+    job_ids = [job.id for job in jobs]
+
+    monkeypatch.setattr(maintenance_module, "get_system_setting", lambda key, default: 30)
+
+    service = MaintenanceService(db)
+    deleted = service.cleanup_old_jobs()
+
+    assert deleted == 3
+    remaining_ids = {job.id for job in db.query(ScanJob).all()}
+    assert remaining_ids == set(job_ids[3:])
+
+
+def test_cleanup_old_jobs_clamps_zero_retention_to_one_day(db, monkeypatch):
+    old = datetime.now(timezone.utc) - timedelta(days=2)
+    job = ScanJob(
+        job_type=JobType.SCAN,
+        status=JobStatus.COMPLETED,
+        created_at=old,
+        completed_at=old,
+    )
+    db.add(job)
+    db.commit()
+
+    monkeypatch.setattr(maintenance_module, "get_system_setting", lambda key, default: 0)
+
+    service = MaintenanceService(db)
+    deleted = service.cleanup_old_jobs()
+
+    assert deleted == 1
+    assert db.query(ScanJob).count() == 0
 
 
 def test_refresh_reading_list_descriptions_batches_and_commits(db, monkeypatch):

@@ -387,6 +387,7 @@ def test_run_cleanup_job_global_and_scoped_paths(monkeypatch, db):
     maintenance_global.cleanup_missing_files.return_value = [1, 2]
     maintenance_global.cleanup_orphans.return_value = {"series_removed": 1}
     maintenance_global.cleanup_orphaned_thumbnails.return_value = {"deleted": 9}
+    maintenance_global.cleanup_old_jobs.return_value = 4
 
     maintenance_scoped = MagicMock()
     maintenance_scoped.cleanup_missing_files.return_value = []
@@ -406,11 +407,14 @@ def test_run_cleanup_job_global_and_scoped_paths(monkeypatch, db):
     assert first.args[0] == 20 and first.args[1] == JobStatus.COMPLETED
     assert first.kwargs["summary"]["missing_files_removed"] == 2
     assert first.kwargs["summary"]["orphaned_thumbnails_deleted"] == {"deleted": 9}
+    assert first.kwargs["summary"]["old_jobs"] == 4
 
     assert second.args[0] == 21 and second.args[1] == JobStatus.COMPLETED
     assert second.kwargs["summary"]["missing_files_removed"] == 0
 
     maintenance_global.delete_thumbnails_by_id.assert_called_once_with([1, 2])
+    maintenance_global.cleanup_old_jobs.assert_called_once()
+    maintenance_scoped.cleanup_old_jobs.assert_not_called()
     maintenance_scoped.cleanup_orphaned_thumbnails.assert_not_called()
     manager._set_library_scanning_status.assert_called_once_with(77, False)
 

@@ -198,6 +198,18 @@ class SettingsService:
             ]
         },
         {
+            "key": "jobs.retention_days",
+            "value": "30",
+            "category": "system",
+            "data_type": "int",
+            "label": "Job History Retention (Days)",
+            "description": "Delete completed and failed job history older than this many days during global cleanup.",
+            "display_group": "Scheduled Tasks",
+            "min_value": 1,
+            "validation_label": "Job history retention",
+            "unit_label": "day",
+        },
+        {
             "key": "system.parallel_metadata_processing",
             "value": "false",
             "category": "system",

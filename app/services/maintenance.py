@@ -1,13 +1,17 @@
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
+from sqlalchemy import and_, or_
 import logging
 import os
 
 from app.config import settings
+from app.core.settings_loader import get_system_setting
 from app.core.path_utils import resolve_absolute_path
 from app.models.tags import Character, Team, Location
 from app.models.credits import Person
 from app.models.comic import Comic, Volume
+from app.models.job import JobStatus, ScanJob
 from app.models.library_root import LibraryRoot
 from app.models.series import Series
 from app.models.reading_list import ReadingList
@@ -217,6 +221,32 @@ class MaintenanceService:
 
         self.logger.info(f"Janitor: Deleted {deleted_count} orphaned thumbnail files.")
         return deleted_count
+
+    def cleanup_old_jobs(self) -> int:
+        """
+        Delete terminal job history rows older than the configured retention window.
+        """
+        retention_days = max(1, get_system_setting("jobs.retention_days", 30))
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+
+        deleted = (
+            self.db.query(ScanJob)
+            .filter(ScanJob.status.in_([JobStatus.COMPLETED, JobStatus.FAILED]))
+            .filter(
+                or_(
+                    ScanJob.completed_at < cutoff,
+                    and_(ScanJob.completed_at.is_(None), ScanJob.created_at < cutoff),
+                )
+            )
+            .delete(synchronize_session=False)
+        )
+
+        if deleted:
+            self.db.commit()
+            self.logger.info(f"Janitor: Deleted {deleted} old job history row(s).")
+
+        return deleted
 
     def refresh_reading_list_descriptions(self) -> dict:
         """Populate missing descriptions for ComicInfo-derived lists.
