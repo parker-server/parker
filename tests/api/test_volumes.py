@@ -83,6 +83,11 @@ def test_volume_detail_blocks_restricted_content(auth_client, db, normal_user):
     assert response.status_code == 403
     assert "restricted" in response.json()["detail"].lower()
 
+    details_response = auth_client.get(f"/api/volumes/{data['volume'].id}/details")
+
+    assert details_response.status_code == 403
+    assert "restricted" in details_response.json()["detail"].lower()
+
 
 def test_volume_issues_filters_sorting_and_read_status(auth_client, db, normal_user):
     data = _create_volume_fixture(db, lib_name="issues-lib", series_name="Volume Issues")
@@ -194,9 +199,10 @@ def test_volume_detail_reports_missing_zero_index_and_metadata(auth_client, db, 
     writer = Person(name="Writer A")
     penciller = Person(name="Penciller A")
     hero = Character(name="Hero A")
+    sidekick = Character(name="Hero B")
     team = Team(name="Team A")
     location = Location(name="Location A")
-    db.add_all([writer, penciller, hero, team, location])
+    db.add_all([writer, penciller, hero, sidekick, team, location])
     db.flush()
 
     db.add_all([
@@ -207,6 +213,7 @@ def test_volume_detail_reports_missing_zero_index_and_metadata(auth_client, db, 
 
     issue_one.characters.append(hero)
     issue_three.characters.append(hero)
+    issue_one.characters.append(sidekick)
     issue_one.teams.append(team)
     issue_one.locations.append(location)
 
@@ -246,13 +253,54 @@ def test_volume_detail_reports_missing_zero_index_and_metadata(auth_client, db, 
     assert payload["first_issue_summary"] == "Volume override summary"
     assert payload["resume_to"] == {"comic_id": issue_three.id, "status": "in_progress"}
     assert payload["colors"] == {"primary": "#111111", "secondary": "#222222"}
-    assert payload["details"]["writers"] == ["Writer A"]
-    assert payload["details"]["pencillers"] == ["Penciller A"]
-    assert payload["details"]["characters"] == ["Hero A"]
-    assert payload["details"]["teams"] == ["Team A"]
-    assert payload["details"]["locations"] == ["Location A"]
+    assert "details" not in payload
     assert [arc["name"] for arc in payload["story_arcs"]] == ["Alpha Arc", "Omega Arc"]
     assert payload["is_reverse_numbering"] is False
+
+    expected_single_pages = {
+        "writers": [{"name": "Writer A", "count": 2}],
+        "pencillers": [{"name": "Penciller A", "count": 1}],
+        "teams": [{"name": "Team A", "count": 1}],
+        "locations": [{"name": "Location A", "count": 1}],
+    }
+
+    for category, expected_items in expected_single_pages.items():
+        details_response = auth_client.get(f"/api/volumes/{volume.id}/details?category={category}")
+
+        assert details_response.status_code == 200
+        details_payload = details_response.json()
+        assert details_payload["category"] == category
+        assert details_payload["items"] == expected_items
+        assert details_payload["total"] == 1
+        assert details_payload["offset"] == 0
+        assert details_payload["limit"] == 25
+        assert details_payload["has_more"] is False
+
+    first_page = auth_client.get(f"/api/volumes/{volume.id}/details?category=characters&limit=1")
+
+    assert first_page.status_code == 200
+    assert first_page.json() == {
+        "category": "characters",
+        "items": [{"name": "Hero A", "count": 2}],
+        "total": 2,
+        "offset": 0,
+        "limit": 1,
+        "has_more": True,
+    }
+
+    second_page = auth_client.get(
+        f"/api/volumes/{volume.id}/details?category=characters&limit=1&offset=1"
+    )
+
+    assert second_page.status_code == 200
+    assert second_page.json() == {
+        "category": "characters",
+        "items": [{"name": "Hero B", "count": 1}],
+        "total": 2,
+        "offset": 1,
+        "limit": 1,
+        "has_more": False,
+    }
 
 
 def test_volume_detail_reports_parent_series_volume_count(auth_client, db, normal_user):

@@ -17,6 +17,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
   - CBL-derived reading lists from uploaded files, direct HTTPS imports, and the DieselTech catalog
   - Volume-level `Following` for future issue tracking by run
   - Optional single-volume series shortcut to open the volume detail page directly
+  - Paginated Details tabs for large series and volume metadata sets
 
 - **User System**
   - Multi‑library access with row‑level security

@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, case, Float, Integer, literal, or_, and_, cast, desc
+from sqlalchemy import func, case, Float, Integer, or_, and_, cast, desc
 from sqlalchemy.orm import joinedload
 
 from typing import List, Annotated
@@ -13,15 +13,22 @@ from app.core.comic_helpers import (get_format_filters, get_smart_cover, get_rea
 
 from app.api.deps import SessionDep, CurrentUser, VolumeDep
 from app.api.deps import PaginationParams, PaginatedResponse
+from app.api.volume_metadata import (
+    VOLUME_METADATA_CATEGORIES,
+    VOLUME_METADATA_PAGE_SIZE,
+    get_volume_metadata_tags_page,
+)
 
 from app.models.comic import Comic, Volume
 from app.models.series import Series
-from app.models.credits import Person, ComicCredit
 from app.models.interactions import UserVolumeFollow
-from app.models.tags import Character, Team, Location
 from app.models.reading_progress import ReadingProgress
 
 router = APIRouter()
+
+
+DETAIL_CATEGORY_PATTERN = "^(" + "|".join(VOLUME_METADATA_CATEGORIES) + ")$"
+
 
 def comic_to_simple_dict(comic: Comic):
     return {
@@ -386,56 +393,6 @@ async def get_volume_detail(volume: VolumeDep, db: SessionDep, current_user: Cur
             # Sort the missing numbers for display (e.g., [2, 3, 4])
             missing_issues = sorted(list(missing_set))
 
-    # 6. Aggregated Metadata (OPTIMIZED)
-    # Instead of 5 separate queries, we construct a UNION ALL to get everything in 1 round trip.
-
-    # Define sub-selectors
-    # Note: literal() allows us to tag the rows so we can sort them in Python
-    q_writers = db.query(Person.name.label("name"), literal("writer").label("type")) \
-        .join(ComicCredit).join(Comic).filter(Comic.volume_id == volume.id).filter(ComicCredit.role == 'writer')
-
-    q_pencillers = db.query(Person.name.label("name"), literal("penciller").label("type")) \
-        .join(ComicCredit).join(Comic).filter(Comic.volume_id == volume.id).filter(ComicCredit.role == 'penciller')
-
-    q_chars = db.query(Character.name.label("name"), literal("character").label("type")) \
-        .join(Comic.characters).filter(Comic.volume_id == volume.id)
-
-    q_teams = db.query(Team.name.label("name"), literal("team").label("type")) \
-        .join(Comic.teams).filter(Comic.volume_id == volume.id)
-
-    q_locs = db.query(Location.name.label("name"), literal("location").label("type")) \
-        .join(Comic.locations).filter(Comic.volume_id == volume.id)
-
-    # Union and execute
-    # distinct() handles duplicates within the union logic
-    meta_rows = q_writers.union_all(q_pencillers, q_chars, q_teams, q_locs).distinct().all()
-
-    # Buckets
-    details = {
-        "writers": [],
-        "pencillers": [],
-        "characters": [],
-        "teams": [],
-        "locations": []
-    }
-
-    # Python sort/group
-    for name, type_tag in meta_rows:
-        if type_tag == "writer":
-            details["writers"].append(name)
-        elif type_tag == "penciller":
-            details["pencillers"].append(name)
-        elif type_tag == "character":
-            details["characters"].append(name)
-        elif type_tag == "team":
-            details["teams"].append(name)
-        elif type_tag == "location":
-            details["locations"].append(name)
-
-    # Final sort
-    for k in details:
-        details[k].sort()
-
     # Calculate Gimmick Flag
     is_reverse_series = False
     if volume.series:
@@ -480,7 +437,6 @@ async def get_volume_detail(volume: VolumeDep, db: SessionDep, current_user: Cur
         "first_issue_id": first_issue.id if first_issue else None,
         "first_issue_summary": volume.summary_override or (first_issue.summary if first_issue else None),
         "story_arcs": story_arcs_data,
-        "details": details,
         "resume_to": {
             "comic_id": resume_comic_id,
             "status": read_status
@@ -489,6 +445,20 @@ async def get_volume_detail(volume: VolumeDep, db: SessionDep, current_user: Cur
         "colors": colors,
         "is_reverse_numbering": is_reverse_series,
     }
+
+
+@router.get("/{volume_id}/details", name="details")
+async def get_volume_metadata_details(
+        volume: VolumeDep,
+        db: SessionDep,
+        current_user: CurrentUser,
+        category: Annotated[str, Query(pattern=DETAIL_CATEGORY_PATTERN)] = "characters",
+        offset: Annotated[int, Query(ge=0)] = 0,
+        limit: Annotated[int, Query(ge=1, le=100)] = VOLUME_METADATA_PAGE_SIZE,
+):
+    _assert_volume_allowed_for_user(volume.id, db, current_user)
+
+    return get_volume_metadata_tags_page(db, [volume.id], category, offset=offset, limit=limit)
 
 
 @router.post("/{volume_id}/follow", name="follow")

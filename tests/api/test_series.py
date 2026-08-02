@@ -336,11 +336,7 @@ def test_series_detail_returns_enriched_payload(auth_client, db, normal_user):
     assert payload["first_issue_summary"] == "Series override summary"
     assert payload["colors"] == {"accent": "#123456"}
     assert payload["resume_to"] == {"comic_id": data["issue_two"].id, "status": "in_progress"}
-    assert payload["details"]["writers"] == ["Series Writer"]
-    assert payload["details"]["pencillers"] == ["Series Penciller"]
-    assert payload["details"]["characters"] == ["Series Hero"]
-    assert payload["details"]["teams"] == ["Series Team"]
-    assert payload["details"]["locations"] == ["Series Location"]
+    assert "details" not in payload
     assert [arc["name"] for arc in payload["story_arcs"]] == ["Arc Prime", "Arc Side"]
     assert payload["parker_readers_count"] is None
 
@@ -364,6 +360,65 @@ def test_series_detail_returns_enriched_payload(auth_client, db, normal_user):
     assert by_vol[data["vol1"].id]["read"] is True
     assert by_vol[data["vol2"].id]["first_issue_id"] == data["issue_two"].id
     assert by_vol[data["vol2"].id]["read"] is False
+
+
+def test_series_metadata_details_are_paginated(auth_client, db, normal_user):
+    data = _create_series_detail_fixture(db)
+
+    sidekick = Character(name="Series Sidekick")
+    db.add(sidekick)
+    db.flush()
+    data["issue_one"].characters.append(sidekick)
+
+    normal_user.accessible_libraries.append(data["library"])
+    db.commit()
+
+    expected_single_pages = {
+        "writers": [{"name": "Series Writer", "count": 2}],
+        "pencillers": [{"name": "Series Penciller", "count": 1}],
+        "teams": [{"name": "Series Team", "count": 1}],
+        "locations": [{"name": "Series Location", "count": 1}],
+    }
+
+    for category, expected_items in expected_single_pages.items():
+        response = auth_client.get(f"/api/series/{data['series'].id}/details?category={category}")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["category"] == category
+        assert payload["items"] == expected_items
+        assert payload["total"] == 1
+        assert payload["offset"] == 0
+        assert payload["limit"] == 25
+        assert payload["has_more"] is False
+
+    first_page = auth_client.get(
+        f"/api/series/{data['series'].id}/details?category=characters&limit=1"
+    )
+
+    assert first_page.status_code == 200
+    assert first_page.json() == {
+        "category": "characters",
+        "items": [{"name": "Series Hero", "count": 2}],
+        "total": 2,
+        "offset": 0,
+        "limit": 1,
+        "has_more": True,
+    }
+
+    second_page = auth_client.get(
+        f"/api/series/{data['series'].id}/details?category=characters&limit=1&offset=1"
+    )
+
+    assert second_page.status_code == 200
+    assert second_page.json() == {
+        "category": "characters",
+        "items": [{"name": "Series Sidekick", "count": 1}],
+        "total": 2,
+        "offset": 1,
+        "limit": 1,
+        "has_more": False,
+    }
 
 
 def test_series_detail_exposes_distinct_opted_in_reader_count(auth_client, db, normal_user):
@@ -512,6 +567,11 @@ def test_series_detail_blocks_age_restricted_content(auth_client, db, normal_use
 
     assert response.status_code == 403
     assert response.json() == {"detail": "Content restricted by age rating"}
+
+    details_response = auth_client.get(f"/api/series/{series.id}/details")
+
+    assert details_response.status_code == 403
+    assert details_response.json() == {"detail": "Content restricted by age rating"}
 
 
 def test_series_list_can_sort_by_updated_desc(auth_client, db, normal_user):

@@ -372,74 +372,187 @@
                     </div>
 
                     <div x-show="activeTab === 'details'">
-                        <div class="space-y-8">
-                            <template x-if="series?.details?.writers?.length > 0">
+                        <div x-show="detailsLoading && !detailsLoaded" class="py-12 text-center">
+                            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                            <p class="text-gray-400">Loading details...</p>
+                        </div>
+
+                        <div x-show="detailsError" class="bg-red-900/20 text-red-400 p-4 rounded-lg border border-red-800 mb-6">
+                            <p x-text="detailsError"></p>
+                        </div>
+
+                        <div x-show="detailsLoaded && !hasAnyDetails" class="text-center py-20 text-gray-500">
+                            <p>No details found for this series.</p>
+                        </div>
+
+                        <div x-show="detailsLoaded || hasAnyDetails" class="space-y-8">
+                            <template x-if="details.writers.loaded && details.writers.items.length > 0">
                                 <div>
-                                    <h3 class="text-lg font-bold mb-3 text-gray-200">Writers</h3>
+                                    <div class="mb-3 flex flex-wrap items-center gap-2">
+                                        <h3 class="text-lg font-bold text-gray-200">Writers</h3>
+                                        <span x-show="details.writers.total > details.writers.items.length" class="text-xs text-gray-500" x-text="`${details.writers.items.length} of ${details.writers.total}`"></span>
+                                    </div>
                                     <div class="flex flex-wrap gap-2">
-                                        <template x-for="name in series.details.writers" :key="name">
+                                        <template x-for="name in details.writers.items" :key="name">
                                         {% with type='writer', item='name' %}
                                             {% include "partials/tag_chip.html" %}
                                         {% endwith %}
                                         </template>
                                     </div>
+                                    <button
+                                        x-show="details.writers.hasMore"
+                                        x-on:click="loadDetailsCategory('writers')"
+                                        :disabled="details.writers.loading"
+                                        class="mt-3 px-3 py-1.5 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-60 disabled:cursor-not-allowed text-sm text-white transition-colors"
+                                    >
+                                        <span x-show="!details.writers.loading" x-text="`Show ${remainingDetailCount('writers')} more`"></span>
+                                        <span x-show="details.writers.loading">Loading...</span>
+                                    </button>
+                                    <button
+                                        x-show="details.writers.items.length > detailPageSize"
+                                        x-on:click="collapseDetailsCategory('writers')"
+                                        :disabled="details.writers.loading"
+                                        class="mt-3 ml-2 px-3 py-1.5 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-60 disabled:cursor-not-allowed text-sm text-gray-200 border border-gray-700 transition-colors"
+                                    >
+                                        Show Less
+                                    </button>
                                 </div>
                             </template>
 
-                            <template x-if="series?.details?.pencillers?.length > 0">
+                            <template x-if="details.pencillers.loaded && details.pencillers.items.length > 0">
                                 <div>
-                                    <h3 class="text-lg font-bold mb-3 text-gray-200">Pencillers</h3>
+                                    <div class="mb-3 flex flex-wrap items-center gap-2">
+                                        <h3 class="text-lg font-bold text-gray-200">Pencillers</h3>
+                                        <span x-show="details.pencillers.total > details.pencillers.items.length" class="text-xs text-gray-500" x-text="`${details.pencillers.items.length} of ${details.pencillers.total}`"></span>
+                                    </div>
                                     <div class="flex flex-wrap gap-2">
-                                        <template x-for="name in series.details.pencillers" :key="name">
+                                        <template x-for="name in details.pencillers.items" :key="name">
                                         {% with type='penciller', item='name' %}
                                             {% include "partials/tag_chip.html" %}
                                         {% endwith %}
                                         </template>
                                     </div>
+                                    <button
+                                        x-show="details.pencillers.hasMore"
+                                        x-on:click="loadDetailsCategory('pencillers')"
+                                        :disabled="details.pencillers.loading"
+                                        class="mt-3 px-3 py-1.5 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-60 disabled:cursor-not-allowed text-sm text-white transition-colors"
+                                    >
+                                        <span x-show="!details.pencillers.loading" x-text="`Show ${remainingDetailCount('pencillers')} more`"></span>
+                                        <span x-show="details.pencillers.loading">Loading...</span>
+                                    </button>
+                                    <button
+                                        x-show="details.pencillers.items.length > detailPageSize"
+                                        x-on:click="collapseDetailsCategory('pencillers')"
+                                        :disabled="details.pencillers.loading"
+                                        class="mt-3 ml-2 px-3 py-1.5 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-60 disabled:cursor-not-allowed text-sm text-gray-200 border border-gray-700 transition-colors"
+                                    >
+                                        Show Less
+                                    </button>
                                 </div>
                             </template>
 
                             <div class="border-t border-gray-700 my-6"></div>
 
-                            <template x-if="series?.details?.characters?.length > 0">
+                            <template x-if="details.characters.loaded && details.characters.items.length > 0">
                                 <div>
-                                    <h3 class="text-lg font-bold mb-3 text-gray-200">Characters</h3>
+                                    <div class="mb-3 flex flex-wrap items-center gap-2">
+                                        <h3 class="text-lg font-bold text-gray-200">Characters</h3>
+                                        <span x-show="details.characters.total > details.characters.items.length" class="text-xs text-gray-500" x-text="`${details.characters.items.length} of ${details.characters.total}`"></span>
+                                    </div>
                                     <div class="flex flex-wrap gap-2">
-                                        <template x-for="name in series.details.characters" :key="name">
+                                        <template x-for="name in details.characters.items" :key="name">
                                         {% with type='character', item='name' %}
                                             {% include "partials/tag_chip.html" %}
                                         {% endwith %}
                                         </template>
                                     </div>
+                                    <button
+                                        x-show="details.characters.hasMore"
+                                        x-on:click="loadDetailsCategory('characters')"
+                                        :disabled="details.characters.loading"
+                                        class="mt-3 px-3 py-1.5 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-60 disabled:cursor-not-allowed text-sm text-white transition-colors"
+                                    >
+                                        <span x-show="!details.characters.loading" x-text="`Show ${remainingDetailCount('characters')} more`"></span>
+                                        <span x-show="details.characters.loading">Loading...</span>
+                                    </button>
+                                    <button
+                                        x-show="details.characters.items.length > detailPageSize"
+                                        x-on:click="collapseDetailsCategory('characters')"
+                                        :disabled="details.characters.loading"
+                                        class="mt-3 ml-2 px-3 py-1.5 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-60 disabled:cursor-not-allowed text-sm text-gray-200 border border-gray-700 transition-colors"
+                                    >
+                                        Show Less
+                                    </button>
                                 </div>
                             </template>
 
-                            <template x-if="series?.details?.teams?.length > 0">
+                            <template x-if="details.teams.loaded && details.teams.items.length > 0">
                                 <div>
-                                    <h3 class="text-lg font-bold mb-3 text-gray-200">Teams</h3>
+                                    <div class="mb-3 flex flex-wrap items-center gap-2">
+                                        <h3 class="text-lg font-bold text-gray-200">Teams</h3>
+                                        <span x-show="details.teams.total > details.teams.items.length" class="text-xs text-gray-500" x-text="`${details.teams.items.length} of ${details.teams.total}`"></span>
+                                    </div>
                                     <div class="flex flex-wrap gap-2">
-                                        <template x-for="name in series.details.teams" :key="name">
+                                        <template x-for="name in details.teams.items" :key="name">
                                         {% with type='team', item='name' %}
                                             {% include "partials/tag_chip.html" %}
                                         {% endwith %}
                                         </template>
                                     </div>
+                                    <button
+                                        x-show="details.teams.hasMore"
+                                        x-on:click="loadDetailsCategory('teams')"
+                                        :disabled="details.teams.loading"
+                                        class="mt-3 px-3 py-1.5 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-60 disabled:cursor-not-allowed text-sm text-white transition-colors"
+                                    >
+                                        <span x-show="!details.teams.loading" x-text="`Show ${remainingDetailCount('teams')} more`"></span>
+                                        <span x-show="details.teams.loading">Loading...</span>
+                                    </button>
+                                    <button
+                                        x-show="details.teams.items.length > detailPageSize"
+                                        x-on:click="collapseDetailsCategory('teams')"
+                                        :disabled="details.teams.loading"
+                                        class="mt-3 ml-2 px-3 py-1.5 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-60 disabled:cursor-not-allowed text-sm text-gray-200 border border-gray-700 transition-colors"
+                                    >
+                                        Show Less
+                                    </button>
                                 </div>
                             </template>
 
-                            <template x-if="series?.details?.locations?.length > 0">
+                            <template x-if="details.locations.loaded && details.locations.items.length > 0">
                                 <div>
-                                    <h3 class="text-lg font-bold mb-3 text-gray-200">Locations</h3>
+                                    <div class="mb-3 flex flex-wrap items-center gap-2">
+                                        <h3 class="text-lg font-bold text-gray-200">Locations</h3>
+                                        <span x-show="details.locations.total > details.locations.items.length" class="text-xs text-gray-500" x-text="`${details.locations.items.length} of ${details.locations.total}`"></span>
+                                    </div>
                                     <div class="flex flex-wrap gap-2">
-                                        <template x-for="name in series.details.locations" :key="name">
+                                        <template x-for="name in details.locations.items" :key="name">
                                         {% with type='location', item='name' %}
                                             {% include "partials/tag_chip.html" %}
                                         {% endwith %}
                                         </template>
                                     </div>
+                                    <button
+                                        x-show="details.locations.hasMore"
+                                        x-on:click="loadDetailsCategory('locations')"
+                                        :disabled="details.locations.loading"
+                                        class="mt-3 px-3 py-1.5 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-60 disabled:cursor-not-allowed text-sm text-white transition-colors"
+                                    >
+                                        <span x-show="!details.locations.loading" x-text="`Show ${remainingDetailCount('locations')} more`"></span>
+                                        <span x-show="details.locations.loading">Loading...</span>
+                                    </button>
+                                    <button
+                                        x-show="details.locations.items.length > detailPageSize"
+                                        x-on:click="collapseDetailsCategory('locations')"
+                                        :disabled="details.locations.loading"
+                                        class="mt-3 ml-2 px-3 py-1.5 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-60 disabled:cursor-not-allowed text-sm text-gray-200 border border-gray-700 transition-colors"
+                                    >
+                                        Show Less
+                                    </button>
                                 </div>
                             </template>
-                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -539,6 +652,18 @@ function seriesDetail() {
         storyArcScopeId: {{ series_id }},
 
         paginationMode: '{{ get_system_setting("ui.pagination_mode", "infinite") }}',
+        detailPageSize: 25,
+        detailCategories: ['writers', 'pencillers', 'characters', 'teams', 'locations'],
+        details: {
+            writers: { items: [], total: 0, hasMore: false, loaded: false, loading: false },
+            pencillers: { items: [], total: 0, hasMore: false, loaded: false, loading: false },
+            characters: { items: [], total: 0, hasMore: false, loaded: false, loading: false },
+            teams: { items: [], total: 0, hasMore: false, loaded: false, loading: false },
+            locations: { items: [], total: 0, hasMore: false, loaded: false, loading: false },
+        },
+        detailsLoaded: false,
+        detailsLoading: false,
+        detailsError: null,
 
         init() {
             this.loadSeriesSummary();
@@ -599,6 +724,10 @@ function seriesDetail() {
         switchTab(tabName) {
             this.activeTab = tabName;
 
+            if (tabName === 'details') {
+                this.loadDetails();
+            }
+
             // If details, related or volumes, we don't need to fetch issues
             if (['volumes', 'related', 'details', 'arcs'].includes(tabName)) return;
 
@@ -621,6 +750,75 @@ function seriesDetail() {
 
             this.currentType = typeParam;
             this.loadItems(); // Call Mixin
+        },
+
+        async loadDetails(force = false) {
+            if ((this.detailsLoaded && !force) || this.detailsLoading) return;
+
+            this.detailsLoading = true;
+            this.detailsError = null;
+
+            try {
+                await Promise.all(this.detailCategories.map((category) => this.loadDetailsCategory(category, true, true)));
+                this.detailsLoaded = true;
+            } catch (e) {
+                console.error(e);
+                this.detailsError = "Could not load series details.";
+            } finally {
+                this.detailsLoading = false;
+            }
+        },
+
+        async loadDetailsCategory(category, reset = false, bubbleError = false) {
+            const state = this.details[category];
+            if (!state || state.loading || (!reset && !state.hasMore)) return;
+
+            state.loading = true;
+            this.detailsError = null;
+
+            try {
+                const offset = reset ? 0 : state.items.length;
+                const query = new URLSearchParams({
+                    category: category,
+                    offset: offset,
+                    limit: this.detailPageSize,
+                });
+                const res = await fetch(window.parker.route('series.details', { series_id: this.seriesId }, query.toString()));
+
+                if (!res.ok) {
+                    throw new Error("Failed to load series detail metadata");
+                }
+
+                const payload = await res.json();
+                const items = (payload.items || []).map((item) => item.name).filter(Boolean);
+                state.items = reset ? items : state.items.concat(items);
+                state.total = payload.total || 0;
+                state.hasMore = Boolean(payload.has_more);
+                state.loaded = true;
+            } catch (e) {
+                this.detailsError = "Could not load series details.";
+                if (bubbleError) throw e;
+            } finally {
+                state.loading = false;
+            }
+        },
+
+        remainingDetailCount(category) {
+            const state = this.details[category];
+            if (!state) return 0;
+            return Math.min(this.detailPageSize, Math.max((state.total || 0) - state.items.length, 0));
+        },
+
+        collapseDetailsCategory(category) {
+            const state = this.details[category];
+            if (!state || state.items.length <= this.detailPageSize) return;
+
+            state.items = state.items.slice(0, this.detailPageSize);
+            state.hasMore = state.total > state.items.length;
+        },
+
+        get hasAnyDetails() {
+            return Object.values(this.details).some((state) => state.items.length > 0);
         },
 
         // Event Listener Handlers (Called via x-on in HTML)

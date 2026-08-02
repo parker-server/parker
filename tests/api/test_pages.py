@@ -418,6 +418,8 @@ def test_series_page_show_series_query_skips_single_volume_redirect(admin_client
 
     assert response.status_code == 200
     assert "seriesDetail()" in response.text
+    assert "series.details" in response.text
+    assert "series?.details" not in response.text
 
 
 def test_series_page_keeps_multi_volume_series_when_setting_enabled(admin_client, db, monkeypatch):
@@ -428,6 +430,8 @@ def test_series_page_keeps_multi_volume_series_when_setting_enabled(admin_client
 
     assert response.status_code == 200
     assert "seriesDetail()" in response.text
+    assert "series.details" in response.text
+    assert "series?.details" not in response.text
 
 
 def test_volume_page_series_breadcrumb_uses_series_escape_hatch(admin_client, db):
@@ -442,6 +446,8 @@ def test_volume_page_series_breadcrumb_uses_series_escape_hatch(admin_client, db
     assert "loadRecommendationsForSingleVolumeSeries()" in body
     assert "series_volume_count !== 1" in body
     assert "series.recommendations" in body
+    assert "volumes.details" in body
+    assert "volume?.details" not in body
 
 
 def test_user_settings_page_renders_for_authenticated_user(auth_client):

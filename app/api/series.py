@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
-from sqlalchemy import func, case, Float, and_, literal, not_
+from sqlalchemy import func, case, Float, and_, not_
 from sqlalchemy.orm import joinedload, aliased
 from typing import List, Optional, Annotated
 from datetime import datetime, timezone
@@ -12,6 +12,11 @@ from app.core.comic_helpers import (get_format_filters, get_smart_cover, get_rea
                                     get_resume_target)
 from app.api.deps import SessionDep, CurrentUser, AdminUser, SeriesDep
 from app.api.deps import PaginationParams, PaginatedResponse
+from app.api.volume_metadata import (
+    VOLUME_METADATA_CATEGORIES,
+    VOLUME_METADATA_PAGE_SIZE,
+    get_volume_metadata_tags_page,
+)
 
 # Import related models
 from app.models.comic import Comic, Volume
@@ -21,7 +26,7 @@ from app.models.library import Library
 from app.models.collection import Collection, CollectionItem
 from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.credits import Person, ComicCredit
-from app.models.tags import Character, Team, Location, Genre, comic_genres
+from app.models.tags import Genre, comic_genres
 from app.models.interactions import UserSeries
 from app.models.reading_progress import ReadingProgress
 
@@ -29,6 +34,9 @@ from app.services.social_insights import get_visible_series_reader_count
 from app.services.thumbnailer import ThumbnailService
 
 router = APIRouter()
+
+
+DETAIL_CATEGORY_PATTERN = "^(" + "|".join(VOLUME_METADATA_CATEGORIES) + ")$"
 
 
 def comic_to_simple_dict(comic: Comic):
@@ -43,6 +51,16 @@ def comic_to_simple_dict(comic: Comic):
         "filename": comic.filename,
         "thumbnail_path": get_thumbnail_url(comic.id, comic.updated_at)
     }
+
+
+def _assert_series_allowed_for_user(series: Series, db, current_user) -> None:
+    age_filter = get_series_age_restriction(current_user)
+    if age_filter is None:
+        return
+
+    is_allowed = db.query(Series.id).filter(Series.id == series.id, age_filter).first()
+    if not is_allowed:
+        raise HTTPException(status_code=403, detail="Content restricted by age rating")
 
 
 def bulk_serialize_series(series_list: List[Series], db, current_user) -> List[dict]:
@@ -150,16 +168,7 @@ async def get_series_detail(series: SeriesDep, db: SessionDep, current_user: Cur
     2. Batch fetches volume stats.
     """
 
-    # 0. Security Check: Age Rating "Poison Pill"
-    # Since we are fetching a specific ID, we should check if this Series is allowed.
-    # Note: Optimization - We could skip this query if user has no restrictions.
-    age_filter = get_series_age_restriction(current_user)
-    if age_filter is not None:
-        # Check if this specific series passes the filter
-        # We query for this ID + the Filter. If None, 403.
-        is_allowed = db.query(Series.id).filter(Series.id == series.id, age_filter).first()
-        if not is_allowed:
-            raise HTTPException(status_code=403, detail="Content restricted by age rating")
+    _assert_series_allowed_for_user(series, db, current_user)
 
 
     # 1. Get Volumes (sorted by volume_number)
@@ -170,7 +179,7 @@ async def get_series_detail(series: SeriesDep, db: SessionDep, current_user: Cur
         # (Return empty structure - kept same as original)
         return {
             "id": series.id, "name": series.name, "library_id": series.library_id,
-            "volume_count": 0, "total_issues": 0, "volumes": [], "collections": [], "reading_lists": [], "details": {},
+            "volume_count": 0, "total_issues": 0, "volumes": [], "collections": [], "reading_lists": [],
             "parker_readers_count": None,
         }
 
@@ -252,41 +261,6 @@ async def get_series_detail(series: SeriesDep, db: SessionDep, current_user: Cur
     related_collections = related_collections_query.distinct().all()
     related_reading_lists = related_reading_lists_query.distinct().all()
 
-
-    # 5. Metadata Details (OPTIMIZED: UNION ALL)
-    # Instead of 5 separate heavy joins, we do one pass.
-
-    q_writers = db.query(Person.name.label("name"), literal("writer").label("type")) \
-        .join(ComicCredit).join(Comic).filter(Comic.volume_id.in_(volume_ids)).filter(ComicCredit.role == 'writer')
-
-    q_pencillers = db.query(Person.name.label("name"), literal("penciller").label("type")) \
-        .join(ComicCredit).join(Comic).filter(Comic.volume_id.in_(volume_ids)).filter(ComicCredit.role == 'penciller')
-
-    q_chars = db.query(Character.name.label("name"), literal("character").label("type")) \
-        .join(Comic.characters).filter(Comic.volume_id.in_(volume_ids))
-
-    q_teams = db.query(Team.name.label("name"), literal("team").label("type")) \
-        .join(Comic.teams).filter(Comic.volume_id.in_(volume_ids))
-
-    q_locs = db.query(Location.name.label("name"), literal("location").label("type")) \
-        .join(Comic.locations).filter(Comic.volume_id.in_(volume_ids))
-
-    meta_rows = q_writers.union_all(q_pencillers, q_chars, q_teams, q_locs).distinct().all()
-
-    details = {"writers": [], "pencillers": [], "characters": [], "teams": [], "locations": []}
-    for name, type_tag in meta_rows:
-        if type_tag == "writer":
-            details["writers"].append(name)
-        elif type_tag == "penciller":
-            details["pencillers"].append(name)
-        elif type_tag == "character":
-            details["characters"].append(name)
-        elif type_tag == "team":
-            details["teams"].append(name)
-        elif type_tag == "location":
-            details["locations"].append(name)
-
-    for k in details: details[k].sort()
 
     # 6. Series Cover & Resume
     base_query = db.query(Comic).filter(Comic.volume_id.in_(volume_ids))
@@ -418,7 +392,6 @@ async def get_series_detail(series: SeriesDep, db: SessionDep, current_user: Cur
         "collections": [{"id": c.id, "name": c.name, "description": c.description} for c in related_collections],
         "reading_lists": [{"id": l.id, "name": l.name, "description": l.description} for l in related_reading_lists],
         "story_arcs": story_arcs_data,
-        "details": details,
         "resume_to": {"comic_id": resume_comic_id, "status": read_status},
         "colors": colors,
         "is_admin": current_user.is_superuser,
@@ -426,6 +399,24 @@ async def get_series_detail(series: SeriesDep, db: SessionDep, current_user: Cur
         "thumbnail_hash": get_thumbnail_hash(first_issue.updated_at),
         "parker_readers_count": parker_readers_count,
     }
+
+
+@router.get("/{series_id}/details", name="details")
+async def get_series_metadata_details(
+        series: SeriesDep,
+        db: SessionDep,
+        current_user: CurrentUser,
+        category: Annotated[str, Query(pattern=DETAIL_CATEGORY_PATTERN)] = "characters",
+        offset: Annotated[int, Query(ge=0)] = 0,
+        limit: Annotated[int, Query(ge=1, le=100)] = VOLUME_METADATA_PAGE_SIZE,
+):
+    _assert_series_allowed_for_user(series, db, current_user)
+
+    volume_ids = [
+        volume_id
+        for (volume_id,) in db.query(Volume.id).filter(Volume.series_id == series.id).all()
+    ]
+    return get_volume_metadata_tags_page(db, volume_ids, category, offset=offset, limit=limit)
 
 
 # ... (Keep the rest of the file: get_series_issues, list_series, etc.) ...

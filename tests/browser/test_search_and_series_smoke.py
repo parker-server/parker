@@ -2,9 +2,10 @@ import pytest
 from datetime import timedelta
 from sqlalchemy import select
 
-from app.models.comic import Volume
+from app.models.comic import Comic, Volume
 from app.models.interactions import UserVolumeFollow
 from app.models.series import Series
+from app.models.tags import Character
 from tests.factories import create_comic
 
 
@@ -75,6 +76,33 @@ def _insert_following_arrival(browser_server):
         session.close()
 
 
+def _add_extra_detail_characters(browser_server):
+    seed = browser_server["seed"]
+    session = browser_server["db_factory"]()
+    names = [f"ZZ Lazy Detail Character {index:02d}" for index in range(26)]
+    try:
+        comic = session.get(Comic, seed["in_progress_comic_id"])
+        characters = [Character(name=name) for name in names]
+        comic.characters.extend(characters)
+        session.add_all(characters)
+        session.commit()
+        return names
+    finally:
+        session.close()
+
+
+def _remove_extra_detail_characters(browser_server, names):
+    session = browser_server["db_factory"]()
+    try:
+        characters = session.scalars(select(Character).where(Character.name.in_(names))).all()
+        for character in characters:
+            character.comics.clear()
+            session.delete(character)
+        session.commit()
+    finally:
+        session.close()
+
+
 @pytest.mark.browser
 def test_search_page_finds_matching_comic_by_title(page, browser_server):
     seed = browser_server["seed"]
@@ -111,6 +139,54 @@ def test_series_detail_page_filters_read_items(page, browser_server):
     page.wait_for_timeout(300)
     assert page.locator(f"text={seed['completed_comic_title']}").first.is_visible()
     assert page.locator(f"text={seed['active_comic_title']}").count() == 0
+
+
+@pytest.mark.browser
+def test_series_and_volume_details_tabs_lazy_load_metadata(page, browser_server):
+    seed = browser_server["seed"]
+    request_urls = []
+    page.on("request", lambda request: request_urls.append(request.url))
+
+    series_details_path = f"/api/series/{seed['series_id']}/details"
+    page.goto(f"{browser_server['base_url']}/series/{seed['series_id']}", wait_until="networkidle")
+    page.wait_for_selector(f"text={seed['series_name']}")
+    assert not any(series_details_path in url for url in request_urls)
+
+    page.get_by_role("button", name="Details").click()
+    page.wait_for_selector("text=Captain Smoke")
+    page.wait_for_selector("text=Casey Smoke")
+    assert any(series_details_path in url for url in request_urls)
+
+    request_urls.clear()
+    volume_details_path = f"/api/volumes/{seed['volume_id']}/details"
+    page.goto(f"{browser_server['base_url']}/volumes/{seed['volume_id']}", wait_until="networkidle")
+    page.get_by_role("heading", name="Volume 1").wait_for()
+    assert not any(volume_details_path in url for url in request_urls)
+
+    page.get_by_role("button", name="Details").click()
+    page.wait_for_selector("text=Captain Smoke")
+    page.wait_for_selector("text=Casey Smoke")
+    assert any(volume_details_path in url for url in request_urls)
+
+
+@pytest.mark.browser
+def test_series_details_show_less_removes_expanded_metadata_chips(page, browser_server):
+    seed = browser_server["seed"]
+    names = _add_extra_detail_characters(browser_server)
+    target_name = names[-1]
+
+    try:
+        page.goto(f"{browser_server['base_url']}/series/{seed['series_id']}", wait_until="networkidle")
+        page.get_by_role("button", name="Details").click()
+
+        page.get_by_role("button", name="Show 2 more").click()
+        page.get_by_text(target_name).wait_for()
+
+        page.get_by_role("button", name="Show Less").click()
+        page.get_by_text(target_name).wait_for(state="detached")
+        page.get_by_role("button", name="Show 2 more").wait_for()
+    finally:
+        _remove_extra_detail_characters(browser_server, names)
 
 
 @pytest.mark.browser
