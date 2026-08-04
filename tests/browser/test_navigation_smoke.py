@@ -46,6 +46,43 @@ def _add_duplicate_collection_context(browser_server):
         session.close()
 
 
+def _add_large_cover_browser_fixture(browser_server):
+    session = browser_server["db_factory"]()
+    try:
+        volume = session.get(Volume, browser_server["seed"]["volume_id"])
+        root = volume.series.library.active_root
+        comic_ids = []
+
+        for offset in range(61):
+            comic = create_comic(
+                session,
+                volume,
+                root,
+                f"cover-browser-large-{offset}.cbz",
+                number=str(1000 + offset),
+                title=f"Cover Browser Large {offset}",
+                year=2025,
+                filename=f"cover-browser-large-{offset}.cbz",
+                page_count=3,
+            )
+            comic_ids.append(comic.id)
+
+        session.commit()
+        return comic_ids
+    finally:
+        session.close()
+
+
+def _remove_large_cover_browser_fixture(browser_server, comic_ids):
+    session = browser_server["db_factory"]()
+    try:
+        if comic_ids:
+            session.query(Comic).filter(Comic.id.in_(comic_ids)).delete(synchronize_session=False)
+            session.commit()
+    finally:
+        session.close()
+
+
 @pytest.mark.browser
 def test_continue_reading_page_shows_in_progress_items_and_opens_reader(page, browser_server):
     seed = browser_server["seed"]
@@ -115,6 +152,35 @@ def test_cover_browser_switches_view_modes_and_returns_to_reading_list(page, bro
 
     page.wait_for_url(f"**/reading-lists/{seed['reading_list_id']}")
     page.get_by_role("heading", name=seed["reading_list_name"]).wait_for()
+
+
+@pytest.mark.browser
+def test_cover_browser_lazy_loads_large_manifest_pages(page, browser_server):
+    seed = browser_server["seed"]
+    comic_ids = _add_large_cover_browser_fixture(browser_server)
+    request_urls = []
+    page.on("request", lambda request: request_urls.append(request.url))
+
+    try:
+        page.goto(
+            f"{browser_server['base_url']}/browse/volume/{seed['volume_id']}",
+            wait_until="networkidle",
+        )
+
+        page.locator(".browser-container").wait_for()
+        page.locator("text=1 / 64").wait_for()
+        manifest_urls = [url for url in request_urls if "/api/comics/covers/manifest" in url]
+        assert any("offset=0" in url and "limit=60" in url for url in manifest_urls)
+        assert not any("offset=60" in url for url in manifest_urls)
+
+        with page.expect_response(lambda response: "/api/comics/covers/manifest" in response.url and "offset=60" in response.url):
+            page.locator(".grid-view").evaluate(
+                "(el) => { el.scrollTop = el.scrollHeight; el.dispatchEvent(new Event('scroll')); }"
+            )
+
+        page.wait_for_function("document.querySelectorAll('.grid-view > div.cursor-pointer').length === 64")
+    finally:
+        _remove_large_cover_browser_fixture(browser_server, comic_ids)
 
 
 @pytest.mark.browser

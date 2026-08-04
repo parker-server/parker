@@ -63,7 +63,7 @@
             <div class="w-px h-6 bg-gray-700"></div>
             <div class="flex flex-col">
                 <span class="font-bold text-white text-sm" x-text="contextLabel"></span>
-                <span class="text-xs text-blue-400" x-text="`${currentIndex + 1} / ${items.length}`"></span>
+                <span class="text-xs text-blue-400" x-text="positionLabel"></span>
             </div>
         </div>
 
@@ -85,7 +85,7 @@
         </div>
     </div>
 
-    <div x-show="mode === 'grid'" class="grid-view scrollbar-thin">
+    <div x-show="mode === 'grid'" class="grid-view scrollbar-thin" x-on:scroll="handleGridScroll($event)">
         <template x-for="(item, index) in items" :key="item.comic_id">
             <div x-on:click="goToIndex(index)" class="cursor-pointer group flex flex-col items-center">
                 <div class="aspect-[2/3] w-full relative rounded-lg overflow-hidden border border-gray-700 group-hover:border-blue-500 transition-all shadow-lg group-hover:scale-105">
@@ -95,6 +95,18 @@
                 <span class="mt-2 text-xs text-gray-400 text-center truncate w-full" x-text="item.label"></span>
             </div>
         </template>
+        <div x-show="loading && items.length === 0" class="col-span-full flex justify-center py-12 text-sm text-gray-400">
+            Loading covers...
+        </div>
+        <div x-show="loadingMore" class="col-span-full flex justify-center py-8 text-sm text-gray-400">
+            Loading more covers...
+        </div>
+        <div x-show="loadError" class="col-span-full flex flex-col items-center gap-3 py-10 text-sm text-red-300">
+            <span x-text="loadError"></span>
+            <button x-on:click.stop="loadManifestPage(items.length === 0)" class="px-3 py-1.5 rounded bg-red-900/40 border border-red-700 hover:bg-red-900/60 text-red-100">
+                Retry
+            </button>
+        </div>
     </div>
 
     <div x-show="mode === 'theater'" class="theater-view" x-on:click="handleZoneClick($event)">
@@ -153,9 +165,15 @@ function coverBrowser() {
         mode: 'grid',
         zoomMode: false,
         items: [],
+        total: 0,
+        hasMore: false,
+        manifestLimit: 60,
         currentIndex: 0,
         doublePage: false,
         loading: true,
+        loadingMore: false,
+        pendingManifestLoad: null,
+        loadError: null,
 
         isPanning: false,
         wasPanning: false, // Used to distinguish between a "Click to Close" and a "Drag Release"
@@ -163,13 +181,7 @@ function coverBrowser() {
         scrollStart: { x: 0, y: 0 },
 
         async init() {
-            const url = window.parker.route('comics.cover_manifest', {}, `context_type=${this.contextType}&context_id=${this.contextId}`);
-            const res = await fetch(url);
-            if(res.ok) {
-                const data = await res.json();
-                this.items = data.items;
-            }
-            this.loading = false;
+            await this.loadManifestPage(true);
 
             // Watch for zoom mode to center the scroll
             this.$watch('zoomMode', value => {
@@ -188,6 +200,15 @@ function coverBrowser() {
 
         },
 
+        get positionLabel() {
+            if (this.loading && this.items.length === 0) return 'Loading...';
+
+            const total = this.total || this.items.length;
+            if (total === 0) return '0 / 0';
+
+            return `${Math.min(this.currentIndex + 1, total)} / ${total}`;
+        },
+
         get currentImages() {
             if (this.items.length === 0) return [];
             const current = this.items[this.currentIndex];
@@ -199,10 +220,79 @@ function coverBrowser() {
             return [current, next];
         },
 
-        next() {
+        async loadManifestPage(reset = false) {
+            if (!reset && this.loadingMore) return this.pendingManifestLoad;
+            if (!reset && !this.hasMore) return;
+
+            const offset = reset ? 0 : this.items.length;
+            const query = new URLSearchParams({
+                context_type: this.contextType,
+                context_id: String(this.contextId),
+                offset: String(offset),
+                limit: String(this.manifestLimit),
+            });
+            const url = window.parker.route('comics.cover_manifest', {}, query.toString());
+
+            if (reset) {
+                this.loading = true;
+                this.items = [];
+                this.total = 0;
+                this.hasMore = false;
+            } else {
+                this.loadingMore = true;
+            }
+            this.loadError = null;
+
+            this.pendingManifestLoad = (async () => {
+                try {
+                    const res = await fetch(url);
+                    if (!res.ok) throw new Error('Could not load covers.');
+
+                    const data = await res.json();
+                    const newItems = data.items || [];
+                    this.items = reset ? newItems : [...this.items, ...newItems];
+                    this.total = data.total ?? this.items.length;
+                    this.hasMore = Boolean(data.has_more);
+                } catch (error) {
+                    this.loadError = 'Could not load covers.';
+                } finally {
+                    this.loading = false;
+                    this.loadingMore = false;
+                    this.pendingManifestLoad = null;
+                }
+            })();
+
+            return this.pendingManifestLoad;
+        },
+
+        loadMore() {
+            return this.loadManifestPage(false);
+        },
+
+        prefetchAhead() {
+            if (this.hasMore && !this.loadingMore && this.items.length - this.currentIndex <= 10) {
+                this.loadMore();
+            }
+        },
+
+        handleGridScroll(e) {
+            const el = e.currentTarget;
+            if (el.scrollTop + el.clientHeight >= el.scrollHeight - 800) {
+                this.loadMore();
+            }
+        },
+
+        async next() {
             const step = this.doublePage ? 2 : 1;
-            if (this.currentIndex + step < this.items.length) {
-                this.currentIndex += step;
+            const targetIndex = this.currentIndex + step;
+
+            if (targetIndex >= this.items.length && this.hasMore) {
+                await this.loadMore();
+            }
+
+            if (targetIndex < this.items.length) {
+                this.currentIndex = targetIndex;
+                this.prefetchAhead();
             }
         },
 
@@ -218,15 +308,16 @@ function coverBrowser() {
         goToIndex(index) {
             this.currentIndex = index;
             this.mode = 'theater';
+            this.prefetchAhead();
         },
 
-        handleZoneClick(e) {
+        async handleZoneClick(e) {
             const width = window.innerWidth;
             if (e.clientX < width / 3) this.prev();
-            else if (e.clientX > width * 0.66) this.next();
+            else if (e.clientX > width * 0.66) await this.next();
         },
 
-        handleKey(e) {
+        async handleKey(e) {
             if (this.zoomMode) {
                 if (e.key === 'Escape') this.zoomMode = false;
                 return;
@@ -236,7 +327,7 @@ function coverBrowser() {
                 if(this.mode === 'theater') this.mode = 'grid';
                 else this.exit();
             }
-            if(e.key === 'ArrowRight' || e.key === ' ') this.next();
+            if(e.key === 'ArrowRight' || e.key === ' ') await this.next();
             if(e.key === 'ArrowLeft') this.prev();
             if(e.key === 'g') this.mode = 'grid';
             if(e.key === 't') this.mode = 'theater';

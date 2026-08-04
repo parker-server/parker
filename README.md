@@ -66,7 +66,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
 
 - **Visuals**
   - Dynamic backgrounds from cover colors
-  - Cover Browser gallery mode
+  - Cover Browser gallery mode with lazy-loaded manifests for very large runs
 
 - **Format Support**
   - Native archive support for `CBZ` and `CBR`

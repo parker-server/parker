@@ -32,6 +32,8 @@ from app.services.social_insights import get_visible_comic_reader_count
 
 router = APIRouter()
 
+COVER_MANIFEST_PAGE_SIZE = 60
+
 
 class ComicRatingUpdate(BaseModel):
     rating: int = Field(..., ge=1, le=5)
@@ -416,10 +418,12 @@ async def get_cover_manifest(
         db: SessionDep,
         current_user: CurrentUser,
         context_type: Literal["series", "volume", "reading_list", "collection", "pull_list"],
-        context_id: int
+        context_id: int,
+        offset: Annotated[int, Query(ge=0)] = 0,
+        limit: Annotated[int, Query(ge=1, le=120)] = COVER_MANIFEST_PAGE_SIZE,
 ):
     """
-    Returns a list of Comic IDs and Titles to power the Cover Browser.
+    Returns a page of Comic IDs and Titles to power the Cover Browser.
     Handles Reverse Numbering (Countdown) and Date Sorting (Zero Hour).
     """
 
@@ -506,10 +510,14 @@ async def get_cover_manifest(
             .filter(CollectionItem.collection_id == context_id) \
             .order_by(Comic.year.asc(), Series.name.asc(), func.cast(Comic.number, Float))
 
-    items = query.all()
+    total = query.order_by(None).count()
+    items = query.offset(offset).limit(limit).all()
 
     return {
-        "total": len(items),
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "has_more": offset + len(items) < total,
         "items": [
             {
                 "comic_id": r.id,

@@ -662,6 +662,50 @@ def test_cover_manifest_volume_and_series_reverse_sort(auth_client, db, normal_u
     assert [item["label"] for item in by_series.json()["items"]] == ["Countdown #4", "Countdown #1"]
 
 
+def test_cover_manifest_paginates_large_contexts(auth_client, db, normal_user):
+    library, _, volume = _create_graph(db, lib_name="comic-manifest-paged", series_name="Paged Manifest")
+
+    comics = [
+        create_comic(
+            db,
+            volume,
+            library.active_root,
+            f"paged-{number}.cbz",
+            number=str(number),
+            year=2025,
+            title=f"Paged #{number}",
+            thumbnail_path=f"/tmp/paged-{number}.webp",
+            filename=f"paged-{number}.cbz",
+        )
+        for number in range(1, 6)
+    ]
+
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    first_page = auth_client.get(
+        f"/api/comics/covers/manifest?context_type=volume&context_id={volume.id}&limit=2"
+    )
+    assert first_page.status_code == 200
+    first_payload = first_page.json()
+    assert first_payload["total"] == 5
+    assert first_payload["offset"] == 0
+    assert first_payload["limit"] == 2
+    assert first_payload["has_more"] is True
+    assert [item["comic_id"] for item in first_payload["items"]] == [comics[0].id, comics[1].id]
+
+    final_page = auth_client.get(
+        f"/api/comics/covers/manifest?context_type=volume&context_id={volume.id}&limit=2&offset=4"
+    )
+    assert final_page.status_code == 200
+    final_payload = final_page.json()
+    assert final_payload["total"] == 5
+    assert final_payload["offset"] == 4
+    assert final_payload["limit"] == 2
+    assert final_payload["has_more"] is False
+    assert [item["comic_id"] for item in final_payload["items"]] == [comics[4].id]
+
+
 def test_cover_manifest_reading_list_pull_list_and_collection_ordering(auth_client, db, normal_user):
     library, series, volume = _create_graph(db, lib_name="comic-manifest-order", series_name="Manifest Order")
 
