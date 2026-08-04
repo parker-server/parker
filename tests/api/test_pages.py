@@ -4,7 +4,7 @@ from app.core.templates import templates
 from app.models.comic import Comic, Volume
 from app.models.series import Series
 from app.services.settings_service import SettingsService
-from tests.factories import create_library_with_root
+from tests.factories import create_comic, create_library_with_root
 
 
 def _seed_series_page_data(db, volume_count=1):
@@ -398,6 +398,33 @@ def test_reader_page_uses_modular_reader_shell(auth_client):
     assert "window.createReader({ comicId: 123 })" in body
     assert "/static/js/reader.js" in body
     assert 'x-on:click="toggleViewMode()"' in body
+
+
+def test_comic_detail_page_gates_file_location_on_file_path(auth_client, db, normal_user):
+    library = create_library_with_root(db, "Comic Detail Page Library", "/tmp/comic-detail-page-library")
+    series = Series(name="Comic Detail Page Series", library=library)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
+    db.flush()
+    comic = create_comic(
+        db,
+        volume,
+        library.active_root,
+        "comic-detail-page-1.cbz",
+        number="1",
+        title="Comic Detail Page Issue",
+        filename="comic-detail-page-1.cbz",
+    )
+
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    response = auth_client.get(f"/comics/{comic.id}")
+
+    assert response.status_code == 200
+    body = response.text
+    assert 'x-show="comic?.file_path"' in body
+    assert 'x-text="comic?.file_path"' in body
 
 
 def test_series_page_redirects_to_single_volume_when_setting_enabled(admin_client, db, monkeypatch):

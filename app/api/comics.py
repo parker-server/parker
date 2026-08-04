@@ -202,7 +202,7 @@ async def get_comic(comic_id: int, db: SessionDep, current_user: CurrentUser):
     return {
         "id": comic.id,
         "filename": comic.filename,
-        "file_path": comic.absolute_path,
+        "file_path": comic.absolute_path if current_user.is_superuser else None,
         "file_size": comic.file_size,
         "thumbnail_hash": get_thumbnail_hash(comic.updated_at),
 

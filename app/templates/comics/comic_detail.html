@@ -126,7 +126,7 @@
                 <div class="bg-gray-800 rounded-lg p-4 space-y-4 border border-gray-700">
                     <h3 class="font-bold text-gray-300 border-b border-gray-700 pb-2">File Info</h3>
 
-                    <div>
+                    <div x-show="comic?.file_path">
                         <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Location</div>
                         <div class="text-xs font-mono text-gray-400 bg-black/30 p-2 rounded break-all select-all border border-gray-700/50" x-text="comic?.file_path"></div>
                     </div>

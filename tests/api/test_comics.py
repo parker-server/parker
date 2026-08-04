@@ -1,7 +1,9 @@
 from pathlib import Path
 from unittest.mock import patch
 
+from app.api.deps import get_current_user
 from app.api.comics import filter_by_user_access, natural_sort_key
+from app.main import app
 from app.models.collection import Collection, CollectionItem
 from app.models.bookmark import Bookmark
 from app.models.comic import Comic, Volume
@@ -247,6 +249,33 @@ def test_get_comic_detail_returns_metadata_and_in_progress_status(auth_client, d
     assert payload["parker_rating_count"] == 0
     assert payload["user_rating"] is None
     assert payload["parker_readers_count"] is None
+
+
+def test_get_comic_detail_only_exposes_file_path_to_admins(client, db, normal_user, admin_user):
+    library, _, volume = _create_graph(db, lib_name="comic-detail-file-path", series_name="File Path Detail Saga")
+
+    comic = create_comic(
+        db,
+        volume,
+        library.active_root,
+        "file-path-1.cbz",
+        number="1",
+        title="File Path Issue",
+        filename="file-path-1.cbz",
+    )
+
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    app.dependency_overrides[get_current_user] = lambda: normal_user
+    user_response = client.get(f"/api/comics/{comic.id}")
+    assert user_response.status_code == 200
+    assert user_response.json()["file_path"] is None
+
+    app.dependency_overrides[get_current_user] = lambda: admin_user
+    admin_response = client.get(f"/api/comics/{comic.id}")
+    assert admin_response.status_code == 200
+    assert admin_response.json()["file_path"] == comic.absolute_path
 
 
 def test_get_comic_detail_returns_completed_read_status(auth_client, db, normal_user):
