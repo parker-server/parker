@@ -211,6 +211,8 @@ def test_library_timeline_deep_link_shows_character_history_and_search_handoff(p
     page.get_by_role("heading", name="Captain Smoke").wait_for()
     page.get_by_text("Generated from metadata embedded in your comic files.").wait_for()
     page.locator("h3").filter(has_text=f"{seed['series_name']} #{seed['in_progress_comic_number']}").wait_for()
+    page.get_by_text(f"{seed['reading_list_name']} · Part 3").wait_for()
+    assert page.get_by_text(f"{seed['reading_list_name']} #3").count() == 0
 
     page.get_by_role("link", name="View Matching Issues").click()
 
