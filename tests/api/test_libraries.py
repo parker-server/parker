@@ -217,6 +217,30 @@ def test_get_library_detail_as_admin(admin_client, db):
     assert payload["id"] == library.id
     assert payload["name"] == "Visible"
     assert payload["pinned"] is False
+    assert payload["path"] == "/tmp/visible"
+    assert payload["roots"][0]["path"] == "/tmp/visible"
+
+
+def test_library_list_and_detail_hide_paths_for_non_admin(auth_client, db, normal_user):
+    library = create_library_with_root(db, "User Visible Paths", "/tmp/user-visible-paths")
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    list_response = auth_client.get("/api/libraries/")
+    detail_response = auth_client.get(f"/api/libraries/{library.id}")
+
+    assert list_response.status_code == 200
+    list_payload = list_response.json()
+    assert len(list_payload) == 1
+    assert list_payload[0]["name"] == "User Visible Paths"
+    assert list_payload[0]["path"] is None
+    assert list_payload[0]["roots"] == []
+
+    assert detail_response.status_code == 200
+    detail_payload = detail_response.json()
+    assert detail_payload["name"] == "User Visible Paths"
+    assert detail_payload["path"] is None
+    assert detail_payload["roots"] == []
 
 
 def test_admin_can_browse_library_paths_within_configured_root(admin_client, monkeypatch, tmp_path):

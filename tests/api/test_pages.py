@@ -427,6 +427,15 @@ def test_comic_detail_page_gates_file_location_on_file_path(auth_client, db, nor
     assert 'x-text="comic?.file_path"' in body
 
 
+def test_libraries_page_gates_library_path_on_api_payload(auth_client):
+    response = auth_client.get("/libraries")
+
+    assert response.status_code == 200
+    body = response.text
+    assert 'x-show="lib.path"' in body
+    assert 'x-text="lib.path"' in body
+
+
 def test_series_page_redirects_to_single_volume_when_setting_enabled(admin_client, db, monkeypatch):
     series, volumes = _seed_series_page_data(db)
     monkeypatch.setattr("app.routers.pages.get_cached_setting", lambda key, default=None: True)

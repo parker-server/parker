@@ -22,7 +22,7 @@
 
             <div class="min-w-0 flex-1">
                 <h3 class="font-bold text-gray-200 text-lg truncate group-hover:text-white" x-text="lib.name"></h3>
-                <p class="text-[10px] text-gray-500 font-mono truncate" x-text="lib.path"></p>
+                <p x-show="lib.path" x-cloak class="text-[10px] text-gray-500 font-mono truncate" x-text="lib.path"></p>
             </div>
         </div>
 

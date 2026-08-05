@@ -153,20 +153,25 @@ def _library_payload(
         pinned: bool = False,
         stats: Optional[dict] = None,
         root_comic_counts: Optional[dict[int, int]] = None,
+        include_paths: bool = True,
 ) -> dict:
     active_root = lib.active_root
     roots = sorted(lib.roots, key=lambda root: root.id)
     payload = {
         "id": lib.id,
         "name": lib.name,
-        "path": active_root.path if active_root else None,
-        "roots": [
-            _library_root_payload(
-                root,
-                comic_count=root_comic_counts.get(root.id, 0) if root_comic_counts is not None else None,
-            )
-            for root in roots
-        ],
+        "path": active_root.path if include_paths and active_root else None,
+        "roots": (
+            [
+                _library_root_payload(
+                    root,
+                    comic_count=root_comic_counts.get(root.id, 0) if root_comic_counts is not None else None,
+                )
+                for root in roots
+            ]
+            if include_paths
+            else []
+        ),
         "active_root_count": sum(1 for root in roots if root.is_active),
         "scan_on_startup": lib.scan_on_startup,
         "watch_mode": lib.watch_mode,
@@ -353,7 +358,8 @@ async def list_libraries(db: SessionDep,
             stats={
                 "series": series_counts.get(lib.id, 0),
                 "issues": issue_counts.get(lib.id, 0)
-            }
+            },
+            include_paths=current_user.is_superuser,
         ))
 
     return results
@@ -418,6 +424,7 @@ async def get_library(library: LibraryDep, db: SessionDep, current_user: Current
         library,
         pinned=pin is not None,
         root_comic_counts=_root_comic_counts(db, library.roots),
+        include_paths=current_user.is_superuser,
     )
 
 
