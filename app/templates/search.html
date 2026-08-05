@@ -237,7 +237,7 @@
             <div class="flex items-center space-x-6">
                 <div class="flex items-center space-x-2">
                     <span class="text-gray-400 text-sm">Sort By</span>
-                    <select x-model="sortBy" class="bg-gray-700 text-white rounded px-2 py-1 text-sm border border-gray-600 outline-none">
+                    <select x-model="sortBy" x-on:change="handleSortByChange()" class="bg-gray-700 text-white rounded px-2 py-1 text-sm border border-gray-600 outline-none">
                         <option value="created">Date Added</option>
                         <option value="updated">Date Updated</option>
                         <option value="year">Release Year</option>
@@ -246,6 +246,13 @@
                         <option value="page_count">Page Count</option>
                         <option value="rating">Source Rating</option>
                         <option value="parker_rating">Parker Rating</option>
+                    </select>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <span class="text-gray-400 text-sm">Order</span>
+                    <select x-model="sortOrder" class="bg-gray-700 text-white rounded px-2 py-1 text-sm border border-gray-600 outline-none">
+                        <option value="asc" x-text="sortOrderLabel('asc')">Ascending</option>
+                        <option value="desc" x-text="sortOrderLabel('desc')">Descending</option>
                     </select>
                 </div>
                 <div class="flex items-center space-x-2">
@@ -710,6 +717,34 @@ document.addEventListener('alpine:init', () => {
             this.showValidationErrors = true;
             window.parker.showToast('Enter a value for each rule or choose "Is Empty".', 'warning');
             return false;
+        },
+
+        defaultSortOrder(sortBy) {
+            return ['series', 'title'].includes(sortBy) ? 'asc' : 'desc';
+        },
+
+        handleSortByChange() {
+            this.sortOrder = this.defaultSortOrder(this.sortBy);
+        },
+
+        sortOrderLabel(order) {
+            if (['series', 'title'].includes(this.sortBy)) {
+                return order === 'asc' ? 'A to Z' : 'Z to A';
+            }
+
+            if (['created', 'updated', 'year'].includes(this.sortBy)) {
+                return order === 'desc' ? 'Newest First' : 'Oldest First';
+            }
+
+            if (this.sortBy === 'page_count') {
+                return order === 'desc' ? 'Most Pages' : 'Fewest Pages';
+            }
+
+            if (['rating', 'parker_rating'].includes(this.sortBy)) {
+                return order === 'desc' ? 'Highest First' : 'Lowest First';
+            }
+
+            return order === 'asc' ? 'Ascending' : 'Descending';
         },
 
         async performSearch() {

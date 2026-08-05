@@ -1,5 +1,7 @@
-import pytest
+import json
 from datetime import timedelta
+
+import pytest
 from sqlalchemy import select
 
 from app.models.comic import Comic, Volume
@@ -123,6 +125,55 @@ def test_search_page_finds_matching_comic_by_title(page, browser_server):
     results_title = results_section.locator("p.text-sm.text-gray-400").filter(has_text=seed["active_comic_title"]).first
     results_title.wait_for()
     assert results_title.is_visible()
+
+
+@pytest.mark.browser
+def test_search_sort_field_selects_natural_default_order(page, browser_server):
+    page.goto(f"{browser_server['base_url']}/search", wait_until="networkidle")
+
+    page.get_by_role("heading", name="Advanced Search").wait_for()
+
+    first_rule = page.locator(".space-y-4 > div").first
+    first_rule.locator("select").nth(0).select_option("title")
+    first_rule.locator("input[x-model='rule.value'][type='text']").fill("Smoke")
+
+    sort_select = page.locator("select[x-model='sortBy']")
+    order_select = page.locator("select[x-model='sortOrder']")
+
+    sort_select.select_option("page_count")
+    assert order_select.input_value() == "desc"
+
+    sort_select.select_option("title")
+    assert order_select.input_value() == "asc"
+
+    sort_select.select_option("series")
+    assert order_select.input_value() == "asc"
+
+    with page.expect_response(
+        lambda response: "/api/comics/search" in response.url and response.request.method == "POST"
+    ) as response_info:
+        page.get_by_role("button", name="Search Comics").click()
+
+    response = response_info.value
+    payload = json.loads(response.request.post_data or "{}")
+
+    assert response.status == 200
+    assert payload["sort_by"] == "series"
+    assert payload["sort_order"] == "asc"
+
+    order_select.select_option("desc")
+
+    with page.expect_response(
+        lambda response: "/api/comics/search" in response.url and response.request.method == "POST"
+    ) as response_info:
+        page.get_by_role("button", name="Search Comics").click()
+
+    response = response_info.value
+    payload = json.loads(response.request.post_data or "{}")
+
+    assert response.status == 200
+    assert payload["sort_by"] == "series"
+    assert payload["sort_order"] == "desc"
 
 
 @pytest.mark.browser

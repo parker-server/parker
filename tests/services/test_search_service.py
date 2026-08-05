@@ -418,18 +418,31 @@ class _OrderRecorder:
         return self
 
 
+ISSUE_SECONDARY_SORT = [
+    "volumes.volume_number ASC",
+    "CAST(comics.number AS FLOAT) ASC",
+    "comics.number ASC",
+    "comics.id ASC",
+]
+
+SERIES_SECONDARY_SORT = [
+    "series.name ASC",
+    *ISSUE_SECONDARY_SORT,
+]
+
+
 @pytest.mark.parametrize(
     "sort_by,sort_order,expected_column,expected_secondary",
     [
-        ("series", "desc", "series.name", []),
-        ("year", "asc", "comics.year", ["series.name ASC", "comics.number ASC"]),
-        ("title", "asc", "comics.title", []),
-        ("page_count", "desc", "comics.page_count", ["series.name ASC", "comics.number ASC"]),
-        ("rating", "desc", "comics.community_rating", ["series.name ASC", "comics.number ASC"]),
-        ("parker_rating", "desc", "parker_average", ["parker_count DESC", "series.name ASC", "comics.number ASC"]),
-        ("updated", "asc", "comics.updated_at", []),
-        ("created", "desc", "comics.created_at", []),
-        ("unknown", "asc", "comics.created_at", []),
+        ("series", "desc", "series.name", ISSUE_SECONDARY_SORT),
+        ("year", "asc", "comics.year", SERIES_SECONDARY_SORT),
+        ("title", "asc", "comics.title", SERIES_SECONDARY_SORT),
+        ("page_count", "desc", "comics.page_count", SERIES_SECONDARY_SORT),
+        ("rating", "desc", "comics.community_rating", SERIES_SECONDARY_SORT),
+        ("parker_rating", "desc", "parker_average", ["parker_count DESC", *SERIES_SECONDARY_SORT]),
+        ("updated", "asc", "comics.updated_at", SERIES_SECONDARY_SORT),
+        ("created", "desc", "comics.created_at", SERIES_SECONDARY_SORT),
+        ("unknown", "asc", "comics.created_at", SERIES_SECONDARY_SORT),
     ],
 )
 def test_apply_sorting_chooses_expected_columns(sort_by, sort_order, expected_column, expected_secondary):

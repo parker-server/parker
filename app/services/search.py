@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import or_, and_, func, not_, text, select
+from sqlalchemy import or_, and_, func, not_, text, select, cast, Float
 from typing import List, Dict, Any, Union, Optional
 from app.models import (Comic, Volume, Series,
                         Character, Team, Location, Genre,
@@ -559,22 +559,31 @@ class SearchService:
     ):
         if sort_by == 'series':
             col = Series.name
+            effective_sort_by = 'series'
         elif sort_by == 'year':
             col = Comic.year
+            effective_sort_by = 'year'
         elif sort_by == 'title':
             col = Comic.title
+            effective_sort_by = 'title'
         elif sort_by == 'page_count':
             col = Comic.page_count
+            effective_sort_by = 'page_count'
         elif sort_by == 'rating':
             col = Comic.community_rating
+            effective_sort_by = 'rating'
         elif sort_by == 'parker_rating' and parker_rating_column is not None:
             col = parker_rating_column
+            effective_sort_by = 'parker_rating'
         elif sort_by == 'updated':
             col = Comic.updated_at
+            effective_sort_by = 'updated'
         elif sort_by == 'created':  # (Explicit)
             col = Comic.created_at
+            effective_sort_by = 'created'
         else:
             col = Comic.created_at # Default fallback
+            effective_sort_by = 'created'
 
         if sort_order == 'desc':
             # Primary Sort
@@ -582,20 +591,29 @@ class SearchService:
         else:
             query = query.order_by(col.asc())
 
+        issue_order = [
+            Volume.volume_number.asc(),
+            cast(Comic.number, Float).asc(),
+            Comic.number.asc(),
+            Comic.id.asc(),
+        ]
+
         # SECONDARY SORT (Stability)
-        # If sorting by Rating, Year, or Page Count, ties are common.
-        # Always break ties with Series Name -> Number
-        if sort_by == 'parker_rating':
+        # Ties are common across dates, years, ratings, counts, and names.
+        # Keep paging deterministic with the familiar Series -> Volume -> Issue order.
+        if effective_sort_by == 'parker_rating':
             if parker_rating_count_column is not None:
                 query = query.order_by(
                     parker_rating_count_column.desc(),
                     Series.name.asc(),
-                    Comic.number.asc(),
+                    *issue_order,
                 )
             else:
-                query = query.order_by(Series.name.asc(), Comic.number.asc())
-        elif sort_by in ['rating', 'year', 'page_count']:
-            query = query.order_by(Series.name.asc(), Comic.number.asc())
+                query = query.order_by(Series.name.asc(), *issue_order)
+        elif effective_sort_by == 'series':
+            query = query.order_by(*issue_order)
+        elif effective_sort_by in ['rating', 'year', 'page_count', 'title', 'updated', 'created']:
+            query = query.order_by(Series.name.asc(), *issue_order)
 
         return query
 
