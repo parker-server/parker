@@ -87,6 +87,9 @@ def test_system_settings_include_display_groups_and_definition_order(admin_clien
     assert groups["system.task.backup.interval"] == "Scheduled Tasks"
     assert groups["system.task.scan.interval"] == "Scheduled Tasks"
     assert groups["jobs.retention_days"] == "Scheduled Tasks"
+    assert groups["enrichment.online_lookup_enabled"] == "Metadata Enrichment"
+    assert groups["enrichment.online_scan_lookup_enabled"] == "Metadata Enrichment"
+    assert groups["enrichment.online_scan_lookup_limit"] == "Metadata Enrichment"
     assert groups["system.parallel_metadata_processing"] == "Metadata Processing"
     assert groups["system.parallel_metadata_workers"] == "Metadata Processing"
     assert groups["system.parallel_image_processing"] == "Thumbnail Processing"
@@ -287,6 +290,37 @@ def test_initialize_defaults_seeds_job_history_retention_setting(db):
     assert service.get("jobs.retention_days") == 30
     assert setting.category == "system"
     assert setting.data_type == "int"
+
+
+def test_initialize_defaults_seeds_online_enrichment_setting(db):
+    service = SettingsService(db)
+
+    service.initialize_defaults()
+
+    manual_setting = db.query(SystemSetting).filter(
+        SystemSetting.key == "enrichment.online_lookup_enabled"
+    ).first()
+    scan_setting = db.query(SystemSetting).filter(
+        SystemSetting.key == "enrichment.online_scan_lookup_enabled"
+    ).first()
+    scan_limit = db.query(SystemSetting).filter(
+        SystemSetting.key == "enrichment.online_scan_lookup_limit"
+    ).first()
+
+    assert manual_setting is not None
+    assert service.get("enrichment.online_lookup_enabled") is True
+    assert manual_setting.category == "system"
+    assert manual_setting.data_type == "bool"
+
+    assert scan_setting is not None
+    assert service.get("enrichment.online_scan_lookup_enabled") is False
+    assert scan_setting.category == "system"
+    assert scan_setting.data_type == "bool"
+
+    assert scan_limit is not None
+    assert service.get("enrichment.online_scan_lookup_limit") == 10
+    assert scan_limit.category == "system"
+    assert scan_limit.data_type == "int"
 
 
 def test_initialize_defaults_clamps_existing_job_history_retention_to_minimum(db):

@@ -16,6 +16,7 @@ from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.series import Series
 from app.models.tags import Character, Location, Team
 from app.models.user import User
+from app.services.enrichment import EnrichmentResult
 from app.services.maintenance import MaintenanceService
 import app.services.maintenance as maintenance_module
 
@@ -515,7 +516,10 @@ def test_refresh_reading_list_descriptions_batches_and_commits(db, monkeypatch):
 
     service = MaintenanceService(db)
     service.enrichment = MagicMock()
-    service.enrichment.get_description.side_effect = lambda name: f"desc-{name}"
+    service.enrichment.lookup_description.side_effect = lambda name, allow_online=False: EnrichmentResult(
+        description=f"desc-{name}",
+        source="local",
+    )
 
     original_commit = db.commit
     commit_spy = MagicMock(side_effect=original_commit)
@@ -523,7 +527,14 @@ def test_refresh_reading_list_descriptions_batches_and_commits(db, monkeypatch):
 
     result = service.refresh_reading_list_descriptions()
 
-    assert result == {"updated": 52, "total_scanned": 52}
+    assert result == {
+        "updated": 52,
+        "unchanged": 0,
+        "not_found": 0,
+        "local_hits": 52,
+        "online_hits": 0,
+        "total_scanned": 52,
+    }
     assert commit_spy.call_count == 2
 
 
@@ -537,13 +548,13 @@ def test_refresh_reading_list_descriptions_no_updates(db, monkeypatch):
 
     service = MaintenanceService(db)
 
-    def description_lookup(name):
+    def description_lookup(name, allow_online=False):
         if name == "none-c":
-            return None
-        return f"desc-{name}"
+            return EnrichmentResult(description=None)
+        return EnrichmentResult(description=f"desc-{name}", source="local")
 
     service.enrichment = MagicMock()
-    service.enrichment.get_description.side_effect = description_lookup
+    service.enrichment.lookup_description.side_effect = description_lookup
 
     original_commit = db.commit
     commit_spy = MagicMock(side_effect=original_commit)
@@ -551,5 +562,12 @@ def test_refresh_reading_list_descriptions_no_updates(db, monkeypatch):
 
     result = service.refresh_reading_list_descriptions()
 
-    assert result == {"updated": 0, "total_scanned": 3}
+    assert result == {
+        "updated": 0,
+        "unchanged": 2,
+        "not_found": 1,
+        "local_hits": 2,
+        "online_hits": 0,
+        "total_scanned": 3,
+    }
     assert commit_spy.call_count == 0

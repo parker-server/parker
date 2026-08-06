@@ -5,6 +5,7 @@ from app.models.library import Library
 from app.services.maintenance import MaintenanceService
 from app.services.backup import BackupService
 from app.services.scan_manager import scan_manager
+from app.services.settings_service import SettingsService
 
 router = APIRouter()
 
@@ -44,10 +45,14 @@ async def run_refresh_descriptions_task(
         admin: AdminUser
 ):
     """
-    Trigger enrichment of reading list descriptions from the seed file.
+    Trigger enrichment of reading list descriptions from curated seeds and,
+    when enabled, Wikipedia.
     """
+    online_enabled = SettingsService(db).get("enrichment.online_lookup_enabled")
     service = MaintenanceService(db)
-    stats = service.refresh_reading_list_descriptions()
+    stats = service.refresh_reading_list_descriptions(
+        allow_online=True if online_enabled is None else bool(online_enabled)
+    )
 
     return {
         "message": "Enrichment complete",

@@ -6,11 +6,34 @@ from app.models.cbl_source import CBLSource
 from app.services.enrichment import EnrichmentService
 
 class ReadingListService:
-    def __init__(self, db: Session):
+    def __init__(
+        self,
+        db: Session,
+        *,
+        allow_online_enrichment: bool = False,
+        online_enrichment_lookup_limit: Optional[int] = None,
+        online_enrichment_request_limit: int = 6,
+        enrichment: Optional[EnrichmentService] = None,
+    ):
         self.db = db
         self.list_cache: Dict[Tuple[str, str], Optional[ReadingList]] = {}
         self.logger = logging.getLogger(__name__)
-        self.enrichment = EnrichmentService()
+        self.allow_online_enrichment = allow_online_enrichment
+        self.online_enrichment_lookup_limit = online_enrichment_lookup_limit
+        self.online_enrichment_attempts = 0
+        self.enrichment = enrichment or EnrichmentService(
+            allow_online=allow_online_enrichment,
+            max_online_requests=online_enrichment_request_limit,
+        )
+
+    def _consume_online_enrichment_budget(self) -> bool:
+        if not self.allow_online_enrichment:
+            return False
+        if self.online_enrichment_lookup_limit is not None:
+            if self.online_enrichment_attempts >= self.online_enrichment_lookup_limit:
+                return False
+            self.online_enrichment_attempts += 1
+        return True
 
     def get_or_create_reading_list(self, name: str, source: str = "comicinfo") -> Optional[ReadingList]:
         """
@@ -49,7 +72,10 @@ class ReadingListService:
             # lists -- a CBL file supplies its own description, and a manual list is
             # the user's own to write.
             if source == "comicinfo":
-                description = self.enrichment.get_description(name)
+                description = self.enrichment.get_description(
+                    name,
+                    allow_online=self._consume_online_enrichment_budget(),
+                )
                 if description:
                     reading_list.description = description
 

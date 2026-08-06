@@ -75,7 +75,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
   - Experimental backend support for `JPEG XL` (`JXL`), with browser-dependent native reading support
 
 - **Enrichment**
-  - Auto‑populated event descriptions
+  - Auto-populated ComicInfo event descriptions from curated seeds and optional Wikipedia lookup
   - Reading time estimates
 
 - **Search**

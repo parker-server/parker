@@ -28,6 +28,56 @@ def _item_root_context(
     return library_root_id, library_root_path
 
 
+def _scan_online_enrichment_kwargs(db) -> dict:
+    try:
+        from app.services.settings_service import SettingsService
+
+        service = SettingsService(db)
+        enabled = bool(service.get("enrichment.online_scan_lookup_enabled"))
+        if not enabled:
+            return {"allow_online_enrichment": False}
+
+        lookup_limit = service.get("enrichment.online_scan_lookup_limit")
+        try:
+            lookup_limit = int(lookup_limit)
+        except (TypeError, ValueError):
+            lookup_limit = 10
+
+        return {
+            "allow_online_enrichment": True,
+            "online_enrichment_lookup_limit": max(0, lookup_limit),
+            "online_enrichment_request_limit": 3,
+        }
+    except Exception:
+        return {"allow_online_enrichment": False}
+
+
+def _build_reading_list_service(service_class, db):
+    from inspect import Parameter, signature
+
+    enrichment_kwargs = _scan_online_enrichment_kwargs(db)
+
+    try:
+        parameters = signature(service_class).parameters
+    except (TypeError, ValueError):
+        parameters = {}
+
+    accepts_var_kwargs = any(
+        parameter.kind == Parameter.VAR_KEYWORD
+        for parameter in parameters.values()
+    )
+    accepted_kwargs = {
+        key: value
+        for key, value in enrichment_kwargs.items()
+        if accepts_var_kwargs or key in parameters
+    }
+
+    if accepted_kwargs:
+        return service_class(db, **accepted_kwargs)
+
+    return service_class(db)
+
+
 def _apply_metadata_batch(
     db,
     batch,
@@ -324,7 +374,7 @@ def metadata_writer(
 
         tag_service = TagService(db)
         credit_service = CreditService(db)
-        reading_list_service = ReadingListService(db)
+        reading_list_service = _build_reading_list_service(ReadingListService, db)
         collection_service = CollectionService(db)
 
         batch = []

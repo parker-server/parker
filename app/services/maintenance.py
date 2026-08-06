@@ -17,7 +17,7 @@ from app.models.series import Series
 from app.models.reading_list import ReadingList
 from app.models.collection import Collection
 
-from app.services.enrichment import EnrichmentService
+from app.services.enrichment import EnrichmentResult, EnrichmentService
 from app.services.images import ImageService
 
 
@@ -248,27 +248,53 @@ class MaintenanceService:
 
         return deleted
 
-    def refresh_reading_list_descriptions(self) -> dict:
+    def refresh_reading_list_descriptions(self, *, allow_online: bool = False) -> dict:
         """Populate missing descriptions for ComicInfo-derived lists.
 
         Scoped to source == "comicinfo" only -- a CBL-derived list's description
-        comes from the .cbl file itself and must not be clobbered by a Wikipedia
-        lookup here.
+        comes from the .cbl file itself and must not be clobbered by this lookup.
         """
         lists = self.db.query(ReadingList).filter(ReadingList.source == "comicinfo").all()
-        updated_count = 0
+        stats = {
+            "updated": 0,
+            "unchanged": 0,
+            "not_found": 0,
+            "local_hits": 0,
+            "online_hits": 0,
+            "total_scanned": len(lists),
+        }
 
         for r_list in lists:
-            description = self.enrichment.get_description(r_list.name)
+            result = self.enrichment.lookup_description(
+                r_list.name,
+                allow_online=allow_online,
+            )
+            if not isinstance(result, EnrichmentResult):
+                # Backwards-compatible guard for tests or local integrations that
+                # replace the enrichment service with a simple description lookup.
+                result = EnrichmentResult(description=result)
+
+            description = result.description
+            if not description:
+                stats["not_found"] += 1
+                continue
+
+            if result.source == "local":
+                stats["local_hits"] += 1
+            elif result.source == "wikipedia":
+                stats["online_hits"] += 1
+
             if description and description != r_list.description:
                 r_list.description = description
-                updated_count += 1
+                stats["updated"] += 1
 
                 # Batch commit every 50 to avoid holding lock too long
-                if updated_count % 50 == 0:
+                if stats["updated"] % 50 == 0:
                     self.db.commit()
+            else:
+                stats["unchanged"] += 1
 
-        if updated_count > 0:
+        if stats["updated"] > 0:
             self.db.commit()
 
-        return {"updated": updated_count, "total_scanned": len(lists)}
+        return stats

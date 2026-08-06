@@ -1,3 +1,5 @@
+from unittest.mock import MagicMock
+
 from app.models import (
     CollectionItem,
     Comic,
@@ -176,6 +178,35 @@ def test_update_comic_reading_lists_skips_repeated_collision_via_cache(db):
     assert db.query(ReadingListItem).filter(ReadingListItem.comic_id == comic_a.id).count() == 0
     assert db.query(ReadingListItem).filter(ReadingListItem.comic_id == comic_b.id).count() == 0
     assert db.query(ReadingList).filter(ReadingList.name == "Crisis").count() == 1
+
+
+def test_update_comic_reading_lists_respects_online_enrichment_budget(db):
+    comic_a = _create_comic(db, "list-online-budget-a")
+    comic_b = _create_comic(db, "list-online-budget-b")
+    enrichment = MagicMock()
+    enrichment.get_description.side_effect = [
+        "first online description",
+        "second should be local-only",
+    ]
+
+    service = ReadingListService(
+        db,
+        allow_online_enrichment=True,
+        online_enrichment_lookup_limit=1,
+        enrichment=enrichment,
+    )
+
+    service.update_comic_reading_lists(comic_a, "First Online Event", "1")
+    service.update_comic_reading_lists(comic_b, "Second Online Event", "1")
+    db.commit()
+
+    first_list = db.query(ReadingList).filter_by(name="First Online Event").one()
+    second_list = db.query(ReadingList).filter_by(name="Second Online Event").one()
+
+    assert first_list.description == "first online description"
+    assert second_list.description == "second should be local-only"
+    assert enrichment.get_description.call_args_list[0].kwargs == {"allow_online": True}
+    assert enrichment.get_description.call_args_list[1].kwargs == {"allow_online": False}
 
 
 def test_cleanup_empty_lists_only_removes_comicinfo_lists(db):

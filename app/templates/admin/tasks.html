@@ -109,21 +109,21 @@
                         <span>📝</span> Enrich Descriptions
                     </h3>
                     <p class="text-gray-400 mt-2 text-sm max-w-xl">
-                        Scans all auto-generated Reading Lists and attempts to match them against the internal database of event descriptions.
+                        Scans ComicInfo-derived Reading Lists and fills descriptions from curated event seeds plus online lookup when enabled.
                     </p>
                 </div>
                 <button
-                    x-on:click="runTask('refresh-descriptions')"
+                    x-on:click="runTask('refresh_descriptions')"
                     class="btn-primary flex items-center gap-2"
                     :disabled="loading"
                     :class="loading ? 'opacity-50 cursor-not-allowed' : ''"
                 >
-                    <span x-show="loading && activeTask === 'refresh-descriptions'" class="animate-spin">↻</span>
-                    <span x-show="!(loading && activeTask === 'refresh-descriptions')">Run Task</span>
+                    <span x-show="loading && activeTask === 'refresh_descriptions'" class="animate-spin">↻</span>
+                    <span x-show="!(loading && activeTask === 'refresh_descriptions')">Run Task</span>
                 </button>
             </div>
 
-            <div x-show="activeTask === 'refresh-descriptions' && lastResult"
+            <div x-show="activeTask === 'refresh_descriptions' && lastResult"
                  x-transition
                  class="mt-6 bg-blue-900/20 rounded p-4 border border-blue-500/30 font-mono text-sm">
                 <div class="flex justify-between items-center mb-2">
@@ -133,6 +133,14 @@
                 <div class="text-gray-300">
                     <p>Scanned <span class="text-white font-bold" x-text="lastResult?.stats?.total_scanned"></span> lists.</p>
                     <p>Updated <span class="text-green-400 font-bold" x-text="lastResult?.stats?.updated"></span> descriptions.</p>
+                    <p>
+                        Found
+                        <span class="text-white font-bold" x-text="(lastResult?.stats?.local_hits || 0) + (lastResult?.stats?.online_hits || 0)"></span>
+                        matches
+                        (<span x-text="lastResult?.stats?.local_hits || 0"></span> local,
+                        <span x-text="lastResult?.stats?.online_hits || 0"></span> online).
+                    </p>
+                    <p>Not found <span class="text-gray-400 font-bold" x-text="lastResult?.stats?.not_found || 0"></span>.</p>
                 </div>
             </div>
         </div>
