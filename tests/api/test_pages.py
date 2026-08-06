@@ -467,6 +467,19 @@ def test_series_page_show_series_query_skips_single_volume_redirect(admin_client
     assert "series?.details" not in response.text
 
 
+def test_series_page_groups_admin_actions_in_labeled_pill(admin_client, db, monkeypatch):
+    series, _ = _seed_series_page_data(db)
+    monkeypatch.setattr("app.routers.pages.get_cached_setting", lambda key, default=None: False)
+
+    response = admin_client.get(f"/series/{series.id}", follow_redirects=False)
+
+    assert response.status_code == 200
+    body = response.text
+    assert 'title="Admin functions"' in body
+    assert ">Admin<" in body
+    assert 'aria-label="Regenerate thumbnails"' in body
+
+
 def test_series_page_keeps_multi_volume_series_when_setting_enabled(admin_client, db, monkeypatch):
     series, _ = _seed_series_page_data(db, volume_count=2)
     monkeypatch.setattr("app.routers.pages.get_cached_setting", lambda key, default=None: True)
