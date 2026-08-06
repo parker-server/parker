@@ -160,6 +160,7 @@ async def get_reading_list(list_id: int, db: SessionDep, current_user: CurrentUs
             "volume": comic.volume.volume_number,
             "number": comic.number,
             "title": comic.title,
+            "summary": comic.summary,
             "filename": comic.filename,
             "year": comic.year,
             "format": comic.format,

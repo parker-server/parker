@@ -143,6 +143,7 @@ def test_reading_list_can_open_reader_and_return(page, browser_server):
     )
 
     page.get_by_role("heading", name=seed["reading_list_name"]).wait_for()
+    page.get_by_text(seed["active_comic_summary"]).wait_for()
     page.get_by_role("button", name="Start Reading").click()
 
     page.wait_for_url(f"**/reader/{seed['active_comic_id']}*")

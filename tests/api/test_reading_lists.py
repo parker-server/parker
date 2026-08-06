@@ -170,6 +170,7 @@ def test_get_reading_list_success_returns_position_order_and_details(auth_client
     )
     c1 = _create_comic(db, volume_id=vol.id, prefix="reading-lists-detail", number="1", year=2020)
     c2 = _create_comic(db, volume_id=vol.id, prefix="reading-lists-detail", number="2", year=2021)
+    c1.summary = "The event begins with a compact issue summary."
 
     reading_list = ReadingList(name="Detail Reading List", description="Detail", source="manual")
     db.add(reading_list)
@@ -190,6 +191,7 @@ def test_get_reading_list_success_returns_position_order_and_details(auth_client
     assert payload["comic_count"] == 2
     assert [c["id"] for c in payload["comics"]] == [c1.id, c2.id]
     assert [c["position"] for c in payload["comics"]] == [1.0, 2.0]
+    assert payload["comics"][0]["summary"] == "The event begins with a compact issue summary."
     assert payload["details"] == {
         "writers": [],
         "pencillers": [],

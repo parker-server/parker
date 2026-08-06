@@ -24,6 +24,13 @@
         <a :href="window.parker.route('pages.comic_detail', { comic_id: comic.id })" class="hover:text-blue-400 transition-colors" x-text="`#${comic.number} ${comic.title || ''}`"></a>
     </h3>
 
+    <p
+        x-show="comic.summary"
+        class="mt-2 text-sm leading-relaxed text-gray-400 line-clamp-2"
+        x-text="comic.summary"
+        :title="comic.summary"
+    ></p>
+
     <div class="flex items-center gap-2 mt-1">
         <span class="text-xs text-gray-500 bg-gray-900 px-2 py-0.5 rounded" x-text="comic.year"></span>
 

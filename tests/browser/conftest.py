@@ -87,6 +87,7 @@ def browser_seed_data(browser_db_factory):
         relative_path="smoke-encore.cbz",
         number="2",
         title="Smoke Encore",
+        summary="Smoke Encore opens the crossover with a short row summary.",
         filename="smoke-encore.cbz",
         page_count=3,
     )
@@ -170,6 +171,7 @@ def browser_seed_data(browser_db_factory):
         "active_comic_id": active_comic.id,
         "active_comic_title": active_comic.title,
         "active_comic_number": active_comic.number,
+        "active_comic_summary": active_comic.summary,
         "in_progress_comic_id": in_progress_comic.id,
         "in_progress_comic_title": in_progress_comic.title,
         "in_progress_comic_number": in_progress_comic.number,
