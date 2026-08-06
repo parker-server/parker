@@ -261,7 +261,7 @@
                                 <template x-for="year in decade.years" :key="`${decade.key}-${year.year}`">
                                     <div class="grid gap-4 md:grid-cols-[7rem_minmax(0,1fr)]">
                                         <div class="md:text-right">
-                                            <div class="text-2xl font-black text-white" x-text="year.year"></div>
+                                            <div class="sticky top-24 text-2xl font-black text-white" x-text="year.year"></div>
                                             <div class="mt-1 text-sm text-gray-500">
                                                 <span x-text="year.issue_count"></span>
                                                 <span x-text="year.issue_count === 1 ? 'issue' : 'issues'"></span>

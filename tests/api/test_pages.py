@@ -345,6 +345,15 @@ def test_shared_datetime_helpers_assume_naive_api_timestamps_are_utc():
     assert "formatLocalDate" in script
 
 
+def test_timeline_year_labels_remain_sticky_in_year_and_decade_modes(auth_client):
+    response = auth_client.get("/timelines")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "sticky top-24 text-3xl font-black text-white" in body
+    assert "sticky top-24 text-2xl font-black text-white" in body
+
+
 def test_search_widget_people_results_use_generic_creator_handoff(auth_client):
     response = auth_client.get("/")
 
