@@ -16,6 +16,7 @@ def _insert_decade_timeline_fixture(browser_server):
         volume_id = browser_server["seed"]["volume_id"]
         volume = session.get(Volume, volume_id)
         root = volume.series.library.active_root
+        comic_ids = []
         for offset, year in enumerate(range(2000, 2013), start=1):
             comic = create_comic(
                 session, volume, root, f"decade-smoke-{year}.cbz",
@@ -26,7 +27,23 @@ def _insert_decade_timeline_fixture(browser_server):
                 page_count=3,
             )
             comic.characters.append(character)
+            comic_ids.append(comic.id)
 
+        session.commit()
+        return character.id, comic_ids
+    finally:
+        session.close()
+
+
+def _remove_decade_timeline_fixture(browser_server, character_id, comic_ids):
+    session = browser_server["db_factory"]()
+    try:
+        character = session.get(Character, character_id)
+        if character is not None:
+            character.comics.clear()
+            session.delete(character)
+        if comic_ids:
+            session.query(Comic).filter(Comic.id.in_(comic_ids)).delete(synchronize_session=False)
         session.commit()
     finally:
         session.close()
@@ -36,11 +53,27 @@ def _add_duplicate_collection_context(browser_server):
     session = browser_server["db_factory"]()
     try:
         comic = session.get(Comic, browser_server["seed"]["in_progress_comic_id"])
+        original_series_group = comic.series_group
         comic.series_group = "Smoke Group"
         collection = Collection(name="Smoke Group", description="Generated from SeriesGroup")
         session.add(collection)
         session.flush()
         session.add(CollectionItem(collection_id=collection.id, comic_id=comic.id))
+        session.commit()
+        return collection.id, original_series_group
+    finally:
+        session.close()
+
+
+def _remove_duplicate_collection_context(browser_server, collection_id, original_series_group):
+    session = browser_server["db_factory"]()
+    try:
+        comic = session.get(Comic, browser_server["seed"]["in_progress_comic_id"])
+        if comic is not None:
+            comic.series_group = original_series_group
+        collection = session.get(Collection, collection_id)
+        if collection is not None:
+            session.delete(collection)
         session.commit()
     finally:
         session.close()
@@ -257,39 +290,45 @@ def test_timeline_subject_type_toggle_clears_search_input(page, browser_server):
 @pytest.mark.browser
 def test_timeline_entry_shows_series_group_metadata_as_one_collection_badge(page, browser_server):
     seed = browser_server["seed"]
-    _add_duplicate_collection_context(browser_server)
+    collection_id, original_series_group = _add_duplicate_collection_context(browser_server)
 
-    page.goto(
-        f"{browser_server['base_url']}/timelines?type=character&name=Captain%20Smoke",
-        wait_until="networkidle",
-    )
+    try:
+        page.goto(
+            f"{browser_server['base_url']}/timelines?type=character&name=Captain%20Smoke",
+            wait_until="networkidle",
+        )
 
-    page.get_by_role("heading", name="Captain Smoke").wait_for()
-    row = page.locator("[data-timeline-entry-card]").filter(
-        has_text=f"{seed['series_name']} #{seed['in_progress_comic_number']}"
-    ).first
-    row.wait_for()
+        page.get_by_role("heading", name="Captain Smoke").wait_for()
+        row = page.locator("[data-timeline-entry-card]").filter(
+            has_text=f"{seed['series_name']} #{seed['in_progress_comic_number']}"
+        ).first
+        row.wait_for()
 
-    assert row.get_by_text("Smoke Group").count() == 1
+        assert row.get_by_text("Smoke Group").count() == 1
+    finally:
+        _remove_duplicate_collection_context(browser_server, collection_id, original_series_group)
 
 
 @pytest.mark.browser
 def test_library_timeline_groups_long_histories_by_decade(page, browser_server):
-    _insert_decade_timeline_fixture(browser_server)
+    character_id, comic_ids = _insert_decade_timeline_fixture(browser_server)
 
-    page.goto(
-        f"{browser_server['base_url']}/timelines?type=character&name=Decade%20Smoke",
-        wait_until="networkidle",
-    )
+    try:
+        page.goto(
+            f"{browser_server['base_url']}/timelines?type=character&name=Decade%20Smoke",
+            wait_until="networkidle",
+        )
 
-    page.get_by_role("heading", name="Decade Smoke").wait_for()
-    page.get_by_text("grouping it by decade").wait_for()
-    page.get_by_text("2000s").wait_for()
-    page.get_by_text("2010s").wait_for()
+        page.get_by_role("heading", name="Decade Smoke").wait_for()
+        page.get_by_text("grouping it by decade").wait_for()
+        page.get_by_text("2000s").wait_for()
+        page.get_by_text("2010s").wait_for()
 
-    issue_heading = page.locator("h3").filter(has_text="Smoke Series #101")
-    assert issue_heading.count() == 0 or not issue_heading.first.is_visible()
+        issue_heading = page.locator("h3").filter(has_text="Smoke Series #101")
+        assert issue_heading.count() == 0 or not issue_heading.first.is_visible()
 
-    page.get_by_role("button").filter(has_text="2000s").click()
+        page.get_by_role("button").filter(has_text="2000s").click()
 
-    issue_heading.first.wait_for()
+        issue_heading.first.wait_for()
+    finally:
+        _remove_decade_timeline_fixture(browser_server, character_id, comic_ids)
