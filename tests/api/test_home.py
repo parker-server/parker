@@ -2,7 +2,9 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from app.api.home import _pick_best_cover, format_home_item
+from app.api.deps import get_current_user
+from app.api.home import HOME_RAIL_KEYS, _pick_best_cover, format_home_item
+from app.main import app
 from app.models.comic import Comic, Volume
 from app.models.interactions import UserComicRating, UserLibraryPin, UserVolumeFollow
 from app.models.reading_progress import ReadingProgress
@@ -44,6 +46,10 @@ def _add_user(db, *, username: str, email: str, social_insights_enabled: bool):
     db.add(user)
     db.flush()
     return user
+
+
+def _home_layout_keys(payload: dict) -> list[str]:
+    return [rail["key"] for rail in payload["rails"]]
 
 
 def test_format_home_item_and_pick_best_cover_helpers():
@@ -96,6 +102,135 @@ def test_format_home_item_and_pick_best_cover_helpers():
     ]
     picked_reverse = _pick_best_cover(reverse, reverse_pool)
     assert picked_reverse.number == "4"
+
+
+def test_home_layout_returns_default_order(auth_client):
+    response = auth_client.get("/api/home/layout")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert _home_layout_keys(payload) == list(HOME_RAIL_KEYS)
+    assert all(rail["visible"] for rail in payload["rails"])
+    assert all(rail["customized"] is False for rail in payload["rails"])
+
+
+def test_home_layout_persists_hidden_rails_and_submitted_order(auth_client, db, normal_user):
+    submitted_keys = ["recently_updated_series", "resume"] + [
+        key for key in HOME_RAIL_KEYS if key not in {"recently_updated_series", "resume"}
+    ]
+
+    response = auth_client.put(
+        "/api/home/layout",
+        json={
+            "rails": [
+                {"key": key, "visible": key != "resume"}
+                for key in submitted_keys
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert _home_layout_keys(payload) == submitted_keys
+    assert payload["rails"][1]["key"] == "resume"
+    assert payload["rails"][1]["visible"] is False
+    assert payload["rails"][0]["customized"] is True
+
+    db.refresh(normal_user)
+    assert [rail["key"] for rail in normal_user.home_rail_layout["rails"]] == submitted_keys
+    assert normal_user.home_rail_layout["rails"][1] == {"key": "resume", "visible": False}
+
+
+def test_home_layout_inserts_missing_saved_rails_without_persisting_on_read(auth_client, db, normal_user):
+    saved_layout = {
+        "version": 1,
+        "rails": [
+            {"key": "up_next", "visible": True},
+            {"key": "resume", "visible": False},
+        ],
+    }
+    normal_user.home_rail_layout = saved_layout
+    db.commit()
+
+    response = auth_client.get("/api/home/layout")
+
+    assert response.status_code == 200
+    payload = response.json()
+    resolved_keys = _home_layout_keys(payload)
+    assert set(resolved_keys) == set(HOME_RAIL_KEYS)
+    assert resolved_keys.index("up_next") < resolved_keys.index("resume")
+    assert next(rail for rail in payload["rails"] if rail["key"] == "following_arrivals")["visible"] is True
+    assert next(rail for rail in payload["rails"] if rail["key"] == "resume")["visible"] is False
+
+    db.refresh(normal_user)
+    assert normal_user.home_rail_layout == saved_layout
+
+
+def test_home_layout_rejects_unknown_rail_key(auth_client, db, normal_user):
+    response = auth_client.put(
+        "/api/home/layout",
+        json={"rails": [{"key": "typo_rail", "visible": True}]},
+    )
+
+    assert response.status_code == 422
+    assert "Unknown home rail key" in response.json()["detail"]
+    db.refresh(normal_user)
+    assert normal_user.home_rail_layout is None
+
+
+def test_home_layout_rejects_duplicate_rail_key(auth_client):
+    response = auth_client.put(
+        "/api/home/layout",
+        json={
+            "rails": [
+                {"key": "resume", "visible": True},
+                {"key": "resume", "visible": False},
+            ],
+        },
+    )
+
+    assert response.status_code == 422
+    assert "Duplicate home rail key" in response.json()["detail"]
+
+
+def test_home_layout_is_per_user(client, db, normal_user):
+    other_user = _add_user(
+        db,
+        username="home-layout-other",
+        email="home-layout-other@example.com",
+        social_insights_enabled=True,
+    )
+    normal_user.home_rail_layout = {
+        "version": 1,
+        "rails": [{"key": "resume", "visible": False}],
+    }
+    db.commit()
+
+    app.dependency_overrides[get_current_user] = lambda: normal_user
+    first_response = client.get("/api/home/layout")
+    assert first_response.status_code == 200
+    assert next(rail for rail in first_response.json()["rails"] if rail["key"] == "resume")["visible"] is False
+
+    app.dependency_overrides[get_current_user] = lambda: other_user
+    second_response = client.get("/api/home/layout")
+    assert second_response.status_code == 200
+    assert next(rail for rail in second_response.json()["rails"] if rail["key"] == "resume")["visible"] is True
+
+
+def test_home_layout_reset_clears_saved_layout(auth_client, db, normal_user):
+    normal_user.home_rail_layout = {
+        "version": 1,
+        "rails": [{"key": "resume", "visible": False}],
+    }
+    db.commit()
+
+    response = auth_client.post("/api/home/layout/reset")
+
+    assert response.status_code == 200
+    assert _home_layout_keys(response.json()) == list(HOME_RAIL_KEYS)
+    assert all(rail["visible"] for rail in response.json()["rails"])
+    db.refresh(normal_user)
+    assert normal_user.home_rail_layout is None
 
 
 def test_home_random_empty_and_skips_series_without_comics(auth_client, db):

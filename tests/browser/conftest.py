@@ -193,6 +193,7 @@ def reset_browser_state(browser_db_factory, browser_seed_data):
         user = session.scalar(select(User).where(User.id == browser_seed_data["user_id"]))
         if user is not None:
             user.social_insights_enabled = True
+            user.home_rail_layout = None
         session.add_all(
             [
                 ReadingProgress(

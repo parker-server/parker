@@ -1,8 +1,8 @@
 # Home Rail Customization Scope
 
-Status: Draft
+Status: Implemented for 0.1.29
 
-This note captures a possible implementation path for letting each Parker user reorder and hide home page rails.
+This note captures the implemented 0.1.29 path for letting each Parker user reorder and hide home page rails.
 
 The goal is to make the home page feel more personal without turning every rail source into a separate settings feature. Parker already has several per-user discovery signals, so the first version should be a small presentation layer on top of the existing rail APIs rather than a rewrite of home discovery.
 

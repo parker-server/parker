@@ -5,236 +5,412 @@
 {% block content %}
 <div class="space-y-12" x-data='homePage({{ {"startupNotice": startup_notice}|tojson }})'>
 
-    <div x-show="!isLoading && !showStartupNotice && !isLibraryEmpty" class="space-y-16 pb-12" x-cloak>
-
-        <div x-show="!loading.resume && resumeComics.length > 0">
-            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-                <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                    <span>📖</span> Jump Back In
-                </h2>
-            </div>
-
-            <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-                <template x-for="comic in resumeComics" :key="comic.id">
-                    <div class="w-40 flex-shrink-0">
-                        {% include "partials/comic_card.html" %}
-                    </div>
-                </template>
-            </div>
+    <div x-show="showNormalHomeFeed" class="space-y-10 pb-12" x-cloak>
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-800 pb-4">
+            <h1 class="text-2xl font-black text-white tracking-tight">Home</h1>
+            <button
+                type="button"
+                x-on:click="openCustomizeModal()"
+                class="inline-flex items-center gap-2 rounded-lg border border-gray-700 bg-gray-800 px-4 py-2 text-sm font-semibold text-gray-200 transition-colors hover:border-blue-400 hover:text-white"
+            >
+                <span aria-hidden="true">=</span>
+                <span>Customize Home</span>
+            </button>
         </div>
 
-        <div x-show="!loading.following && followingArrivals.length > 0">
-            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-                <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                    <span>+</span> New from Following
-                </h2>
-                <a :href="window.parker.route('pages.user_following')" class="text-xs text-blue-400 hover:text-white transition-colors">
-                    Manage Following
-                </a>
-            </div>
+        <div class="space-y-16">
+            <template x-for="rail in visibleHomeRails" :key="rail.key">
+                <div :data-home-rail="rail.key" x-show="!isRailLoading(rail.key) && railHasContent(rail.key)" x-cloak>
+                    <template x-if="rail.key === 'resume'">
+                        <section>
+                            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+                                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                                    <span aria-hidden="true">&#9658;</span> Jump Back In
+                                </h2>
+                            </div>
 
-            <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-                <template x-for="comic in followingArrivals" :key="comic.id">
-                    <div class="w-40 flex-shrink-0">
-                        {% include "partials/comic_card.html" %}
-                    </div>
-                </template>
-            </div>
-        </div>
+                            <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                                <template x-for="comic in resumeComics" :key="comic.id">
+                                    <div class="w-40 flex-shrink-0">
+                                        {% include "partials/comic_card.html" %}
+                                    </div>
+                                </template>
+                            </div>
+                        </section>
+                    </template>
 
-        <div x-show="!loading.onDeck && onDeckSeries.length > 0">
-            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-                <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                    <span>▶</span> Up Next
-                </h2>
-            </div>
-            <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-                <template x-for="comic in onDeckSeries" :key="comic.id">
-                    <div class="w-40 flex-shrink-0">
-                        {% include "partials/comic_card.html" %}
-                    </div>
-                </template>
-            </div>
-        </div>
+                    <template x-if="rail.key === 'following_arrivals'">
+                        <section>
+                            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+                                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                                    <span aria-hidden="true">+</span> New from Following
+                                </h2>
+                                <a :href="window.parker.route('pages.user_following')" class="text-xs text-blue-400 hover:text-white transition-colors">
+                                    Manage Following
+                                </a>
+                            </div>
 
-        <div x-show="!loading.pinnedLibraries && pinnedLibraryRails.length > 0" class="space-y-12">
-            <div class="flex items-center justify-between border-b border-gray-700 pb-2">
-                <h2 class="text-xl font-bold text-white">Pinned Libraries</h2>
-                <a :href="window.parker.route('pages.libraries')" class="text-xs text-blue-400 hover:text-white transition-colors">Manage Pins</a>
-            </div>
+                            <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                                <template x-for="comic in followingArrivals" :key="comic.id">
+                                    <div class="w-40 flex-shrink-0">
+                                        {% include "partials/comic_card.html" %}
+                                    </div>
+                                </template>
+                            </div>
+                        </section>
+                    </template>
 
-            <template x-for="rail in pinnedLibraryRails" :key="rail.library_id">
-                <div>
-                    <div class="flex items-center justify-between mb-4">
-                        <div>
-                            <h3 class="text-lg font-bold text-white" x-text="rail.name"></h3>
-                            <p class="text-xs text-gray-500">Recently updated series</p>
-                        </div>
-                        <a :href="window.parker.route('pages.library_detail', { library_id: rail.library_id })" class="text-xs text-blue-400 hover:text-white transition-colors">View Library</a>
-                    </div>
+                    <template x-if="rail.key === 'up_next'">
+                        <section>
+                            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+                                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                                    <span aria-hidden="true">&#9654;</span> Up Next
+                                </h2>
+                            </div>
+                            <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                                <template x-for="comic in onDeckSeries" :key="comic.id">
+                                    <div class="w-40 flex-shrink-0">
+                                        {% include "partials/comic_card.html" %}
+                                    </div>
+                                </template>
+                            </div>
+                        </section>
+                    </template>
 
-                    <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-                        <template x-for="series in rail.items" :key="series.id">
-                            {% include "partials/series_card.html" %}
-                        </template>
-                    </div>
+                    <template x-if="rail.key === 'pinned_libraries'">
+                        <section class="space-y-12">
+                            <div class="flex items-center justify-between border-b border-gray-700 pb-2">
+                                <h2 class="text-xl font-bold text-white">Pinned Libraries</h2>
+                                <a :href="window.parker.route('pages.libraries')" class="text-xs text-blue-400 hover:text-white transition-colors">Manage Pins</a>
+                            </div>
+
+                            <template x-for="libraryRail in pinnedLibraryRails" :key="libraryRail.library_id">
+                                <div>
+                                    <div class="flex items-center justify-between mb-4">
+                                        <div>
+                                            <h3 class="text-lg font-bold text-white" x-text="libraryRail.name"></h3>
+                                            <p class="text-xs text-gray-500">Recently updated series</p>
+                                        </div>
+                                        <a :href="window.parker.route('pages.library_detail', { library_id: libraryRail.library_id })" class="text-xs text-blue-400 hover:text-white transition-colors">View Library</a>
+                                    </div>
+
+                                    <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                                        <template x-for="series in libraryRail.items" :key="series.id">
+                                            {% include "partials/series_card.html" %}
+                                        </template>
+                                    </div>
+                                </div>
+                            </template>
+                        </section>
+                    </template>
+
+                    <template x-if="rail.key === 'smart_lists'">
+                        <section class="space-y-12">
+                            <template x-for="list in smartLists" :key="list.id">
+                                <div x-data="smartRail(list)" x-show="!loading && items.length > 0">
+                                    <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+                                        <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                                            <span x-text="icon"></span>
+                                            <span x-text="title"></span>
+                                        </h2>
+                                        <a :href="window.parker.route('pages.search', {}, `smart_list_id=${listId}`)" class="text-xs text-blue-400 hover:text-white transition-colors">View All</a>
+                                    </div>
+
+                                    <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                                        <template x-for="comic in items" :key="comic.id">
+                                            <div class="w-36 flex-shrink-0">
+                                                {% include "partials/comic_card.html" %}
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
+                            </template>
+                        </section>
+                    </template>
+
+                    <template x-if="rail.key === 'want_to_read'">
+                        <section>
+                            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+                                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                                    <span class="text-yellow-400" aria-hidden="true">&#9733;</span> Want to Read
+                                </h2>
+                            </div>
+
+                            <div class="flex space-x-6 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                                <template x-for="series in starredSeries" :key="series.id">
+                                    {% include "partials/series_card.html" %}
+                                </template>
+                            </div>
+                        </section>
+                    </template>
+
+                    <template x-if="rail.key === 'top_rated'">
+                        <section>
+                            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+                                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                                    <span class="text-yellow-400" aria-hidden="true">&#9733;</span> Critically Acclaimed
+                                </h2>
+                            </div>
+
+                            <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                                <template x-for="comic in topRatedComics" :key="comic.id">
+                                    <div class="w-36 flex-shrink-0">
+                                        {% include "partials/comic_card.html" %}
+                                    </div>
+                                </template>
+                            </div>
+                        </section>
+                    </template>
+
+                    <template x-if="rail.key === 'top_parker_rated'">
+                        <section>
+                            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+                                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                                    <span class="text-blue-400" aria-hidden="true">&#9733;</span> Top Rated on Parker
+                                </h2>
+                            </div>
+
+                            <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                                <template x-for="comic in parkerTopRatedComics" :key="comic.id">
+                                    <div class="w-36 flex-shrink-0">
+                                        {% include "partials/comic_card.html" %}
+                                    </div>
+                                </template>
+                            </div>
+                        </section>
+                    </template>
+
+                    <template x-if="rail.key === 'trending'">
+                        <section>
+                            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+                                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                                    <span aria-hidden="true">&#9889;</span> Trending
+                                </h2>
+                            </div>
+
+                            <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                                <template x-for="series in trendingSeries" :key="series.id">
+                                    {% include "partials/series_card.html" %}
+                                </template>
+                            </div>
+                        </section>
+                    </template>
+
+                    <template x-if="rail.key === 'popular'">
+                        <section>
+                            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+                                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                                    <span aria-hidden="true">&#8593;</span> Popular with Others
+                                </h2>
+                            </div>
+
+                            <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                                <template x-for="series in popularSeries" :key="series.id">
+                                    {% include "partials/series_card.html" %}
+                                </template>
+                            </div>
+                        </section>
+                    </template>
+
+                    <template x-if="rail.key === 'random_gems'">
+                        <section>
+                            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+                                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                                    <span aria-hidden="true">?</span> Random Gems
+                                </h2>
+                                <button x-on:click="fetchRandom(false)" class="text-xs text-blue-400 hover:text-white">Spin Again</button>
+                            </div>
+
+                            <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                                <template x-for="series in randomSeries" :key="series.id">
+                                    {% include "partials/series_card.html" %}
+                                </template>
+                            </div>
+                        </section>
+                    </template>
+
+                    <template x-if="rail.key === 'recently_added_series'">
+                        <section>
+                            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+                                <h2 class="text-xl font-bold text-white">
+                                    <span aria-hidden="true">+</span> Recently Added Series
+                                </h2>
+                                <a :href="window.parker.route('pages.search', {}, 'sort_by=created&sort_order=desc')" class="text-sm text-blue-400 hover:text-white transition-colors">View All</a>
+                            </div>
+
+                            <div class="flex space-x-6 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                                <template x-for="series in recentSeries" :key="series.id">
+                                    {% include "partials/series_card.html" %}
+                                </template>
+                            </div>
+                        </section>
+                    </template>
+
+                    <template x-if="rail.key === 'recently_updated_series'">
+                        <section>
+                            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+                                <h2 class="text-xl font-bold text-white">
+                                    <span aria-hidden="true">&#8635;</span> Recently Updated Series
+                                </h2>
+                                <a :href="window.parker.route('pages.search', {}, 'sort_by=updated&sort_order=desc')" class="text-sm text-blue-400 hover:text-white transition-colors">View All</a>
+                            </div>
+
+                            <div class="flex space-x-6 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                                <template x-for="series in updatedSeries" :key="series.id">
+                                    {% include "partials/series_card.html" %}
+                                </template>
+                            </div>
+                        </section>
+                    </template>
                 </div>
             </template>
         </div>
+    </div>
 
-        <template x-for="list in smartLists" :key="list.id">
-
-            <div x-data="smartRail(list)" x-show="!loading && items.length > 0" class="mb-12">
-
-                <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-                    <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                        <span x-text="icon"></span>
-                        <span x-text="title"></span>
-                    </h2>
-                    <a :href="window.parker.route('pages.search', {}, `smart_list_id=${listId}`)" class="text-xs text-blue-400 hover:text-white transition-colors">View All</a>
+    <template x-if="showNoVisibleRailsFallback">
+        <div class="max-w-3xl mx-auto py-12 px-6">
+            <div class="bg-gray-800/50 border border-gray-700 rounded-xl p-8 text-center space-y-6 shadow-xl">
+                <div class="space-y-3">
+                    <h1 class="text-3xl font-black text-white tracking-tight">No Home Rails Are Visible</h1>
+                    <p class="text-gray-400 max-w-xl mx-auto">
+                        Your Home layout is hidden right now. Customize the layout or reset it to bring the default rails back.
+                    </p>
                 </div>
 
-                <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                <div class="flex flex-wrap items-center justify-center gap-3">
+                    <button
+                        type="button"
+                        x-on:click="openCustomizeModal()"
+                        class="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-blue-500"
+                    >
+                        Customize Home
+                    </button>
+                    <button
+                        type="button"
+                        x-on:click="resetLayout()"
+                        :disabled="layoutSaving"
+                        class="rounded-lg border border-gray-600 px-5 py-2.5 text-sm font-semibold text-gray-200 transition-colors hover:border-blue-400 hover:text-white disabled:opacity-60"
+                    >
+                        Reset Home Layout
+                    </button>
+                </div>
+            </div>
+        </div>
+    </template>
 
-                    <template x-for="comic in items" :key="comic.id">
-                        <div class="w-36 flex-shrink-0">
-                            {% include "partials/comic_card.html" %}
+    <template x-if="showCustomizeModal">
+        <div class="fixed inset-0 z-[150] flex items-center justify-center px-4 py-8" x-cloak>
+            <div class="absolute inset-0 bg-black/70" x-on:click="closeCustomizeModal()"></div>
+
+            <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="home-customize-title"
+                class="relative flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-gray-700 bg-gray-900 shadow-2xl"
+            >
+                <div class="flex items-start justify-between gap-4 border-b border-gray-800 px-6 py-5">
+                    <div>
+                        <h2 id="home-customize-title" class="text-xl font-bold text-white">Customize Home</h2>
+                        <p class="mt-1 text-sm text-gray-400">Choose the rails Parker loads and the order they appear in.</p>
+                    </div>
+                    <button
+                        type="button"
+                        x-on:click="closeCustomizeModal()"
+                        class="rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-800 hover:text-white"
+                        aria-label="Close"
+                    >
+                        <span aria-hidden="true">x</span>
+                    </button>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-2 border-b border-gray-800 px-6 py-3">
+                    <button type="button" x-on:click="showAllDraftRails()" class="rounded-md border border-gray-700 px-3 py-1.5 text-xs font-semibold text-gray-200 hover:border-blue-400 hover:text-white">Show All</button>
+                    <button type="button" x-on:click="hideAllDraftRails()" class="rounded-md border border-gray-700 px-3 py-1.5 text-xs font-semibold text-gray-200 hover:border-blue-400 hover:text-white">Hide All</button>
+                    <button type="button" x-on:click="resetLayout()" :disabled="layoutSaving" class="ml-auto rounded-md border border-gray-700 px-3 py-1.5 text-xs font-semibold text-gray-200 hover:border-blue-400 hover:text-white disabled:opacity-60">Reset to Default</button>
+                </div>
+
+                <div class="flex-1 space-y-3 overflow-y-auto px-6 py-5">
+                    <template x-for="(rail, index) in draftRails" :key="rail.key">
+                        <div
+                            :data-home-rail-draft="rail.key"
+                            draggable="true"
+                            x-on:dragstart="startDraftDrag(index)"
+                            x-on:dragover.prevent
+                            x-on:drop="dropDraftRail(index)"
+                            class="grid grid-cols-[auto_1fr_auto_auto] items-center gap-3 rounded-lg border border-gray-800 bg-gray-950/70 px-3 py-3"
+                            :class="rail.visible ? 'opacity-100' : 'opacity-60'"
+                        >
+                            <button
+                                type="button"
+                                class="cursor-grab rounded-md border border-gray-700 px-2 py-2 text-gray-400 hover:border-blue-400 hover:text-white"
+                                :aria-label="`Drag ${rail.title}`"
+                                title="Drag to reorder"
+                            >
+                                <span aria-hidden="true">::</span>
+                            </button>
+
+                            <div class="min-w-0">
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <h3 class="truncate text-sm font-bold text-white" x-text="rail.title"></h3>
+                                    <span class="rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider"
+                                          :class="rail.visible ? 'border-green-500/40 text-green-300' : 'border-gray-600 text-gray-400'"
+                                          x-text="rail.visible ? 'Visible' : 'Hidden'"></span>
+                                </div>
+                                <p class="mt-1 text-xs text-gray-500" x-text="rail.hint"></p>
+                            </div>
+
+                            <div class="flex items-center gap-1">
+                                <button
+                                    type="button"
+                                    x-on:click="moveDraftRail(index, -1)"
+                                    :disabled="index === 0"
+                                    :aria-label="`Move ${rail.title} up`"
+                                    title="Move up"
+                                    class="rounded-md border border-gray-700 px-2 py-1 text-sm text-gray-300 hover:border-blue-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                                >
+                                    <span aria-hidden="true">^</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    x-on:click="moveDraftRail(index, 1)"
+                                    :disabled="index === draftRails.length - 1"
+                                    :aria-label="`Move ${rail.title} down`"
+                                    title="Move down"
+                                    class="rounded-md border border-gray-700 px-2 py-1 text-sm text-gray-300 hover:border-blue-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                                >
+                                    <span aria-hidden="true">v</span>
+                                </button>
+                            </div>
+
+                            <label class="relative inline-flex cursor-pointer items-center">
+                                <input type="checkbox" class="peer sr-only" x-model="rail.visible" :aria-label="`Show ${rail.title}`">
+                                <span class="pointer-events-none relative h-6 w-11 rounded-full bg-gray-700 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-transform peer-checked:bg-blue-600 peer-checked:after:translate-x-5"></span>
+                            </label>
                         </div>
                     </template>
-
-                </div>
-            </div>
-        </template>
-
-        <div x-show="!loading.starred && starredSeries.length > 0">
-            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-                <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                    <span class="text-yellow-400">★</span> Want to Read
-                </h2>
                 </div>
 
-            <div class="flex space-x-6 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-                <template x-for="series in starredSeries" :key="series.id">
-                    {% include "partials/series_card.html" %}
-                </template>
+                <div class="flex flex-wrap items-center justify-end gap-3 border-t border-gray-800 px-6 py-4">
+                    <button type="button" x-on:click="closeCustomizeModal()" class="rounded-lg border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-300 hover:border-gray-500 hover:text-white">Cancel</button>
+                    <button
+                        type="button"
+                        x-on:click="saveLayout()"
+                        :disabled="layoutSaving"
+                        class="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white transition-colors hover:bg-blue-500 disabled:opacity-60"
+                    >
+                        <span x-show="!layoutSaving">Save Home Layout</span>
+                        <span x-show="layoutSaving">Saving...</span>
+                    </button>
+                </div>
             </div>
         </div>
-
-
-        <div x-show="!loading.topRated && topRatedComics.length > 0">
-            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-                <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                    <span class="text-yellow-400">★</span> Critically Acclaimed
-                </h2>
-            </div>
-
-            <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-                <template x-for="comic in topRatedComics" :key="comic.id">
-                    <div class="w-36 flex-shrink-0">
-                        {% include "partials/comic_card.html" %}
-                    </div>
-                </template>
-            </div>
-        </div>
-
-        <div x-show="!loading.parkerTopRated && parkerTopRatedComics.length > 0">
-            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-                <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                    <span class="text-blue-400">&#9733;</span> Top Rated on Parker
-                </h2>
-            </div>
-
-            <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-                <template x-for="comic in parkerTopRatedComics" :key="comic.id">
-                    <div class="w-36 flex-shrink-0">
-                        {% include "partials/comic_card.html" %}
-                    </div>
-                </template>
-            </div>
-        </div>
-
-        <div x-show="!loading.trending && trendingSeries.length > 0">
-            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-                <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                    <span>⚡</span> Trending
-                </h2>
-            </div>
-
-            <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-                <template x-for="series in trendingSeries" :key="series.id">
-                        {% include "partials/series_card.html" %}
-                </template>
-            </div>
-        </div>
-
-        <div x-show="!loading.popular && popularSeries.length > 0">
-            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-                <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                    <span>🔥</span> Popular with Others
-                </h2>
-            </div>
-
-            <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-                <template x-for="series in popularSeries" :key="series.id">
-                        {% include "partials/series_card.html" %}
-                </template>
-            </div>
-        </div>
-
-
-        <div x-show="!loading.random && randomSeries.length > 0">
-            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-                <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                    <span>🎲</span> Random Gems
-                </h2>
-                <button x-on:click="fetchRandom()" class="text-xs text-blue-400 hover:text-white">Spin Again ↻</button>
-            </div>
-
-            <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-                <template x-for="series in randomSeries" :key="series.id">
-
-                        {% include "partials/series_card.html" %}
-                </template>
-            </div>
-        </div>
-
-        <div x-show="!loading.recent && recentSeries.length > 0">
-            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-                <h2 class="text-xl font-bold text-white">
-                    <span>✨</span> Recently Added Series
-                </h2>
-                <a :href="window.parker.route('pages.search', {}, 'sort_by=created&sort_order=desc')" class="text-sm text-blue-400 hover:text-white transition-colors">View All</a>
-            </div>
-
-            <div class="flex space-x-6 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-                <template x-for="series in recentSeries" :key="series.id">
-                    {% include "partials/series_card.html" %}
-                </template>
-            </div>
-        </div>
-
-        <div x-show="!loading.updated && updatedSeries.length > 0">
-            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-                <h2 class="text-xl font-bold text-white">
-                    <span>🔁</span> Recently Updated Series
-                </h2>
-                <a :href="window.parker.route('pages.search', {}, 'sort_by=updated&sort_order=desc')" class="text-sm text-blue-400 hover:text-white transition-colors">View All</a>
-            </div>
-
-            <div class="flex space-x-6 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-                <template x-for="series in updatedSeries" :key="series.id">
-                    {% include "partials/series_card.html" %}
-                </template>
-            </div>
-        </div>
-
-    </div>
+    </template>
 
     <template x-if="!isLoading && showStartupNotice">
         <div class="max-w-4xl mx-auto py-12 px-6">
             <div class="bg-amber-950/30 border border-amber-500/30 rounded-2xl p-8 md:p-12 text-center space-y-8 shadow-2xl">
                 <div class="inline-flex items-center justify-center w-20 h-20 bg-amber-500/10 rounded-full mb-4">
-                    <span class="text-5xl">⚠</span>
+                    <span class="text-5xl">&#9888;</span>
                 </div>
 
                 <div class="space-y-3">
@@ -250,7 +426,7 @@
 
                 <div class="max-w-2xl mx-auto space-y-4" x-show="startupNotice.is_admin">
                     <a :href="startupNotice.diagnostics_url" class="group flex items-start gap-4 rounded-xl border border-amber-400/40 bg-amber-500/10 px-6 py-5 text-left shadow-lg transition-all hover:border-amber-300/60 hover:bg-amber-500/15">
-                        <div class="text-2xl">🩺</div>
+                        <div class="text-2xl">!</div>
                         <div>
                             <h3 class="font-bold text-white group-hover:text-amber-100 transition-colors">Open Diagnostics</h3>
                             <p class="text-sm text-amber-100/70 mt-1">Inspect the active database path, counts, configured libraries, and comics probe before making any changes.</p>
@@ -273,7 +449,7 @@
         <div class="max-w-4xl mx-auto py-12 px-6">
             <div class="bg-gray-800/50 border border-gray-700 rounded-2xl p-8 md:p-12 text-center space-y-8 shadow-2xl">
                 <div class="inline-flex items-center justify-center w-20 h-20 bg-blue-600/20 rounded-full mb-4">
-                    <span class="text-5xl animate-bounce [animation-iteration-count:3]">📚</span>
+                    <span class="text-5xl animate-bounce [animation-iteration-count:3]">P</span>
                 </div>
 
                 <div class="space-y-3">
@@ -286,7 +462,7 @@
                 <div class="grid md:grid-cols-2 gap-6 text-left max-w-2xl mx-auto">
                     <a :href="window.parker.url('/admin/libraries')" class="group p-6 bg-gray-900/50 border border-gray-700 rounded-xl hover:border-blue-500/50 transition-all">
                         <div class="flex items-start gap-4">
-                            <div class="text-2xl">📁</div>
+                            <div class="text-2xl">+</div>
                             <div>
                                 <h3 class="font-bold text-white group-hover:text-blue-400 transition-colors">Add your first Library</h3>
                                 <p class="text-sm text-gray-500 mt-1">Connect your comic folders to start scanning.</p>
@@ -296,7 +472,7 @@
 
                     <a href="https://github.com/parker-server/parker/wiki/Getting-Started" target="_blank" class="group p-6 bg-gray-900/50 border border-gray-700 rounded-xl hover:border-blue-500/50 transition-all">
                         <div class="flex items-start gap-4">
-                            <div class="text-2xl">📖</div>
+                            <div class="text-2xl">?</div>
                             <div>
                                 <h3 class="font-bold text-white group-hover:text-blue-400 transition-colors">Read the Wiki</h3>
                                 <p class="text-sm text-gray-500 mt-1">Learn about metadata, tagging, and server settings.</p>
@@ -335,71 +511,273 @@ function homePage(bootstrap = {}) {
         smartLists: [],
         popularSeries: [],
 
+        layoutRails: [],
+        draftRails: [],
+        layoutLoading: true,
+        layoutSaving: false,
+        showCustomizeModal: false,
+        dragIndex: null,
+
         loading: {
-            recent: true,
-            updated: true,
-            starred: true,
-            onDeck: true,
-            random: true,
-            topRated: true,
-            parkerTopRated: true,
-            trending: true,
-            resume: true,
-            following: true,
-            pinnedLibraries: true,
-            popular: true,
+            recent: false,
+            updated: false,
+            starred: false,
+            onDeck: false,
+            random: false,
+            topRated: false,
+            parkerTopRated: false,
+            trending: false,
+            resume: false,
+            following: false,
+            pinnedLibraries: false,
+            smartLists: false,
+            popular: false,
         },
 
         get isLoading() {
-            return this.loading.recent
-                || this.loading.updated || this.loading.starred
-                || this.loading.onDeck || this.loading.random
-                || this.loading.topRated || this.loading.resume
-                || this.loading.parkerTopRated
-                || this.loading.following
-                || this.loading.pinnedLibraries
-                ;
+            return this.layoutLoading || Object.values(this.loading).some(Boolean);
+        },
+
+        get visibleHomeRails() {
+            return this.layoutRails.filter((rail) => rail.visible);
+        },
+
+        get hasNoVisibleConfigurableRails() {
+            return !this.layoutLoading && this.layoutRails.length > 0 && this.visibleHomeRails.length === 0;
         },
 
         get isLibraryEmpty() {
-            // Check all main categories to see if anything exists
-            return this.recentSeries.length === 0
-                && this.resumeComics.length === 0
-                && this.starredSeries.length === 0
-                && this.followingArrivals.length === 0
-                && this.pinnedLibraryRails.length === 0;
+            if (this.showStartupNotice || this.hasNoVisibleConfigurableRails || this.isLoading) return false;
+            return !this.visibleHomeRails.some((rail) => this.railHasContent(rail.key));
         },
 
         get showStartupNotice() {
             return !!this.startupNotice;
         },
 
+        get showNoVisibleRailsFallback() {
+            return !this.isLoading && !this.showStartupNotice && this.hasNoVisibleConfigurableRails;
+        },
+
+        get showNormalHomeFeed() {
+            return !this.isLoading && !this.showStartupNotice && !this.isLibraryEmpty && !this.showNoVisibleRailsFallback;
+        },
+
         init() {
             if (this.showStartupNotice) {
-                Object.keys(this.loading).forEach(key => {
-                    this.loading[key] = false;
-                });
+                this.layoutLoading = false;
+                this.setAllLoading(false);
                 return;
             }
 
-            this.fetchStarred();
-            this.fetchRecent();
-            this.fetchUpdated();
-            this.fetchOnDeck();
-            this.fetchResume();
-            this.fetchFollowingArrivals();
-            this.fetchPinnedLibraries();
-            this.fetchRandom();
-            this.fetchTopRated();
-            this.fetchTopParkerRated();
-            this.fetchTrending();
-            this.fetchSmartLists();
-            this.fetchPopular();
+            this.loadLayout();
+        },
+
+        defaultLayoutRails() {
+            return [
+                { key: 'resume', title: 'Jump Back In', hint: 'Continue books already in progress.', visible: true },
+                { key: 'following_arrivals', title: 'New from Following', hint: 'New issues from followed volumes.', visible: true },
+                { key: 'up_next', title: 'Up Next', hint: 'Next unread issues from recent reads.', visible: true },
+                { key: 'pinned_libraries', title: 'Pinned Libraries', hint: 'Managed by pinned libraries.', visible: true },
+                { key: 'smart_lists', title: 'Smart Lists', hint: 'Managed by smart-list dashboard settings.', visible: true },
+                { key: 'want_to_read', title: 'Want to Read', hint: 'Series you have starred.', visible: true },
+                { key: 'top_rated', title: 'Critically Acclaimed', hint: 'High source ratings.', visible: true },
+                { key: 'top_parker_rated', title: 'Top Rated on Parker', hint: 'Community Parker ratings.', visible: true },
+                { key: 'trending', title: 'Trending', hint: 'Recent anonymous reading activity.', visible: true },
+                { key: 'popular', title: 'Popular with Others', hint: 'Anonymous aggregate reader activity.', visible: true },
+                { key: 'random_gems', title: 'Random Gems', hint: 'A rotating discovery rail.', visible: true },
+                { key: 'recently_added_series', title: 'Recently Added Series', hint: 'Series with newly imported comics.', visible: true },
+                { key: 'recently_updated_series', title: 'Recently Updated Series', hint: 'Series with recently updated comics.', visible: true },
+            ];
+        },
+
+        setAllLoading(value) {
+            Object.keys(this.loading).forEach((key) => {
+                this.loading[key] = value;
+            });
+        },
+
+        loadingKeyForRail(key) {
+            return {
+                resume: 'resume',
+                following_arrivals: 'following',
+                up_next: 'onDeck',
+                pinned_libraries: 'pinnedLibraries',
+                smart_lists: 'smartLists',
+                want_to_read: 'starred',
+                top_rated: 'topRated',
+                top_parker_rated: 'parkerTopRated',
+                trending: 'trending',
+                popular: 'popular',
+                random_gems: 'random',
+                recently_added_series: 'recent',
+                recently_updated_series: 'updated',
+            }[key] || null;
+        },
+
+        isRailLoading(key) {
+            const loadingKey = this.loadingKeyForRail(key);
+            return loadingKey ? this.loading[loadingKey] : false;
+        },
+
+        railHasContent(key) {
+            return {
+                resume: this.resumeComics.length > 0,
+                following_arrivals: this.followingArrivals.length > 0,
+                up_next: this.onDeckSeries.length > 0,
+                pinned_libraries: this.pinnedLibraryRails.length > 0,
+                smart_lists: this.smartLists.length > 0,
+                want_to_read: this.starredSeries.length > 0,
+                top_rated: this.topRatedComics.length > 0,
+                top_parker_rated: this.parkerTopRatedComics.length > 0,
+                trending: this.trendingSeries.length > 0,
+                popular: this.popularSeries.length > 0,
+                random_gems: this.randomSeries.length > 0,
+                recently_added_series: this.recentSeries.length > 0,
+                recently_updated_series: this.updatedSeries.length > 0,
+            }[key] || false;
+        },
+
+        async loadLayout() {
+            this.layoutLoading = true;
+            try {
+                const res = await fetch(window.parker.route('home.layout'));
+                if (res.ok) {
+                    const data = await res.json();
+                    this.layoutRails = data.rails || [];
+                } else {
+                    this.layoutRails = this.defaultLayoutRails();
+                }
+            } catch(e) {
+                console.error(e);
+                this.layoutRails = this.defaultLayoutRails();
+            } finally {
+                this.layoutLoading = false;
+                this.fetchVisibleRails();
+            }
+        },
+
+        fetchVisibleRails() {
+            this.setAllLoading(false);
+            const fetchers = {
+                resume: () => this.fetchResume(),
+                following_arrivals: () => this.fetchFollowingArrivals(),
+                up_next: () => this.fetchOnDeck(),
+                pinned_libraries: () => this.fetchPinnedLibraries(),
+                smart_lists: () => this.fetchSmartLists(),
+                want_to_read: () => this.fetchStarred(),
+                top_rated: () => this.fetchTopRated(),
+                top_parker_rated: () => this.fetchTopParkerRated(),
+                trending: () => this.fetchTrending(),
+                popular: () => this.fetchPopular(),
+                random_gems: () => this.fetchRandom(true),
+                recently_added_series: () => this.fetchRecent(),
+                recently_updated_series: () => this.fetchUpdated(),
+            };
+
+            this.layoutRails
+                .filter((rail) => rail.visible && fetchers[rail.key])
+                .forEach((rail) => fetchers[rail.key]());
+        },
+
+        openCustomizeModal() {
+            this.draftRails = this.layoutRails.map((rail) => ({
+                key: rail.key,
+                title: rail.title,
+                hint: rail.hint,
+                visible: rail.visible,
+            }));
+            this.showCustomizeModal = true;
+        },
+
+        closeCustomizeModal() {
+            if (this.layoutSaving) return;
+            this.showCustomizeModal = false;
+            this.dragIndex = null;
+        },
+
+        moveDraftRail(index, direction) {
+            const targetIndex = index + direction;
+            if (targetIndex < 0 || targetIndex >= this.draftRails.length) return;
+
+            const rails = [...this.draftRails];
+            const [rail] = rails.splice(index, 1);
+            rails.splice(targetIndex, 0, rail);
+            this.draftRails = rails;
+        },
+
+        startDraftDrag(index) {
+            this.dragIndex = index;
+        },
+
+        dropDraftRail(index) {
+            if (this.dragIndex === null || this.dragIndex === index) return;
+
+            const rails = [...this.draftRails];
+            const [rail] = rails.splice(this.dragIndex, 1);
+            rails.splice(index, 0, rail);
+            this.draftRails = rails;
+            this.dragIndex = null;
+        },
+
+        showAllDraftRails() {
+            this.draftRails = this.draftRails.map((rail) => ({ ...rail, visible: true }));
+        },
+
+        hideAllDraftRails() {
+            this.draftRails = this.draftRails.map((rail) => ({ ...rail, visible: false }));
+        },
+
+        async saveLayout() {
+            this.layoutSaving = true;
+            try {
+                const res = await fetch(window.parker.route('home.update_layout'), {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        rails: this.draftRails.map((rail) => ({
+                            key: rail.key,
+                            visible: rail.visible,
+                        })),
+                    }),
+                });
+                if (!res.ok) throw new Error('Failed to save home layout');
+
+                const data = await res.json();
+                this.layoutRails = data.rails || [];
+                this.showCustomizeModal = false;
+                this.fetchVisibleRails();
+                window.parker.showToast?.('Home layout saved.', 'success');
+            } catch(e) {
+                console.error(e);
+                window.parker.showToast?.('Could not save Home layout.', 'error');
+            } finally {
+                this.layoutSaving = false;
+            }
+        },
+
+        async resetLayout() {
+            this.layoutSaving = true;
+            try {
+                const res = await fetch(window.parker.route('home.reset_layout'), { method: 'POST' });
+                if (!res.ok) throw new Error('Failed to reset home layout');
+
+                const data = await res.json();
+                this.layoutRails = data.rails || [];
+                this.showCustomizeModal = false;
+                this.fetchVisibleRails();
+                window.parker.showToast?.('Home layout reset.', 'success');
+            } catch(e) {
+                console.error(e);
+                window.parker.showToast?.('Could not reset Home layout.', 'error');
+            } finally {
+                this.layoutSaving = false;
+            }
         },
 
         async fetchStarred() {
+            this.loading.starred = true;
             try {
-                // Fetch starred series sorted by updated (recently modified or starred)
                 const res = await fetch(window.parker.route('series.list', {}, '?only_starred=true&size=20'));
                 if (res.ok) {
                     const data = await res.json();
@@ -410,6 +788,7 @@ function homePage(bootstrap = {}) {
         },
 
         async fetchRecent() {
+            this.loading.recent = true;
             try {
                 const res = await fetch(window.parker.route('home.recently_added_series', {}, 'limit=10'));
                 if (res.ok) {
@@ -420,6 +799,7 @@ function homePage(bootstrap = {}) {
         },
 
         async fetchUpdated() {
+            this.loading.updated = true;
             try {
                 const res = await fetch(window.parker.route('home.recently_updated_series', {}, 'limit=10'));
                 if (res.ok) {
@@ -430,6 +810,7 @@ function homePage(bootstrap = {}) {
         },
 
         async fetchOnDeck() {
+            this.loading.onDeck = true;
             try {
                 const res = await fetch(window.parker.route('home.up_next'));
                 if (res.ok) {
@@ -440,6 +821,7 @@ function homePage(bootstrap = {}) {
         },
 
         async fetchResume() {
+            this.loading.resume = true;
             try {
                 const res = await fetch(window.parker.route('home.resume_reading'));
                 if (res.ok) this.resumeComics = await res.json();
@@ -448,6 +830,7 @@ function homePage(bootstrap = {}) {
         },
 
         async fetchFollowingArrivals() {
+            this.loading.following = true;
             try {
                 const res = await fetch(window.parker.route('home.following_arrivals', {}, 'limit=12'));
                 if (res.ok) this.followingArrivals = await res.json();
@@ -456,6 +839,7 @@ function homePage(bootstrap = {}) {
         },
 
         async fetchPinnedLibraries() {
+            this.loading.pinnedLibraries = true;
             try {
                 const res = await fetch(window.parker.route('home.pinned_libraries', {}, 'limit=15'));
                 if (res.ok) this.pinnedLibraryRails = await res.json();
@@ -463,7 +847,8 @@ function homePage(bootstrap = {}) {
             finally { this.loading.pinnedLibraries = false; }
         },
 
-        async fetchRandom() {
+        async fetchRandom(markLoading = true) {
+            if (markLoading) this.loading.random = true;
             try {
                 const res = await fetch(window.parker.route('home.random_gems', {}, 'limit=12'));
                 if (res.ok) this.randomSeries = await res.json();
@@ -472,6 +857,7 @@ function homePage(bootstrap = {}) {
         },
 
         async fetchTopRated() {
+            this.loading.topRated = true;
             try {
                 const res = await fetch(window.parker.route('home.top_rated', {}, 'limit=12'));
                 if (res.ok) this.topRatedComics = await res.json();
@@ -480,6 +866,7 @@ function homePage(bootstrap = {}) {
         },
 
         async fetchTopParkerRated() {
+            this.loading.parkerTopRated = true;
             try {
                 const res = await fetch(window.parker.route('home.top_parker_rated', {}, 'limit=12'));
                 if (res.ok) this.parkerTopRatedComics = await res.json();
@@ -488,6 +875,7 @@ function homePage(bootstrap = {}) {
         },
 
         async fetchTrending() {
+            this.loading.trending = true;
             try {
                 const res = await fetch(window.parker.route('home.trending', {}, 'limit=12'));
                 if (res.ok) this.trendingSeries = await res.json();
@@ -496,17 +884,19 @@ function homePage(bootstrap = {}) {
         },
 
         async fetchSmartLists() {
+            this.loading.smartLists = true;
             try {
                 const res = await fetch(window.parker.route('smart_lists.list'));
                 if (res.ok) {
                     const allLists = await res.json();
-                    // Only show the ones the user enabled for dashboard
                     this.smartLists = allLists.filter(l => l.show_on_dashboard);
                 }
             } catch (e) { console.error(e); }
+            finally { this.loading.smartLists = false; }
         },
 
         async fetchPopular() {
+            this.loading.popular = true;
             try {
                 const res = await fetch(window.parker.route('home.popular', {}, 'limit=12'));
                 if (res.ok) this.popularSeries = await res.json();
