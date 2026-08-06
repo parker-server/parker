@@ -1,77 +1,120 @@
-# Parker Comic Server
+Welcome to Parker! This guide will help you get your personal comic server up and running using Docker.
 
-Parker is a self‑hosted comic book server for CBZ/CBR archives. It’s designed to be simple to run, easy to use, and powerful enough to organize large collections.
+### Prerequisites
+- Docker installed on your host machine.
+- A directory containing your comic collection (currently supporting .cbz and .cbr).
+- (Optional) Docker Compose for easier management.
 
----
-
-## 🚀 Quickstart
-
-1. Get the docker image (recommended)
-
+## Channel selection
 Parker publishes two Docker image channels:
 
 - **Stable (recommended):**
 The latest tag is built from versioned releases and is the recommended option for most users.
 
-  ```bash
-  docker run -d \
-    -p 8000:8000 \
-    -v /some/path/config:/app/storage \
-    -v /some/path/comics:/comics \
-    ghcr.io/parker-server/parker:latest
-  ```
- 
+`parker:latest`
+
 - **Edge**:
 The edge tag is built automatically from every commit to master.
-It includes the newest features and fixes, but may be less stable
+It includes the newest features and fixes, but may be less stable.
 
-  ```bash
-  docker run -d \
-    -p 8000:8000 \
-    -v /some/path/config:/app/storage \
-    -v /some/path/comics:/comics \
-    ghcr.io/parker-server/parker:edge
-  ```
-
-2. Once up and running you can access Parker at http://localhost:8000.  The default username is ```admin``` and the password is ```admin```
-3. Once logged in, navigate to the administration area at http://localhost:8000/admin
-4. Click the 'Libraries' card and click the ```Add Library``` button
-5. Enter a name and a valid path to the root of your comics folder. Note: if running on Windows, paths must be expressed with reverse slashes.
-  Example: If your comic library resides at ```C:\Users\parker\MyComics```, you would enter ```C:/Users/parker/MyComics``` into the folder path box.
-6. Click the ```Create Library``` button which will save the library.
-7. You will see a row on the page representing your new library.  Click the ```Scan``` button and confirm to kick off your initial scan
-8. The page will poll for the job to know when it's complete.  You can also review jobs on the 'Scan Jobs' card from the admin home.
+`parker:edge`
 
 
+### Quick Start (Docker Run)
+If you want to test Parker quickly, run the following command. Replace the paths on the left side of the `:` with your actual local directories:
 
-#### If you prefer to get into the trenches you can instead directly clone the source code
+```bash
+docker run -d \
+  --name parker \
+  -p 8000:8000 \
+  -v /path/to/config:/app/storage \
+  -v /path/to/comics:/comics:ro \
+  -e BASE_URL=/ \
+  -e COMICS_PATH=/comics \
+  ghcr.io/parker-server/parker:latest
+```
+
+Parker listens on port `8000` inside the container. To use a different host port, change the left side of the port mapping. For example, `-p 9000:8000` exposes Parker at `http://localhost:9000`.
+
+### Advanced Configuration via CLI
+You can configure any setting from the .env file directly in your docker run command using the -e flag. This is particularly useful for setting up your environment without manually editing files.
+
+Example: Running on a subpath with Proxy Trust
+
+```bash
+docker run -d \
+  --name parker \
+  -p 8000:8000 \
+  -e BASE_URL=/comics \
+  -e COMICS_PATH=/comics \
+  -e TRUSTED_PROXIES="172.18.0.1,192.168.1.50" \
+  -e ALLOWED_ORIGINS="https://comics.yourdomain.com" \
+  -v /path/to/config:/app/storage \
+  -v /path/to/comics:/comics:ro \
+  ghcr.io/parker-server/parker:latest
+```
+
+### Recommended Setup (Docker Compose)
+For a more permanent installation, use a `docker-compose.yml` file. This allows you to manage environment variables in a dedicated `.env` file.
+
+docker-compose.yml
+
+```yml
+services:
+  parker:
+    image: ghcr.io/parker-server/parker:latest
+    container_name: parker
+    ports:
+      - "${PARKER_PORT:-8000}:8000"
+    env_file: .env  # Loads your configuration
+    volumes:
+      - /path/to/config:/app/storage
+      - /path/to/comics:/comics:ro
+    restart: unless-stopped
+```
+
+Example .env
+```
+PARKER_PORT=8000
+BASE_URL=/
+COMICS_PATH=/comics
+SECRET_KEY=change-me
+```
+
+### Initial Configuration
+Once the container is running, access the web UI at http://localhost:8000, or the host port you mapped with `PARKER_PORT` / `-p`.
+
+Admin Account: Parker automatically creates the user **admin**, password **admin** on first boot.
+
+Once logged in, navigate to the administration area at `/admin`, such as `http://localhost:8000/admin`.
+
+Click the 'Libraries' card and click the `Add Library` button.
+
+Use `Browse` to select a folder under the configured `COMICS_PATH` root. For the Docker examples above, that root is `/comics`.
+
+If entering a path manually, use the path inside the container, such as `/comics` or `/comics/DC`, not the host path from the left side of the Docker volume mapping.
+
+Click the `Create Library` button which will save the library.
+
+You will see a row on the page representing your new library.  Click the `Scan` button and confirm to kick off your initial scan.
+
+The page will poll for the job to know when it's complete.  You can also review jobs on the 'Scan Jobs' card from the admin home.
+
+
+### Building from source
+
+If you prefer to get into the trenches you can instead directly clone the source code
 
 1. Clone the repository:
+
    ```bash
    git clone https://github.com/parker-server/parker.git
    cd parker
+   ```
    
-2. Configure the docker-compose.yml with volume mappings, port, etc
-3. ```docker-compose up -d --build```
+2. Configure the `docker-compose.yml` with volume mappings, port, etc as explained in the above sections
 
-
-## ✨ What You Get
-- Browse comics by Library → Series → Volume → Issue
-- Web Reader with manga mode, double‑page spreads, and swipe navigation
-- Smart Lists and Pull Lists to organize your reading
-- Reports Dashboard to spot missing issues, duplicates, and storage usage
-- User accounts with library permissions
-- Optional OPDS feed for external reader apps
-- Optional WebP transcoding for faster remote reading
-
-## 📌 Status- Current version: 1.1 (Stable)
-- Core features are ready to use
-- Expect ongoing updates and improvements
-
-## 🤝 Contributing
-Parker is open source and evolving. Feedback, bug reports, and pull requests are welcome!
-
-## 📜 License
-MIT License
-
+3. ```bash
+   docker-compose up -d --build
+   ```
 
