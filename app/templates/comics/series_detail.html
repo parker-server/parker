@@ -12,8 +12,8 @@
 <div class="relative z-10">
     <div class="space-y-6" x-data="seriesDetail()" x-on:set-read-filter="handleReadFilter($event.detail)" x-on:toggle-sort="handleToggleSort()">
 
-        <div class="flex items-center space-x-2 text-gray-400 mb-6 text-sm" x-show="!error && !notFound" x-cloak>
-            <a :href="window.parker.route('pages.library_detail', { library_id: series?.library_id })" class="hover:text-white" x-text="series?.library_name"></a>
+        <div class="flex items-center space-x-2 text-gray-400 mb-6 text-sm md:text-base" x-show="!error && !notFound" x-cloak>
+            <a :href="window.parker.route('pages.library_detail', { library_id: series?.library_id })" class="py-1 hover:text-white" x-text="series?.library_name"></a>
             <span>/</span>
             <span class="text-white" x-text="`${series?.name}`"></span>
         </div>

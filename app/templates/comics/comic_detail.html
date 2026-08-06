@@ -13,10 +13,10 @@
 
     <div class="max-w-6xl mx-auto" x-data="comicDetail()" x-on:pull-list-item-added.window="handlePullListItemAdded($event.detail)">
 
-        <div class="flex items-center space-x-2 text-gray-400 mb-6 text-sm" x-show="!error" x-cloak>
-            <a :href="window.parker.route('pages.library_detail', { library_id: comic?.library_id })" class="hover:text-white" x-text="comic?.library_name"></a>
+        <div class="flex items-center space-x-2 text-gray-400 mb-6 text-sm md:text-base" x-show="!error" x-cloak>
+            <a :href="window.parker.route('pages.library_detail', { library_id: comic?.library_id })" class="py-1 hover:text-white" x-text="comic?.library_name"></a>
             <span>/</span>
-            <a :href="window.parker.route('pages.series_detail', { series_id: comic?.series_id})" class="hover:text-blue-400" x-text="comic?.series || 'Series'"></a>
+            <a :href="window.parker.route('pages.series_detail', { series_id: comic?.series_id})" class="py-1 hover:text-blue-400" x-text="comic?.series || 'Series'"></a>
             <span>/</span>
             <span class="text-white" x-text="`#${comic?.number}`"></span>
         </div>
