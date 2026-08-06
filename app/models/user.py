@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Integer, String, DateTime, ForeignKey, Table
+from sqlalchemy import Boolean, Column, Integer, String, DateTime, ForeignKey, JSON, Table
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from app.database import Base
@@ -25,6 +25,7 @@ class User(Base):
     max_age_rating = Column(String, nullable=True, default=None)
     allow_unknown_age_ratings = Column(Boolean, default=False)
     monthly_reading_goal = Column(Integer, default=10)
+    home_rail_layout = Column(JSON, nullable=True)
 
 
     # Permissions

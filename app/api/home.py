@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import Float, and_, or_
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.sql.expression import func, desc, cast
-from typing import List
+from typing import Any, List
 from datetime import datetime, timezone, timedelta
 from collections import defaultdict
 
@@ -21,6 +22,212 @@ from app.schemas.search import ComicSearchItem
 from app.core.comic_helpers import REVERSE_NUMBERING_SERIES, NON_PLAIN_FORMATS
 
 router = APIRouter()
+
+HOME_RAIL_LAYOUT_VERSION = 1
+HOME_RAIL_DEFINITIONS = (
+    {"key": "resume", "title": "Jump Back In", "hint": "Continue books already in progress."},
+    {"key": "following_arrivals", "title": "New from Following", "hint": "New issues from followed volumes."},
+    {"key": "up_next", "title": "Up Next", "hint": "Next unread issues from recent reads."},
+    {"key": "pinned_libraries", "title": "Pinned Libraries", "hint": "Managed by pinned libraries."},
+    {"key": "smart_lists", "title": "Smart Lists", "hint": "Managed by smart-list dashboard settings."},
+    {"key": "want_to_read", "title": "Want to Read", "hint": "Series you have starred."},
+    {"key": "top_rated", "title": "Critically Acclaimed", "hint": "High source ratings."},
+    {"key": "top_parker_rated", "title": "Top Rated on Parker", "hint": "Community Parker ratings."},
+    {"key": "trending", "title": "Trending", "hint": "Recent anonymous reading activity."},
+    {"key": "popular", "title": "Popular with Others", "hint": "Anonymous aggregate reader activity."},
+    {"key": "random_gems", "title": "Random Gems", "hint": "A rotating discovery rail."},
+    {"key": "recently_added_series", "title": "Recently Added Series", "hint": "Series with newly imported comics."},
+    {"key": "recently_updated_series", "title": "Recently Updated Series", "hint": "Series with recently updated comics."},
+)
+HOME_RAIL_KEYS = tuple(definition["key"] for definition in HOME_RAIL_DEFINITIONS)
+HOME_RAIL_DEFINITION_BY_KEY = {definition["key"]: definition for definition in HOME_RAIL_DEFINITIONS}
+HOME_RAIL_DEFAULT_INDEX = {key: index for index, key in enumerate(HOME_RAIL_KEYS)}
+
+
+class HomeRailLayoutEntry(BaseModel):
+    key: str
+    visible: bool = True
+
+
+class HomeRailLayoutUpdate(BaseModel):
+    rails: list[HomeRailLayoutEntry]
+
+
+class HomeRailLayoutRail(HomeRailLayoutEntry):
+    title: str
+    hint: str | None = None
+    customized: bool = False
+
+
+class HomeRailLayoutResponse(BaseModel):
+    rails: list[HomeRailLayoutRail]
+
+
+class HomeRailLayoutError(ValueError):
+    pass
+
+
+def _normalize_saved_home_rail_entries(saved_layout: Any) -> list[dict]:
+    if not isinstance(saved_layout, dict):
+        return []
+
+    saved_rails = saved_layout.get("rails")
+    if not isinstance(saved_rails, list):
+        return []
+
+    entries = []
+    seen_keys = set()
+    for raw_entry in saved_rails:
+        if not isinstance(raw_entry, dict):
+            continue
+
+        key = raw_entry.get("key")
+        if key not in HOME_RAIL_DEFINITION_BY_KEY or key in seen_keys:
+            continue
+
+        entries.append({"key": key, "visible": bool(raw_entry.get("visible", True))})
+        seen_keys.add(key)
+
+    return entries
+
+
+def _normalize_submitted_home_rail_entries(rails: list[HomeRailLayoutEntry]) -> list[dict]:
+    entries = []
+    seen_keys = set()
+
+    for rail in rails:
+        key = rail.key
+        if key not in HOME_RAIL_DEFINITION_BY_KEY:
+            raise HomeRailLayoutError(f"Unknown home rail key: {key}")
+        if key in seen_keys:
+            raise HomeRailLayoutError(f"Duplicate home rail key: {key}")
+
+        entries.append({"key": key, "visible": bool(rail.visible)})
+        seen_keys.add(key)
+
+    return entries
+
+
+def _insert_missing_home_rail_entries(entries: list[dict]) -> list[dict]:
+    resolved = [entry.copy() for entry in entries]
+    present_keys = {entry["key"] for entry in resolved}
+
+    for definition in HOME_RAIL_DEFINITIONS:
+        key = definition["key"]
+        if key in present_keys:
+            continue
+
+        entry = {"key": key, "visible": True}
+        default_index = HOME_RAIL_DEFAULT_INDEX[key]
+        insert_at = len(resolved)
+
+        for candidate_index in range(default_index - 1, -1, -1):
+            candidate_key = HOME_RAIL_KEYS[candidate_index]
+            existing_index = next(
+                (index for index, existing in enumerate(resolved) if existing["key"] == candidate_key),
+                None,
+            )
+            if existing_index is not None:
+                insert_at = existing_index + 1
+                break
+        else:
+            for candidate_index in range(default_index + 1, len(HOME_RAIL_KEYS)):
+                candidate_key = HOME_RAIL_KEYS[candidate_index]
+                existing_index = next(
+                    (index for index, existing in enumerate(resolved) if existing["key"] == candidate_key),
+                    None,
+                )
+                if existing_index is not None:
+                    insert_at = existing_index
+                    break
+
+        resolved.insert(insert_at, entry)
+        present_keys.add(key)
+
+    return resolved
+
+
+def resolve_home_rail_layout(saved_layout: Any) -> dict:
+    saved_entries = _normalize_saved_home_rail_entries(saved_layout)
+    saved_positions = {entry["key"]: index for index, entry in enumerate(saved_entries)}
+    saved_visibility = {entry["key"]: entry["visible"] for entry in saved_entries}
+
+    resolved_entries = _insert_missing_home_rail_entries(saved_entries)
+
+    return {
+        "rails": [
+            {
+                "key": entry["key"],
+                "title": HOME_RAIL_DEFINITION_BY_KEY[entry["key"]]["title"],
+                "hint": HOME_RAIL_DEFINITION_BY_KEY[entry["key"]]["hint"],
+                "visible": entry["visible"],
+                "customized": (
+                    entry["key"] in saved_positions
+                    and (
+                        saved_positions[entry["key"]] != HOME_RAIL_DEFAULT_INDEX[entry["key"]]
+                        or saved_visibility[entry["key"]] is False
+                    )
+                ),
+            }
+            for entry in resolved_entries
+        ],
+    }
+
+
+def _persistable_home_rail_layout(entries: list[dict]) -> dict:
+    resolved_entries = _insert_missing_home_rail_entries(entries)
+    return {
+        "version": HOME_RAIL_LAYOUT_VERSION,
+        "rails": [
+            {"key": entry["key"], "visible": entry["visible"]}
+            for entry in resolved_entries
+        ],
+    }
+
+
+def _get_layout_user(db: Session, current_user: User) -> User:
+    user = db.get(User, current_user.id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+
+@router.get("/layout", response_model=HomeRailLayoutResponse, name="layout")
+def get_home_layout(current_user: CurrentUser):
+    return resolve_home_rail_layout(current_user.home_rail_layout)
+
+
+@router.put("/layout", response_model=HomeRailLayoutResponse, name="update_layout")
+def update_home_layout(
+        data: HomeRailLayoutUpdate,
+        db: SessionDep,
+        current_user: CurrentUser,
+):
+    try:
+        entries = _normalize_submitted_home_rail_entries(data.rails)
+    except HomeRailLayoutError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    user = _get_layout_user(db, current_user)
+    user.home_rail_layout = _persistable_home_rail_layout(entries)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    return resolve_home_rail_layout(user.home_rail_layout)
+
+
+@router.post("/layout/reset", response_model=HomeRailLayoutResponse, name="reset_layout")
+def reset_home_layout(
+        db: SessionDep,
+        current_user: CurrentUser,
+):
+    user = _get_layout_user(db, current_user)
+    user.home_rail_layout = None
+    db.add(user)
+    db.commit()
+
+    return resolve_home_rail_layout(None)
 
 # (Or define a simple one here if ComicSearchItem is too heavy,
 # but it should be fine as it matches what comic_card expects)
