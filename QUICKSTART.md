@@ -31,6 +31,7 @@ docker run -d \
   -v /path/to/comics:/comics:ro \
   -e BASE_URL=/ \
   -e COMICS_PATH=/comics \
+  -e SECRET_KEY="$(openssl rand -hex 32)" \
   ghcr.io/parker-server/parker:latest
 ```
 
@@ -47,6 +48,7 @@ docker run -d \
   -p 8000:8000 \
   -e BASE_URL=/comics \
   -e COMICS_PATH=/comics \
+  -e SECRET_KEY="$(openssl rand -hex 32)" \
   -e TRUSTED_PROXIES="172.18.0.1,192.168.1.50" \
   -e ALLOWED_ORIGINS="https://comics.yourdomain.com" \
   -v /path/to/config:/app/storage \
@@ -78,13 +80,18 @@ Example .env
 PARKER_PORT=8000
 BASE_URL=/
 COMICS_PATH=/comics
-SECRET_KEY=change-me
+# Generate a unique value first: openssl rand -hex 32
+SECRET_KEY=
 ```
 
 ### Initial Configuration
+Parker requires `SECRET_KEY` to be set to a unique random value before startup. It will refuse to start if the key is empty or still uses a known placeholder.
+
 Once the container is running, access the web UI at http://localhost:8000, or the host port you mapped with `PARKER_PORT` / `-p`.
 
 Admin Account: Parker automatically creates the user **admin**, password **admin** on first boot.
+
+Change the admin password after first login, especially before exposing Parker outside a trusted local network.
 
 Once logged in, navigate to the administration area at `/admin`, such as `http://localhost:8000/admin`.
 

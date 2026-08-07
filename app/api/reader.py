@@ -1,20 +1,18 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import Response, FileResponse
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import Response
 from sqlalchemy import func, Float, case, or_, cast
 from sqlalchemy.orm import joinedload
-from typing import List, Annotated, Optional, Literal
-from pathlib import Path
+from typing import Annotated, Optional, Literal
 import re
 import logging
 
-from app.core.comic_helpers import (get_age_rating_config, get_comic_age_restriction)
+from app.core.comic_helpers import assert_user_can_view_comic, get_comic_age_restriction
 from app.core.comic_helpers import get_format_sort_index, get_format_weight, REVERSE_NUMBERING_SERIES
 from app.core.path_utils import resolve_absolute_path
 from app.api.deps import SessionDep, CurrentUser
 from app.models.comic import Comic, Volume
 from app.models.series import Series
 from app.models.library import Library
-from app.models.library_root import LibraryRoot
 
 from app.services.images import ImageService
 from app.models.reading_progress import ReadingProgress
@@ -71,31 +69,7 @@ async def get_comic_reader_init(comic_id: int,
     if not comic:
         raise HTTPException(status_code=404, detail="Comic not found")
 
-    if not current_user.is_superuser:
-
-        allowed_libs = [l.id for l in current_user.accessible_libraries]
-        if comic.volume.series.library_id not in allowed_libs:
-            raise HTTPException(status_code=404, detail="Comic not found")
-
-        # 2. Age Rating: Check Target
-        if current_user.max_age_rating:
-
-            is_restricted = False
-            allowed, banned = get_age_rating_config(current_user)
-
-            # Explicit Ban
-            if comic.age_rating in banned:
-                is_restricted = True
-
-            # Unknown Ban
-            if not current_user.allow_unknown_age_ratings:
-                if not comic.age_rating or comic.age_rating == "" or comic.age_rating.lower() == "unknown":
-                    is_restricted = True
-
-            if is_restricted:
-                raise HTTPException(status_code=403, detail="Content restricted by age rating")
-        # -------------------------------------
-
+    assert_user_can_view_comic(comic, current_user)
 
     # Default: No Context (Standard Volume Browsing)
     prev_id = None
@@ -384,26 +358,31 @@ def get_comic_page(
         comic_id: int,
         page_index: int,
         db: SessionDep,
+        current_user: CurrentUser,
         sharpen: Annotated[bool, Query()] = False,
         grayscale: Annotated[bool, Query()] = False,
         webp: Annotated[bool, Query()] = False
 ):
     """
     Get a specific page image.
-    OPTIMIZED: Fetches only the root path + relative path, not the full Comic object.
+    SECURED: Requires the same library and age-rating access as reader init.
     """
-    # 1. Fetch Path Only (Lean joined query = <1ms, no full ORM object)
-    row = (
-        db.query(LibraryRoot.path, Comic.relative_path)
-        .join(Comic, Comic.library_root_id == LibraryRoot.id)
+    comic = (
+        db.query(Comic)
+        .options(
+            joinedload(Comic.volume).joinedload(Volume.series),
+            joinedload(Comic.library_root),
+        )
         .filter(Comic.id == comic_id)
         .first()
     )
 
-    if not row:
+    if not comic:
         raise HTTPException(status_code=404, detail="Comic not found")
 
-    file_path = resolve_absolute_path(row[0], row[1])
+    assert_user_can_view_comic(comic, current_user, hide_denied=True)
+
+    file_path = resolve_absolute_path(comic.library_root.path, comic.relative_path)
 
     image_service = ImageService()
     image_bytes, is_correct_format, mime_type = image_service.get_page_image(

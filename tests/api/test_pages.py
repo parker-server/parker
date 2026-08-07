@@ -251,8 +251,23 @@ def test_login_page_cycles_static_covers(client, db):
     assert "cycling_static_covers" in body
     assert "/static/img/login-covers/action-comics-1.webp" in body
     assert "/static/img/login-covers/amazing-fantasy-15.webp" in body
-    assert "fetchBackgrounds()" in body
+    assert "fetchBackgrounds()" not in body
     assert "loadStaticCovers()" in body
+
+
+def test_login_page_treats_legacy_random_covers_as_static_cover_cycling(client, db):
+    settings_service = SettingsService(db)
+    settings_service.initialize_defaults()
+    settings_service.update("ui.login_background_style", "random_covers")
+
+    response = client.get("/login")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "cycling_static_covers" in body
+    assert "random_covers" not in body
+    assert "/static/img/login-covers/action-comics-1.webp" in body
+    assert "fetchBackgrounds()" not in body
 
 
 def test_login_page_static_cover_fallback_uses_webp_asset(client, db):

@@ -175,6 +175,18 @@ port exposed by Docker Compose, set `PARKER_PORT` in `.env`; for example,
 `PARKER_PORT=9000` exposes Parker at host port `9000` while the container still
 uses port `8000` internally.
 
+### Secret Key Configuration
+
+Parker requires `SECRET_KEY` to be set before startup. The value signs login
+tokens, so it must be unique per server and kept private. Generate one with:
+
+```bash
+openssl rand -hex 32
+```
+
+Put the generated value in `.env` as `SECRET_KEY=<generated value>`. Parker will
+refuse to start if the key is empty or still uses a known placeholder.
+
 ### OPDS Reader Compatibility
 
 Parker's OPDS feed serves original comic archives and preserves their file type.

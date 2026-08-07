@@ -120,6 +120,14 @@ def test_appearance_settings_include_display_groups_and_definition_order(admin_c
     assert groups["ui.on_deck.staleness_weeks"] == "Browsing Behavior"
 
 
+def test_login_background_style_defaults_to_static_cover_cycling(db):
+    SettingsService(db).initialize_defaults()
+
+    setting = db.query(SystemSetting).filter(SystemSetting.key == "ui.login_background_style").first()
+
+    assert setting.value == "cycling_static_covers"
+
+
 def test_login_background_style_options_include_static_cover_cycling(admin_client, db):
     SettingsService(db).initialize_defaults()
 
@@ -133,6 +141,25 @@ def test_login_background_style_options_include_static_cover_cycling(admin_clien
         if setting["key"] == "ui.login_background_style"
     )
     assert {"label": "Cycle Static Covers", "value": "cycling_static_covers"} in login_style["options"]
+    assert "random_covers" not in {option["value"] for option in login_style["options"]}
+
+
+def test_login_background_style_random_covers_is_normalized_to_static_cover_cycling(db):
+    db.add(
+        SystemSetting(
+            key="ui.login_background_style",
+            value="random_covers",
+            category="appearance",
+            data_type="select",
+            label="Login Background Style",
+        )
+    )
+    db.commit()
+
+    SettingsService(db).initialize_defaults()
+
+    setting = db.query(SystemSetting).filter(SystemSetting.key == "ui.login_background_style").first()
+    assert setting.value == "cycling_static_covers"
 
 
 def test_login_static_cover_default_uses_existing_webp_asset(db):

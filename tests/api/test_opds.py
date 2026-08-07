@@ -355,11 +355,51 @@ def test_opds_thumbnail_links_use_jpeg_endpoint(client, db, normal_user, tmp_pat
     assert image.get("type") == "image/jpeg"
     assert image.get("href", "").startswith(f"http://testserver/opds/images/{comic.id}/thumbnail.jpg?v=")
 
-    thumbnail_response = client.get(f"/opds/images/{comic.id}/thumbnail.jpg")
+    missing_auth = client.get(f"/opds/images/{comic.id}/thumbnail.jpg")
+    assert missing_auth.status_code == 401
 
-    assert thumbnail_response.status_code == 200
-    assert thumbnail_response.headers["content-type"].startswith("image/jpeg")
-    assert thumbnail_response.content.startswith(b"\xff\xd8")
+    with patch("app.api.opds_deps.verify_password", return_value=True):
+        thumbnail_response = client.get(
+            f"/opds/images/{comic.id}/thumbnail.jpg",
+            auth=(normal_user.username, "any_password")
+        )
+
+        assert thumbnail_response.status_code == 200
+        assert thumbnail_response.headers["content-type"].startswith("image/jpeg")
+        assert thumbnail_response.content.startswith(b"\xff\xd8")
+
+
+def test_opds_thumbnail_hides_inaccessible_library_comics(client, db, normal_user, tmp_path):
+    _enable_opds(db)
+
+    thumbnail_path = tmp_path / "hidden-cover.webp"
+    Image.new("RGB", (24, 36), color=(80, 100, 160)).save(thumbnail_path, format="WEBP")
+
+    library = create_library_with_root(db, "Hidden Thumbnail Library", str(tmp_path))
+    root = library.active_root
+    series = Series(name="Hidden Cover Test", library=library)
+    volume = Volume(series=series, volume_number=1)
+    comic = Comic(
+        volume=volume,
+        number="1",
+        title="Hidden Cover Story",
+        filename="hidden-cover-test-001.cbz",
+        library_root_id=root.id,
+        relative_path="hidden-cover-test-001.cbz",
+        thumbnail_path=str(thumbnail_path),
+    )
+    db.add_all([series, volume, comic])
+    db.commit()
+
+    from unittest.mock import patch
+
+    with patch("app.api.opds_deps.verify_password", return_value=True):
+        response = client.get(
+            f"/opds/images/{comic.id}/thumbnail.jpg",
+            auth=(normal_user.username, "any_password")
+        )
+
+    assert response.status_code == 404
 
 
 def test_opds_download_uses_real_archive_type_and_extension(client, db, normal_user, tmp_path):

@@ -9,7 +9,8 @@ import random
 from pydantic import BaseModel, Field
 
 from app.core.comic_helpers import (get_reading_time, get_format_sort_index, REVERSE_NUMBERING_SERIES,
-                                    get_age_rating_config, get_series_age_restriction, get_thumbnail_url, get_thumbnail_hash)
+                                    assert_user_can_view_comic, get_comic_age_restriction,
+                                    get_series_age_restriction, get_thumbnail_url, get_thumbnail_hash)
 from app.api.deps import SessionDep, CurrentUser, ComicDep
 
 from app.models.comic import Comic, Volume
@@ -65,15 +66,7 @@ def _ensure_user_can_view_comic(current_user: CurrentUser, comic: Comic):
     """
     Applies the same age restriction logic used by the detail endpoint.
     """
-    if not current_user.is_superuser and current_user.max_age_rating:
-        _, banned = get_age_rating_config(current_user)
-
-        if comic.age_rating in banned:
-            raise HTTPException(status_code=403, detail="Content restricted by age rating")
-
-        if not current_user.allow_unknown_age_ratings:
-            if not comic.age_rating or comic.age_rating == "" or comic.age_rating.lower() == "unknown":
-                raise HTTPException(status_code=403, detail="Content restricted by age rating")
+    assert_user_can_view_comic(comic, current_user)
 
 
 def _get_web_link_presentation(web_url: str | None) -> tuple[str | None, str | None]:
@@ -337,18 +330,26 @@ async def delete_comic_rating(
 @router.get("/{comic_id}/thumbnail", name="thumbnail")
 async def get_comic_thumbnail(
         comic_id: int,
-        db: SessionDep
+        db: SessionDep,
+        current_user: CurrentUser
 ):
     """
-    Get the thumbnail for a comic (public)
+    Get the thumbnail for a comic.
     Serves from storage/cover.
     """
     # 1. Base Query
-    comic = db.query(Comic).filter(Comic.id == comic_id).first()
+    comic = (
+        db.query(Comic)
+        .options(joinedload(Comic.volume).joinedload(Volume.series))
+        .filter(Comic.id == comic_id)
+        .first()
+    )
 
     if not comic:
         # We return 404 here to prevent leaking existence of the comic
         raise HTTPException(status_code=404, detail="Comic not found")
+
+    assert_user_can_view_comic(comic, current_user, hide_denied=True)
 
     last_mod = int(comic.updated_at.timestamp()) if comic.updated_at else 0
     etag = f'"{comic_id}-{last_mod}"'
@@ -387,15 +388,29 @@ async def get_comic_thumbnail(
 @router.get("/random/backgrounds", name="random_backgrounds")
 async def get_random_backgrounds(
         db: SessionDep,
+        current_user: CurrentUser,
         limit: int = 20
 ):
     """
-    Get a list of random comic thumbnail URLs for the login background.
+    Get a list of random comic thumbnail URLs for authenticated users.
     Optimized for performance: Avoids SQL 'ORDER BY RANDOM()' sorting.
     """
     # 1. Fetch ALL eligible IDs (Linear scan, fast)
     # We only fetch the ID column to minimize memory usage
-    all_rows = db.query(Comic.id, Comic.updated_at).filter(Comic.thumbnail_path != None).all()
+    query = (
+        db.query(Comic.id, Comic.updated_at)
+        .join(Volume)
+        .join(Series)
+        .filter(Comic.thumbnail_path != None)
+    )
+
+    query = filter_by_user_access(query, current_user)
+
+    age_filter = get_comic_age_restriction(current_user)
+    if age_filter is not None:
+        query = query.filter(age_filter)
+
+    all_rows = query.all()
 
     # SQLAlchemy returns a list of tuples like [(1,), (2,), (5,)]
     # We flatten this to a standard list [1, 2, 5]

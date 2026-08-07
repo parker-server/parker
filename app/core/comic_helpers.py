@@ -91,6 +91,46 @@ def get_age_rating_config(user) -> tuple[tuple[str, ...], tuple[str, ...]]:
 # --------------------
 
 
+def is_comic_age_restricted_for_user(comic: Comic, user) -> bool:
+    """Return True when the comic itself exceeds the user's age-rating access."""
+    if not user or user.is_superuser or not user.max_age_rating:
+        return False
+
+    _, banned_ratings = get_age_rating_config(user)
+
+    if comic.age_rating in banned_ratings:
+        return True
+
+    if not user.allow_unknown_age_ratings:
+        if not comic.age_rating or comic.age_rating == "" or comic.age_rating.lower() == "unknown":
+            return True
+
+    return False
+
+
+def assert_user_can_view_comic(comic: Comic, user, *, hide_denied: bool = False) -> None:
+    """
+    Enforce library and comic-level age access for a loaded Comic.
+
+    `hide_denied=True` is intended for byte-serving endpoints so direct media
+    URLs do not confirm whether a comic id exists.
+    """
+    denied_detail = "Comic not found" if hide_denied else "Content restricted by age rating"
+    denied_status = 404 if hide_denied else 403
+
+    if not user or not user.is_superuser:
+        allowed_library_ids = {library.id for library in getattr(user, "accessible_libraries", [])}
+        library_id = None
+        if comic.volume and comic.volume.series:
+            library_id = comic.volume.series.library_id
+
+        if library_id not in allowed_library_ids:
+            raise HTTPException(status_code=404, detail="Comic not found")
+
+    if is_comic_age_restricted_for_user(comic, user):
+        raise HTTPException(status_code=denied_status, detail=denied_detail)
+
+
 def get_comic_age_restriction(user, comic_model=Comic):
     """
     Returns a SQLAlchemy BinaryExpression to filter COMIC rows directly.
