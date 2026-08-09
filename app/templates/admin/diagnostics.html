@@ -10,6 +10,30 @@
         description="Inspect the active storage and startup state Parker is using right now."
     ) }}
 
+    {% if diagnostics.legacy_default_admin_password_active %}
+    <div class="rounded-2xl border border-rose-500/40 bg-rose-950/30 p-6 shadow-xl">
+        <div class="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
+            <div class="space-y-3">
+                <div class="flex flex-wrap items-center gap-3">
+                    <span class="inline-flex rounded-full border border-rose-400/40 bg-rose-500/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.2em] text-rose-100">
+                        Security Warning
+                    </span>
+                    <span class="text-sm font-semibold text-rose-100">Legacy default admin password detected</span>
+                </div>
+                <p class="max-w-3xl text-sm leading-6 text-rose-100/85">
+                    The <code class="rounded bg-black/30 px-1.5 py-0.5 text-rose-50">admin</code> account still accepts Parker's legacy default password. Change it before exposing Parker outside a trusted network.
+                </p>
+            </div>
+            <a
+                href="{{ url('/user/settings') }}"
+                class="inline-flex shrink-0 items-center justify-center rounded-lg border border-rose-300/40 bg-rose-500/15 px-4 py-2 text-sm font-bold text-rose-50 transition-colors hover:border-rose-200/70 hover:bg-rose-500/25"
+            >
+                Update Password
+            </a>
+        </div>
+    </div>
+    {% endif %}
+
     <div class="rounded-2xl border border-gray-700 bg-gray-800/60 p-6 shadow-xl space-y-4">
         <div class="flex flex-wrap items-center gap-3">
             <span class="text-xs font-bold uppercase tracking-[0.25em] text-gray-400">Status</span>

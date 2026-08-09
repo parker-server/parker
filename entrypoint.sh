@@ -13,12 +13,17 @@ alembic upgrade head
 
 # Initialize default settings
 python - << 'EOF'
+from app.config import settings
 from app.database import SessionLocal
+from app.services.admin_bootstrap import ensure_initial_admin
 from app.services.settings_service import SettingsService
 
 db = SessionLocal()
-SettingsService(db).initialize_defaults()
-db.close()
+try:
+    ensure_initial_admin(db, app_settings=settings)
+    SettingsService(db).initialize_defaults()
+finally:
+    db.close()
 EOF
 
 # Start Uvicorn

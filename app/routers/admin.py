@@ -122,6 +122,7 @@ async def admin_diagnostics_page(request: Request, db: SessionDep, admin_user: A
     diagnostics = collect_startup_diagnostics(
         db,
         database_url=settings.database_url,
+        include_security_checks=True,
     )
     support_snapshot = build_support_snapshot(
         diagnostics,

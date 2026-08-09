@@ -425,15 +425,15 @@
                 </div>
 
                 <div class="max-w-2xl mx-auto space-y-4" x-show="startupNotice.is_admin">
-                    <a :href="startupNotice.diagnostics_url" class="group flex items-start gap-4 rounded-xl border border-amber-400/40 bg-amber-500/10 px-6 py-5 text-left shadow-lg transition-all hover:border-amber-300/60 hover:bg-amber-500/15">
+                    <a :href="startupNotice.primary_action_url || startupNotice.diagnostics_url ? window.parker.url(startupNotice.primary_action_url || startupNotice.diagnostics_url) : '#'" class="group flex items-start gap-4 rounded-xl border border-amber-400/40 bg-amber-500/10 px-6 py-5 text-left shadow-lg transition-all hover:border-amber-300/60 hover:bg-amber-500/15">
                         <div class="text-2xl">!</div>
                         <div>
-                            <h3 class="font-bold text-white group-hover:text-amber-100 transition-colors">Open Diagnostics</h3>
-                            <p class="text-sm text-amber-100/70 mt-1">Inspect the active database path, counts, configured libraries, and comics probe before making any changes.</p>
+                            <h3 class="font-bold text-white group-hover:text-amber-100 transition-colors" x-text="startupNotice.primary_action_title || 'Open Diagnostics'"></h3>
+                            <p class="text-sm text-amber-100/70 mt-1" x-text="startupNotice.primary_action_summary || 'Inspect the active database path, counts, configured libraries, and comics probe before making any changes.'"></p>
                         </div>
                     </a>
 
-                    <div class="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm">
+                    <div class="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm" x-show="startupNotice.status === 'storage_mismatch_suspected'">
                         <a :href="window.parker.url('/admin')" class="text-gray-300 hover:text-white transition-colors">Back to Admin</a>
                         <a :href="window.parker.url('/admin/libraries')" class="text-amber-200/55 hover:text-amber-200/80 transition-colors">Manage Libraries Anyway</a>
                     </div>

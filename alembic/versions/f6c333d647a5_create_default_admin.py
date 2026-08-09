@@ -1,4 +1,4 @@
-"""create default admin
+"""legacy default admin seed retired
 
 Revision ID: f6c333d647a5
 Revises: 23bc0e2cee25
@@ -6,10 +6,6 @@ Create Date: 2025-12-13 11:50:24.008539
 
 """
 from typing import Sequence, Union
-
-from alembic import op
-import sqlalchemy as sa
-from sqlalchemy.sql import table, column
 
 
 # revision identifiers, used by Alembic.
@@ -20,31 +16,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    users = table(
-        'users',
-        column('email', sa.String),
-        column('username', sa.String),
-        column('hashed_password', sa.String),
-        column('is_superuser', sa.Boolean),
-        column('is_active', sa.Boolean),
-
-    )
-
-    # Insert only if table is empty
-    conn = op.get_bind()
-    result = conn.execute(sa.text("SELECT COUNT(*) FROM users"))
-    count = result.scalar()
-
-    if count == 0:
-        conn.execute(
-            users.insert().values(
-                username="admin",
-                email="admin@example.com",
-                hashed_password='$2b$12$A//4Gkpn1.4pwUJE4nrMMef5iFScpRG3qq3fNFZXTC4M6mkmthF0C', # admin
-                is_superuser=True,
-                is_active=True,
-            )
-        )
+    # Parker now creates the first administrator through startup bootstrap
+    # using INITIAL_ADMIN_PASSWORD. Existing databases that already ran the
+    # legacy seed are intentionally left untouched.
+    pass
 
 
 

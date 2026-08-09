@@ -85,12 +85,15 @@ def client(db) -> Generator:
             pass
 
     app.dependency_overrides[get_db] = override_get_db
+    app.state.skip_admin_bootstrap = True
 
-    with TestClient(app) as c:
-        yield c
-
-    # Reset overrides after test
-    app.dependency_overrides.clear()
+    try:
+        with TestClient(app) as c:
+            yield c
+    finally:
+        # Reset overrides after test
+        app.dependency_overrides.clear()
+        app.state.skip_admin_bootstrap = False
 
 
 # 4. USER FIXTURES

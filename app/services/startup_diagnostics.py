@@ -5,6 +5,7 @@ from pathlib import Path
 from sqlalchemy import text
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.security import verify_password
 from app.models.comic import Comic
 from app.models.library import Library
 from app.models.series import Series
@@ -95,6 +96,21 @@ def _safe_alembic_version(db: Session) -> str | None:
         return None
 
     return row[0]
+
+
+def _legacy_default_admin_password_active(db: Session) -> bool:
+    user = db.query(User).filter(
+        User.username == "admin",
+        User.is_superuser == True,
+        User.is_active == True,
+    ).first()
+    if user is None:
+        return False
+
+    try:
+        return verify_password("admin", user.hashed_password)
+    except Exception:
+        return False
 
 
 def _looks_like_container_library_path(path: str) -> bool:
@@ -193,6 +209,7 @@ def collect_startup_diagnostics(
     *,
     database_url: str,
     comics_root: Path = Path("/comics"),
+    include_security_checks: bool = False,
 ) -> dict:
     db_path = resolve_sqlite_db_path(database_url)
     db_exists = bool(db_path and db_path.exists())
@@ -210,6 +227,11 @@ def collect_startup_diagnostics(
         User.email == "admin@example.com",
         User.is_superuser == True,
     ).first() is not None
+    legacy_default_admin_password_active = (
+        _legacy_default_admin_password_active(db)
+        if include_security_checks
+        else False
+    )
 
     library_sample = []
     for library in (
@@ -281,6 +303,7 @@ def collect_startup_diagnostics(
             "comics": comics_count,
         },
         "default_admin_present": default_admin_present,
+        "legacy_default_admin_password_active": legacy_default_admin_password_active,
         "library_sample": library_sample,
         "runtime": {
             "mode": runtime_mode,
@@ -298,6 +321,8 @@ def collect_startup_diagnostics(
 def build_home_startup_notice(diagnostics: dict, *, is_admin: bool) -> dict | None:
     status = diagnostics.get("status")
     if status == STARTUP_STATUS_HEALTHY:
+        if diagnostics.get("legacy_default_admin_password_active") and is_admin:
+            return _build_legacy_default_admin_password_notice()
         return None
 
     if status == STARTUP_STATUS_STORAGE_MISMATCH:
@@ -309,9 +334,35 @@ def build_home_startup_notice(diagnostics: dict, *, is_admin: bool) -> dict | No
             "is_admin": is_admin,
             "recommended_actions": diagnostics["recommended_actions"],
             "diagnostics_url": "/admin/diagnostics" if is_admin else None,
+            "primary_action_url": "/admin/diagnostics" if is_admin else None,
+            "primary_action_title": "Open Diagnostics",
+            "primary_action_summary": "Inspect the active database path, counts, configured libraries, and comics probe before making any changes.",
         }
 
+    if diagnostics.get("legacy_default_admin_password_active") and is_admin:
+        return _build_legacy_default_admin_password_notice()
+
     return None
+
+
+def _build_legacy_default_admin_password_notice() -> dict:
+    return {
+        "status": "legacy_default_admin_password_active",
+        "title": "Legacy Default Admin Password",
+        "summary": (
+            "The built-in admin account still accepts Parker's legacy default password. "
+            "Change it before exposing Parker outside a trusted network."
+        ),
+        "is_suspicious": True,
+        "is_admin": True,
+        "recommended_actions": [
+            "Open Account Settings and change the admin password.",
+            "Use a unique password that is not shared with other services.",
+        ],
+        "primary_action_url": "/user/settings",
+        "primary_action_title": "Update Password",
+        "primary_action_summary": "Change the current admin password from your account settings.",
+    }
 
 
 def build_support_snapshot(
