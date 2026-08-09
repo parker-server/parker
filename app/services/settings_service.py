@@ -77,14 +77,13 @@ class SettingsService:
             "unit_label": "seconds",
         },
         {
-            "key": "ui.login_background_style", "value": "random_covers",
+            "key": "ui.login_background_style", "value": "cycling_static_covers",
             "category": "appearance", "data_type": "select",
             "label": "Login Background Style",
             "description": "Choose what appears behind the login form.",
             "display_group": "Login Page",
             "options": [
                 {"label": "None (Gradient only)", "value": "none"},
-                {"label": "Random library covers", "value": "random_covers"},
                 {"label": "Solid Color", "value": "solid_color"},
                 {"label": "Static Cover", "value": "static_cover"},
                 {"label": "Cycle Static Covers", "value": "cycling_static_covers"},
@@ -374,6 +373,9 @@ class SettingsService:
                     setting.depends_on = default["depends_on"]
 
                 if key == "ui.login_static_cover" and setting.value not in STATIC_COVERS:
+                    setting.value = default["value"]
+
+                if key == "ui.login_background_style" and setting.value == "random_covers":
                     setting.value = default["value"]
 
                 if "min_value" in default:

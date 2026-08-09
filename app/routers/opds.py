@@ -20,7 +20,9 @@ from app.core.templates import templates
 from app.core.comic_helpers import (
     get_series_age_restriction,
     get_comic_age_restriction,
-    get_age_rating_config, NON_PLAIN_FORMATS, get_thumbnail_hash
+    assert_user_can_view_comic,
+    NON_PLAIN_FORMATS,
+    get_thumbnail_hash,
 )
 
 router = APIRouter(prefix="/opds", tags=["opds"])
@@ -105,13 +107,22 @@ def get_opds_thumbnail_href(request: Request, comic: Comic) -> str:
     return f"{url}?v={get_thumbnail_hash(comic.updated_at)}"
 
 
-def get_authorized_opds_comic(comic_id: int, user: OPDSUser, db: SessionDep) -> Comic:
+def get_authorized_opds_comic(
+        comic_id: int,
+        user: OPDSUser,
+        db: SessionDep,
+        *,
+        hide_denied: bool = False,
+) -> Comic:
     """Return a comic if the OPDS user can access it, otherwise raise."""
     comic = (
         db.query(Comic)
         .join(Volume)
         .join(Series)
-        .options(joinedload(Comic.library_root))
+        .options(
+            joinedload(Comic.library_root),
+            joinedload(Comic.volume).joinedload(Volume.series),
+        )
         .filter(Comic.id == comic_id)
         .first()
     )
@@ -119,23 +130,7 @@ def get_authorized_opds_comic(comic_id: int, user: OPDSUser, db: SessionDep) -> 
     if not comic:
         raise HTTPException(status_code=404)
 
-    if not user.is_superuser:
-        if comic.volume.series.library_id not in [l.id for l in user.accessible_libraries]:
-            raise HTTPException(status_code=404)
-
-    if not user.is_superuser and user.max_age_rating:
-        _, banned = get_age_rating_config(user)
-        is_restricted = False
-
-        if comic.age_rating in banned:
-            is_restricted = True
-
-        if not user.allow_unknown_age_ratings:
-            if not comic.age_rating or comic.age_rating == "" or comic.age_rating.lower() == "unknown":
-                is_restricted = True
-
-        if is_restricted:
-            raise HTTPException(status_code=403, detail="Age Restricted")
+    assert_user_can_view_comic(comic, user, hide_denied=hide_denied)
 
     return comic
 
@@ -387,10 +382,8 @@ templates.env.globals["get_opds_thumbnail_href"] = get_opds_thumbnail_href
 
 # 4. DOWNLOAD: Serve the file
 @router.get("/images/{comic_id}/thumbnail.jpg", name="opds_thumbnail")
-async def opds_thumbnail(comic_id: int, db: SessionDep):
-    comic = db.query(Comic).filter(Comic.id == comic_id).first()
-    if not comic:
-        raise HTTPException(status_code=404, detail="Comic not found")
+async def opds_thumbnail(comic_id: int, user: OPDSUser, db: SessionDep):
+    comic = get_authorized_opds_comic(comic_id, user, db, hide_denied=True)
 
     thumbnail_path = get_opds_thumbnail_path(comic)
 

@@ -13,8 +13,7 @@ services:
     environment:
       - DATABASE_URL=sqlite:////app/storage/database/comics.db
       - COMICS_PATH=/comics
-      # Generate a strong key: openssl rand -hex 32
-      - SECRET_KEY=CHANGE_THIS_TO_A_REAL_SECRET_KEY
+      - "SECRET_KEY=${SECRET_KEY:?Set SECRET_KEY in .env to a unique random value. Generate one with: openssl rand -hex 32}"
       # If you need to tell the app where unrar is in the container
       # (Note: standard Linux unrar path is usually /usr/bin/unrar)
       - UNRAR_PATH=/usr/bin/unrar

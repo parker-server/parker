@@ -192,6 +192,8 @@ async def login_page(request: Request, db: SessionDep):
 
     svc = SettingsService(db)
     login_background_style = svc.get("ui.login_background_style")
+    if login_background_style == "random_covers":
+        login_background_style = "cycling_static_covers"
 
     context = {
         "active_effect": get_active_effect(),

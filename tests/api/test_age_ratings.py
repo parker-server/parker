@@ -300,30 +300,23 @@ def test_dashboard_stats_poison_pill(db, restricted_client, restricted_user):
     # (Or arguably it should, but your SQL logic filters the JOIN, so it won't).
     assert stats['issues_read'] == 0
 
-@pytest.mark.skip(reason="Undecided if we're going to protect individual images from age check")
-def test_file_security_bypass(db, restricted_client, restricted_user):
+def test_direct_media_urls_hide_age_restricted_comics(db, restricted_client, restricted_user):
     """
-    CRITICAL SECURITY CHECK:
-    Can I download the file or see the page if I guess the URL?
+    Direct media URLs should not serve bytes or confirm existence when a user
+    guesses the ID of an age-restricted comic.
     """
     data = setup_mixed_environment(db)
     lib = db.get(Library, data['lib_id'])
     restricted_user.accessible_libraries.append(lib)
     db.commit()
 
-    # 1. Try to get a PAGE from the Mature book
-    # This Mock prevents the actual file read, but we check if it passes the DB security layer
-    with pytest.raises(Exception):
-        # If this returns 403, you are safe. If 200 or 404 (file missing), you are vulnerable.
-        res = restricted_client.get(f"/api/reader/{data['poisoned_mature_comic_id']}/page/1")
-        assert res.status_code == 403
+    res = restricted_client.get(f"/api/reader/{data['poisoned_mature_comic_id']}/page/1")
+    assert res.status_code == 404
+    assert res.json()["detail"] == "Comic not found"
 
-    # 2. Try to get the THUMBNAIL of the Mature book
     res_thumb = restricted_client.get(f"/api/comics/{data['poisoned_mature_comic_id']}/thumbnail")
-    # Ideally, this should be 403 or 404 generic.
-    # If it returns the image, it's a minor leak.
-    if res_thumb.status_code == 200:
-        pytest.fail("Security Hole: Thumbnail for banned book is accessible")
+    assert res_thumb.status_code == 404
+    assert res_thumb.json()["detail"] == "Comic not found"
 
 def test_opds_security(db, client, restricted_user):
     """Verify OPDS doesn't leak banned books."""
@@ -360,4 +353,12 @@ def test_opds_security(db, client, restricted_user):
         )
 
         assert res_dl.status_code == 403
+
+        # 5. OPDS Thumbnail
+        res_thumb = client.get(
+            f"/opds/images/{data['poisoned_mature_comic_id']}/thumbnail.jpg",
+            auth=auth_creds
+        )
+
+        assert res_thumb.status_code == 404
 

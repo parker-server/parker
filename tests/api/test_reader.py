@@ -336,17 +336,42 @@ def test_reader_init_story_arc_context_respects_volume_scope(auth_client, db, no
     assert payload["next_comic_id"] == second.id
 
 
-def test_reader_page_endpoint_headers_and_errors(client, db):
+def test_reader_page_endpoint_requires_authentication(client, db):
     _, _, volume = _create_graph(db, lib_name="reader-page-lib", series_name="Reader Pages")
     comic = _add_comic(db, volume, number="1", title="Page Comic")
     db.commit()
 
-    missing = client.get("/api/reader/999999/page/1")
+    response = client.get(f"/api/reader/{comic.id}/page/1")
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Not authenticated"}
+
+
+def test_reader_page_endpoint_hides_inaccessible_library_comics(auth_client, db):
+    _, _, volume = _create_graph(db, lib_name="reader-page-hidden-lib", series_name="Hidden Reader Pages")
+    comic = _add_comic(db, volume, number="1", title="Hidden Page Comic")
+    db.commit()
+
+    with patch("app.api.reader.ImageService.get_page_image") as mock_page:
+        response = auth_client.get(f"/api/reader/{comic.id}/page/1")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Comic not found"}
+    mock_page.assert_not_called()
+
+
+def test_reader_page_endpoint_headers_and_errors(auth_client, db, normal_user):
+    library, _, volume = _create_graph(db, lib_name="reader-page-lib", series_name="Reader Pages")
+    comic = _add_comic(db, volume, number="1", title="Page Comic")
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    missing = auth_client.get("/api/reader/999999/page/1")
     assert missing.status_code == 404
     assert missing.json() == {"detail": "Comic not found"}
 
     with patch("app.api.reader.ImageService.get_page_image", return_value=(b"jpeg-bytes", True, "image/jpeg")) as mock_page:
-        jpeg = client.get(f"/api/reader/{comic.id}/page/1?sharpen=true&grayscale=true")
+        jpeg = auth_client.get(f"/api/reader/{comic.id}/page/1?sharpen=true&grayscale=true")
 
     assert jpeg.status_code == 200
     assert jpeg.headers["content-disposition"] == 'inline; filename="page_1.jpg"'
@@ -360,47 +385,47 @@ def test_reader_page_endpoint_headers_and_errors(client, db):
     )
 
     with patch("app.api.reader.ImageService.get_page_image", return_value=(b"png-bytes", False, "image/png")):
-        png = client.get(f"/api/reader/{comic.id}/page/2")
+        png = auth_client.get(f"/api/reader/{comic.id}/page/2")
 
     assert png.status_code == 200
     assert png.headers["content-disposition"] == 'inline; filename="page_2.png"'
     assert png.headers["cache-control"] == "no-cache, no-store, must-revalidate"
 
     with patch("app.api.reader.ImageService.get_page_image", return_value=(b"gif-bytes", False, "image/gif")):
-        gif = client.get(f"/api/reader/{comic.id}/page/3")
+        gif = auth_client.get(f"/api/reader/{comic.id}/page/3")
 
     assert gif.status_code == 200
     assert gif.headers["content-disposition"] == 'inline; filename="page_3.gif"'
 
     with patch("app.api.reader.ImageService.get_page_image", return_value=(b"webp-bytes", True, "image/webp")):
-        webp = client.get(f"/api/reader/{comic.id}/page/4?webp=true")
+        webp = auth_client.get(f"/api/reader/{comic.id}/page/4?webp=true")
 
     assert webp.status_code == 200
     assert webp.headers["content-disposition"] == 'inline; filename="page_4.webp"'
     assert webp.headers["content-type"].startswith("image/webp")
 
     with patch("app.api.reader.ImageService.get_page_image", return_value=(b"jxl-bytes", True, "image/jxl")):
-        jxl = client.get(f"/api/reader/{comic.id}/page/6")
+        jxl = auth_client.get(f"/api/reader/{comic.id}/page/6")
 
     assert jxl.status_code == 200
     assert jxl.headers["content-disposition"] == 'inline; filename="page_6.jxl"'
     assert jxl.headers["content-type"].startswith("image/jxl")
 
     with patch("app.api.reader.ImageService.get_page_image", return_value=(b"avif-bytes", True, "image/avif")):
-        avif = client.get(f"/api/reader/{comic.id}/page/7")
+        avif = auth_client.get(f"/api/reader/{comic.id}/page/7")
 
     assert avif.status_code == 200
     assert avif.headers["content-disposition"] == 'inline; filename="page_7.avif"'
     assert avif.headers["content-type"].startswith("image/avif")
 
     with patch("app.api.reader.ImageService.get_page_image", return_value=(None, False, "image/jpeg")):
-        no_page = client.get(f"/api/reader/{comic.id}/page/5")
+        no_page = auth_client.get(f"/api/reader/{comic.id}/page/5")
 
     assert no_page.status_code == 404
     assert no_page.json() == {"detail": "Page not found"}
 
 
-def test_reader_page_endpoint_serves_real_jxl_archive_page(client, db, tmp_path):
+def test_reader_page_endpoint_serves_real_jxl_archive_page(auth_client, db, normal_user, tmp_path):
     library, _, volume = _create_graph(db, lib_name="reader-jxl-lib", series_name="Reader JXL")
     archive_path = _build_jxl_cbz(tmp_path)
     comic = _add_comic(
@@ -410,9 +435,10 @@ def test_reader_page_endpoint_serves_real_jxl_archive_page(client, db, tmp_path)
         title="JXL Archive Comic",
         file_path=str(archive_path),
     )
+    normal_user.accessible_libraries.append(library)
     db.commit()
 
-    response = client.get(f"/api/reader/{comic.id}/page/0")
+    response = auth_client.get(f"/api/reader/{comic.id}/page/0")
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("image/jxl")
@@ -420,7 +446,7 @@ def test_reader_page_endpoint_serves_real_jxl_archive_page(client, db, tmp_path)
     assert len(response.content) > 0
 
 
-def test_reader_page_endpoint_serves_real_avif_archive_page(client, db, tmp_path):
+def test_reader_page_endpoint_serves_real_avif_archive_page(auth_client, db, normal_user, tmp_path):
     library, _, volume = _create_graph(db, lib_name="reader-avif-lib", series_name="Reader AVIF")
     archive_path = _build_avif_cbz(tmp_path)
     comic = _add_comic(
@@ -430,9 +456,10 @@ def test_reader_page_endpoint_serves_real_avif_archive_page(client, db, tmp_path
         title="AVIF Archive Comic",
         file_path=str(archive_path),
     )
+    normal_user.accessible_libraries.append(library)
     db.commit()
 
-    response = client.get(f"/api/reader/{comic.id}/page/0")
+    response = auth_client.get(f"/api/reader/{comic.id}/page/0")
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("image/avif")

@@ -572,7 +572,48 @@ def test_get_comic_detail_missing_or_hidden_returns_404(auth_client, db):
     assert hidden.json() == {"detail": "Comic not found"}
 
 
-def test_get_comic_thumbnail_db_path_and_fallback_and_missing(client, db, tmp_path):
+def test_get_comic_thumbnail_requires_authentication(client, db):
+    library, _, volume = _create_graph(db, lib_name="comic-thumb-auth", series_name="Thumb Auth Saga")
+    comic = create_comic(
+        db,
+        volume,
+        library.active_root,
+        "auth-thumb.cbz",
+        number="1",
+        title="Auth Thumb",
+        filename="auth-thumb.cbz",
+    )
+    db.commit()
+
+    response = client.get(f"/api/comics/{comic.id}/thumbnail")
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Not authenticated"}
+
+
+def test_get_comic_thumbnail_hides_inaccessible_library_comics(auth_client, db, tmp_path):
+    library, _, volume = _create_graph(db, lib_name="comic-thumb-hidden", series_name="Hidden Thumb Saga")
+    db_thumb = tmp_path / "hidden-thumb.webp"
+    db_thumb.write_bytes(b"hidden-thumb")
+    comic = create_comic(
+        db,
+        volume,
+        library.active_root,
+        "hidden-thumb.cbz",
+        number="1",
+        title="Hidden Thumb",
+        thumbnail_path=str(db_thumb),
+        filename="hidden-thumb.cbz",
+    )
+    db.commit()
+
+    response = auth_client.get(f"/api/comics/{comic.id}/thumbnail")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Comic not found"}
+
+
+def test_get_comic_thumbnail_db_path_and_fallback_and_missing(auth_client, db, normal_user, tmp_path):
     library, _, volume = _create_graph(db, lib_name="comic-thumb", series_name="Thumb Saga")
 
     db_thumb = tmp_path / "db-thumb.webp"
@@ -599,9 +640,10 @@ def test_get_comic_thumbnail_db_path_and_fallback_and_missing(client, db, tmp_pa
         thumbnail_path=None,
         filename="no-thumb.cbz",
     )
+    normal_user.accessible_libraries.append(library)
     db.commit()
 
-    db_resp = client.get(f"/api/comics/{comic_db.id}/thumbnail")
+    db_resp = auth_client.get(f"/api/comics/{comic_db.id}/thumbnail")
     assert db_resp.status_code == 200
     assert db_resp.headers["content-type"].startswith("image/webp")
     assert "ETag" in db_resp.headers
@@ -613,7 +655,7 @@ def test_get_comic_thumbnail_db_path_and_fallback_and_missing(client, db, tmp_pa
     standard_path.write_bytes(b"standard-thumb")
 
     try:
-        std_resp = client.get(f"/api/comics/{comic_std.id}/thumbnail")
+        std_resp = auth_client.get(f"/api/comics/{comic_std.id}/thumbnail")
         assert std_resp.status_code == 200
         assert std_resp.headers["content-type"].startswith("image/webp")
     finally:
@@ -629,7 +671,7 @@ def test_get_comic_thumbnail_db_path_and_fallback_and_missing(client, db, tmp_pa
         missing_standard_path.unlink()
 
     try:
-        missing_resp = client.get(f"/api/comics/{comic_missing.id}/thumbnail")
+        missing_resp = auth_client.get(f"/api/comics/{comic_missing.id}/thumbnail")
         assert missing_resp.status_code == 404
         assert missing_resp.json() == {"detail": "Could not find thumbnail"}
     finally:
@@ -637,8 +679,15 @@ def test_get_comic_thumbnail_db_path_and_fallback_and_missing(client, db, tmp_pa
             missing_standard_path.write_bytes(missing_backup)
 
 
-def test_random_backgrounds_handles_empty_and_limit(client, db):
-    empty = client.get("/api/comics/random/backgrounds?limit=3")
+def test_random_backgrounds_requires_authentication(client):
+    response = client.get("/api/comics/random/backgrounds?limit=3")
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Not authenticated"}
+
+
+def test_random_backgrounds_handles_empty_and_limit(auth_client, db, normal_user):
+    empty = auth_client.get("/api/comics/random/backgrounds?limit=3")
     assert empty.status_code == 200
     assert empty.json() == []
 
@@ -647,16 +696,67 @@ def test_random_backgrounds_handles_empty_and_limit(client, db):
     c1 = create_comic(db, volume, root, "r1.cbz", number="1", title="R1", thumbnail_path="/tmp/r1.webp", filename="r1.cbz")
     c2 = create_comic(db, volume, root, "r2.cbz", number="2", title="R2", thumbnail_path="/tmp/r2.webp", filename="r2.cbz")
     c3 = create_comic(db, volume, root, "r3.cbz", number="3", title="R3", thumbnail_path="/tmp/r3.webp", filename="r3.cbz")
+    normal_user.accessible_libraries.append(library)
     db.commit()
 
     with patch("app.api.comics.random.sample", side_effect=lambda rows, size: rows[:size]):
-        response = client.get("/api/comics/random/backgrounds?limit=2")
+        response = auth_client.get("/api/comics/random/backgrounds?limit=2")
 
     assert response.status_code == 200
     payload = response.json()
     assert len(payload) == 2
     assert payload[0].startswith(f"/api/comics/{c1.id}/thumbnail?v=")
     assert payload[1].startswith(f"/api/comics/{c2.id}/thumbnail?v=")
+
+
+def test_random_backgrounds_filters_library_and_age_access(auth_client, db, normal_user):
+    allowed_library, _, allowed_volume = _create_graph(db, lib_name="comic-random-allowed", series_name="Allowed Random")
+    hidden_library, _, hidden_volume = _create_graph(db, lib_name="comic-random-hidden", series_name="Hidden Random")
+
+    allowed_comic = create_comic(
+        db,
+        allowed_volume,
+        allowed_library.active_root,
+        "allowed-random.cbz",
+        number="1",
+        title="Allowed Random",
+        age_rating="Everyone",
+        thumbnail_path="/tmp/allowed-random.webp",
+        filename="allowed-random.cbz",
+    )
+    create_comic(
+        db,
+        allowed_volume,
+        allowed_library.active_root,
+        "mature-random.cbz",
+        number="2",
+        title="Mature Random",
+        age_rating="Mature 17+",
+        thumbnail_path="/tmp/mature-random.webp",
+        filename="mature-random.cbz",
+    )
+    create_comic(
+        db,
+        hidden_volume,
+        hidden_library.active_root,
+        "hidden-random.cbz",
+        number="1",
+        title="Hidden Random",
+        age_rating="Everyone",
+        thumbnail_path="/tmp/hidden-random.webp",
+        filename="hidden-random.cbz",
+    )
+    normal_user.max_age_rating = "Teen"
+    normal_user.accessible_libraries.append(allowed_library)
+    db.commit()
+
+    with patch("app.api.comics.random.sample", side_effect=lambda rows, size: rows[:size]):
+        response = auth_client.get("/api/comics/random/backgrounds?limit=10")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 1
+    assert payload[0].startswith(f"/api/comics/{allowed_comic.id}/thumbnail?v=")
 
 
 def test_cover_manifest_volume_and_series_reverse_sort(auth_client, db, normal_user):

@@ -41,7 +41,7 @@
     <!-- Background Images Layer (z-0) -->
     <div class="absolute inset-0 z-0">
 
-        {% if login_bg_style == 'random_covers' or login_bg_style == 'cycling_static_covers' %}
+        {% if login_bg_style == 'cycling_static_covers' %}
             <!-- Cycling Covers -->
             <div class="absolute inset-0 bg-cover bg-center"
                  :style="`background-image: url('${currentImage}')`">
@@ -163,8 +163,6 @@ function loginCycler() {
         init() {
             if (this.bgStyle === 'cycling_static_covers') {
                 this.loadStaticCovers();
-            } else if (this.bgStyle === 'random_covers') {
-                this.fetchBackgrounds();
             }
         },
 
@@ -175,25 +173,6 @@ function loginCycler() {
                 if (this.images.length > 1) {
                     this.startCycling();
                 }
-            }
-        },
-
-        async fetchBackgrounds() {
-            try {
-                // Fetch random covers from our new endpoint
-                const res = await fetch(window.parker.url('/api/comics/random/backgrounds'));
-                if (res.ok) {
-                    this.images = await res.json();
-                    if (this.images.length > 0) {
-                        this.currentImage = this.images[0];
-                        // Start cycling if we have more than 1 image
-                        if (this.images.length > 1) {
-                            this.startCycling();
-                        }
-                    }
-                }
-            } catch (e) {
-                console.error("Failed to load backgrounds", e);
             }
         },
 
