@@ -28,6 +28,7 @@ async def home(request: Request, db: SessionDep, user: CurrentUser):
         diagnostics = collect_startup_diagnostics(
             db,
             database_url=settings.database_url,
+            include_security_checks=bool(user.is_superuser),
         )
     except Exception:
         diagnostics = None

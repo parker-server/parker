@@ -59,7 +59,11 @@ def test_startup_diagnostics_endpoint_returns_collected_payload(admin_client, mo
         "recommended_actions": ["Check storage"],
     }
 
-    monkeypatch.setattr("app.api.stats.collect_startup_diagnostics", lambda db, database_url: sentinel)
+    def fake_collect_startup_diagnostics(db, database_url, **kwargs):
+        assert kwargs["include_security_checks"] is True
+        return sentinel
+
+    monkeypatch.setattr("app.api.stats.collect_startup_diagnostics", fake_collect_startup_diagnostics)
 
     response = admin_client.get("/api/stats/startup")
 
@@ -71,7 +75,11 @@ def test_startup_support_snapshot_endpoint_returns_structured_snapshot(admin_cli
     sentinel = {"status": "healthy"}
     snapshot = {"snapshot_type": "parker_startup_diagnostics", "schema_version": 1}
 
-    monkeypatch.setattr("app.api.stats.collect_startup_diagnostics", lambda db, database_url: sentinel)
+    def fake_collect_startup_diagnostics(db, database_url, **kwargs):
+        assert "include_security_checks" not in kwargs
+        return sentinel
+
+    monkeypatch.setattr("app.api.stats.collect_startup_diagnostics", fake_collect_startup_diagnostics)
     monkeypatch.setattr("app.api.stats.get_build_commit_hash", lambda: "abc123def456")
     monkeypatch.setattr(
         "app.api.stats.build_support_snapshot",

@@ -187,6 +187,23 @@ openssl rand -hex 32
 Put the generated value in `.env` as `SECRET_KEY=<generated value>`. Parker will
 refuse to start if the key is empty or still uses a known placeholder.
 
+### Initial Admin Bootstrap
+
+On a new database, Parker creates the first administrator from bootstrap
+environment variables instead of using a shared default password.
+
+Set `INITIAL_ADMIN_PASSWORD` before first startup. It must be at least 8
+characters and should be unique to this server. `INITIAL_ADMIN_USERNAME` is
+optional and defaults to `admin`.
+
+```env
+INITIAL_ADMIN_USERNAME=admin
+INITIAL_ADMIN_PASSWORD=<your initial admin password>
+```
+
+After an active administrator exists, Parker ignores these bootstrap values so
+upgrades do not reset or overwrite existing accounts.
+
 ### OPDS Reader Compatibility
 
 Parker's OPDS feed serves original comic archives and preserves their file type.

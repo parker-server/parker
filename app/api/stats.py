@@ -26,6 +26,7 @@ async def get_startup_diagnostics(
     return collect_startup_diagnostics(
         db,
         database_url=settings.database_url,
+        include_security_checks=True,
     )
 
 

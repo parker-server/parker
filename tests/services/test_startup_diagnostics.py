@@ -2,6 +2,7 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
+from app.core.security import get_password_hash
 from app.models.comic import Comic, Volume
 from app.models.library_root import LibraryRoot
 from app.models.series import Series
@@ -141,6 +142,50 @@ def test_collect_startup_diagnostics_classifies_storage_mismatch(db, tmp_path):
     assert diagnostics["database"]["size_display"] == "432 B"
 
 
+def test_collect_startup_diagnostics_detects_legacy_default_admin_password(db, tmp_path):
+    db.add(
+        User(
+            username="admin",
+            email="admin@example.com",
+            hashed_password=get_password_hash("admin"),
+            is_superuser=True,
+            is_active=True,
+        )
+    )
+    db.commit()
+
+    diagnostics = collect_startup_diagnostics(
+        db,
+        database_url=f"sqlite:///{(tmp_path / 'comics.db').as_posix()}",
+        comics_root=tmp_path / "probe",
+        include_security_checks=True,
+    )
+
+    assert diagnostics["legacy_default_admin_password_active"] is True
+
+
+def test_collect_startup_diagnostics_ignores_changed_admin_password(db, tmp_path):
+    db.add(
+        User(
+            username="admin",
+            email="admin@example.com",
+            hashed_password=get_password_hash("changed-password"),
+            is_superuser=True,
+            is_active=True,
+        )
+    )
+    db.commit()
+
+    diagnostics = collect_startup_diagnostics(
+        db,
+        database_url=f"sqlite:///{(tmp_path / 'comics.db').as_posix()}",
+        comics_root=tmp_path / "probe",
+        include_security_checks=True,
+    )
+
+    assert diagnostics["legacy_default_admin_password_active"] is False
+
+
 def test_build_home_startup_notice_returns_admin_notice_for_storage_mismatch():
     diagnostics = {
         "status": STARTUP_STATUS_STORAGE_MISMATCH,
@@ -165,6 +210,24 @@ def test_build_home_startup_notice_ignores_healthy_state():
     }
 
     assert build_home_startup_notice(diagnostics, is_admin=True) is None
+
+
+def test_build_home_startup_notice_returns_admin_legacy_password_warning():
+    diagnostics = {
+        "status": STARTUP_STATUS_HEALTHY,
+        "status_title": "Healthy",
+        "status_summary": "Healthy summary",
+        "recommended_actions": [],
+        "legacy_default_admin_password_active": True,
+    }
+
+    notice = build_home_startup_notice(diagnostics, is_admin=True)
+
+    assert notice is not None
+    assert notice["status"] == "legacy_default_admin_password_active"
+    assert notice["primary_action_url"] == "/user/settings"
+    assert "legacy default password" in notice["summary"]
+    assert build_home_startup_notice(diagnostics, is_admin=False) is None
 
 
 def test_build_support_snapshot_wraps_diagnostics_with_metadata():
@@ -199,6 +262,7 @@ def test_build_support_snapshot_wraps_diagnostics_with_metadata():
     }
     assert snapshot["status"]["code"] == "healthy"
     assert snapshot["configured_library_sample"] == [{"name": "Main", "path": "C:/Comics"}]
+    assert "legacy_default_admin_password_active" not in snapshot
 
 
 def test_collect_startup_diagnostics_marks_default_comics_root_as_container_runtime(db, tmp_path):

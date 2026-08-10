@@ -39,7 +39,7 @@ def _seed_series_page_data(db, volume_count=1):
 def test_home_page_shows_storage_warning_for_admin_when_startup_looks_suspicious(admin_client, monkeypatch):
     monkeypatch.setattr(
         "app.routers.pages.collect_startup_diagnostics",
-        lambda db, database_url: {
+        lambda db, database_url, **kwargs: {
             "status": "storage_mismatch_suspected",
             "status_title": "Storage Mismatch Suspected",
             "status_summary": "Parker can see comics but the database has no libraries configured.",
@@ -61,7 +61,7 @@ def test_home_page_shows_storage_warning_for_admin_when_startup_looks_suspicious
 def test_home_page_keeps_normal_onboarding_when_startup_state_is_healthy(admin_client, monkeypatch):
     monkeypatch.setattr(
         "app.routers.pages.collect_startup_diagnostics",
-        lambda db, database_url: {
+        lambda db, database_url, **kwargs: {
             "status": "healthy",
             "status_title": "Healthy",
             "status_summary": "Healthy",
@@ -74,7 +74,29 @@ def test_home_page_keeps_normal_onboarding_when_startup_state_is_healthy(admin_c
     assert response.status_code == 200
     body = response.text
     assert "Welcome to Parker!" in body
-    assert "storage_mismatch_suspected" not in body
+    assert '{"startupNotice": null}' in body
+
+
+def test_home_page_shows_legacy_default_password_warning_for_admin(admin_client, monkeypatch):
+    monkeypatch.setattr(
+        "app.routers.pages.collect_startup_diagnostics",
+        lambda db, database_url, **kwargs: {
+            "status": "healthy",
+            "status_title": "Healthy",
+            "status_summary": "Everything looks good.",
+            "recommended_actions": [],
+            "legacy_default_admin_password_active": True,
+        },
+    )
+
+    response = admin_client.get("/")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "Legacy Default Admin Password" in body
+    assert "Update Password" in body
+    assert "/user/settings" in body
+    assert "legacy_default_admin_password_active" in body
 
 
 def test_admin_dashboard_links_to_diagnostics(admin_client):
@@ -125,10 +147,51 @@ def test_admin_diagnostics_page_exposes_support_snapshot_actions(admin_client):
     assert "document.execCommand('copy')" in body
 
 
+def test_admin_diagnostics_page_shows_legacy_default_password_warning(admin_client, monkeypatch):
+    def fake_collect_startup_diagnostics(db, database_url, **kwargs):
+        assert kwargs["include_security_checks"] is True
+        return {
+            "status": "healthy",
+            "status_title": "Healthy",
+            "status_summary": "Everything looks good.",
+            "is_suspicious": False,
+            "recommended_actions": [],
+            "runtime": {"mode": "local_filesystem", "label": "Local filesystem"},
+            "database": {
+                "url": "sqlite:///test.db",
+                "path": "test.db",
+                "exists": True,
+                "size_bytes": 0,
+                "size_display": "0 B",
+                "wal_size_bytes": None,
+                "wal_size_display": None,
+                "shm_size_bytes": None,
+                "shm_size_display": None,
+                "alembic_version": "head",
+            },
+            "counts": {"users": 1, "libraries": 0, "series": 0, "comics": 0},
+            "default_admin_present": True,
+            "legacy_default_admin_password_active": True,
+            "library_sample": [],
+            "comics_root": {"path": "/comics", "exists": False, "sample": []},
+        }
+
+    monkeypatch.setattr("app.routers.admin.collect_startup_diagnostics", fake_collect_startup_diagnostics)
+
+    response = admin_client.get("/admin/diagnostics")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "Security Warning" in body
+    assert "Legacy default admin password detected" in body
+    assert "Update Password" in body
+    assert "/user/settings" in body
+
+
 def test_admin_diagnostics_page_renders_configured_library_roots(admin_client, monkeypatch):
     monkeypatch.setattr(
         "app.routers.admin.collect_startup_diagnostics",
-        lambda db, database_url: {
+        lambda db, database_url, **kwargs: {
             "status": "healthy",
             "status_title": "Healthy",
             "status_summary": "Everything looks good.",
@@ -187,7 +250,7 @@ def test_admin_diagnostics_page_renders_configured_library_roots(admin_client, m
 def test_admin_diagnostics_page_labels_sampled_library_count(admin_client, monkeypatch):
     monkeypatch.setattr(
         "app.routers.admin.collect_startup_diagnostics",
-        lambda db, database_url: {
+        lambda db, database_url, **kwargs: {
             "status": "healthy",
             "status_title": "Healthy",
             "status_summary": "Everything looks good.",

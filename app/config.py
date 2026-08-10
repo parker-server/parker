@@ -54,6 +54,8 @@ class Settings(BaseSettings):
     secret_key: str = Field(default="", repr=False, validate_default=True)
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
+    initial_admin_username: str = "admin"
+    initial_admin_password: str = Field(default="", repr=False)
 
     @field_validator("secret_key")
     @classmethod
@@ -72,6 +74,14 @@ class Settings(BaseSettings):
             )
 
         return key
+
+    @field_validator("initial_admin_username")
+    @classmethod
+    def validate_initial_admin_username(cls, value: str) -> str:
+        username = value.strip()
+        if not username:
+            raise ValueError("INITIAL_ADMIN_USERNAME cannot be empty")
+        return username
 
     # Paths
     unrar_path: str = "unrar"
@@ -112,8 +122,9 @@ settings = Settings()
 def debug_print_settings():
     import json
     values = settings.model_dump(mode="json")
-    if "secret_key" in values:
-        values["secret_key"] = "<redacted>"
+    for secret_name in ("secret_key", "initial_admin_password"):
+        if secret_name in values:
+            values[secret_name] = "<redacted>"
     print("\n=== Parker Configuration ===")
     print(json.dumps(values, indent=2))
     print("Allowed origins:", settings.allowed_origins)

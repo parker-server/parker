@@ -21,13 +21,11 @@ from app.database import engine, Base
 from app.config import settings, debug_print_settings
 from app.database import SessionLocal
 from app.logging import log_config
-from app.core.security import get_password_hash
+from app.services.admin_bootstrap import AdminBootstrapError, ensure_initial_admin
 from app.services.settings_service import SettingsService
 from app.services.scheduler import scheduler_service
 from app.services.startup_diagnostics import log_startup_diagnostics
 
-
-from app.models.user import User
 
 from app.services.watcher import library_watcher
 
@@ -77,7 +75,12 @@ async def lifespan(app: FastAPI):
     # -- Init DB defaults when necessary (Safe, idempotent)
     db = SessionLocal()
     try:
+        if not getattr(app.state, "skip_admin_bootstrap", False):
+            ensure_initial_admin(db, app_settings=settings)
         SettingsService(db).initialize_defaults()
+    except AdminBootstrapError as exc:
+        logger.critical("Admin bootstrap failed: %s", exc)
+        raise
     finally:
         db.close()
     # --------------------------------------

@@ -23,6 +23,14 @@ It includes the newest features and fixes, but may be less stable.
 ### Quick Start (Docker Run)
 If you want to test Parker quickly, run the following command. Replace the paths on the left side of the `:` with your actual local directories:
 
+Generate an initial admin password first and keep it somewhere safe until you
+log in:
+
+```bash
+export PARKER_INITIAL_ADMIN_PASSWORD="$(openssl rand -base64 24)"
+echo "$PARKER_INITIAL_ADMIN_PASSWORD"
+```
+
 ```bash
 docker run -d \
   --name parker \
@@ -32,6 +40,7 @@ docker run -d \
   -e BASE_URL=/ \
   -e COMICS_PATH=/comics \
   -e SECRET_KEY="$(openssl rand -hex 32)" \
+  -e INITIAL_ADMIN_PASSWORD="$PARKER_INITIAL_ADMIN_PASSWORD" \
   ghcr.io/parker-server/parker:latest
 ```
 
@@ -49,6 +58,7 @@ docker run -d \
   -e BASE_URL=/comics \
   -e COMICS_PATH=/comics \
   -e SECRET_KEY="$(openssl rand -hex 32)" \
+  -e INITIAL_ADMIN_PASSWORD="$PARKER_INITIAL_ADMIN_PASSWORD" \
   -e TRUSTED_PROXIES="172.18.0.1,192.168.1.50" \
   -e ALLOWED_ORIGINS="https://comics.yourdomain.com" \
   -v /path/to/config:/app/storage \
@@ -82,16 +92,23 @@ BASE_URL=/
 COMICS_PATH=/comics
 # Generate a unique value first: openssl rand -hex 32
 SECRET_KEY=
+# Optional; defaults to admin
+INITIAL_ADMIN_USERNAME=admin
+# Required only before Parker creates the first administrator
+INITIAL_ADMIN_PASSWORD=
 ```
 
 ### Initial Configuration
 Parker requires `SECRET_KEY` to be set to a unique random value before startup. It will refuse to start if the key is empty or still uses a known placeholder.
 
+For a new database, Parker also requires `INITIAL_ADMIN_PASSWORD` so it can
+create the first administrator without using a shared default password.
+`INITIAL_ADMIN_USERNAME` defaults to `admin` if omitted. These values are
+ignored after an active administrator exists.
+
 Once the container is running, access the web UI at http://localhost:8000, or the host port you mapped with `PARKER_PORT` / `-p`.
 
-Admin Account: Parker automatically creates the user **admin**, password **admin** on first boot.
-
-Change the admin password after first login, especially before exposing Parker outside a trusted local network.
+Admin Account: log in with the bootstrap username and password you configured before first startup.
 
 Once logged in, navigate to the administration area at `/admin`, such as `http://localhost:8000/admin`.
 
