@@ -1,12 +1,14 @@
+import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlalchemy import text
+from sqlalchemy import desc, text
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.security import verify_password
 from app.models.comic import Comic
+from app.models.job import ScanJob
 from app.models.library import Library
 from app.models.series import Series
 from app.models.user import User
@@ -20,6 +22,34 @@ STARTUP_STATUS_EMPTY_DATABASE = "empty_database"
 STARTUP_STATUS_STORAGE_MISMATCH = "storage_mismatch_suspected"
 RUNTIME_MODE_CONTAINER = "container_like"
 RUNTIME_MODE_LOCAL = "local_filesystem"
+RECENT_JOB_LIMIT = 3
+SAFE_JOB_SUMMARY_KEYS = {
+    "characters",
+    "collections_restored",
+    "comics_scanned",
+    "deleted",
+    "elapsed",
+    "empty_collections",
+    "empty_lists",
+    "errors",
+    "force_scan_recommended",
+    "imported",
+    "locations",
+    "missing_files_removed",
+    "old_jobs",
+    "orphaned_thumbnails_deleted",
+    "people",
+    "processed",
+    "reading_lists_restored",
+    "series",
+    "skipped",
+    "source_metadata_invalid",
+    "source_metadata_missing",
+    "story_arcs_restored",
+    "teams",
+    "updated",
+    "volumes",
+}
 
 
 def resolve_sqlite_db_path(database_url: str) -> Path | None:
@@ -96,6 +126,71 @@ def _safe_alembic_version(db: Session) -> str | None:
         return None
 
     return row[0]
+
+
+def _isoformat_datetime(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+
+    return value.isoformat()
+
+
+def _duration_seconds(started_at: datetime | None, completed_at: datetime | None) -> float | None:
+    if not started_at or not completed_at:
+        return None
+
+    return round((completed_at - started_at).total_seconds(), 3)
+
+
+def _safe_job_type(value: object) -> str:
+    return str(getattr(value, "value", value))
+
+
+def _safe_job_summary(raw_summary: str | None) -> dict:
+    if not raw_summary:
+        return {}
+
+    try:
+        parsed = json.loads(raw_summary)
+    except (TypeError, ValueError):
+        return {}
+
+    if not isinstance(parsed, dict):
+        return {}
+
+    safe_summary = {}
+    for key, value in parsed.items():
+        if key not in SAFE_JOB_SUMMARY_KEYS:
+            continue
+        if isinstance(value, bool) or isinstance(value, int) or isinstance(value, float):
+            safe_summary[key] = value
+
+    return safe_summary
+
+
+def _recent_job_summaries(db: Session, limit: int = RECENT_JOB_LIMIT) -> list[dict]:
+    jobs = (
+        db.query(ScanJob)
+        .order_by(desc(ScanJob.created_at), desc(ScanJob.id))
+        .limit(limit)
+        .all()
+    )
+
+    return [
+        {
+            "job_type": _safe_job_type(job.job_type),
+            "status": _safe_job_type(job.status),
+            "scope": "global" if job.library_id is None else "library",
+            "force_scan": bool(job.force_scan),
+            "created_at": _isoformat_datetime(job.created_at),
+            "started_at": _isoformat_datetime(job.started_at),
+            "completed_at": _isoformat_datetime(job.completed_at),
+            "duration_seconds": _duration_seconds(job.started_at, job.completed_at),
+            "summary": _safe_job_summary(job.result_summary),
+            "has_error": bool(job.error_message),
+        }
+        for job in jobs
+    ]
 
 
 def _legacy_default_admin_password_active(db: Session) -> bool:
@@ -305,6 +400,7 @@ def collect_startup_diagnostics(
         "default_admin_present": default_admin_present,
         "legacy_default_admin_password_active": legacy_default_admin_password_active,
         "library_sample": library_sample,
+        "recent_jobs": _recent_job_summaries(db),
         "runtime": {
             "mode": runtime_mode,
             "label": "Container-like" if runtime_mode == RUNTIME_MODE_CONTAINER else "Local filesystem",
@@ -394,6 +490,7 @@ def build_support_snapshot(
         "counts": diagnostics["counts"],
         "default_admin_present": diagnostics["default_admin_present"],
         "configured_library_sample": diagnostics["library_sample"],
+        "recent_jobs": diagnostics.get("recent_jobs", []),
         "comics_probe": diagnostics["comics_root"],
         "recommended_actions": diagnostics["recommended_actions"],
     }

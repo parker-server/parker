@@ -124,6 +124,91 @@
         </section>
     </div>
 
+    {% set recent_jobs = diagnostics.recent_jobs if diagnostics.recent_jobs is defined else [] %}
+    <section class="rounded-2xl border border-gray-700 bg-gray-800/60 p-6 shadow-xl space-y-4">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+                <h2 class="text-lg font-bold text-white">Recent Scan Job Health</h2>
+                <p class="mt-1 text-sm text-gray-400">Privacy-safe status, timing, and count summaries for the latest background jobs.</p>
+            </div>
+            {% if recent_jobs %}
+            <span class="text-xs uppercase tracking-[0.18em] text-gray-500">
+                Showing {{ recent_jobs|length }} latest {{ 'job' if recent_jobs|length == 1 else 'jobs' }}
+            </span>
+            {% endif %}
+        </div>
+
+        {% if recent_jobs %}
+        <ul class="space-y-3 text-sm text-gray-300">
+            {% for job in recent_jobs %}
+            <li class="rounded-lg border border-gray-700 bg-gray-900/40 px-4 py-3">
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="font-bold text-white">{{ job.job_type|replace('_', ' ')|title }}</span>
+                    <span class="inline-flex rounded-full border px-2 py-0.5 text-xs font-bold
+                        {% if job.status == 'completed' %}border-emerald-500/30 bg-emerald-500/10 text-emerald-200
+                        {% elif job.status == 'failed' %}border-rose-500/30 bg-rose-500/10 text-rose-200
+                        {% elif job.status == 'running' %}border-blue-500/30 bg-blue-500/10 text-blue-200
+                        {% else %}border-gray-600 bg-gray-700/40 text-gray-300{% endif %}">
+                        {{ job.status|replace('_', ' ')|title }}
+                    </span>
+                    <span class="inline-flex rounded-full border border-gray-600 bg-gray-700/40 px-2 py-0.5 text-xs font-bold text-gray-300">
+                        {{ 'Global job' if job.scope == 'global' else 'Library job' }}
+                    </span>
+                    {% if job.force_scan %}
+                    <span class="inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs font-bold text-amber-200">
+                        Forced
+                    </span>
+                    {% endif %}
+                </div>
+
+                <dl class="mt-3 grid gap-3 md:grid-cols-4">
+                    <div>
+                        <dt class="text-gray-500 uppercase tracking-[0.16em] text-xs">Created</dt>
+                        <dd class="text-gray-200 break-all">{{ job.created_at or 'Unknown' }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-gray-500 uppercase tracking-[0.16em] text-xs">Started</dt>
+                        <dd class="text-gray-200 break-all">{{ job.started_at or 'Not started' }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-gray-500 uppercase tracking-[0.16em] text-xs">Completed</dt>
+                        <dd class="text-gray-200 break-all">{{ job.completed_at or 'Not completed' }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-gray-500 uppercase tracking-[0.16em] text-xs">Duration</dt>
+                        <dd class="text-gray-200">
+                            {% if job.duration_seconds is not none %}
+                            {{ job.duration_seconds }}s
+                            {% else %}
+                            Unknown
+                            {% endif %}
+                        </dd>
+                    </div>
+                </dl>
+
+                {% if job.summary %}
+                <div class="mt-3 flex flex-wrap gap-2">
+                    {% for key, value in job.summary.items() %}
+                    <span class="inline-flex rounded-full border border-gray-600 bg-gray-950/50 px-2 py-0.5 text-xs font-semibold text-gray-200">
+                        {{ key|replace('_', ' ')|title }}: {{ value }}
+                    </span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                {% if job.has_error %}
+                <p class="mt-3 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-200">
+                    Error recorded. Details are hidden here to avoid exposing local library names, paths, or filenames.
+                </p>
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-sm text-gray-400">No background job history is available in the active database.</p>
+        {% endif %}
+    </section>
+
     <div class="grid gap-6 lg:grid-cols-2">
         <section class="rounded-2xl border border-gray-700 bg-gray-800/60 p-6 shadow-xl space-y-4">
             {% set shown_library_count = diagnostics.library_sample|length if diagnostics.library_sample else 0 %}

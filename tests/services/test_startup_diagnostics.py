@@ -1,9 +1,11 @@
 import logging
-from datetime import datetime, timezone
+import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from app.core.security import get_password_hash
 from app.models.comic import Comic, Volume
+from app.models.job import JobStatus, JobType, ScanJob
 from app.models.library_root import LibraryRoot
 from app.models.series import Series
 from app.models.user import User
@@ -186,6 +188,59 @@ def test_collect_startup_diagnostics_ignores_changed_admin_password(db, tmp_path
     assert diagnostics["legacy_default_admin_password_active"] is False
 
 
+def test_collect_startup_diagnostics_includes_privacy_safe_recent_jobs(db, tmp_path):
+    base_time = datetime(2026, 8, 10, 12, 0, tzinfo=timezone.utc)
+    db.add(
+        ScanJob(
+            library_id=12345,
+            job_type=JobType.SCAN,
+            status=JobStatus.FAILED,
+            force_scan=True,
+            created_at=base_time - timedelta(minutes=3),
+            started_at=base_time - timedelta(minutes=2),
+            completed_at=base_time,
+            result_summary=json.dumps({
+                "imported": 2,
+                "updated": 1,
+                "elapsed": 120.5,
+                "force_scan_recommended": True,
+                "library_name": "Private Library",
+                "path": "C:/Users/test/Comics/Private Library",
+                "error_details": ["C:/Users/test/Comics/Private Library/Secret #1.cbz"],
+            }),
+            error_message="Failed reading C:/Users/test/Comics/Private Library/Secret #1.cbz",
+        )
+    )
+    db.commit()
+
+    diagnostics = collect_startup_diagnostics(
+        db,
+        database_url=f"sqlite:///{(tmp_path / 'comics.db').as_posix()}",
+        comics_root=tmp_path / "probe",
+    )
+
+    recent_job = diagnostics["recent_jobs"][0]
+    assert recent_job["job_type"] == "scan"
+    assert recent_job["status"] == "failed"
+    assert recent_job["scope"] == "library"
+    assert recent_job["force_scan"] is True
+    assert recent_job["has_error"] is True
+    assert recent_job["duration_seconds"] == 120.0
+    assert recent_job["summary"] == {
+        "imported": 2,
+        "updated": 1,
+        "elapsed": 120.5,
+        "force_scan_recommended": True,
+    }
+    assert "library_id" not in recent_job
+    assert "error_message" not in recent_job
+
+    serialized_job = json.dumps(recent_job)
+    assert "Private Library" not in serialized_job
+    assert "C:/Users/test/Comics" not in serialized_job
+    assert "Secret #1.cbz" not in serialized_job
+
+
 def test_build_home_startup_notice_returns_admin_notice_for_storage_mismatch():
     diagnostics = {
         "status": STARTUP_STATUS_STORAGE_MISMATCH,
@@ -241,6 +296,7 @@ def test_build_support_snapshot_wraps_diagnostics_with_metadata():
         "counts": {"users": 1, "libraries": 2, "series": 3, "comics": 4},
         "default_admin_present": True,
         "library_sample": [{"name": "Main", "path": "C:/Comics"}],
+        "recent_jobs": [{"job_type": "scan", "status": "completed"}],
         "comics_root": {"path": "/comics", "exists": False, "sample": []},
         "recommended_actions": [],
     }
@@ -262,6 +318,7 @@ def test_build_support_snapshot_wraps_diagnostics_with_metadata():
     }
     assert snapshot["status"]["code"] == "healthy"
     assert snapshot["configured_library_sample"] == [{"name": "Main", "path": "C:/Comics"}]
+    assert snapshot["recent_jobs"] == [{"job_type": "scan", "status": "completed"}]
     assert "legacy_default_admin_password_active" not in snapshot
 
 

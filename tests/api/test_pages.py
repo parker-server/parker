@@ -148,6 +148,61 @@ def test_admin_diagnostics_page_exposes_support_snapshot_actions(admin_client):
     assert "document.execCommand('copy')" in body
 
 
+def test_admin_diagnostics_page_renders_privacy_safe_recent_job_health(admin_client, monkeypatch):
+    monkeypatch.setattr(
+        "app.routers.admin.collect_startup_diagnostics",
+        lambda db, database_url, **kwargs: {
+            "status": "healthy",
+            "status_title": "Healthy",
+            "status_summary": "Everything looks good.",
+            "is_suspicious": False,
+            "recommended_actions": [],
+            "runtime": {"mode": "local_filesystem", "label": "Local filesystem"},
+            "database": {
+                "url": "sqlite:///test.db",
+                "path": "test.db",
+                "exists": True,
+                "size_bytes": 0,
+                "size_display": "0 B",
+                "wal_size_bytes": None,
+                "wal_size_display": None,
+                "shm_size_bytes": None,
+                "shm_size_display": None,
+                "alembic_version": "head",
+            },
+            "counts": {"users": 1, "libraries": 0, "series": 0, "comics": 0},
+            "default_admin_present": True,
+            "library_sample": [],
+            "recent_jobs": [
+                {
+                    "job_type": "scan",
+                    "status": "failed",
+                    "scope": "library",
+                    "force_scan": True,
+                    "created_at": "2026-08-10T12:00:00+00:00",
+                    "started_at": "2026-08-10T12:01:00+00:00",
+                    "completed_at": "2026-08-10T12:03:00+00:00",
+                    "duration_seconds": 120.0,
+                    "summary": {"imported": 4, "errors": 1},
+                    "has_error": True,
+                }
+            ],
+            "comics_root": {"path": "/comics", "exists": False, "sample": []},
+        },
+    )
+
+    response = admin_client.get("/admin/diagnostics")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "Recent Scan Job Health" in body
+    assert "Library job" in body
+    assert "Forced" in body
+    assert "Imported: 4" in body
+    assert "Errors: 1" in body
+    assert "Error recorded. Details are hidden" in body
+
+
 def test_admin_diagnostics_page_shows_legacy_default_password_warning(admin_client, monkeypatch):
     def fake_collect_startup_diagnostics(db, database_url, **kwargs):
         assert kwargs["include_security_checks"] is True
