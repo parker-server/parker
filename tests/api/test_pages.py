@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from app.core.login_backgrounds import STATIC_COVERS
 from app.core.templates import templates
 from app.models.comic import Comic, Volume
 from app.models.series import Series
@@ -316,6 +317,28 @@ def test_login_page_cycles_static_covers(client, db):
     assert "/static/img/login-covers/amazing-fantasy-15.webp" in body
     assert "fetchBackgrounds()" not in body
     assert "loadStaticCovers()" in body
+
+
+def test_login_page_shuffles_static_cover_cycle(client, db, monkeypatch):
+    settings_service = SettingsService(db)
+    settings_service.initialize_defaults()
+    settings_service.update("ui.login_background_style", "cycling_static_covers")
+    cover_filenames = list(STATIC_COVERS)
+
+    def reverse_shuffle(items):
+        items.reverse()
+
+    monkeypatch.setattr("app.routers.pages.random.shuffle", reverse_shuffle)
+
+    response = client.get("/login")
+
+    assert response.status_code == 200
+    body = response.text
+    last_cover_position = body.find(f"/static/img/login-covers/{cover_filenames[-1]}")
+    first_cover_position = body.find(f"/static/img/login-covers/{cover_filenames[0]}")
+    assert last_cover_position != -1
+    assert first_cover_position != -1
+    assert last_cover_position < first_cover_position
 
 
 def test_login_page_treats_legacy_random_covers_as_static_cover_cycling(client, db):

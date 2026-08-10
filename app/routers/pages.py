@@ -1,3 +1,5 @@
+import random
+
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
@@ -16,6 +18,15 @@ from app.services.startup_diagnostics import (
 )
 
 router = APIRouter()
+
+
+def _shuffled_login_static_cover_urls(base_url: str) -> list[str]:
+    filenames = list(STATIC_COVERS)
+    random.shuffle(filenames)
+    return [
+        f"{base_url}/static/img/login-covers/{filename}"
+        for filename in filenames
+    ]
 
 
 # Frontend routes
@@ -216,11 +227,7 @@ async def login_page(request: Request, db: SessionDep):
         context["login_static_cover"] = cover_filename
 
     elif login_background_style == "cycling_static_covers":
-        base_url = settings.clean_base_url
-        context["login_static_cover_urls"] = [
-            f"{base_url}/static/img/login-covers/{filename}"
-            for filename in STATIC_COVERS
-        ]
+        context["login_static_cover_urls"] = _shuffled_login_static_cover_urls(settings.clean_base_url)
 
     return templates.TemplateResponse(request=request, name="login_full.html", context=context)
 
