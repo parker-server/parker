@@ -272,17 +272,18 @@ def test_admin_diagnostics_page_renders_configured_library_roots(admin_client, m
                 {
                     "name": "Multi Root Library",
                     "path": "C:/Comics/Main",
+                    "path_display": "C:/.../Main",
                     "path_exists": True,
                     "root_count": 3,
                     "active_root_count": 2,
                     "roots": [
-                        {"id": 1, "path": "C:/Comics/Main", "is_active": True, "path_exists": True},
-                        {"id": 2, "path": "D:/Comics/Archive", "is_active": True, "path_exists": False},
-                        {"id": 3, "path": "E:/Comics/Offline", "is_active": False, "path_exists": None},
+                        {"id": 1, "path": "C:/Comics/Main", "path_display": "C:/.../Main", "is_active": True, "path_exists": True},
+                        {"id": 2, "path": "D:/Comics/Archive", "path_display": "D:/.../Archive", "is_active": True, "path_exists": False},
+                        {"id": 3, "path": "E:/Comics/Offline", "path_display": "E:/.../Offline", "is_active": False, "path_exists": None},
                     ],
                 }
             ],
-            "comics_root": {"path": "/comics", "exists": False, "sample": []},
+            "comics_root": {"path": "/comics", "path_display": "/comics", "exists": False, "sample": [], "sample_count": 0},
         },
     )
 
@@ -290,10 +291,15 @@ def test_admin_diagnostics_page_renders_configured_library_roots(admin_client, m
 
     assert response.status_code == 200
     body = response.text
+    assert "Privacy Mode" in body
+    assert "Reveal Full Paths" in body
     assert "Multi Root Library" in body
     assert "Showing all 1 library" in body
     assert "max-h-96" in body
     assert "2 active / 3 roots" in body
+    assert "C:/.../Main" in body
+    assert "D:/.../Archive" in body
+    assert "E:/.../Offline" in body
     assert "C:/Comics/Main" in body
     assert "D:/Comics/Archive" in body
     assert "E:/Comics/Offline" in body

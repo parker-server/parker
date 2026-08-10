@@ -3,12 +3,29 @@
 {% block title %}Startup Diagnostics - Parker{% endblock %}
 
 {% block content %}
-<div class="max-w-5xl mx-auto space-y-8">
+<div class="max-w-5xl mx-auto space-y-8" x-data="{ showFullPaths: false }">
     {% from "partials/admin_header.html" import admin_header %}
     {{ admin_header(
         title="Startup Diagnostics",
         description="Inspect the active storage and startup state Parker is using right now."
     ) }}
+
+    <div class="rounded-2xl border border-blue-500/30 bg-blue-950/20 p-5 shadow-xl">
+        <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div class="space-y-1">
+                <h2 class="text-sm font-bold uppercase tracking-[0.2em] text-blue-200">Privacy Mode</h2>
+                <p class="text-sm text-blue-100/75">
+                    Full local paths are hidden by default for safer screenshots and shared support snapshots.
+                </p>
+            </div>
+            <button
+                type="button"
+                @click="showFullPaths = !showFullPaths"
+                class="inline-flex shrink-0 items-center justify-center rounded-lg border border-blue-300/40 bg-blue-500/15 px-4 py-2 text-sm font-bold text-blue-50 transition-colors hover:border-blue-200/70 hover:bg-blue-500/25"
+                x-text="showFullPaths ? 'Hide Full Paths' : 'Reveal Full Paths'"
+            ></button>
+        </div>
+    </div>
 
     {% if diagnostics.legacy_default_admin_password_active %}
     <div class="rounded-2xl border border-rose-500/40 bg-rose-950/30 p-6 shadow-xl">
@@ -61,6 +78,8 @@
     <div class="grid gap-6 lg:grid-cols-2">
         <section class="rounded-2xl border border-gray-700 bg-gray-800/60 p-6 shadow-xl space-y-4">
             <h2 class="text-lg font-bold text-white">Database</h2>
+            {% set database_url_display = diagnostics.database.url_display if diagnostics.database.url_display is defined and diagnostics.database.url_display else diagnostics.database.url %}
+            {% set database_path_display = diagnostics.database.path_display if diagnostics.database.path_display is defined and diagnostics.database.path_display else diagnostics.database.path %}
             <dl class="space-y-3 text-sm">
                 <div>
                     <dt class="text-gray-500 uppercase tracking-[0.2em] text-xs">Runtime</dt>
@@ -68,11 +87,17 @@
                 </div>
                 <div>
                     <dt class="text-gray-500 uppercase tracking-[0.2em] text-xs">URL</dt>
-                    <dd class="text-gray-200 break-all">{{ diagnostics.database.url }}</dd>
+                    <dd class="text-gray-200 break-all">
+                        <span x-show="!showFullPaths">{{ database_url_display or 'Unknown' }}</span>
+                        <span x-show="showFullPaths" x-cloak>{{ diagnostics.database.url or 'Unknown' }}</span>
+                    </dd>
                 </div>
                 <div>
                     <dt class="text-gray-500 uppercase tracking-[0.2em] text-xs">Path</dt>
-                    <dd class="text-gray-200 break-all">{{ diagnostics.database.path }}</dd>
+                    <dd class="text-gray-200 break-all">
+                        <span x-show="!showFullPaths">{{ database_path_display or 'Unknown' }}</span>
+                        <span x-show="showFullPaths" x-cloak>{{ diagnostics.database.path or 'Unknown' }}</span>
+                    </dd>
                 </div>
                 <div class="grid grid-cols-2 gap-3">
                     <div>
@@ -250,6 +275,7 @@
                     <ul class="mt-3 space-y-2">
                         {% for root in roots %}
                         <li class="rounded-lg border border-gray-700 bg-gray-950/50 px-3 py-2">
+                            {% set root_display_path = root.path_display if root.path_display is defined and root.path_display else root.path %}
                             <div class="flex flex-wrap items-center gap-2">
                                 <span class="inline-flex rounded-full border px-2 py-0.5 text-xs font-bold {% if root.is_active %}border-blue-500/30 bg-blue-500/10 text-blue-200{% else %}border-gray-600 bg-gray-700/40 text-gray-300{% endif %}">
                                     {{ 'Active' if root.is_active else 'Inactive' }}
@@ -264,12 +290,19 @@
                                 </span>
                                 {% endif %}
                             </div>
-                            <div class="mt-1 break-all text-gray-400">{{ root.path or 'No path configured' }}</div>
+                            <div class="mt-1 break-all text-gray-400">
+                                <span x-show="!showFullPaths">{{ root_display_path or 'No path configured' }}</span>
+                                <span x-show="showFullPaths" x-cloak>{{ root.path or 'No path configured' }}</span>
+                            </div>
                         </li>
                         {% endfor %}
                     </ul>
                     {% else %}
-                    <div class="mt-1 break-all text-gray-400">{{ library.path }}</div>
+                    {% set library_display_path = library.path_display if library.path_display is defined and library.path_display else library.path %}
+                    <div class="mt-1 break-all text-gray-400">
+                        <span x-show="!showFullPaths">{{ library_display_path or 'No path configured' }}</span>
+                        <span x-show="showFullPaths" x-cloak>{{ library.path or 'No path configured' }}</span>
+                    </div>
                     {% endif %}
                 </li>
                 {% endfor %}
@@ -287,7 +320,10 @@
                 Local Comics Probe
                 {% endif %}
             </h2>
-            <p class="text-sm text-gray-300 break-all">{{ diagnostics.comics_root.path }}</p>
+            <p class="text-sm text-gray-300 break-all">
+                <span x-show="!showFullPaths">{{ diagnostics.comics_root.path_display if diagnostics.comics_root.path_display is defined else diagnostics.comics_root.path }}</span>
+                <span x-show="showFullPaths" x-cloak>{{ diagnostics.comics_root.path }}</span>
+            </p>
             <p class="text-sm text-gray-400">
                 Exists:
                 <span class="inline-flex rounded-full border px-2 py-0.5 text-xs font-bold {% if diagnostics.comics_root.exists %}border-emerald-500/30 bg-emerald-500/10 text-emerald-200{% else %}border-gray-600 bg-gray-700/40 text-gray-200{% endif %}">
@@ -296,7 +332,10 @@
             </p>
 
             {% if diagnostics.comics_root.sample %}
-            <ul class="space-y-2 text-sm text-gray-300">
+            <p class="text-sm text-gray-400" x-show="!showFullPaths">
+                {{ diagnostics.comics_root.sample_count if diagnostics.comics_root.sample_count is defined else diagnostics.comics_root.sample|length }} sample {{ 'entry' if diagnostics.comics_root.sample|length == 1 else 'entries' }} hidden until full paths are revealed.
+            </p>
+            <ul class="space-y-2 text-sm text-gray-300" x-show="showFullPaths" x-cloak>
                 {% for entry in diagnostics.comics_root.sample %}
                 <li class="rounded-lg border border-gray-700 bg-gray-900/40 px-4 py-3">{{ entry }}</li>
                 {% endfor %}

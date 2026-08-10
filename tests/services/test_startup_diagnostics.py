@@ -292,12 +292,49 @@ def test_build_support_snapshot_wraps_diagnostics_with_metadata():
         "status_summary": "Everything looks good.",
         "is_suspicious": False,
         "runtime": {"mode": RUNTIME_MODE_LOCAL, "label": "Local filesystem"},
-        "database": {"path": "/tmp/comics.db"},
+        "database": {
+            "url": "sqlite:///C:/Users/test/Parker/storage/database/comics.db",
+            "url_display": "sqlite:///C:/.../comics.db",
+            "path": "C:/Users/test/Parker/storage/database/comics.db",
+            "path_display": "C:/.../comics.db",
+            "exists": True,
+            "size_bytes": 128,
+            "size_display": "128 B",
+            "wal_size_bytes": None,
+            "wal_size_display": None,
+            "shm_size_bytes": None,
+            "shm_size_display": None,
+            "alembic_version": "head",
+        },
         "counts": {"users": 1, "libraries": 2, "series": 3, "comics": 4},
         "default_admin_present": True,
-        "library_sample": [{"name": "Main", "path": "C:/Comics"}],
+        "library_sample": [
+            {
+                "name": "Main",
+                "path": "C:/Users/test/Comics/Main",
+                "path_display": "C:/.../Main",
+                "path_exists": True,
+                "root_count": 1,
+                "active_root_count": 1,
+                "roots": [
+                    {
+                        "id": 42,
+                        "path": "C:/Users/test/Comics/Main",
+                        "path_display": "C:/.../Main",
+                        "is_active": True,
+                        "path_exists": True,
+                    }
+                ],
+            }
+        ],
         "recent_jobs": [{"job_type": "scan", "status": "completed"}],
-        "comics_root": {"path": "/comics", "exists": False, "sample": []},
+        "comics_root": {
+            "path": "C:/Users/test/Comics",
+            "path_display": "C:/.../Comics",
+            "exists": True,
+            "sample": ["Private Folder/"],
+            "sample_count": 1,
+        },
         "recommended_actions": [],
     }
 
@@ -317,9 +354,39 @@ def test_build_support_snapshot_wraps_diagnostics_with_metadata():
         "git_commit_hash": "abc123def456",
     }
     assert snapshot["status"]["code"] == "healthy"
-    assert snapshot["configured_library_sample"] == [{"name": "Main", "path": "C:/Comics"}]
+    assert snapshot["database"]["url"] == "sqlite:///C:/.../comics.db"
+    assert snapshot["database"]["path"] == "C:/.../comics.db"
+    assert snapshot["database"]["paths_redacted"] is True
+    assert snapshot["configured_library_sample"] == [
+        {
+            "name": "Main",
+            "path": "C:/.../Main",
+            "path_exists": True,
+            "root_count": 1,
+            "active_root_count": 1,
+            "roots": [
+                {
+                    "path": "C:/.../Main",
+                    "is_active": True,
+                    "path_exists": True,
+                }
+            ],
+            "paths_redacted": True,
+        }
+    ]
+    assert snapshot["comics_probe"] == {
+        "path": "C:/.../Comics",
+        "exists": True,
+        "sample_count": 1,
+        "sample_names_redacted": True,
+        "paths_redacted": True,
+    }
     assert snapshot["recent_jobs"] == [{"job_type": "scan", "status": "completed"}]
     assert "legacy_default_admin_password_active" not in snapshot
+
+    serialized_snapshot = json.dumps(snapshot)
+    assert "C:/Users/test" not in serialized_snapshot
+    assert "Private Folder" not in serialized_snapshot
 
 
 def test_collect_startup_diagnostics_marks_default_comics_root_as_container_runtime(db, tmp_path):
@@ -373,6 +440,38 @@ def test_collect_startup_diagnostics_tracks_library_path_existence(db, tmp_path)
     assert by_name["Existing"]["path_exists"] is True
     assert by_name["Missing"]["path_exists"] is False
     assert diagnostics["database"]["size_display"] == "2.0 KB"
+
+
+def test_collect_startup_diagnostics_adds_redacted_display_paths(db):
+    create_library_with_root(db, "Private Path Library", "D:/_ComicTests/DC2")
+    db.commit()
+
+    diagnostics = collect_startup_diagnostics(
+        db,
+        database_url="sqlite:///D:/Parker/storage/database/comics.db",
+        comics_root=Path("D:/_ComicTests"),
+    )
+
+    assert diagnostics["database"]["url"] == "sqlite:///D:/Parker/storage/database/comics.db"
+    assert diagnostics["database"]["url_display"] == "sqlite:///D:/.../comics.db"
+    assert diagnostics["database"]["path_display"] == "D:/.../comics.db"
+    assert diagnostics["library_sample"][0]["path"] == "D:/_ComicTests/DC2"
+    assert diagnostics["library_sample"][0]["path_display"] == "D:/.../DC2"
+    assert diagnostics["library_sample"][0]["roots"][0]["path_display"] == "D:/.../DC2"
+    assert diagnostics["comics_root"]["path_display"] == "D:/.../_ComicTests"
+
+
+def test_collect_startup_diagnostics_redacts_database_url_credentials(db, tmp_path):
+    diagnostics = collect_startup_diagnostics(
+        db,
+        database_url="postgresql://reader:secret-password@db.internal:5432/private_parker?sslmode=require",
+        comics_root=tmp_path / "probe",
+    )
+
+    assert diagnostics["database"]["url_display"] == "postgresql://<credentials>@db.internal:5432/.../private_parker"
+    assert "reader" not in diagnostics["database"]["url_display"]
+    assert "secret-password" not in diagnostics["database"]["url_display"]
+    assert "sslmode" not in diagnostics["database"]["url_display"]
 
 
 def test_collect_startup_diagnostics_reports_multiple_library_roots(db, tmp_path):

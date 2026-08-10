@@ -2,6 +2,7 @@ import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 from sqlalchemy import desc, text
 from sqlalchemy.orm import Session, selectinload
@@ -59,6 +60,76 @@ def resolve_sqlite_db_path(database_url: str) -> Path | None:
 
     raw_path = database_url[len(prefix):]
     return Path(raw_path)
+
+
+def _path_tail(path_str: str) -> str:
+    normalized = path_str.replace("\\", "/").rstrip("/")
+    if not normalized:
+        return ""
+
+    return normalized.rsplit("/", 1)[-1] or normalized
+
+
+def _redact_path(path_str: str | None) -> str | None:
+    if not path_str:
+        return path_str
+
+    normalized = str(path_str).replace("\\", "/").rstrip("/")
+    if not normalized:
+        return normalized
+
+    if normalized in {"/", ".", ".."}:
+        return normalized
+
+    if normalized.lower() == ":memory:":
+        return normalized
+
+    tail = _path_tail(normalized)
+    if not tail:
+        return normalized
+
+    if len(normalized) >= 2 and normalized[1] == ":":
+        return f"{normalized[:2]}/.../{tail}"
+
+    if normalized.startswith("//"):
+        parts = [part for part in normalized.split("/") if part]
+        if len(parts) >= 2:
+            return f"//{parts[0]}/.../{tail}"
+        return f"//.../{tail}"
+
+    if normalized.startswith("/"):
+        parts = [part for part in normalized.split("/") if part]
+        if len(parts) <= 1:
+            return normalized
+        return f"/.../{tail}"
+
+    if "/" not in normalized:
+        return normalized
+
+    return f".../{tail}"
+
+
+def _redact_database_url(database_url: str) -> str:
+    sqlite_prefix = "sqlite:///"
+    if database_url.startswith(sqlite_prefix):
+        raw_path = database_url[len(sqlite_prefix):]
+        if raw_path == ":memory:":
+            return "sqlite:///:memory:"
+        redacted_path = _redact_path(raw_path) or raw_path
+        return f"sqlite:///{redacted_path.lstrip('/')}"
+
+    parsed = urlsplit(database_url)
+    if not parsed.scheme:
+        return _redact_path(database_url) or database_url
+
+    host = parsed.hostname or ""
+    if parsed.port is not None:
+        host = f"{host}:{parsed.port}"
+    netloc = f"<credentials>@{host}" if parsed.username or parsed.password else host
+    path_tail = _path_tail(parsed.path)
+    redacted_path = f"/.../{path_tail}" if path_tail else ""
+
+    return urlunsplit((parsed.scheme, netloc, redacted_path, "", ""))
 
 
 def _safe_file_size(path: Path | None) -> int | None:
@@ -342,6 +413,7 @@ def collect_startup_diagnostics(
             {
                 "id": root.id,
                 "path": root.path,
+                "path_display": _redact_path(root.path),
                 "is_active": root.is_active,
                 "path_exists": _safe_path_exists(root.path),
             }
@@ -350,6 +422,7 @@ def collect_startup_diagnostics(
         library_sample.append({
             "name": library.name,
             "path": root_path,
+            "path_display": _redact_path(root_path),
             "path_exists": _safe_path_exists(root_path),
             "root_count": len(roots),
             "active_root_count": sum(1 for root in roots if root["is_active"]),
@@ -373,15 +446,19 @@ def collect_startup_diagnostics(
         default_admin_present=default_admin_present,
         comics_root_sample=comics_root_sample,
     )
+    db_path_str = str(db_path.resolve(strict=False)) if db_path else None
+    comics_root_display = _redact_path(str(comics_root)) or str(comics_root)
 
     return {
         "status": status,
         "status_title": _status_title(status),
-        "status_summary": _status_summary(status, str(comics_root)),
+        "status_summary": _status_summary(status, comics_root_display),
         "is_suspicious": status == STARTUP_STATUS_STORAGE_MISMATCH,
         "database": {
             "url": database_url,
-            "path": str(db_path.resolve(strict=False)) if db_path else None,
+            "url_display": _redact_database_url(database_url),
+            "path": db_path_str,
+            "path_display": _redact_path(db_path_str),
             "exists": db_exists,
             "size_bytes": db_size,
             "size_display": _format_bytes(db_size),
@@ -407,8 +484,10 @@ def collect_startup_diagnostics(
         },
         "comics_root": {
             "path": str(comics_root),
+            "path_display": _redact_path(str(comics_root)),
             "exists": comics_root_exists,
             "sample": comics_root_sample,
+            "sample_count": len(comics_root_sample),
         },
         "recommended_actions": _build_recommended_actions(status),
     }
@@ -461,6 +540,57 @@ def _build_legacy_default_admin_password_notice() -> dict:
     }
 
 
+def _redacted_database_snapshot(database: dict) -> dict:
+    return {
+        "url": database.get("url_display") or _redact_database_url(database.get("url") or ""),
+        "path": database.get("path_display") or _redact_path(database.get("path")),
+        "exists": database.get("exists"),
+        "size_bytes": database.get("size_bytes"),
+        "size_display": database.get("size_display"),
+        "wal_size_bytes": database.get("wal_size_bytes"),
+        "wal_size_display": database.get("wal_size_display"),
+        "shm_size_bytes": database.get("shm_size_bytes"),
+        "shm_size_display": database.get("shm_size_display"),
+        "alembic_version": database.get("alembic_version"),
+        "paths_redacted": True,
+    }
+
+
+def _redacted_library_snapshot(library_sample: list[dict]) -> list[dict]:
+    redacted_libraries = []
+    for library in library_sample:
+        roots = [
+            {
+                "path": root.get("path_display") or _redact_path(root.get("path")),
+                "is_active": root.get("is_active"),
+                "path_exists": root.get("path_exists"),
+            }
+            for root in library.get("roots", [])
+        ]
+        redacted_libraries.append({
+            "name": library.get("name"),
+            "path": library.get("path_display") or _redact_path(library.get("path")),
+            "path_exists": library.get("path_exists"),
+            "root_count": library.get("root_count"),
+            "active_root_count": library.get("active_root_count"),
+            "roots": roots,
+            "paths_redacted": True,
+        })
+
+    return redacted_libraries
+
+
+def _redacted_comics_probe_snapshot(comics_root: dict) -> dict:
+    sample = comics_root.get("sample") or []
+    return {
+        "path": comics_root.get("path_display") or _redact_path(comics_root.get("path")),
+        "exists": comics_root.get("exists"),
+        "sample_count": comics_root.get("sample_count", len(sample)),
+        "sample_names_redacted": bool(sample),
+        "paths_redacted": True,
+    }
+
+
 def build_support_snapshot(
     diagnostics: dict,
     *,
@@ -486,12 +616,12 @@ def build_support_snapshot(
             "is_suspicious": diagnostics["is_suspicious"],
         },
         "runtime": diagnostics["runtime"],
-        "database": diagnostics["database"],
+        "database": _redacted_database_snapshot(diagnostics["database"]),
         "counts": diagnostics["counts"],
         "default_admin_present": diagnostics["default_admin_present"],
-        "configured_library_sample": diagnostics["library_sample"],
+        "configured_library_sample": _redacted_library_snapshot(diagnostics["library_sample"]),
         "recent_jobs": diagnostics.get("recent_jobs", []),
-        "comics_probe": diagnostics["comics_root"],
+        "comics_probe": _redacted_comics_probe_snapshot(diagnostics["comics_root"]),
         "recommended_actions": diagnostics["recommended_actions"],
     }
 
