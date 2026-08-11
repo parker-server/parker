@@ -139,10 +139,10 @@
                                             </template>
 
                                             <template x-if="setting.data_type === 'select'">
-                                                <div class="flex flex-col gap-2 sm:flex-row">
+                                                <div class="flex flex-col gap-3">
                                                     <select
                                                         x-model="setting.tempValue"
-                                                        x-on:change="update(setting, $event.target.value)"
+                                                        x-on:change="handleSelectChange(setting, $event.target.value)"
                                                         class="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none transition-colors focus:border-blue-500"
                                                     >
                                                         <template x-for="opt in getGroupedOptions(setting.options).orphans" :key="opt.value">
@@ -157,6 +157,26 @@
                                                             </optgroup>
                                                         </template>
                                                     </select>
+
+                                                    <div
+                                                        x-show="isCoverPreviewVisible(setting)"
+                                                        x-transition.opacity.duration.200ms
+                                                        x-cloak
+                                                        class="rounded-xl border border-blue-500/30 bg-blue-500/10 p-3 shadow-lg shadow-blue-950/20"
+                                                    >
+                                                        <div class="flex items-center gap-3">
+                                                            <img
+                                                                :src="coverPreview.url"
+                                                                :alt="`${coverPreview.label} cover preview`"
+                                                                class="h-24 w-16 flex-shrink-0 rounded-md object-cover shadow-lg ring-1 ring-white/10"
+                                                            >
+                                                            <div class="min-w-0">
+                                                                <div class="text-[10px] font-bold uppercase tracking-[0.22em] text-blue-200">Cover Preview</div>
+                                                                <div class="mt-1 truncate text-sm font-semibold text-white" x-text="coverPreview.label"></div>
+                                                                <p class="mt-1 text-xs leading-relaxed text-blue-100/80">Previewing the selected login background cover.</p>
+                                                            </div>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             </template>
 
@@ -188,7 +208,7 @@
             </div>
         </section>
     </template>
-    
+
     <template x-if="!categoryList.length">
         <div class="rounded-2xl border border-gray-800 bg-gray-900 p-8 text-center text-gray-400">
             No settings available.
@@ -202,7 +222,14 @@ function settingsManager() {
         settings: {},
         categoryList: [],
         openSections: {},
-        
+        coverPreview: {
+            key: null,
+            url: '',
+            label: '',
+            visible: false,
+            timeoutId: null,
+        },
+
         async init() {
             const res = await fetch(window.parker.route('settings.list'));
             this.settings = await res.json();
@@ -335,6 +362,55 @@ function settingsManager() {
             return setting.min_value !== undefined && setting.min_value !== null ? setting.min_value : null;
         },
 
+        isLoginStaticCoverSetting(setting) {
+            return setting && setting.key === 'ui.login_static_cover';
+        },
+
+        findSettingOption(setting, value) {
+            return (setting.options || [])
+                .find(opt => String(opt.value) === String(value));
+        },
+
+        coverPreviewUrl(filename) {
+            if (!filename) return '';
+            return window.parker.url(`/static/img/login-covers/${filename}`);
+        },
+
+        isCoverPreviewVisible(setting) {
+            return this.isLoginStaticCoverSetting(setting)
+                && this.coverPreview.visible
+                && this.coverPreview.key === setting.key;
+        },
+
+        showCoverPreview(setting, value) {
+            if (!this.isLoginStaticCoverSetting(setting)) return;
+
+            const option = this.findSettingOption(setting, value);
+            if (!option) return;
+
+            if (this.coverPreview.timeoutId) {
+                clearTimeout(this.coverPreview.timeoutId);
+            }
+
+            this.coverPreview = {
+                key: setting.key,
+                url: this.coverPreviewUrl(option.value),
+                label: option.label,
+                visible: true,
+                timeoutId: null,
+            };
+
+            this.coverPreview.timeoutId = setTimeout(() => {
+                this.coverPreview.visible = false;
+                this.coverPreview.timeoutId = null;
+            }, 3500);
+        },
+
+        handleSelectChange(setting, newValue) {
+            this.showCoverPreview(setting, newValue);
+            this.update(setting, newValue);
+        },
+
         /**
          * Transforms a flat list of options into a structure for rendering groups.
          * Returns: { orphans: [], groups: { "GroupName": [opt, opt] } }
@@ -364,7 +440,7 @@ function settingsManager() {
         async update(setting, newValue) {
             // Optimistic Update
             const oldVal = setting.value;
-            setting.value = newValue; 
+            setting.value = newValue;
 
             try {
                 const res = await fetch(window.parker.route('settings.update', {key: setting.key }), {
@@ -372,7 +448,7 @@ function settingsManager() {
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ value: newValue })
                 });
-                
+
                 if(!res.ok) {
                     let message = "Error saving setting";
                     try {
@@ -381,10 +457,10 @@ function settingsManager() {
                     } catch(parseError) {}
                     throw new Error(message);
                 }
-                
+
                 // Refresh local state to match server format
                 const updated = await res.json();
-                setting.value = updated.value; 
+                setting.value = updated.value;
                 setting.tempValue = updated.value;
                 window.parker.showToast("Setting saved", "success");
             } catch(e) {
@@ -393,7 +469,7 @@ function settingsManager() {
                 window.parker.showToast(e.message || "Error saving setting", "error");
             }
         },
-        
+
     }
 }
 </script>
