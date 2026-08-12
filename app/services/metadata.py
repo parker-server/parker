@@ -233,19 +233,24 @@ class MetadataService:
     def can_write(self, file_path: str) -> bool:
 
         # 1. Existence Check
-        if not os.path.exists(file_path):
+        if not file_path:
             return False
 
-        # 2. Permission Check (The Docker/OS check)
-        if not os.access(file_path, os.W_OK):
+        path = Path(file_path)
+        if not path.exists() or not path.is_file():
             return False
 
-        # 3. Format Check
-        ext = file_path.lower().split('.')[-1]
-        if ext == 'cbz': return True
-        if ext == 'cbr' and self.rar_exe: return True
+        # 2. Format Check
+        ext = path.suffix.lower()
+        if ext == '.cbr' and not self.rar_exe:
+            return False
+        if ext not in {'.cbz', '.cbr'}:
+            return False
 
-        return False
+        # 3. Permission Check (The Docker/OS check)
+        # CBZ writeback creates a sibling temp archive and swaps it into place,
+        # so both the archive and containing directory must be writable.
+        return os.access(str(path), os.W_OK) and os.access(str(path.parent), os.W_OK)
 
     def read_metadata(self, file_path: str) -> Dict[str, Any]:
         """

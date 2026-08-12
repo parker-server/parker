@@ -5,7 +5,7 @@
      class="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm"
      x-transition.opacity>
 
-    <div class="bg-gray-800 border border-gray-700 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col"
+    <div class="bg-gray-800 border border-gray-700 rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col"
          x-on:click.away="close()">
 
         <div class="px-6 py-4 border-b border-gray-700 flex justify-between items-center bg-gray-900/50 rounded-t-xl">
@@ -35,33 +35,103 @@
 
             <form x-show="!loading && !error" class="space-y-6" x-on:submit.prevent="save()">
 
-                <div class="grid grid-cols-12 gap-4">
-                    <div class="col-span-8">
+                <div class="grid grid-cols-1 sm:grid-cols-12 gap-4">
+                    <div class="sm:col-span-8">
                         <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Series Name</label>
                         <input type="text" x-model="form.Series" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:border-blue-500 outline-none">
                     </div>
-                    <div class="col-span-2">
+                    <div class="sm:col-span-2">
                         <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Vol</label>
                         <input type="text" x-model="form.Volume" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:border-blue-500 outline-none">
                     </div>
-                    <div class="col-span-2">
+                    <div class="sm:col-span-2">
                         <label class="block text-xs font-bold text-gray-500 uppercase mb-1">#</label>
                         <input type="text" x-model="form.Number" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:border-blue-500 outline-none">
                     </div>
                 </div>
 
-                <div class="grid grid-cols-12 gap-4">
-                    <div class="col-span-10">
+                <div class="grid grid-cols-1 sm:grid-cols-12 gap-4">
+                    <div class="sm:col-span-10">
                         <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Issue Title</label>
                         <input type="text" x-model="form.Title" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:border-blue-500 outline-none">
                     </div>
-                    <div class="col-span-2">
+                    <div class="sm:col-span-2">
                         <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Year</label>
                         <input type="number" x-model="form.Year" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:border-blue-500 outline-none">
                     </div>
                 </div>
 
-                <div class="grid grid-cols-2 gap-4">
+                <div class="grid grid-cols-1 sm:grid-cols-12 gap-4">
+                    <div class="sm:col-span-4">
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Format</label>
+                        <select x-model="form.Format" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:border-blue-500 outline-none">
+                            <option value="">None</option>
+                            <template x-for="option in formatOptions" :key="option">
+                                <option :value="option" x-text="option"></option>
+                            </template>
+                            <template x-if="form.Format && !formatOptions.includes(form.Format)">
+                                <option :value="form.Format" x-text="form.Format"></option>
+                            </template>
+                        </select>
+                    </div>
+                    <div class="sm:col-span-4">
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Age Rating</label>
+                        <select x-model="form.AgeRating" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:border-blue-500 outline-none">
+                            <option value="">None</option>
+                            <template x-for="option in ageRatingOptions" :key="option">
+                                <option :value="option" x-text="option"></option>
+                            </template>
+                            <template x-if="form.AgeRating && !ageRatingOptions.includes(form.AgeRating)">
+                                <option :value="form.AgeRating" x-text="form.AgeRating"></option>
+                            </template>
+                        </select>
+                    </div>
+                    <div class="sm:col-span-4">
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Total Issues</label>
+                        <input type="number" min="0" x-model="form.Count" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:border-blue-500 outline-none">
+                    </div>
+                </div>
+
+                <div class="relative">
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Genre</label>
+                    <input
+                        type="text"
+                        x-model="form.Genre"
+                        @input.debounce.250ms="fetchGenreSuggestions()"
+                        @focus="fetchGenreSuggestions()"
+                        @keydown.escape.prevent="genreSuggestions = []"
+                        class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:border-blue-500 outline-none"
+                        placeholder="Comma separated"
+                    >
+                    <div
+                        x-show="genreSuggestions.length > 0"
+                        x-on:click.away="genreSuggestions = []"
+                        class="absolute z-20 mt-1 max-h-48 w-full overflow-y-auto rounded border border-gray-600 bg-gray-700 shadow-lg"
+                    >
+                        <template x-for="suggestion in genreSuggestions" :key="suggestion">
+                            <button
+                                type="button"
+                                x-on:mousedown.prevent
+                                x-on:click="selectGenreSuggestion(suggestion)"
+                                class="block w-full border-b border-gray-600 px-3 py-2 text-left text-sm text-white transition-colors hover:bg-blue-600 last:border-0"
+                                x-text="suggestion"
+                            ></button>
+                        </template>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Alternate Series</label>
+                        <input type="text" x-model="form.AlternateSeries" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:border-blue-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Alternate Number</label>
+                        <input type="text" x-model="form.AlternateNumber" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:border-blue-500 outline-none">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                         <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Writer</label>
                         <input type="text" x-model="form.Writer" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:border-blue-500 outline-none" placeholder="Comma separated">
@@ -117,36 +187,49 @@ function editMetadataModal() {
         error: null,
         comicId: null,
         isCbr: false,
+        genreSuggestions: [],
+        formatOptions: [
+            'Annual', 'Graphic Novel', 'Hardcover', 'Limited Series', 'Magazine',
+            'One Shot', 'Special', 'TPB', 'Web Comic'
+        ],
+        ageRatingOptions: [
+            'Early Childhood', 'Everyone', 'G', 'Kids to Adults', 'Everyone 10+',
+            'PG', 'Teen', 'Rating Pending', 'M', 'MA15+', 'Mature 17+',
+            'Adults Only 18+', 'R18+', 'X18+'
+        ],
 
         // This mirrors the ComicInfo XML tags
         form: {
             Series: '', Number: '', Volume: '', Title: '', Summary: '',
-            Year: '', Writer: '', Penciller: '', Publisher: '', Imprint: ''
+            Year: '', Writer: '', Penciller: '', Publisher: '', Imprint: '',
+            Count: '', AlternateSeries: '', AlternateNumber: '', Genre: '',
+            Format: '', AgeRating: ''
         },
 
         async open(id) {
             this.comicId = id;
             this.isOpen = true;
             this.error = null;
+            this.genreSuggestions = [];
             this.loading = true;
 
             try {
                 // 1. Fetch current file info (Check extension)
-                const checkRes = await fetch(window.url(`/api/comics/${id}`));
+                const checkRes = await fetch(window.parker.url(`/api/comics/${id}`));
                 const comicData = await checkRes.json();
 
-                if (comicData.file_path.toLowerCase().endsWith('.cbr') || comicData.file_path.toLowerCase().endsWith('.rar')) {
+                const filePath = (comicData.file_path || '').toLowerCase();
+                if (filePath.endsWith('.cbr') || filePath.endsWith('.rar')) {
                     this.isCbr = true;
                 }
 
                 // 2. Fetch current XML data
                 // We reuse the existing endpoint or creating a dedicated GET metadata endpoint
                 // For now, let's assume we can fetch the parsed metadata
-                const res = await fetch(window.url(`/api/comics/${id}/metadata`));
+                const res = await fetch(window.parker.url(`/api/comics/${id}/metadata`));
                 if (!res.ok) throw new Error("Could not read metadata");
 
                 const data = await res.json();
-                console.log(data);
                 // Populate form
                 this.form = {
                     Series: data.series || '',
@@ -158,7 +241,13 @@ function editMetadataModal() {
                     Writer: data.writer || '',
                     Penciller: data.penciller || '',
                     Publisher: data.publisher || '',
-                    Imprint: data.imprint || ''
+                    Imprint: data.imprint || '',
+                    Count: data.count || '',
+                    AlternateSeries: data.alternate_series || '',
+                    AlternateNumber: data.alternate_number || '',
+                    Genre: data.genre || '',
+                    Format: data.format || '',
+                    AgeRating: data.age_rating || ''
                 };
 
             } catch(e) {
@@ -171,12 +260,61 @@ function editMetadataModal() {
 
         close() {
             this.isOpen = false;
+            this.genreSuggestions = [];
+        },
+
+        genreTokens() {
+            return (this.form.Genre || '')
+                .split(',')
+                .map((value) => value.trim())
+                .filter(Boolean);
+        },
+
+        currentGenreToken() {
+            const parts = (this.form.Genre || '').split(',');
+            return (parts[parts.length - 1] || '').trim();
+        },
+
+        async fetchGenreSuggestions() {
+            const token = this.currentGenreToken();
+            if (token.length < 2) {
+                this.genreSuggestions = [];
+                return;
+            }
+
+            try {
+                const res = await fetch(window.parker.route(
+                    'search.suggestions',
+                    {},
+                    `field=genre&query=${encodeURIComponent(token)}`
+                ));
+                if (!res.ok) {
+                    this.genreSuggestions = [];
+                    return;
+                }
+
+                const existing = this.genreTokens().map((value) => value.toLowerCase());
+                const suggestions = await res.json();
+                this.genreSuggestions = suggestions
+                    .filter((suggestion) => suggestion && !existing.includes(suggestion.toLowerCase()))
+                    .slice(0, 10);
+            } catch(e) {
+                console.error(e);
+                this.genreSuggestions = [];
+            }
+        },
+
+        selectGenreSuggestion(value) {
+            const existing = this.genreTokens().slice(0, -1);
+            existing.push(value);
+            this.form.Genre = existing.join(', ');
+            this.genreSuggestions = [];
         },
 
         async save() {
             this.saving = true;
             try {
-                const res = await fetch(window.url(`/api/comics/${this.comicId}/metadata`), {
+                const res = await fetch(window.parker.url(`/api/comics/${this.comicId}/metadata`), {
                     method: 'PATCH',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(this.form)
@@ -187,7 +325,7 @@ function editMetadataModal() {
                     throw new Error(errData.detail || "Save failed");
                 }
 
-                window.comicServer.showToast("File updated. Scan queued.", "success");
+                window.parker.showToast("File updated. Scan queued.", "success");
                 this.close();
 
                 // Optional: Reload the page to show new data

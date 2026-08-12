@@ -15,6 +15,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
   - Multi-root libraries with explicit add, disable, relocate, and remove controls
   - Reading Lists, Collections, Story Arcs, Stacks, Smart Lists
   - CBL-derived reading lists from uploaded files, direct HTTPS imports, and the DieselTech catalog
+  - Admin-only light `ComicInfo.xml` editing for writable comic archives, hidden for read-only storage
   - Volume-level `Following` for future issue tracking by run
   - Optional single-volume series shortcut to open the volume detail page directly
   - Paginated Details tabs for large series and volume metadata sets
@@ -226,7 +227,6 @@ Known client behavior:
 - Enhanced WebP transcoding pipeline (JXL, AVIF to WebP)
 - Additional unit test coverage
 - Migration tooling improvements
-- Light metadata editing with file writeback (Tentative)
 
 ## 🤝 Contributing
 Parker is early‑stage but stable. Contributions are welcome!

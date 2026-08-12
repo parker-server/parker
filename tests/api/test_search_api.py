@@ -5,7 +5,7 @@ from app.models.credits import ComicCredit, Person
 from app.models.pull_list import PullList, PullListItem
 from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.series import Series
-from app.models.tags import Character, Location, Team
+from app.models.tags import Character, Genre, Location, Team
 from app.models.user import User
 from tests.factories import create_comic, create_library_with_root
 
@@ -79,6 +79,9 @@ def _seed_search_fixture(db, normal_user):
     banned_team = Team(name="FindMe Evil Team")
     safe_location = Location(name="FindMe City")
     banned_location = Location(name="FindMe Forbidden City")
+    safe_genre = Genre(name="FindMe Genre")
+    banned_genre = Genre(name="FindMe Banned Genre")
+    hidden_genre = Genre(name="FindMe Hidden Genre")
     db.add_all([
         safe_character,
         banned_character,
@@ -86,6 +89,9 @@ def _seed_search_fixture(db, normal_user):
         banned_team,
         safe_location,
         banned_location,
+        safe_genre,
+        banned_genre,
+        hidden_genre,
     ])
     db.flush()
 
@@ -100,6 +106,11 @@ def _seed_search_fixture(db, normal_user):
     safe1.locations.append(safe_location)
     safe2.locations.append(safe_location)
     banned.locations.append(banned_location)
+
+    safe1.genres.append(safe_genre)
+    safe2.genres.append(safe_genre)
+    banned.genres.append(banned_genre)
+    hidden.genres.append(hidden_genre)
 
     safe_writer = Person(name="FindMe Writer")
     banned_writer = Person(name="FindMe Banned Writer")
@@ -202,6 +213,7 @@ def test_search_suggestions_respects_rls_age_and_field_routes(auth_client, db, n
     assert suggest("writer", "FindMe") == ["FindMe Writer"]
     assert suggest("collection", "FindMe") == ["FindMe Safe Collection"]
     assert suggest("location", "FindMe") == ["FindMe City"]
+    assert suggest("genre", "FindMe") == ["FindMe Genre"]
     assert suggest("format", "mini") == ["mini-series"]
     assert suggest("imprint", "FindMe") == ["FindMe Imprint"]
     assert suggest("age_rating", "Teen") == ["Teen"]

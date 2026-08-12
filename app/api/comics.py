@@ -204,7 +204,7 @@ async def get_comic(comic_id: int, db: SessionDep, current_user: CurrentUser):
         "file_path": comic.absolute_path if current_user.is_superuser else None,
         "file_size": comic.file_size,
         "thumbnail_hash": get_thumbnail_hash(comic.updated_at),
-        "can_edit": (current_user.is_superuser and metadata_service.can_write(comic.file_path)),
+        "can_edit": (current_user.is_superuser and metadata_service.can_write(comic.absolute_path)),
 
         # Library info
         "library_id": comic.volume.series.library_id,
@@ -558,12 +558,11 @@ def get_comic_metadata(comic_id: int, db: SessionDep, current_user: AdminUser):
     comic = db.query(Comic).get(comic_id)
     if not comic: raise HTTPException(404, "Comic not found")
 
-    # Use the absolute path directly from the database
-    # This assumes 'file_path' is populated correctly during scan
-    if not comic.file_path:
+    full_path = comic.absolute_path
+    if not full_path:
         raise HTTPException(500, "Comic record is missing file path")
 
-    return metadata_service.read_metadata(comic.file_path)
+    return metadata_service.read_metadata(full_path)
 
 @router.patch("/{comic_id}/metadata", name='update_metadata', tags=["metadata", 'admin'])
 def update_metadata(
@@ -579,8 +578,8 @@ def update_metadata(
     if not comic:
         raise HTTPException(404, "Comic not found")
 
-    # 1. Use direct path
-    full_path = comic.file_path
+    # 1. Resolve the archive path from the library root and relative path.
+    full_path = comic.absolute_path
 
     # 2. Check Capability
     if not metadata_service.can_write(full_path):
@@ -588,12 +587,13 @@ def update_metadata(
 
     # 3. Perform Write (File System Source of Truth)
     try:
-        # Convert Pydantic to Dict, removing None values
+        # Convert Pydantic to Dict while keeping explicit None values as tag removals.
         data_dict = updates.model_dump(exclude_unset=True)
 
-        # Ensure primitive types for XML (convert ints/floats to strings)
+        # Ensure primitive types for XML while preserving None as "remove this tag".
         for k, v in data_dict.items():
-            data_dict[k] = str(v)
+            if v is not None:
+                data_dict[k] = str(v)
 
         metadata_service.write_metadata(full_path, data_dict)
 

@@ -251,7 +251,13 @@ def test_get_comic_detail_returns_metadata_and_in_progress_status(auth_client, d
     assert payload["parker_readers_count"] is None
 
 
-def test_get_comic_detail_only_exposes_file_path_to_admins(client, db, normal_user, admin_user):
+def test_get_comic_detail_only_exposes_file_path_and_editing_to_capable_admins(
+    client,
+    db,
+    normal_user,
+    admin_user,
+    monkeypatch,
+):
     library, _, volume = _create_graph(db, lib_name="comic-detail-file-path", series_name="File Path Detail Saga")
 
     comic = create_comic(
@@ -267,15 +273,237 @@ def test_get_comic_detail_only_exposes_file_path_to_admins(client, db, normal_us
     normal_user.accessible_libraries.append(library)
     db.commit()
 
+    checked_paths = []
+
+    def fake_can_write(path):
+        checked_paths.append(path)
+        return True
+
+    monkeypatch.setattr("app.api.comics.metadata_service.can_write", fake_can_write)
+
     app.dependency_overrides[get_current_user] = lambda: normal_user
     user_response = client.get(f"/api/comics/{comic.id}")
     assert user_response.status_code == 200
-    assert user_response.json()["file_path"] is None
+    user_payload = user_response.json()
+    assert user_payload["file_path"] is None
+    assert user_payload["can_edit"] is False
+    assert checked_paths == []
 
     app.dependency_overrides[get_current_user] = lambda: admin_user
     admin_response = client.get(f"/api/comics/{comic.id}")
     assert admin_response.status_code == 200
-    assert admin_response.json()["file_path"] == comic.absolute_path
+    admin_payload = admin_response.json()
+    assert admin_payload["file_path"] == comic.absolute_path
+    assert admin_payload["can_edit"] is True
+    assert checked_paths == [comic.absolute_path]
+
+    monkeypatch.setattr("app.api.comics.metadata_service.can_write", lambda path: False)
+
+    readonly_response = client.get(f"/api/comics/{comic.id}")
+    assert readonly_response.status_code == 200
+    readonly_payload = readonly_response.json()
+    assert readonly_payload["file_path"] == comic.absolute_path
+    assert readonly_payload["can_edit"] is False
+
+
+def test_update_metadata_preserves_editable_metadata_fields(admin_client, db, monkeypatch):
+    library, _, volume = _create_graph(db, lib_name="comic-metadata-update", series_name="Metadata Update Saga")
+
+    comic = create_comic(
+        db,
+        volume,
+        library.active_root,
+        "metadata-update-1.cbz",
+        number="1",
+        title="Metadata Update Issue",
+        filename="metadata-update-1.cbz",
+    )
+    db.commit()
+
+    captured = {}
+
+    def fake_write_metadata(path, data):
+        captured["path"] = path
+        captured["data"] = data
+        return True
+
+    def fake_add_task(library_id, force=False):
+        captured["task"] = {"library_id": library_id, "force": force}
+        return {"status": "queued", "message": "Scan queued"}
+
+    monkeypatch.setattr("app.api.comics.metadata_service.can_write", lambda path: True)
+    monkeypatch.setattr("app.api.comics.metadata_service.write_metadata", fake_write_metadata)
+    monkeypatch.setattr("app.api.comics.scan_manager.add_task", fake_add_task)
+
+    response = admin_client.patch(
+        f"/api/comics/{comic.id}/metadata",
+        json={
+            "Volume": "2",
+            "Imprint": "Vertigo",
+            "Publisher": "DC",
+            "Summary": None,
+            "Year": 2024,
+            "Count": 12,
+            "AlternateSeries": "Event Alpha",
+            "AlternateNumber": "3",
+            "Genre": "Superhero, Horror",
+            "Format": "Special",
+            "AgeRating": "Teen",
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["path"] == comic.absolute_path
+    assert captured["data"] == {
+        "Volume": "2",
+        "Imprint": "Vertigo",
+        "Publisher": "DC",
+        "Summary": None,
+        "Year": "2024",
+        "Count": "12",
+        "AlternateSeries": "Event Alpha",
+        "AlternateNumber": "3",
+        "Genre": "Superhero, Horror",
+        "Format": "Special",
+        "AgeRating": "Teen",
+    }
+    assert captured["task"] == {"library_id": library.id, "force": False}
+
+
+def test_update_metadata_treats_blank_numeric_fields_as_removals(admin_client, db, monkeypatch):
+    library, _, volume = _create_graph(
+        db,
+        lib_name="comic-metadata-blank-numeric",
+        series_name="Metadata Blank Numeric Saga",
+    )
+
+    comic = create_comic(
+        db,
+        volume,
+        library.active_root,
+        "metadata-blank-numeric-1.cbz",
+        number="1",
+        title="Metadata Blank Numeric Issue",
+        filename="metadata-blank-numeric-1.cbz",
+    )
+    db.commit()
+
+    captured = {}
+
+    def fake_write_metadata(path, data):
+        captured["path"] = path
+        captured["data"] = data
+        return True
+
+    monkeypatch.setattr("app.api.comics.metadata_service.can_write", lambda path: True)
+    monkeypatch.setattr("app.api.comics.metadata_service.write_metadata", fake_write_metadata)
+    monkeypatch.setattr(
+        "app.api.comics.scan_manager.add_task",
+        lambda library_id, force=False: {"status": "queued", "message": "Scan queued"},
+    )
+
+    response = admin_client.patch(
+        f"/api/comics/{comic.id}/metadata",
+        json={"Year": "", "Count": ""},
+    )
+
+    assert response.status_code == 200
+    assert captured["path"] == comic.absolute_path
+    assert captured["data"] == {"Year": None, "Count": None}
+
+
+def test_get_comic_metadata_reads_from_absolute_path(admin_client, db, monkeypatch):
+    library, _, volume = _create_graph(db, lib_name="comic-metadata-read", series_name="Metadata Read Saga")
+
+    comic = create_comic(
+        db,
+        volume,
+        library.active_root,
+        "metadata-read-1.cbz",
+        number="1",
+        title="Metadata Read Issue",
+        filename="metadata-read-1.cbz",
+    )
+    db.commit()
+
+    captured = {}
+
+    def fake_read_metadata(path):
+        captured["path"] = path
+        return {"title": "Read From File", "imprint": "Read Imprint"}
+
+    monkeypatch.setattr("app.api.comics.metadata_service.read_metadata", fake_read_metadata)
+
+    response = admin_client.get(f"/api/comics/{comic.id}/metadata")
+
+    assert response.status_code == 200
+    assert response.json() == {"title": "Read From File", "imprint": "Read Imprint"}
+    assert captured["path"] == comic.absolute_path
+
+
+def test_update_metadata_rejects_unwritable_archive(admin_client, db, monkeypatch):
+    library, _, volume = _create_graph(db, lib_name="comic-metadata-unwritable", series_name="Metadata Unwritable Saga")
+
+    comic = create_comic(
+        db,
+        volume,
+        library.active_root,
+        "metadata-unwritable-1.txt",
+        number="1",
+        title="Metadata Unwritable Issue",
+        filename="metadata-unwritable-1.txt",
+    )
+    db.commit()
+
+    monkeypatch.setattr("app.api.comics.metadata_service.can_write", lambda path: False)
+
+    response = admin_client.patch(
+        f"/api/comics/{comic.id}/metadata",
+        json={"Title": "Blocked Update"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "Cannot write metadata. File type not supported or tools missing."
+    }
+
+
+def test_update_metadata_reports_writer_failure_without_queueing_scan(admin_client, db, monkeypatch):
+    library, _, volume = _create_graph(db, lib_name="comic-metadata-failure", series_name="Metadata Failure Saga")
+
+    comic = create_comic(
+        db,
+        volume,
+        library.active_root,
+        "metadata-failure-1.cbz",
+        number="1",
+        title="Metadata Failure Issue",
+        filename="metadata-failure-1.cbz",
+    )
+    db.commit()
+
+    queued_scan = False
+
+    def fake_write_metadata(_path, _data):
+        raise RuntimeError("archive locked")
+
+    def fake_add_task(_library_id, force=False):
+        nonlocal queued_scan
+        queued_scan = True
+        return {"status": "queued", "message": "Scan queued"}
+
+    monkeypatch.setattr("app.api.comics.metadata_service.can_write", lambda path: True)
+    monkeypatch.setattr("app.api.comics.metadata_service.write_metadata", fake_write_metadata)
+    monkeypatch.setattr("app.api.comics.scan_manager.add_task", fake_add_task)
+
+    response = admin_client.patch(
+        f"/api/comics/{comic.id}/metadata",
+        json={"Title": "Failing Update"},
+    )
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Failed to write metadata: archive locked"}
+    assert queued_scan is False
 
 
 def test_get_comic_detail_returns_completed_read_status(auth_client, db, normal_user):
