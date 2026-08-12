@@ -1,14 +1,69 @@
 {% extends "base.html" %}
 
-{% block title %}Account Settings - Comic Server{% endblock %}
+{% block title %}Account Settings - Parker{% endblock %}
 
 {% block content %}
 <div class="max-w-2xl mx-auto" x-data="userSettings()">
     
     <div class="flex justify-between items-center mb-8">
         <h1 class="text-3xl font-bold text-white">Account Settings</h1>
-        <a href="/user/dashboard" class="text-gray-400 hover:text-white transition-colors">← Back to Dashboard</a>
+        <a :href="window.parker.route('pages.user_dashboard')" class="text-gray-400 hover:text-white transition-colors">← Back to Dashboard</a>
     </div>
+
+    <div class="bg-gray-800 rounded-lg p-8 border border-gray-700 shadow-xl mb-5">
+        <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">Privacy & Social</h2>
+
+        <div class="flex items-start gap-4">
+            <div class="flex items-center h-6">
+                <input
+                    id="share_progress"
+                    type="checkbox"
+                    x-model="preferences.social_insights_enabled"
+                    x-on:change="updatePreferences"
+                    class="w-5 h-5 bg-gray-900 border-gray-600 rounded text-blue-600 focus:ring-blue-500 focus:ring-offset-gray-800"
+                >
+            </div>
+            <div>
+                <label for="share_progress" class="font-medium text-white">Contribute to Parker Social Insights</label>
+                <p class="text-gray-400 text-sm mt-1">
+                    Allow your reading activity to be anonymously included in community features like "Popular with Others"
+                    and reader counts on comics and series. No one will see your individual reading history.
+                </p>
+                <template x-if="preferences.social_insights_enabled === false">
+                    <p class="mt-3 rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-sm text-blue-100">
+                        Parker's social rails work best when more readers contribute anonymous aggregate activity. You can turn this on or off anytime.
+                    </p>
+                </template>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-gray-800 rounded-lg p-8 border border-gray-700 shadow-xl mb-5">
+        <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">Reading Habits</h2>
+
+        <div class="flex items-center justify-between gap-4">
+            <div>
+                <label for="monthly_goal" class="font-medium text-white">Monthly Issue Goal</label>
+                <p class="text-gray-400 text-sm mt-1">
+                    How many comics do you want to finish each month? This sets the target for your dashboard progress bar.
+                </p>
+            </div>
+            <div class="flex items-center gap-3">
+                <input
+                    id="monthly_reading_goal"
+                    type="number"
+                    min="1"
+                    max="999"
+                    x-model.number="preferences.monthly_reading_goal"
+                    x-on:change="updatePreferences"
+                    class="w-20 bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white font-bold text-center focus:outline-none focus:border-blue-500 transition-colors"
+                >
+                <span class="text-gray-500 text-sm font-bold uppercase tracking-wider">Issues</span>
+            </div>
+        </div>
+    </div>
+
+
 
     <div class="bg-gray-800 rounded-lg p-8 border border-gray-700 shadow-xl">
         
@@ -79,7 +134,38 @@ function userSettings() {
         loading: false,
         message: '',
         messageColor: 'text-green-400',
+        preferences: {},
 
+        async init() {
+            try {
+                const res = await fetch(window.parker.route('users.preferences'));
+                if(res.ok) {
+                    this.preferences = await res.json();
+                }
+            } catch(e) { console.error("Failed to get user preferences", e); }
+
+        },
+        async updatePreferences() {
+            try {
+                const res = await fetch(window.parker.route('users.update_preferences'), {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        social_insights_enabled: this.preferences.social_insights_enabled,
+                        monthly_reading_goal: this.preferences.monthly_reading_goal
+                    })
+                });
+
+                if(res.ok) {
+                    window.parker.showToast("Settings updated", "success");
+                } else {
+                    window.parker.showToast("Failed to update settings", "error");
+                    this.revertValuesOnFail();
+                }
+            } catch(e) {
+                console.error(e);
+            }
+        },
         async changePassword() {
             this.message = '';
             
@@ -93,7 +179,7 @@ function userSettings() {
             this.loading = true;
 
             try {
-                const res = await fetch(window.url('/api/users/me/password'), {
+                const res = await fetch(window.parker.route('users.update_password'), {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(this.form)
@@ -118,7 +204,12 @@ function userSettings() {
             } finally {
                 this.loading = false;
             }
-        }
+        },
+        revertValuesOnFail()
+        {
+            // Revert toggle if failed
+            this.preferences.social_insights_enabled = !this.preferences.social_insights_enabled;
+        },
     }
 }
 </script>

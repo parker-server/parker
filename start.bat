@@ -1,5 +1,5 @@
 @echo off
-echo Starting Comic Server...
+echo Starting Parker...
 echo.
 
 REM Check if Python is installed
@@ -35,10 +35,12 @@ if not exist ".env" (
 )
 
 REM Create necessary directories
-if not exist "data" mkdir data
-if not exist "cache" mkdir cache
-if not exist "static" mkdir static
-if not exist "templates" mkdir templates
+if not exist storage\database mkdir storage\database
+if not exist storage\cache mkdir storage\cache
+if not exist storage\cover mkdir storage\cover
+if not exist storage\avatars mkdir storage\avatars
+if not exist storage\logs mkdir storage\logs
+
 
 echo.
 echo Setup complete!

@@ -37,32 +37,21 @@ function dynamicBackground() {
 
         async init() {
 
-            if(!window.PAGE_CONTEXT)
+            if(!window.parker.page_color_context)
             {
                 this.style = 'NONE';
                 return;
             }
 
-            // 1. Fetch System Setting
-            // In a real app, you might inject this via backend template to avoid a fetch
-            // But fetching ensures we respect user changes immediately
-            const settingRes = await fetch(window.url('/api/settings/'));
-            if(settingRes.ok) {
-                const settings = await settingRes.json();
-                // Find ui.background_style
-                const styleSetting = settings.appearance.find(s => s.key === 'ui.background_style');
-                console.log(styleSetting);
-                this.style = styleSetting ? styleSetting.value : 'NONE';
-            }
-
-            // 2. Read Context from the Page
+            // Read Context from the Page
             // The parent page (comic_detail, series_detail) must expose these variables globally
-            this.primary = window.PAGE_CONTEXT.colors?.primary || '#000000';
-            this.secondary = window.PAGE_CONTEXT.colors?.secondary || '#1a1a1a';
-            this.accent1 = window.PAGE_CONTEXT.colors?.accent1 || '#333333';
-            this.accent2 = window.PAGE_CONTEXT.colors?.accent2 || '#444444';
-            this.accent3 = window.PAGE_CONTEXT.colors?.accent3 || '#555555';
-            this.imageUrl = window.PAGE_CONTEXT.imageUrl || '';
+            this.style = window.parker.page_color_context.backgroundStyle;
+            this.primary = window.parker.page_color_context.colors?.primary || '#000000';
+            this.secondary = window.parker.page_color_context.colors?.secondary || '#1a1a1a';
+            this.accent1 = window.parker.page_color_context.colors?.accent1 || '#333333';
+            this.accent2 = window.parker.page_color_context.colors?.accent2 || '#444444';
+            this.accent3 = window.parker.page_color_context.colors?.accent3 || '#555555';
+            this.imageUrl = window.parker.page_color_context.imageUrl || '';
 
         },
 

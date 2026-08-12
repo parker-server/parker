@@ -5,17 +5,23 @@
 
   <id>{{ feed_id }}</id>
   <title>{{ feed_title }}</title>
-  <updated>{{ updated_at.isoformat() }}Z</updated>
+  <updated>{{ updated_at }}</updated>
   <author>
     <name>Parker Media Server</name>
   </author>
+
+  {% for link in feed_links %}
+  <link rel="{{ link.rel }}"
+        type="{{ link.type }}"
+        href="{{ link.href }}"/>
+  {% endfor %}
 
   {# --- NAVIGATION ENTRIES (Libraries/Series) --- #}
   {% for entry in entries %}
   <entry>
     <title>{{ entry.title }}</title>
     <id>{{ entry.id }}</id>
-    <updated>{{ entry.updated }}Z</updated>
+    <updated>{{ entry.updated }}</updated>
     <content type="text">{{ entry.summary or "" }}</content>
 
     <link rel="subsection"
@@ -33,14 +39,19 @@
   {# --- ACQUISITION ENTRIES (The Comics) --- #}
   {% for book in books %}
   <entry>
-    <title>{{ book.series.name }} #{{ book.number }} - {{ book.title }}</title>
+    {# FIX: Access Series via Volume #}
+    <title>{{ book.volume.series.name }} #{{ book.number }} - {{ book.title }}</title>
+
     <id>urn:parker:comic:{{ book.id }}</id>
-    <updated>{{ book.updated_at.isoformat() }}Z</updated>
+    <updated>{{ format_opds_datetime(book.updated_at) }}</updated>
 
     {# 1. Authors / Credits #}
-    {% if book.writers %}
-        {% for writer in book.writers %}
-        <author><name>{{ writer }}</name></author>
+    {# FIX: Iterate through credits instead of 'writers' property (unless you defined that property on the model) #}
+    {% if book.credits %}
+        {% for credit in book.credits %}
+            {% if credit.role == 'writer' %}
+            <author><name>{{ credit.person.name }}</name></author>
+            {% endif %}
         {% endfor %}
     {% else %}
         <author><name>Unknown</name></author>
@@ -51,8 +62,9 @@
     <dcterms:publisher>{{ book.publisher }}</dcterms:publisher>
     {% endif %}
 
-    {% if book.year %}
-    <dcterms:issued>{{ book.year }}-{{ '%02d' % book.month|default(1) }}-{{ '%02d' % book.day|default(1) }}</dcterms:issued>
+    {% set issued_date = format_opds_issued(book.year, book.month, book.day) %}
+    {% if issued_date %}
+    <dcterms:issued>{{ issued_date }}</dcterms:issued>
     {% endif %}
 
     <dcterms:language>{{ book.language_iso or 'en' }}</dcterms:language>
@@ -71,17 +83,17 @@
     {# 4. Images #}
     <link rel="http://opds-spec.org/image"
           type="image/jpeg"
-          href="/api/comics/{{ book.id }}/thumbnail"/>
+          href="{{ get_opds_thumbnail_href(request, book) }}"/>
 
     <link rel="http://opds-spec.org/image/thumbnail"
           type="image/jpeg"
-          href="/api/comics/{{ book.id }}/thumbnail"/>
+          href="{{ get_opds_thumbnail_href(request, book) }}"/>
 
     {# 5. Download Link with File Size #}
     <link rel="http://opds-spec.org/acquisition"
-          type="application/zip"
+          type="{{ get_opds_acquisition_type(book) }}"
           length="{{ book.file_size }}"
-          href="/opds/download/{{ book.id }}"/>
+          href="{{ get_opds_download_href(request, book) }}"/>
   </entry>
   {% endfor %}
 </feed>

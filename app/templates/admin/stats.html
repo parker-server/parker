@@ -1,16 +1,17 @@
 {% extends "base.html" %}
 
-{% block title %}Server Statistics - Comic Server{% endblock %}
+{% block title %}Server Statistics - Parker{% endblock %}
 
 {% block content %}
 <div class="max-w-6xl mx-auto" x-data="serverStats()">
-    
-    <div class="flex justify-between items-center mb-8">
-        <h1 class="text-3xl font-bold text-white">System Statistics</h1>
-        <button @click="loadStats()" class="text-gray-400 hover:text-white transition-colors">
-            <span :class="loading ? 'animate-spin inline-block' : ''">↻</span> Refresh
-        </button>
-    </div>
+
+    {% from "partials/admin_header.html" import admin_header %}
+    {{ admin_header(
+        title="Statistics",
+        description="Insight into your collection and users.",
+        refresh_func="loadStats()",
+        loading_var="loading"
+    ) }}
 
     <div x-show="loading" class="flex justify-center py-20">
         <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
@@ -38,7 +39,7 @@
                 </div>
 
                 <div class="bg-gray-800 rounded-lg p-6 border border-gray-700 shadow-lg">
-                    <div class="text-3xl font-bold text-purple-400 mb-1" x-text="window.comicServer.formatBytes(stats?.storage?.total_bytes)"></div>
+                    <div class="text-3xl font-bold text-purple-400 mb-1" x-text="window.parker.formatBytes(stats?.storage?.total_bytes)"></div>
                     <div class="text-sm text-gray-400">Disk Usage</div>
                 </div>
             </div>
@@ -74,7 +75,7 @@
             </div>
         </div>
 
-        <div x-data="{ genreStats: [] }" x-init="genreStats = await (await fetch(window.url('/api/stats/genres'))).json()">
+        <div x-data="{ genreStats: [] }" x-init="genreStats = await (await fetch(window.parker.route('stats.genre'))).json()">
             <h2 class="text-lg font-bold text-gray-400 mb-4 uppercase tracking-wider">Collection Insights</h2>
 
             <div class="bg-gray-800 rounded-lg border border-gray-700 shadow-lg overflow-hidden">
@@ -121,7 +122,7 @@
                             <template x-for="item in genreStats" :key="item.genre">
                                 <div class="flex items-center justify-between p-3 bg-gray-900/50 rounded border border-gray-700/50">
                                     <span class="text-gray-300" x-text="item.genre"></span>
-                                    <span class="font-mono text-blue-400 text-sm" x-text="window.comicServer.formatBytes(item.size_bytes)"></span>
+                                    <span class="font-mono text-blue-400 text-sm" x-text="window.parker.formatBytes(item.size_bytes)"></span>
                                 </div>
                             </template>
                         </div>
@@ -146,7 +147,7 @@ function serverStats() {
         async loadStats() {
             this.loading = true;
             try {
-                const res = await fetch(window.url('/api/stats/'));
+                const res = await fetch(window.parker.route('stats.system'));
                 if (res.ok) {
                     this.stats = await res.json();
                 } else {

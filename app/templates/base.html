@@ -4,23 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Parker{% endblock %}</title>
+    {% set configured_instance_name = (get_system_setting("general.app_name", "Parker") or "")|trim %}
+    {% set instance_name = configured_instance_name or "Parker" %}
 
-    <script>
-        // Global Configuration
-        window.APP_CONFIG = {
-            baseUrl: "{{ base_url }}" || "",
-        };
+    {# Used for including context-sensitive path data #}
+    {% from "partials/config_context.html" import config_context %}
+    {{ config_context(request, base_url) }}
 
-        // JS Helper Function
-        window.url = function(path) {
-            const base = window.APP_CONFIG.baseUrl;
-            const cleanPath = path.startsWith('/') ? path.slice(1) : path;
-            return base ? `${base}/${cleanPath}` : `/${cleanPath}`;
-        };
-    </script>
+    <script src="{{ url('/static/js/storage.js') }}?v={{ asset_version('static/js/storage.js') }}"></script>
 
-    <!-- HTMX -->
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <!-- Alpine.js Collapse plugin -->
+    <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/collapse@3.x.x/dist/cdn.min.js"></script>
 
     <!-- Alpine.js -->
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/cdn.min.js"></script>
@@ -29,7 +23,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
 
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="{{ url('static/css/style.css') }}">
+    <link rel="stylesheet" href="{{ url('static/css/style.css') }}?v={{ asset_version('static/css/style.css') }}">
     <style>
         [x-cloak] { display: none !important; }
 
@@ -38,21 +32,52 @@
     </style>
     {% block extra_head %}{% endblock %}
 </head>
-<body class="bg-gray-900 text-gray-100 min-h-screen flex flex-col" x-data="{ mobileMenuOpen: false }">
-    {% include "partials/dynamic_background.html" %}
+<body
+    class="{% block body_class %}bg-gray-900 text-gray-100 min-h-screen flex flex-col{% endblock %}"
+    {% block body_alpine %}
+    x-data="{
+        mobileMenuOpen: false,
+        isAdmin: false,
+        async init() {
+            if (!window.parker.storage.has('token')) {
+                this.isAdmin = false;
+                return;
+            }
 
+            try {
+                const res = await fetch(window.parker.url('/api/auth/me'));
+                if (!res.ok) {
+                    this.isAdmin = false;
+                    return;
+                }
+
+                const user = await res.json();
+                this.isAdmin = !!user.is_superuser;
+            } catch (error) {
+                this.isAdmin = false;
+                console.error('Failed to load current user role:', error);
+            }
+        }
+    }"
+    {% endblock %}
+>
+
+    {% block site_nav %}
     <nav class="bg-gray-900/95 backdrop-blur-md border-b border-gray-800 sticky top-0 z-[100]">
         <div class="container mx-auto px-4">
             <div class="flex items-center justify-between h-16">
 
                 <div class="flex items-center gap-8">
-                    <a href="{{ url('/') }}" class="text-2xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent hover:from-blue-300 hover:to-indigo-300 transition-all">
-                        Parker
+                    <a href="{{ url('/') }}" class="min-w-0 text-2xl font-bold text-white transition-all hover:text-blue-200">
+                        <span class="truncate bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent hover:from-blue-300 hover:to-indigo-300" title="{{ instance_name }}">
+                            Parker
+                        </span>
                     </a>
 
                     <div class="hidden lg:flex items-center space-x-1">
                         <a href="{{ url('/user/dashboard') }}" class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors">Dashboard</a>
-                        <div class="relative group" x-data="{ open: false, libs: [] }" x-init="libs = await (await fetch(window.url('/api/libraries/'))).json()">
+                        <a href="{{ url('/insights') }}" class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors">Insights</a>
+                        <div class="relative group" x-data="{ open: false, libs: [] }" x-init="libs = await (await fetch(window.parker.route('libraries.list', {}, 'limit=5'))).json()">
 
                             <button class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors flex items-center gap-1">
                                 <span>Libraries</span>
@@ -62,7 +87,7 @@
                             <div class="absolute left-0 mt-0 w-48 bg-gray-900 border border-gray-700 rounded-lg shadow-xl py-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
 
                                 <template x-for="lib in libs" :key="lib.id">
-                                    <a :href="window.url(`/libraries/${lib.id}`)" class="block px-4 py-2 text-sm text-gray-300 hover:bg-blue-600 hover:text-white" x-text="lib.name"></a>
+                                    <a :href="window.parker.route('pages.library_detail', { library_id: lib.id })" class="block px-4 py-2 text-sm text-gray-300 hover:bg-blue-600 hover:text-white" x-text="lib.name"></a>
                                 </template>
 
                                 <div x-show="libs.length > 0" class="border-t border-gray-700 my-1"></div>
@@ -74,6 +99,9 @@
                         </div>
                         <a href="{{ url('/collections') }}" class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors">Collections</a>
                         <a href="{{ url('/reading-lists') }}" class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors">Reading Lists</a>
+                        <template x-if="isAdmin">
+                            <a href="{{ url('/admin') }}" class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors">Admin</a>
+                        </template>
                     </div>
                 </div>
 
@@ -98,17 +126,17 @@
                     </div>
 
                     <div class="flex items-center border-l border-gray-700 pl-3 ml-1">
-                        <template x-if="localStorage.getItem('token')">
+                        <template x-if="window.parker.storage.has('token')">
                             <button
-                                @click="localStorage.removeItem('token'); window.location.href = '/login'"
+                                x-on:click="window.parker.auth.clearSession(); window.location.href = window.parker.route('pages.login');"
                                 class="text-sm font-medium text-gray-400 hover:text-white transition-colors"
                             >
                                 Logout
                             </button>
                         </template>
 
-                        <template x-if="!localStorage.getItem('token')">
-                            <a href="/login" class="text-sm font-bold text-blue-400 hover:text-blue-300 transition-colors">
+                        <template x-if="!window.parker.storage.has('token')">
+                            <a :href="window.parker.route('login')" class="text-sm font-bold text-blue-400 hover:text-blue-300 transition-colors">
                                 Login
                             </a>
                         </template>
@@ -138,11 +166,13 @@
                 class="lg:hidden border-t border-gray-800 py-4 space-y-1"
             >
                 <a href="{{ url('/user/dashboard') }}" class="block px-4 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-gray-800 rounded-md">Dashboard</a>
+                <a href="{{ url('/insights') }}" class="block px-4 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-gray-800 rounded-md">Insights</a>
                 <a href="{{ url('/libraries') }}" class="block px-4 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-gray-800 rounded-md">Libraries</a>
-                <a href="{{ url('/continue-reading') }}" class="block px-4 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-gray-800 rounded-md">Continue Reading</a>
                 <a href="{{ url('/collections') }}" class="block px-4 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-gray-800 rounded-md">Collections</a>
                 <a href="{{ url('/reading-lists') }}" class="block px-4 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-gray-800 rounded-md">Reading Lists</a>
-
+                <template x-if="isAdmin">
+                    <a href="{{ url('/admin') }}" class="block px-4 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-gray-800 rounded-md">Admin</a>
+                </template>
                 <div class="px-4 pt-4 pb-2">
                     <div class="relative">
                         {% include "partials/search_widget.html" %}
@@ -151,22 +181,27 @@
             </div>
         </div>
     </nav>
+    {% endblock %}
 
-    <main class="container mx-auto px-4 py-8 flex-grow">
+    <main class="{% block main_class %}container mx-auto px-4 py-8 flex-grow{% endblock %}">
         {% block content %}{% endblock %}
     </main>
 
     <div id="toast-container" style="z-index: 2000 !important;" class="fixed bottom-4 right-4 space-y-2 pointer-events-none">
         </div>
 
+    {% block global_modals %}
     {% include "partials/add_pull_list_modal.html" %}
     {% include "partials/selection_widget.html" %}
+    {% endblock %}
 
+    {% block site_footer %}
+    {% include "partials/footer.html" %}
+    {% endblock %}
 
+    <script src="{{ url('/static/js/app.js') }}?v={{ asset_version('static/js/app.js') }}"></script>
 
-
-    <script src="{{ url('/static/js/app.js') }}"></script>
-
+    {% block global_alpine_components %}
     <script>
         document.addEventListener('alpine:init', () => {
             Alpine.data('scannerStatus', () => ({
@@ -178,12 +213,12 @@
                     // Check immediately on load
                     this.checkStatus();
                     // Then poll every 5 seconds
-                    this.interval = setInterval(() => this.checkStatus(), 5000);
+                    //this.interval = setInterval(() => this.checkStatus(), 5000);
                 },
 
                 async checkStatus() {
                     try {
-                        const response = await fetch(window.url('/api/jobs/active'));
+                        const response = await fetch(window.parker.route('jobs.active'));
                         const data = await response.json();
 
                         if (data.active) {
@@ -203,8 +238,14 @@
             }))
         })
     </script>
+    {% endblock %}
 
+    {% block event_listeners %}
     {% include "partials/event_listeners.html" %}
+    {% endblock %}
     {% block extra_scripts %}{% endblock %}
+    {% block dialogs %}
+    {% include "partials/dialogs.html" %}
+    {% endblock %}
 </body>
 </html>

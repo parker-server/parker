@@ -1,0 +1,483 @@
+{% extends "base.html" %}
+
+{% block title %}Startup Diagnostics - Parker{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto space-y-8" x-data="{ showFullPaths: false }">
+    {% from "partials/admin_header.html" import admin_header %}
+    {{ admin_header(
+        title="Startup Diagnostics",
+        description="Inspect the active storage and startup state Parker is using right now."
+    ) }}
+
+    <div class="rounded-2xl border border-blue-500/30 bg-blue-950/20 p-5 shadow-xl">
+        <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div class="space-y-1">
+                <h2 class="text-sm font-bold uppercase tracking-[0.2em] text-blue-200">Privacy Mode</h2>
+                <p class="text-sm text-blue-100/75">
+                    Full local paths are hidden by default for safer screenshots and shared support snapshots.
+                </p>
+            </div>
+            <button
+                type="button"
+                @click="showFullPaths = !showFullPaths"
+                class="inline-flex shrink-0 items-center justify-center rounded-lg border border-blue-300/40 bg-blue-500/15 px-4 py-2 text-sm font-bold text-blue-50 transition-colors hover:border-blue-200/70 hover:bg-blue-500/25"
+                x-text="showFullPaths ? 'Hide Full Paths' : 'Reveal Full Paths'"
+            ></button>
+        </div>
+    </div>
+
+    {% if diagnostics.legacy_default_admin_password_active %}
+    <div class="rounded-2xl border border-rose-500/40 bg-rose-950/30 p-6 shadow-xl">
+        <div class="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
+            <div class="space-y-3">
+                <div class="flex flex-wrap items-center gap-3">
+                    <span class="inline-flex rounded-full border border-rose-400/40 bg-rose-500/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.2em] text-rose-100">
+                        Security Warning
+                    </span>
+                    <span class="text-sm font-semibold text-rose-100">Legacy default admin password detected</span>
+                </div>
+                <p class="max-w-3xl text-sm leading-6 text-rose-100/85">
+                    The <code class="rounded bg-black/30 px-1.5 py-0.5 text-rose-50">admin</code> account still accepts Parker's legacy default password. Change it before exposing Parker outside a trusted network.
+                </p>
+            </div>
+            <a
+                href="{{ url('/user/settings') }}"
+                class="inline-flex shrink-0 items-center justify-center rounded-lg border border-rose-300/40 bg-rose-500/15 px-4 py-2 text-sm font-bold text-rose-50 transition-colors hover:border-rose-200/70 hover:bg-rose-500/25"
+            >
+                Update Password
+            </a>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="rounded-2xl border border-gray-700 bg-gray-800/60 p-6 shadow-xl space-y-4">
+        <div class="flex flex-wrap items-center gap-3">
+            <span class="text-xs font-bold uppercase tracking-[0.25em] text-gray-400">Status</span>
+            <span class="inline-flex rounded-full border px-3 py-1 text-sm font-bold
+                {% if diagnostics.status == 'healthy' %}border-emerald-500/40 bg-emerald-500/10 text-emerald-200
+                {% elif diagnostics.status == 'storage_mismatch_suspected' %}border-amber-500/40 bg-amber-500/10 text-amber-200
+                {% else %}border-blue-500/40 bg-blue-500/10 text-blue-200{% endif %}">
+                {{ diagnostics.status_title }}
+            </span>
+        </div>
+        <p class="text-gray-300 leading-relaxed">{{ diagnostics.status_summary }}</p>
+
+        {% if diagnostics.recommended_actions %}
+        <div class="space-y-2">
+            <h2 class="text-sm font-bold uppercase tracking-[0.2em] text-gray-400">Recommended Actions</h2>
+            <ul class="space-y-2 text-sm text-gray-300">
+                {% for action in diagnostics.recommended_actions %}
+                <li class="rounded-lg border border-gray-700 bg-gray-900/40 px-4 py-3">{{ action }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="grid gap-6 lg:grid-cols-2">
+        <section class="rounded-2xl border border-gray-700 bg-gray-800/60 p-6 shadow-xl space-y-4">
+            <h2 class="text-lg font-bold text-white">Database</h2>
+            {% set database_url_display = diagnostics.database.url_display if diagnostics.database.url_display is defined and diagnostics.database.url_display else diagnostics.database.url %}
+            {% set database_path_display = diagnostics.database.path_display if diagnostics.database.path_display is defined and diagnostics.database.path_display else diagnostics.database.path %}
+            <dl class="space-y-3 text-sm">
+                <div>
+                    <dt class="text-gray-500 uppercase tracking-[0.2em] text-xs">Runtime</dt>
+                    <dd class="text-gray-200">{{ diagnostics.runtime.label }}</dd>
+                </div>
+                <div>
+                    <dt class="text-gray-500 uppercase tracking-[0.2em] text-xs">URL</dt>
+                    <dd class="text-gray-200 break-all">
+                        <span x-show="!showFullPaths">{{ database_url_display or 'Unknown' }}</span>
+                        <span x-show="showFullPaths" x-cloak>{{ diagnostics.database.url or 'Unknown' }}</span>
+                    </dd>
+                </div>
+                <div>
+                    <dt class="text-gray-500 uppercase tracking-[0.2em] text-xs">Path</dt>
+                    <dd class="text-gray-200 break-all">
+                        <span x-show="!showFullPaths">{{ database_path_display or 'Unknown' }}</span>
+                        <span x-show="showFullPaths" x-cloak>{{ diagnostics.database.path or 'Unknown' }}</span>
+                    </dd>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <dt class="text-gray-500 uppercase tracking-[0.2em] text-xs">DB Size</dt>
+                        <dd class="text-gray-200" title="{{ diagnostics.database.size_bytes }}">{{ diagnostics.database.size_display or 'Unknown' }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-gray-500 uppercase tracking-[0.2em] text-xs">Alembic</dt>
+                        <dd class="text-gray-200">{{ diagnostics.database.alembic_version }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-gray-500 uppercase tracking-[0.2em] text-xs">WAL Size</dt>
+                        <dd class="text-gray-200" title="{{ diagnostics.database.wal_size_bytes }}">{{ diagnostics.database.wal_size_display or 'Unknown' }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-gray-500 uppercase tracking-[0.2em] text-xs">SHM Size</dt>
+                        <dd class="text-gray-200" title="{{ diagnostics.database.shm_size_bytes }}">{{ diagnostics.database.shm_size_display or 'Unknown' }}</dd>
+                    </div>
+                </div>
+            </dl>
+        </section>
+
+        <section class="rounded-2xl border border-gray-700 bg-gray-800/60 p-6 shadow-xl space-y-4">
+            <h2 class="text-lg font-bold text-white">Counts</h2>
+            <div class="grid grid-cols-2 gap-4">
+                <div class="rounded-xl border border-gray-700 bg-gray-900/40 p-4">
+                    <div class="text-xs uppercase tracking-[0.2em] text-gray-500">Users</div>
+                    <div class="mt-2 text-3xl font-black text-white">{{ diagnostics.counts.users }}</div>
+                </div>
+                <div class="rounded-xl border border-gray-700 bg-gray-900/40 p-4">
+                    <div class="text-xs uppercase tracking-[0.2em] text-gray-500">Libraries</div>
+                    <div class="mt-2 text-3xl font-black text-white">{{ diagnostics.counts.libraries }}</div>
+                </div>
+                <div class="rounded-xl border border-gray-700 bg-gray-900/40 p-4">
+                    <div class="text-xs uppercase tracking-[0.2em] text-gray-500">Series</div>
+                    <div class="mt-2 text-3xl font-black text-white">{{ diagnostics.counts.series }}</div>
+                </div>
+                <div class="rounded-xl border border-gray-700 bg-gray-900/40 p-4">
+                    <div class="text-xs uppercase tracking-[0.2em] text-gray-500">Comics</div>
+                    <div class="mt-2 text-3xl font-black text-white">{{ diagnostics.counts.comics }}</div>
+                </div>
+            </div>
+            <p class="text-sm text-gray-400">
+                Default seeded admin present:
+                <span class="inline-flex rounded-full border px-2 py-0.5 text-xs font-bold {% if diagnostics.default_admin_present %}border-emerald-500/30 bg-emerald-500/10 text-emerald-200{% else %}border-gray-600 bg-gray-700/40 text-gray-200{% endif %}">
+                    {{ 'Yes' if diagnostics.default_admin_present else 'No' }}
+                </span>
+            </p>
+        </section>
+    </div>
+
+    {% set recent_jobs = diagnostics.recent_jobs if diagnostics.recent_jobs is defined else [] %}
+    <section class="rounded-2xl border border-gray-700 bg-gray-800/60 p-6 shadow-xl space-y-4">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+                <h2 class="text-lg font-bold text-white">Recent Scan Job Health</h2>
+                <p class="mt-1 text-sm text-gray-400">Privacy-safe status, timing, and count summaries for the latest background jobs.</p>
+            </div>
+            {% if recent_jobs %}
+            <span class="text-xs uppercase tracking-[0.18em] text-gray-500">
+                Showing {{ recent_jobs|length }} latest {{ 'job' if recent_jobs|length == 1 else 'jobs' }}
+            </span>
+            {% endif %}
+        </div>
+
+        {% if recent_jobs %}
+        <ul class="space-y-3 text-sm text-gray-300">
+            {% for job in recent_jobs %}
+            <li class="rounded-lg border border-gray-700 bg-gray-900/40 px-4 py-3">
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="font-bold text-white">{{ job.job_type|replace('_', ' ')|title }}</span>
+                    <span class="inline-flex rounded-full border px-2 py-0.5 text-xs font-bold
+                        {% if job.status == 'completed' %}border-emerald-500/30 bg-emerald-500/10 text-emerald-200
+                        {% elif job.status == 'failed' %}border-rose-500/30 bg-rose-500/10 text-rose-200
+                        {% elif job.status == 'running' %}border-blue-500/30 bg-blue-500/10 text-blue-200
+                        {% else %}border-gray-600 bg-gray-700/40 text-gray-300{% endif %}">
+                        {{ job.status|replace('_', ' ')|title }}
+                    </span>
+                    <span class="inline-flex rounded-full border border-gray-600 bg-gray-700/40 px-2 py-0.5 text-xs font-bold text-gray-300">
+                        {{ 'Global job' if job.scope == 'global' else 'Library job' }}
+                    </span>
+                    {% if job.force_scan %}
+                    <span class="inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs font-bold text-amber-200">
+                        Forced
+                    </span>
+                    {% endif %}
+                </div>
+
+                <dl class="mt-3 grid gap-3 md:grid-cols-4">
+                    <div>
+                        <dt class="text-gray-500 uppercase tracking-[0.16em] text-xs">Created</dt>
+                        <dd class="text-gray-200 break-all">{{ job.created_at or 'Unknown' }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-gray-500 uppercase tracking-[0.16em] text-xs">Started</dt>
+                        <dd class="text-gray-200 break-all">{{ job.started_at or 'Not started' }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-gray-500 uppercase tracking-[0.16em] text-xs">Completed</dt>
+                        <dd class="text-gray-200 break-all">{{ job.completed_at or 'Not completed' }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-gray-500 uppercase tracking-[0.16em] text-xs">Duration</dt>
+                        <dd class="text-gray-200">
+                            {% if job.duration_seconds is not none %}
+                            {{ job.duration_seconds }}s
+                            {% else %}
+                            Unknown
+                            {% endif %}
+                        </dd>
+                    </div>
+                </dl>
+
+                {% if job.summary %}
+                <div class="mt-3 flex flex-wrap gap-2">
+                    {% for key, value in job.summary.items() %}
+                    <span class="inline-flex rounded-full border border-gray-600 bg-gray-950/50 px-2 py-0.5 text-xs font-semibold text-gray-200">
+                        {{ key|replace('_', ' ')|title }}: {{ value }}
+                    </span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                {% if job.has_error %}
+                <p class="mt-3 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-200">
+                    Error recorded. Details are hidden here to avoid exposing local library names, paths, or filenames.
+                </p>
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-sm text-gray-400">No background job history is available in the active database.</p>
+        {% endif %}
+    </section>
+
+    <div class="grid gap-6 lg:grid-cols-2">
+        <section class="rounded-2xl border border-gray-700 bg-gray-800/60 p-6 shadow-xl space-y-4">
+            {% set shown_library_count = diagnostics.library_sample|length if diagnostics.library_sample else 0 %}
+            <div class="flex flex-wrap items-start justify-between gap-3">
+                <h2 class="text-lg font-bold text-white">Configured Libraries</h2>
+                {% if diagnostics.counts.libraries %}
+                <p class="text-xs uppercase tracking-[0.18em] text-gray-500">
+                    {% if shown_library_count < diagnostics.counts.libraries %}
+                    Showing {{ shown_library_count }} of {{ diagnostics.counts.libraries }} libraries
+                    {% else %}
+                    Showing all {{ diagnostics.counts.libraries }} {{ 'library' if diagnostics.counts.libraries == 1 else 'libraries' }}
+                    {% endif %}
+                </p>
+                {% endif %}
+            </div>
+            {% if diagnostics.library_sample %}
+            <ul class="max-h-96 space-y-3 overflow-y-auto pr-1 text-sm text-gray-300">
+                {% for library in diagnostics.library_sample %}
+                <li class="rounded-lg border border-gray-700 bg-gray-900/40 px-4 py-3">
+                    {% set roots = library.roots if library.roots is defined else [] %}
+                    {% set root_count = library.root_count if library.root_count is defined else roots|length %}
+                    {% set active_root_count = library.active_root_count if library.active_root_count is defined else 0 %}
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                            <div class="font-bold text-white">{{ library.name }}</div>
+                            {% if root_count %}
+                            <div class="mt-1 text-xs uppercase tracking-[0.16em] text-gray-500">
+                                {{ active_root_count }} active / {{ root_count }} {{ 'root' if root_count == 1 else 'roots' }}
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% if not roots and library.path_exists is not none %}
+                        <span class="inline-flex rounded-full border px-2 py-0.5 text-xs font-bold {% if library.path_exists %}border-emerald-500/30 bg-emerald-500/10 text-emerald-200{% else %}border-rose-500/30 bg-rose-500/10 text-rose-200{% endif %}">
+                            {{ 'Path Found' if library.path_exists else 'Path Missing' }}
+                        </span>
+                        {% endif %}
+                    </div>
+                    {% if roots %}
+                    <ul class="mt-3 space-y-2">
+                        {% for root in roots %}
+                        <li class="rounded-lg border border-gray-700 bg-gray-950/50 px-3 py-2">
+                            {% set root_display_path = root.path_display if root.path_display is defined and root.path_display else root.path %}
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span class="inline-flex rounded-full border px-2 py-0.5 text-xs font-bold {% if root.is_active %}border-blue-500/30 bg-blue-500/10 text-blue-200{% else %}border-gray-600 bg-gray-700/40 text-gray-300{% endif %}">
+                                    {{ 'Active' if root.is_active else 'Inactive' }}
+                                </span>
+                                {% if root.path_exists is not none %}
+                                <span class="inline-flex rounded-full border px-2 py-0.5 text-xs font-bold {% if root.path_exists %}border-emerald-500/30 bg-emerald-500/10 text-emerald-200{% else %}border-rose-500/30 bg-rose-500/10 text-rose-200{% endif %}">
+                                    {{ 'Path Found' if root.path_exists else 'Path Missing' }}
+                                </span>
+                                {% else %}
+                                <span class="inline-flex rounded-full border border-gray-600 bg-gray-700/40 px-2 py-0.5 text-xs font-bold text-gray-300">
+                                    Path Unknown
+                                </span>
+                                {% endif %}
+                            </div>
+                            <div class="mt-1 break-all text-gray-400">
+                                <span x-show="!showFullPaths">{{ root_display_path or 'No path configured' }}</span>
+                                <span x-show="showFullPaths" x-cloak>{{ root.path or 'No path configured' }}</span>
+                            </div>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    {% else %}
+                    {% set library_display_path = library.path_display if library.path_display is defined and library.path_display else library.path %}
+                    <div class="mt-1 break-all text-gray-400">
+                        <span x-show="!showFullPaths">{{ library_display_path or 'No path configured' }}</span>
+                        <span x-show="showFullPaths" x-cloak>{{ library.path or 'No path configured' }}</span>
+                    </div>
+                    {% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="text-sm text-gray-400">No libraries are configured in the active database.</p>
+            {% endif %}
+        </section>
+
+        <section class="rounded-2xl border border-gray-700 bg-gray-800/60 p-6 shadow-xl space-y-4">
+            <h2 class="text-lg font-bold text-white">
+                {% if diagnostics.runtime.mode == 'container_like' %}
+                Container Comics Mount
+                {% else %}
+                Local Comics Probe
+                {% endif %}
+            </h2>
+            <p class="text-sm text-gray-300 break-all">
+                <span x-show="!showFullPaths">{{ diagnostics.comics_root.path_display if diagnostics.comics_root.path_display is defined else diagnostics.comics_root.path }}</span>
+                <span x-show="showFullPaths" x-cloak>{{ diagnostics.comics_root.path }}</span>
+            </p>
+            <p class="text-sm text-gray-400">
+                Exists:
+                <span class="inline-flex rounded-full border px-2 py-0.5 text-xs font-bold {% if diagnostics.comics_root.exists %}border-emerald-500/30 bg-emerald-500/10 text-emerald-200{% else %}border-gray-600 bg-gray-700/40 text-gray-200{% endif %}">
+                    {{ 'Yes' if diagnostics.comics_root.exists else 'No' }}
+                </span>
+            </p>
+
+            {% if diagnostics.comics_root.sample %}
+            <p class="text-sm text-gray-400" x-show="!showFullPaths">
+                {{ diagnostics.comics_root.sample_count if diagnostics.comics_root.sample_count is defined else diagnostics.comics_root.sample|length }} sample {{ 'entry' if diagnostics.comics_root.sample|length == 1 else 'entries' }} hidden until full paths are revealed.
+            </p>
+            <ul class="space-y-2 text-sm text-gray-300" x-show="showFullPaths" x-cloak>
+                {% for entry in diagnostics.comics_root.sample %}
+                <li class="rounded-lg border border-gray-700 bg-gray-900/40 px-4 py-3">{{ entry }}</li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            {% if diagnostics.runtime.mode == 'container_like' %}
+            <p class="text-sm text-gray-400">No sample entries were found in the container comics mount.</p>
+            {% else %}
+            <p class="text-sm text-gray-400">Not present in this runtime, which is normal for local or non-Docker setups using library paths outside `/comics`.</p>
+            {% endif %}
+            {% endif %}
+        </section>
+    </div>
+
+    <div x-data='supportSnapshotPanel({{ support_snapshot|tojson }})' class="rounded-2xl border border-gray-700 bg-gray-800/60 p-6 shadow-xl space-y-4">
+        <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div class="space-y-2">
+                <h2 class="text-lg font-bold text-white">Support Snapshot</h2>
+                <p class="text-sm text-gray-300">Copy or download a structured diagnostics bundle for issue reports and support requests.</p>
+            </div>
+            <div class="flex flex-wrap gap-3">
+                <button
+                    @click="copySnapshot()"
+                    class="rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-2 text-sm font-bold text-blue-200 transition-colors hover:border-blue-400/50 hover:bg-blue-500/20"
+                >
+                    Copy Support Snapshot
+                </button>
+                <button
+                    @click="downloadSnapshot()"
+                    class="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm font-bold text-emerald-200 transition-colors hover:border-emerald-400/50 hover:bg-emerald-500/20"
+                >
+                    Download JSON
+                </button>
+                <a
+                    :href="window.parker.route('stats.startup_support_snapshot')"
+                    class="rounded-lg border border-gray-600 bg-gray-900/40 px-4 py-2 text-sm font-bold text-gray-200 transition-colors hover:border-gray-500 hover:bg-gray-900/70"
+                >
+                    Open Raw JSON
+                </a>
+            </div>
+        </div>
+
+        <p class="text-xs uppercase tracking-[0.2em] text-gray-500" x-text="feedback"></p>
+
+        <div class="rounded-xl border border-gray-700 bg-gray-950/70 p-4">
+            <pre class="max-h-72 overflow-auto whitespace-pre-wrap break-words text-xs leading-6 text-gray-200" x-text="formattedSnapshot"></pre>
+        </div>
+    </div>
+</div>
+
+<script>
+function supportSnapshotPanel(snapshot) {
+    return {
+        snapshot,
+        feedback: 'Structured JSON payload for GitHub issues, Reddit replies, and direct support requests.',
+
+        get formattedSnapshot() {
+            return JSON.stringify(this.snapshot, null, 2);
+        },
+
+        fallbackCopyText(text) {
+            const textarea = document.createElement('textarea');
+            const selection = document.getSelection();
+            const originalRange = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+
+            textarea.value = text;
+            textarea.setAttribute('readonly', '');
+            textarea.style.position = 'fixed';
+            textarea.style.top = '0';
+            textarea.style.left = '-9999px';
+            textarea.style.opacity = '0';
+
+            document.body.appendChild(textarea);
+            textarea.focus();
+            textarea.select();
+            textarea.setSelectionRange(0, textarea.value.length);
+
+            let copied = false;
+
+            try {
+                copied = document.execCommand('copy');
+            } finally {
+                document.body.removeChild(textarea);
+
+                if (originalRange && selection) {
+                    selection.removeAllRanges();
+                    selection.addRange(originalRange);
+                }
+            }
+
+            return copied;
+        },
+
+        async copySnapshot() {
+            const text = this.formattedSnapshot;
+
+            try {
+                if (navigator.clipboard?.writeText && window.isSecureContext) {
+                    await navigator.clipboard.writeText(text);
+                } else if (!this.fallbackCopyText(text)) {
+                    throw new Error('Clipboard unavailable');
+                }
+
+                this.feedback = 'Support snapshot copied to clipboard.';
+                if (window.parker?.showToast) {
+                    window.parker.showToast('Support snapshot copied.', 'success');
+                }
+            } catch (error) {
+                if (this.fallbackCopyText(text)) {
+                    this.feedback = 'Support snapshot copied to clipboard.';
+                    if (window.parker?.showToast) {
+                        window.parker.showToast('Support snapshot copied.', 'success');
+                    }
+                    return;
+                }
+
+                this.feedback = 'Copy failed in this browser. Try Download JSON, especially on iPad/Safari.';
+                if (window.parker?.showToast) {
+                    window.parker.showToast('Unable to copy support snapshot.', 'error');
+                }
+            }
+        },
+
+        downloadSnapshot() {
+            const blob = new Blob([this.formattedSnapshot], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            const timestamp = (this.snapshot.generated_at_utc || 'snapshot')
+                .replace(/[:]/g, '-')
+                .replace(/\.\d+/, '')
+                .replace('+00:00', 'Z');
+
+            anchor.href = url;
+            anchor.download = `parker-support-snapshot-${timestamp}.json`;
+            document.body.appendChild(anchor);
+            anchor.click();
+            document.body.removeChild(anchor);
+            URL.revokeObjectURL(url);
+
+            this.feedback = 'Support snapshot downloaded as JSON.';
+        },
+    };
+}
+</script>
+{% endblock %}

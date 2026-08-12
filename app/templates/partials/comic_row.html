@@ -3,11 +3,14 @@
             if(readingList) { return `context_type=reading_list&context_id=${this.readingListId}`; }
             else if(collection) { return `context_type=collection&context_id=${this.collection.id}`; }
             else { return ''; }
+        },
+        get includeReaderReturnTo() {
+            return !(readingList || collection);
         }
     }">
-<a :href="`/reader/${comic.id}?${readerQueryParams}`" class="flex-shrink-0 relative block w-16 h-24 rounded overflow-hidden shadow-sm group-hover:shadow-md transition-all">
+<a :href="window.parker.readerRoute(comic.id, readerQueryParams, { includeReturnTo: includeReaderReturnTo })" class="flex-shrink-0 relative block w-16 h-24 rounded overflow-hidden shadow-sm group-hover:shadow-md transition-all">
     <img
-        :src="comic.thumbnail_path"
+        :src="window.parker.url(comic.thumbnail_path)"
         :alt="comic.title"
         class="w-full h-full object-cover"
         loading="lazy"
@@ -15,11 +18,18 @@
 </a>
 
 <div class="flex-1 min-w-0 ml-4 mr-4">
-    <a :href="`/series/${comic.series_id}`" class="text-sm text-gray-400 hover:text-blue-400 transition-colors" x-text="comic.series"></a>
+    <a :href="window.parker.route('pages.series_detail', { series_id: comic.series_id })" class="text-sm text-gray-400 hover:text-blue-400 transition-colors" x-text="comic.series"></a>
 
     <h3 class="text-white font-bold text-lg truncate">
-        <a :href="`/comics/${comic.id}`" class="hover:text-blue-400 transition-colors" x-text="`#${comic.number} ${comic.title || ''}`"></a>
+        <a :href="window.parker.route('pages.comic_detail', { comic_id: comic.id })" class="hover:text-blue-400 transition-colors" x-text="`#${comic.number} ${comic.title || ''}`"></a>
     </h3>
+
+    <p
+        x-show="comic.summary"
+        class="mt-2 text-sm leading-relaxed text-gray-400 line-clamp-2"
+        x-text="comic.summary"
+        :title="comic.summary"
+    ></p>
 
     <div class="flex items-center gap-2 mt-1">
         <span class="text-xs text-gray-500 bg-gray-900 px-2 py-0.5 rounded" x-text="comic.year"></span>
@@ -36,7 +46,7 @@
     </div>
 </div>
 
-<a :href="`/reader/${comic.id}?${readerQueryParams}`" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded text-sm font-bold opacity-0 group-hover:opacity-100 transition-opacity shadow-lg flex-shrink-0">
+<a :href="window.parker.readerRoute(comic.id, readerQueryParams, { includeReturnTo: includeReaderReturnTo })" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded text-sm font-bold opacity-0 group-hover:opacity-100 transition-opacity shadow-lg flex-shrink-0">
     Read
 </a>
 </div>

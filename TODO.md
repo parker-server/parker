@@ -1,0 +1,48 @@
+# Parker TODO
+
+This file captures follow-up work that should not get lost between releases.
+
+## Technical Debt
+
+- Evaluate whether Parker needs a library-level publication or visibility flag.
+  Context: Parker already has per-user library access and age restrictions, and disabled library roots intentionally do not hide existing catalog content. A separate "published to users" concept could be useful for staging imports, repairing messy libraries, temporarily parking archive/offline libraries, or keeping test libraries admin-only, but its real-world frequency is uncertain.
+  Follow-up goal: If actual admin workflows show a need for this, design it deliberately as a library-level publication state rather than overloading root activity or access permissions.
+  Candidate direction: Admins always see hidden/unpublished libraries, while non-admin user-facing surfaces exclude them regardless of assigned library access or age eligibility. Scans, watchers, maintenance, and admin reports would continue to operate unless separately disabled.
+  Guardrail: Treat this as a possible future feature, not a committed roadmap item. It would touch nearly every user-facing query and route, so do not sneak it into root lifecycle work without a dedicated design pass.
+
+- Explore container-level Continue behavior for reader contexts.
+  Context: Reader navigation currently preserves launch-time context for reading lists, collections, stacks, series, volumes, and story arcs, but persisted progress is comic-level. Home rails resume the comic and page only, while container "Start reading" actions begin at the first item instead of resuming the user's last position within that container.
+  Follow-up goal: Decide whether container pages should offer a context-aware Continue action that finds the best in-progress or next unread item within that specific container and launches the reader with that container context.
+  Candidate direction: Treat this as a generic reader-session/container-resume feature rather than a story-arc-specific workaround. Reading lists, collections, stacks, and possibly scoped story arcs should share the same design if the feature is worth building.
+  Guardrail: Avoid changing global home-rail resume behavior unless there is a broader product decision to persist last reader launch context; the current comic/page-only resume is simple and predictable.
+
+- Keep an eye on stack list detail page scale before it becomes a usability problem.
+  Context: `app/templates/pull_lists/detail.html` currently renders a full list in one view, which is fine for normal stack sizes and likely more important to watch than the stack index page.
+  Follow-up goal: If real users start building unusually large stacks, consider pagination, filtering, or virtualization for list contents before the detail view becomes heavy to use.
+  Guardrail: Treat this as a usage-driven optimization, not a default roadmap item, unless real list sizes or UX complaints justify it.
+
+- Keep an eye on smart filter scale before the search load menu gets crowded.
+  Context: Smart filters currently surface mainly in the dashboard management table and the shared "Load" dropdown on `app/templates/search.html`, where they sit alongside saved searches.
+  Follow-up goal: If users start accumulating enough smart filters that discovery or loading becomes awkward, improve those surfaces before adding heavier API pagination.
+  Candidate direction: Start with a bounded scroll area and/or lightweight client-side filtering in the search load menu, then revisit whether the dashboard table needs search, sorting, or pagination based on real usage.
+  Guardrail: Treat this as a usage-driven UX refinement, not a release-blocking task, unless real list counts or complaints show the current UI is straining.
+
+- Expand the admin diagnostics support snapshot after it has seen a few real support incidents.
+  Context: The current snapshot is intentionally lean and already covers startup status, runtime mode, database path/sizes, counts, configured-library samples, and the comics-path probe.
+  Follow-up goal: Only add more fields if they repeatedly save support back-and-forth in real reports.
+  Likely v2 additions:
+  Recent scan job summary (last few jobs, status, timestamps, error text).
+  Library detail summary (`last_scanned`, `is_scanning`, maybe a few more library rows than the current sample).
+  Key request/runtime settings that commonly affect support cases (`base_url`, selected proxy-related settings, maybe a few safe env-derived values).
+  Light filesystem health checks for storage/cache/cover directories.
+  Guardrails: Avoid secrets, tokens, full env dumps, or overly large payloads.
+
+- Revisit the startup diagnostics mismatch heuristic for true first-run versus rebuilt-storage scenarios.
+  Context: The current warning logic is much more useful than before, but we lost the original reporter's environment after they rebuilt from scratch, so we no longer have a live repro to interrogate.
+  Current risk: A fresh install with a valid comics mount and no configured libraries can still look superficially similar to a "wrong storage directory" situation.
+  Follow-up goal: Reassess the signals used for `storage_mismatch_suspected` once we have another real-world report or a better synthetic repro, and tune the messaging so first-run onboarding is not mistaken for a broken upgrade.
+
+- Plan a replacement for ColorThief before Pillow 14.
+  Context: Full pytest coverage currently emits `DeprecationWarning` from `colorthief==0.2.1` because it calls Pillow's deprecated `Image.Image.getdata`, which is scheduled for removal in Pillow 14 on 2027-10-15.
+  Follow-up goal: Decide whether to replace ColorThief, patch/vendor the small palette extraction path, or move Parker's palette generation to a maintained Pillow-based quantization approach before upgrading to Pillow 14.
+  Guardrail: This is not a `0.1.24` release blocker while Parker remains pinned to Pillow 12.x and tests pass.

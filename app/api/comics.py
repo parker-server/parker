@@ -1,33 +1,49 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response, FileResponse
-from sqlalchemy import Float, func
+from sqlalchemy import Float, func, case, cast, or_
+from sqlalchemy.orm import joinedload, selectinload
 from typing import List, Annotated, Literal
 from pathlib import Path
 import re
 import random
+from pydantic import BaseModel, Field
 import os
 
-from app.core.comic_helpers import get_reading_time, get_format_sort_index
+from app.core.comic_helpers import (get_reading_time, get_format_sort_index, REVERSE_NUMBERING_SERIES,
+                                    assert_user_can_view_comic, get_comic_age_restriction,
+                                    get_series_age_restriction, get_thumbnail_url, get_thumbnail_hash)
 from app.api.deps import SessionDep, CurrentUser, ComicDep, AdminUser
 
 from app.models.comic import Comic, Volume
 from app.models.series import Series
-from app.models.library import Library
+from app.models.credits import Person, ComicCredit
 from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.collection import Collection, CollectionItem
 from app.models.pull_list import PullList, PullListItem
+from app.models.bookmark import Bookmark
 from app.models.reading_progress import ReadingProgress
+from app.models.interactions import UserComicRating
+
 
 from app.schemas.search import SearchRequest, SearchResponse
 from app.schemas.metadata import MetadataUpdate
 from app.services.scan_manager import scan_manager
 from app.services.search import SearchService
+from app.services.comic_ratings import build_parker_rating_state
+from app.services.social_insights import get_visible_comic_reader_count
+
 from app.services.images import ImageService
 from app.services.metadata import metadata_service
 from app.services.scanner import LibraryScanner
 
 
 router = APIRouter()
+
+COVER_MANIFEST_PAGE_SIZE = 60
+
+
+class ComicRatingUpdate(BaseModel):
+    rating: int = Field(..., ge=1, le=5)
 
 # --- SECURITY HELPER ---
 def filter_by_user_access(query, user: CurrentUser):
@@ -46,7 +62,30 @@ def natural_sort_key(s):
     return [int(text) if text.isdigit() else text.lower()
             for text in re.split('([0-9]+)', str(s))]
 
-@router.post("/search", response_model=SearchResponse)
+
+def alpha_sort_key(value: str) -> str:
+    """Case-insensitive alphabetical sort key for detail metadata."""
+    return value.casefold() if isinstance(value, str) else str(value).casefold()
+
+
+def _ensure_user_can_view_comic(current_user: CurrentUser, comic: Comic):
+    """
+    Applies the same age restriction logic used by the detail endpoint.
+    """
+    assert_user_can_view_comic(comic, current_user)
+
+
+def _get_web_link_presentation(web_url: str | None) -> tuple[str | None, str | None]:
+    """Returns the label and tooltip copy for a comic metadata web link."""
+    if not web_url:
+        return None, None
+
+    if "comicvine" in web_url.lower():
+        return "ComicVine", "View on ComicVine"
+
+    return "Web Link", "Open web link"
+
+@router.post("/search", response_model=SearchResponse, name="search")
 async def search_comics(request: SearchRequest, db: SessionDep, current_user: CurrentUser):
     """
     Search comics with complex filters
@@ -70,15 +109,51 @@ async def search_comics(request: SearchRequest, db: SessionDep, current_user: Cu
     results = search_service.search(request)
     return results
 
-@router.get("/{comic_id}")
-async def get_comic(comic: ComicDep, db: SessionDep, current_user: CurrentUser):
-    """Get a specific comic with all metadata"""
+@router.get("/{comic_id}", name="detail")
+async def get_comic(comic_id: int, db: SessionDep, current_user: CurrentUser):
+    """
+    Get a specific comic with all metadata.
+    OPTIMIZED: Uses 'selectinload' for lists to prevent Cartesian Product explosion.
+    """
+
+    # 1. Fetch Comic with optimized loading strategy
+    # - joinedload: Good for "One-to-One" or "Many-to-One" (Parents) -> JOINs in SQL
+    # - selectinload: Good for "One-to-Many" (Lists) -> Separate fast queries
+    comic = db.query(Comic).options(
+        # Parents: Join them (1 row)
+        joinedload(Comic.volume).joinedload(Volume.series).joinedload(Series.library),
+        joinedload(Comic.library_root),
+
+        # Children/Lists: Select them separately to avoid 10x10x10 row explosion
+        selectinload(Comic.credits).joinedload(ComicCredit.person),  # Keep person joined to credit
+        selectinload(Comic.characters),
+        selectinload(Comic.teams),
+        selectinload(Comic.locations),
+        selectinload(Comic.genres)
+    ).filter(Comic.id == comic_id).first()
+
+    if not comic:
+        raise HTTPException(status_code=404, detail="Comic not found")
+
+    # 2. Security Check (Manual RLS since we aren't using the dependency)
+    if not current_user.is_superuser:
+        allowed_libs = {l.id for l in current_user.accessible_libraries}
+        if comic.volume.series.library_id not in allowed_libs:
+            raise HTTPException(status_code=404, detail="Comic not found")
+
+    # --- AGE RATING CHECK ---
+    # We have the comic loaded. We can check python side to save a query.
+    _ensure_user_can_view_comic(current_user, comic)
+    # ------------------------
+
+
 
     # Calculate Reading Time
     total_pages = comic.page_count or 0
     read_time = get_reading_time(total_pages)
 
     # Build credits dictionary by role
+    # This loop is now safe (in-memory) because we eager loaded credits+persons
     credits = {}
     for credit in comic.credits:
         if credit.role not in credits:
@@ -92,16 +167,43 @@ async def get_comic(comic: ComicDep, db: SessionDep, current_user: CurrentUser):
         ReadingProgress.user_id == current_user.id
     ).first()
 
+    if progress and progress.completed:
+        read_status = "completed"
     # If started but not finished, show "Continue"
-    if progress and not progress.completed and progress.current_page > 0:
+    elif progress and not progress.completed and progress.current_page > 0:
         read_status = "in_progress"
+    resume_page = progress.current_page if progress and not progress.completed and progress.current_page > 0 else None
+
+    bookmarks = (
+        db.query(Bookmark)
+        .filter(
+            Bookmark.user_id == current_user.id,
+            Bookmark.comic_id == comic.id,
+        )
+        .order_by(Bookmark.page_index.asc())
+        .all()
+    )
+    stack_membership_count = (
+        db.query(PullListItem)
+        .join(PullList, PullList.id == PullListItem.pull_list_id)
+        .filter(
+            PullList.user_id == current_user.id,
+            PullListItem.comic_id == comic.id,
+        )
+        .count()
+    )
+
+    parker_rating = build_parker_rating_state(db, comic.id, current_user.id)
+    parker_readers_count = get_visible_comic_reader_count(db, comic.id)
+
+    web_label, web_title = _get_web_link_presentation(comic.web)
 
     return {
         "id": comic.id,
         "filename": comic.filename,
-        "file_path": comic.file_path,
+        "file_path": comic.absolute_path if current_user.is_superuser else None,
         "file_size": comic.file_size,
-        #"thumbnail_path": comic.thumbnail_path,
+        "thumbnail_hash": get_thumbnail_hash(comic.updated_at),
         "can_edit": (current_user.is_superuser and metadata_service.can_write(comic.file_path)),
 
         # Library info
@@ -116,6 +218,8 @@ async def get_comic(comic: ComicDep, db: SessionDep, current_user: CurrentUser):
         "title": comic.title,
         "summary": comic.summary,
         "web": comic.web,
+        "web_label": web_label,
+        "web_title": web_title,
         "notes": comic.notes,
 
         # Date
@@ -141,12 +245,13 @@ async def get_comic(comic: ComicDep, db: SessionDep, current_user: CurrentUser):
         "age_rating": comic.age_rating,
         "language_iso": comic.language_iso,
         "community_rating": comic.community_rating,
+        "source_rating": comic.community_rating,
 
-        # Tags (from relationships)
-        "characters": [c.name for c in comic.characters],
-        "teams": [t.name for t in comic.teams],
-        "locations": [l.name for l in comic.locations],
-        "genres": [g.name for g in comic.genres],
+        # Tags
+        "characters": sorted((c.name for c in comic.characters), key=alpha_sort_key),
+        "teams": sorted((t.name for t in comic.teams), key=alpha_sort_key),
+        "locations": sorted((l.name for l in comic.locations), key=alpha_sort_key),
+        "genres": sorted((g.name for g in comic.genres), key=alpha_sort_key),
 
         # Reading lists
         "alternate_series": comic.alternate_series,
@@ -159,103 +264,201 @@ async def get_comic(comic: ComicDep, db: SessionDep, current_user: CurrentUser):
 
         # Read status
         "read_status": read_status,
+        "resume_page": resume_page,
+        "stack_membership_count": stack_membership_count,
+        "bookmarks": [
+            {
+                "id": bookmark.id,
+                "page_index": bookmark.page_index,
+                "label": bookmark.label,
+            }
+            for bookmark in bookmarks
+        ],
 
         # ColorScape data
         "color_palette": comic.color_palette,
+
+        # Parker rating
+        **parker_rating,
+
+        # Parker social activity
+        "parker_readers_count": parker_readers_count,
     }
 
 
-@router.get("/{comic_id}/thumbnail")
+@router.put("/{comic_id}/rating", name="set_rating")
+async def set_comic_rating(
+        comic: ComicDep,
+        payload: ComicRatingUpdate,
+        db: SessionDep,
+        current_user: CurrentUser
+):
+    _ensure_user_can_view_comic(current_user, comic)
+
+    rating = db.query(UserComicRating).filter(
+        UserComicRating.comic_id == comic.id,
+        UserComicRating.user_id == current_user.id,
+    ).first()
+
+    if rating:
+        rating.rating = payload.rating
+    else:
+        rating = UserComicRating(
+            comic_id=comic.id,
+            user_id=current_user.id,
+            rating=payload.rating,
+        )
+        db.add(rating)
+
+    db.commit()
+    return build_parker_rating_state(db, comic.id, current_user.id)
+
+
+@router.delete("/{comic_id}/rating", name="delete_rating")
+async def delete_comic_rating(
+        comic: ComicDep,
+        db: SessionDep,
+        current_user: CurrentUser
+):
+    _ensure_user_can_view_comic(current_user, comic)
+
+    rating = db.query(UserComicRating).filter(
+        UserComicRating.comic_id == comic.id,
+        UserComicRating.user_id == current_user.id,
+    ).first()
+
+    if rating:
+        db.delete(rating)
+        db.commit()
+
+    return build_parker_rating_state(db, comic.id, current_user.id)
+
+
+@router.get("/{comic_id}/thumbnail", name="thumbnail")
 async def get_comic_thumbnail(
         comic_id: int,
-        db: SessionDep
+        db: SessionDep,
+        current_user: CurrentUser
 ):
     """
-        Get the thumbnail for a comic (public)
-        Serves from storage/cover. Regenerates if missing.
-        Self-healing: Generates file if missing, but DOES NOT write to DB
-        to avoid locking issues during parallel loading.
+    Get the thumbnail for a comic.
+    Serves from storage/cover.
     """
     # 1. Base Query
-    comic = db.query(Comic).filter(Comic.id == comic_id).first()
+    comic = (
+        db.query(Comic)
+        .options(joinedload(Comic.volume).joinedload(Volume.series))
+        .filter(Comic.id == comic_id)
+        .first()
+    )
 
     if not comic:
         # We return 404 here to prevent leaking existence of the comic
         raise HTTPException(status_code=404, detail="Comic not found")
 
+    assert_user_can_view_comic(comic, current_user, hide_denied=True)
+
+    last_mod = int(comic.updated_at.timestamp()) if comic.updated_at else 0
+    etag = f'"{comic_id}-{last_mod}"'
+
+    thumb_path = None
 
     # 2. Layer 1: Check the path stored in the Database
     if comic.thumbnail_path:
         db_path = Path(comic.thumbnail_path)
         if db_path.exists():
-            return FileResponse(db_path, media_type="image/webp")
+            thumb_path = db_path
 
-    # 3. Layer 2: Check the "Standard" path (Self-Healing fallback)
-    # This handles cases where the DB is NULL or points to a file that was deleted.
-    standard_path = Path(f"./storage/cover/comic_{comic.id}.webp")
+    if not thumb_path:
+        # 3. Layer 2: Check the "Standard" path (Self-Healing fallback)
+        # This handles cases where the DB is NULL or points to a file that was deleted.
+        standard_path = Path(f"./storage/cover/comic_{comic.id}.webp")
+        if standard_path.exists():
+            thumb_path = standard_path
 
-    if standard_path.exists():
-        return FileResponse(standard_path, media_type="image/webp")
+    if thumb_path:
 
-    # 4. Layer 3: Generate on the fly
-    # We use the standard path for the new file.
-    image_service = ImageService()
-    success = image_service.generate_thumbnail(comic.file_path, standard_path)
-
-    if not success:
+        return FileResponse(
+            thumb_path,
+            media_type="image/webp",
+            headers={
+                "ETag": etag,
+                "Cache-Control": "public, max-age=31536000",  # 1 year
+                "Vary": "Accept-Encoding"
+            }
+        )
+    else:
         # Return a placeholder or 404
-        raise HTTPException(status_code=404, detail="Could not generate thumbnail")
-
-    # NOTE: We serve the file, but we DO NOT write back to the DB here.
-    # This avoids the "Database Locked" issues during parallel loading.
-    # The next time this runs, it will hit Layer 2 and succeed.
-    return FileResponse(standard_path, media_type="image/webp")
+        raise HTTPException(status_code=404, detail="Could not find thumbnail")
 
 
-@router.get("/random/backgrounds")
+@router.get("/random/backgrounds", name="random_backgrounds")
 async def get_random_backgrounds(
         db: SessionDep,
+        current_user: CurrentUser,
         limit: int = 20
 ):
     """
-    Get a list of random comic thumbnail URLs for the login background.
+    Get a list of random comic thumbnail URLs for authenticated users.
     Optimized for performance: Avoids SQL 'ORDER BY RANDOM()' sorting.
     """
     # 1. Fetch ALL eligible IDs (Linear scan, fast)
     # We only fetch the ID column to minimize memory usage
-    all_ids_query = db.query(Comic.id).filter(Comic.thumbnail_path != None).all()
+    query = (
+        db.query(Comic.id, Comic.updated_at)
+        .join(Volume)
+        .join(Series)
+        .filter(Comic.thumbnail_path != None)
+    )
+
+    query = filter_by_user_access(query, current_user)
+
+    age_filter = get_comic_age_restriction(current_user)
+    if age_filter is not None:
+        query = query.filter(age_filter)
+
+    all_rows = query.all()
 
     # SQLAlchemy returns a list of tuples like [(1,), (2,), (5,)]
     # We flatten this to a standard list [1, 2, 5]
-    all_ids = [r[0] for r in all_ids_query]
+    #all_ids = [r[0] for r in all_ids_query]
 
-    if not all_ids:
+    if not all_rows:
         return []
 
     # 2. Python Sample (Instant)
     # Safe handling if we have fewer comics than the requested limit
-    sample_size = min(len(all_ids), limit)
-    selected_ids = random.sample(all_ids, sample_size)
+    sample_size = min(len(all_rows), limit)
+    selected_rows = random.sample(all_rows, sample_size)
 
     # 3. Construct URLs (No extra DB query needed)
-    return [f"api/comics/{cid}/thumbnail" for cid in selected_ids]
+    return [get_thumbnail_url(cid, updated_at) for cid, updated_at in selected_rows]
 
 
-@router.get("/covers/manifest")
+@router.get("/covers/manifest", name="cover_manifest")
 async def get_cover_manifest(
         db: SessionDep,
         current_user: CurrentUser,
         context_type: Literal["series", "volume", "reading_list", "collection", "pull_list"],
-        context_id: int
+        context_id: int,
+        offset: Annotated[int, Query(ge=0)] = 0,
+        limit: Annotated[int, Query(ge=1, le=120)] = COVER_MANIFEST_PAGE_SIZE,
 ):
     """
-    Returns a list of Comic IDs and Titles to power the Cover Browser.
+    Returns a page of Comic IDs and Titles to power the Cover Browser.
+    Handles Reverse Numbering (Countdown) and Date Sorting (Zero Hour).
     """
 
     # 1. Base Query
-    # We use .select_from(Comic) to establish Comic as the "Left Side" anchor.
-    # We join Volume and Series immediately because we need Series.library_id for security.
-    query = db.query(Comic.id, Comic.title, Comic.number, Volume.volume_number, Series.name) \
+    # OPTIMIZED: Uses explicit labels to ensure 'Series Name' and 'Comic Title' don't collide.
+    query = db.query(
+        Comic.id,
+        Comic.title,
+        Comic.number,
+        Comic.updated_at,
+        Volume.volume_number,
+        Series.name.label("series_name")
+    ) \
         .select_from(Comic) \
         .join(Volume) \
         .join(Series)
@@ -263,15 +466,51 @@ async def get_cover_manifest(
     # Apply Security
     query = filter_by_user_access(query, current_user)
 
+    # --- AGE RATING FILTER ---
+    # Switch to Series Level check.
+    # Prevents leaking covers of "Safe" issues that belong to "Banned" series.
+    age_filter = get_series_age_restriction(current_user)
+    if age_filter is not None:
+        query = query.filter(age_filter)
+    # -------------------------
+
+
+    # --- DEFINE SORT LOGIC (Shared with comic_helpers) ---
+    # Push NULL/-1 dates to bottom (9999)
+    sort_year = case((or_(Comic.year == None, Comic.year == -1), 9999), else_=Comic.year)
+    sort_month = case((or_(Comic.month == None, Comic.month == -1), 99), else_=Comic.month)
+    sort_day = case((or_(Comic.day == None, Comic.day == -1), 99), else_=Comic.day)
+    sort_number = cast(Comic.number, Float)
+
+
     # 3. Context Filtering & Sorting
     if context_type == "volume":
+
+        # Check for Gimmick Series Name via simple scalar query first
+        # (Optimization: We could join, but explicit check is safer for logic branching)
+        series_name = db.query(Series.name).join(Volume).filter(Volume.id == context_id).scalar()
+
+        number_direction = sort_number.asc()
+        if series_name and series_name.lower() in REVERSE_NUMBERING_SERIES:
+            number_direction = sort_number.desc()
+
         query = query.filter(Comic.volume_id == context_id) \
-            .order_by(func.cast(Comic.number, Float), Comic.number)
+            .order_by(sort_year.asc(), sort_month.asc(), sort_day.asc(),
+            number_direction)
 
     elif context_type == "series":
+
+        # Check Name
+        series_name = db.query(Series.name).filter(Series.id == context_id).scalar()
+
+        number_direction = sort_number.asc()
+        if series_name and series_name.lower() in REVERSE_NUMBERING_SERIES:
+            number_direction = sort_number.desc()
+
         format_weight = get_format_sort_index()
         query = query.filter(Volume.series_id == context_id) \
-            .order_by(Volume.volume_number, format_weight, func.cast(Comic.number, Float))
+            .order_by(Volume.volume_number, format_weight,
+                      sort_year.asc(), sort_month.asc(), sort_day.asc(), number_direction)
 
     elif context_type == "reading_list":
         # Explicit Join: Join ReadingListItem to Comic
@@ -293,15 +532,20 @@ async def get_cover_manifest(
             .filter(CollectionItem.collection_id == context_id) \
             .order_by(Comic.year.asc(), Series.name.asc(), func.cast(Comic.number, Float))
 
-    items = query.all()
+    total = query.order_by(None).count()
+    items = query.offset(offset).limit(limit).all()
 
     return {
-        "total": len(items),
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "has_more": offset + len(items) < total,
         "items": [
             {
                 "comic_id": r.id,
-                "label": f"{r.name} #{r.number}",
-                "thumbnail_url": f"/api/comics/{r.id}/thumbnail"  # Consider using relative path helper if implemented
+                # Explicitly use the labeled series name
+                "label": f"{r.series_name} #{r.number}",
+                "thumbnail_url": get_thumbnail_url(r.id, r.updated_at)
             }
             for r in items
         ]
@@ -364,4 +608,5 @@ def update_metadata(
     except Exception as e:
         print(f"Metadata write failed: {e}")
         raise HTTPException(500, f"Failed to write metadata: {str(e)}")
+
 

@@ -1,78 +1,172 @@
-from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+import random
+
+from fastapi import APIRouter, Query, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.core.comic_helpers import get_smart_cover
 from app.api.deps import SessionDep, ComicDep, VolumeDep, SeriesDep, LibraryDep, CurrentUser
+from app.config import settings
+from app.core.settings_loader import get_cached_setting
 from app.core.templates import templates
 from app.models.comic import Comic, Volume
 from app.core.login_effects import get_active_effect
+from app.core.login_backgrounds import SOLID_COLORS, STATIC_COVERS
+from app.services.settings_service import SettingsService
+from app.services.startup_diagnostics import (
+    build_home_startup_notice,
+    collect_startup_diagnostics,
+)
 
 router = APIRouter()
 
 
+def _shuffled_login_static_cover_urls(base_url: str) -> list[str]:
+    filenames = list(STATIC_COVERS)
+    random.shuffle(filenames)
+    return [
+        f"{base_url}/static/img/login-covers/{filename}"
+        for filename in filenames
+    ]
+
+
 # Frontend routes
-@router.get("/", response_class=HTMLResponse)
-async def home(request: Request, user: CurrentUser):
+@router.get("/", response_class=HTMLResponse, name="home")
+async def home(request: Request, db: SessionDep, user: CurrentUser):
     """Home page - Library browser"""
-    return templates.TemplateResponse(request=request, name="index.html")
+    startup_notice = None
+
+    try:
+        diagnostics = collect_startup_diagnostics(
+            db,
+            database_url=settings.database_url,
+            include_security_checks=bool(user.is_superuser),
+        )
+    except Exception:
+        diagnostics = None
+
+    if diagnostics is not None:
+        startup_notice = build_home_startup_notice(
+            diagnostics,
+            is_admin=bool(user.is_superuser),
+        )
+
+    return templates.TemplateResponse(
+        request=request,
+        name="index.html",
+        context={"startup_notice": startup_notice},
+    )
 
 
-@router.get("/reader/{comic_id}", response_class=HTMLResponse)
+@router.get("/reader/{comic_id}", response_class=HTMLResponse, name="reader")
 async def reader(request: Request, comic_id: int, user: CurrentUser):
     """Comic reader"""
     return templates.TemplateResponse(request=request, name="reader.html", context={
         "comic_id": comic_id
     })
 
-@router.get("/search", response_class=HTMLResponse)
+@router.get("/search", response_class=HTMLResponse, name="search")
 async def search(request: Request, user: CurrentUser):
     """Search page"""
     return templates.TemplateResponse(request=request, name="search.html")
 
-@router.get("/collections", response_class=HTMLResponse)
+@router.get("/insights", response_class=HTMLResponse, name="insights")
+async def insights(request: Request, user: CurrentUser):
+    """Insights landing page"""
+    return templates.TemplateResponse(request=request, name="insights.html")
+
+
+@router.get("/timelines", response_class=HTMLResponse, name="timelines")
+async def timelines(request: Request, user: CurrentUser):
+    """Library timeline page"""
+    return templates.TemplateResponse(request=request, name="timelines.html")
+
+
+@router.get("/insights/creator-chemistry", response_class=HTMLResponse, name="insights_creator_chemistry")
+async def insights_creator_chemistry(request: Request, user: CurrentUser):
+    """Creator collaboration insights page"""
+    return templates.TemplateResponse(request=request, name="insights_creator.html")
+
+
+@router.get("/insights/character-chemistry", response_class=HTMLResponse, name="insights_character_chemistry")
+async def insights_character_chemistry(request: Request, user: CurrentUser):
+    """Character co-appearance insights page"""
+    return templates.TemplateResponse(request=request, name="insights_character.html")
+
+
+@router.get("/insights/writer-character", response_class=HTMLResponse, name="insights_writer_character")
+async def insights_writer_character(request: Request, user: CurrentUser):
+    """Writer to character insights page"""
+    return templates.TemplateResponse(request=request, name="insights_writer_character.html")
+
+
+@router.get("/insights/artist-character", response_class=HTMLResponse, name="insights_artist_character")
+async def insights_artist_character(request: Request, user: CurrentUser):
+    """Artist to character insights page"""
+    return templates.TemplateResponse(request=request, name="insights_artist_character.html")
+
+@router.get("/collections", response_class=HTMLResponse, name="collections")
 async def collections_view(request: Request, user: CurrentUser):
     """Collections page"""
     return templates.TemplateResponse(request=request, name="collections/collections.html")
 
-@router.get("/collections/{collection_id}", response_class=HTMLResponse)
+@router.get("/collections/{collection_id}", response_class=HTMLResponse, name="collection_detail")
 async def collection_detail(request: Request, collection_id: int, user: CurrentUser):
     return templates.TemplateResponse(request=request, name="collections/collection_detail.html",
                                       context={"collection_id": collection_id})
 
-@router.get("/reading-lists", response_class=HTMLResponse)
+@router.get("/reading-lists", response_class=HTMLResponse, name="reading_lists")
 async def reading_lists_view(request: Request, user: CurrentUser):
     """Reading lists page"""
     return templates.TemplateResponse(request=request, name="reading_lists/reading_lists.html")
 
-@router.get("/reading-lists/{reading_list_id}", response_class=HTMLResponse)
+@router.get("/reading-lists/{reading_list_id}", response_class=HTMLResponse, name="reading_list_detail")
 async def reading_list_detail(request: Request, reading_list_id: int, user: CurrentUser):
     return templates.TemplateResponse(request=request, name="reading_lists/reading_list_detail.html", context={
         "reading_list_id": reading_list_id
     })
 
-@router.get("/continue-reading", response_class=HTMLResponse)
+@router.get("/continue-reading", response_class=HTMLResponse, name="continue_reading")
 async def continue_reading(request: Request, user: CurrentUser):
     """Continue reading page"""
     return templates.TemplateResponse(request=request, name="continue_reading.html")
 
-@router.get("/libraries", response_class=HTMLResponse)
+@router.get("/libraries", response_class=HTMLResponse, name="libraries")
 async def libraries_page(request: Request):
-    return templates.TemplateResponse("libraries/index.html", {"request": request})
+    return templates.TemplateResponse(request=request, name="libraries/index.html")
 
-@router.get("/libraries/{library_id}", response_class=HTMLResponse)
+@router.get("/libraries/{library_id}", response_class=HTMLResponse, name="library_detail")
 async def library_view(request: Request, library: LibraryDep, user: CurrentUser):
     """View a specific library"""
     return templates.TemplateResponse(request=request, name="libraries/library.html", context={
         "library_id": library.id
     })
 
-@router.get("/series/{series_id}", response_class=HTMLResponse)
-async def series_detail(request: Request, series: SeriesDep, db: SessionDep, user: CurrentUser):
+@router.get("/series/{series_id}", response_class=HTMLResponse, name="series_detail")
+async def series_detail(
+        request: Request,
+        series: SeriesDep,
+        db: SessionDep,
+        user: CurrentUser,
+        show_series: bool = Query(False)
+):
     """Series detail page"""
+    if not show_series and get_cached_setting("ui.auto_redirect_single_volume_series", False):
+        volume_ids = (
+            db.query(Volume.id)
+            .filter(Volume.series_id == series.id)
+            .order_by(Volume.volume_number)
+            .limit(2)
+            .all()
+        )
+        if len(volume_ids) == 1:
+            return RedirectResponse(
+                url=request.url_for("volume_detail", volume_id=volume_ids[0].id),
+                status_code=307,
+            )
 
     # Find the "Smart Cover" to use for colors/background
     base_query = db.query(Comic).join(Volume).filter(Volume.series_id == series.id)
-    cover_comic = get_smart_cover(base_query)
+    cover_comic = get_smart_cover(base_query, series.name)
 
     return templates.TemplateResponse(request=request, name="comics/series_detail.html", context={
         "series_id": series.id,
@@ -80,20 +174,20 @@ async def series_detail(request: Request, series: SeriesDep, db: SessionDep, use
     })
 
 
-@router.get("/volumes/{volume_id}", response_class=HTMLResponse)
+@router.get("/volumes/{volume_id}", response_class=HTMLResponse, name="volume_detail")
 async def volume_detail(request: Request, volume: VolumeDep, db: SessionDep, user: CurrentUser):
     """Volume detail view"""
 
     # Find the "Smart Cover" to use for colors/background
     base_query = db.query(Comic).join(Volume).filter(Volume.id == volume.id)
-    cover_comic = get_smart_cover(base_query)
+    cover_comic = get_smart_cover(base_query, volume.series.name)
 
     return templates.TemplateResponse(request=request, name="comics/volume_detail.html", context={
         "volume_id": volume.id,
         "cover": cover_comic
     })
 
-@router.get("/comics/{comic_id}", response_class=HTMLResponse)
+@router.get("/comics/{comic_id}", response_class=HTMLResponse, name="comic_detail")
 async def comic_detail(request: Request, comic: ComicDep, user: CurrentUser):
     """
     Comic detail page.
@@ -105,32 +199,78 @@ async def comic_detail(request: Request, comic: ComicDep, user: CurrentUser):
         "comic": comic
     })
 
-@router.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
-    return templates.TemplateResponse(request=request, name="login_full.html", context={
-        "active_effect": get_active_effect()
-    })
+@router.get("/login", response_class=HTMLResponse, name="login")
+async def login_page(request: Request, db: SessionDep):
 
-@router.get("/pull-lists", response_class=HTMLResponse)
-async def pull_lists_index(request: Request, user: CurrentUser):
+    svc = SettingsService(db)
+    login_background_style = svc.get("ui.login_background_style")
+    if login_background_style == "random_covers":
+        login_background_style = "cycling_static_covers"
+
+    context = {
+        "active_effect": get_active_effect(),
+        "login_bg_style": login_background_style,
+    }
+
+    # Add specific context based on style
+    if login_background_style == "solid_color":
+        color_key = svc.get("ui.login_solid_color") or "gotham_night"
+        if color_key not in SOLID_COLORS:
+            color_key = "gotham_night"  # Handle stale DB values
+        color_data = SOLID_COLORS.get(color_key)
+        context["login_solid_color"] = color_data["gradient"]
+
+    elif login_background_style == "static_cover":
+        cover_filename = svc.get("ui.login_static_cover") or "amazing-fantasy-15.webp"
+        if cover_filename not in STATIC_COVERS:
+            cover_filename = "amazing-fantasy-15.webp"  # Handle stale DB values
+        context["login_static_cover"] = cover_filename
+
+    elif login_background_style == "cycling_static_covers":
+        context["login_static_cover_urls"] = _shuffled_login_static_cover_urls(settings.clean_base_url)
+
+    return templates.TemplateResponse(request=request, name="login_full.html", context=context)
+
+@router.get("/stacks", response_class=HTMLResponse, name="stacks")
+async def stacks_index(request: Request, user: CurrentUser):
     return templates.TemplateResponse(request=request, name="pull_lists/index.html")
 
-@router.get("/pull-lists/{list_id}", response_class=HTMLResponse)
-async def pull_list_detail(request: Request, list_id: int, user: CurrentUser):
+@router.get("/stacks/{list_id}", response_class=HTMLResponse, name="stack_detail")
+async def stack_detail(request: Request, list_id: int, user: CurrentUser):
     # We pass the ID to the template; Alpine handles the data fetching
     return templates.TemplateResponse(request=request, name="pull_lists/detail.html", context={
         "list_id": list_id
     })
 
-@router.get("/user/dashboard", response_class=HTMLResponse)
+
+@router.get("/pull-lists", name="pull_lists_legacy")
+async def pull_lists_legacy_redirect(request: Request, user: CurrentUser):
+    return RedirectResponse(url=request.url_for("stacks"), status_code=307)
+
+
+@router.get("/pull-lists/{list_id}", name="pull_list_detail_legacy")
+async def pull_list_detail_legacy_redirect(request: Request, list_id: int, user: CurrentUser):
+    return RedirectResponse(url=request.url_for("stack_detail", list_id=list_id), status_code=307)
+
+@router.get("/user/dashboard", response_class=HTMLResponse, name="user_dashboard")
 async def dashboard(request: Request, user: CurrentUser):
     return templates.TemplateResponse(request=request, name="user/dashboard.html")
 
-@router.get("/user/settings", response_class=HTMLResponse)
-async def settings_page(request: Request, user: CurrentUser):
-    return templates.TemplateResponse("user/settings.html", {"request": request})
+@router.get("/user/following", response_class=HTMLResponse, name="user_following")
+async def following_page(request: Request, user: CurrentUser):
+    return templates.TemplateResponse(request=request, name="user/following.html")
 
-@router.get("/browse/{context_type}/{context_id}", response_class=HTMLResponse)
+@router.get("/user/settings", response_class=HTMLResponse, name="user_settings")
+async def settings_page(request: Request, user: CurrentUser):
+    return templates.TemplateResponse(request=request, name="user/settings.html")
+
+@router.get("/user/year-in-review", response_class=HTMLResponse, name="user_year_in_review")
+async def year_in_review_page(request: Request, user: CurrentUser):
+    return templates.TemplateResponse(request=request, name="user/year_in_review.html")
+
+
+
+@router.get("/browse/{context_type}/{context_id}", response_class=HTMLResponse, name="cover_browser")
 async def cover_browser_page(request: Request, context_type: str, context_id: int, user: CurrentUser):
     # Pass label logic or let JS fetch it
     return templates.TemplateResponse(request=request, name="comics/cover_browser.html", context={
@@ -139,7 +279,7 @@ async def cover_browser_page(request: Request, context_type: str, context_id: in
         "context_label": context_type.title() # Simple default
     })
 
-@router.get("/404", response_class=HTMLResponse)
+@router.get("/404", response_class=HTMLResponse, name="404")
 async def dashboard(request: Request):
     return templates.TemplateResponse(request=request, name="status_codes/404.html")
 

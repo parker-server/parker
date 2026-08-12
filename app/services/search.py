@@ -1,14 +1,15 @@
-from sqlalchemy.orm import Session
-from sqlalchemy import or_, and_, func, not_
-from typing import List, Dict, Any, Union
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import or_, and_, func, not_, text, select, cast, Float
+from typing import List, Dict, Any, Union, Optional
 from app.models import (Comic, Volume, Series,
                         Character, Team, Location, Genre,
                         Person, ComicCredit,
                         Collection, CollectionItem,
                         ReadingList, ReadingListItem,
                         PullList, PullListItem,
-                        Library, User)
+                        Library, User, UserComicRating)
 
+from app.core.comic_helpers import get_series_age_restriction, get_thumbnail_url
 from app.schemas.search import SearchRequest, SearchFilter
 
 
@@ -18,15 +19,38 @@ class SearchService:
     def __init__(self, db: Session, current_user: User):
         self.db = db
         self.user = current_user
+        self._parker_rating_column = None
+        self._parker_rating_count_column = None
 
     def search(self, request: SearchRequest) -> Dict[str, Any]:
         """Execute search based on request parameters"""
         # Start with base query joining essential tables
+        self._parker_rating_column = None
+        self._parker_rating_count_column = None
         query = self.db.query(Comic).join(Volume).join(Series)
+        parker_stats = None
+        prefer_parker_rating = self._should_prefer_parker_rating(request)
 
-        # 1. NEW: Apply Library Context Scope
+        if self._request_needs_parker_stats(request):
+            parker_stats = self._build_parker_rating_subquery()
+            query = query.outerjoin(parker_stats, parker_stats.c.comic_id == Comic.id)
+            self._parker_rating_column = parker_stats.c.parker_rating_average
+            self._parker_rating_count_column = parker_stats.c.parker_rating_count
+
+        # 1. Apply Library Context Scope
         if hasattr(request, 'context_library_id') and request.context_library_id:
             query = query.filter(Series.library_id == request.context_library_id)
+
+        # --- AGE RATING SECURITY ---
+        # Switch from Comic Check (Row) to Series Check (Poison Pill).
+        # This ensures that if a Series is banned, ALL its issues (even safe ones) are hidden.
+        age_filter = get_series_age_restriction(self.user)
+
+        if age_filter is not None:
+            query = query.filter(age_filter)
+        # -----------------------------------
+
+
 
         # Build filter conditions
         if request.filters:
@@ -47,17 +71,43 @@ class SearchService:
 
         # Get total count before pagination
         # Optimization: Count distinct IDs to handle joins correctly
-        total = query.distinct(Comic.id).count()
+        total = query.with_entities(func.count(func.distinct(Comic.id))).scalar()
 
         # Apply sorting
-        query = self._apply_sorting(query, request.sort_by, request.sort_order)
+        query = self._apply_sorting(
+            query,
+            request.sort_by,
+            request.sort_order,
+            parker_rating_column=self._parker_rating_column,
+            parker_rating_count_column=self._parker_rating_count_column,
+        )
 
         # Apply pagination
         query = query.offset(request.offset).limit(request.limit)
 
         # Execute and format results
-        comics = query.all()
-        results = [self._format_comic(comic) for comic in comics]
+        # OPTIMIZATION: Eager load relationships to prevent N+1 in _format_comic
+        query = query.options(joinedload(Comic.volume).joinedload(Volume.series))
+
+        if parker_stats is not None:
+            query = query.add_columns(
+                parker_stats.c.parker_rating_average,
+                parker_stats.c.parker_rating_count,
+            )
+
+            rows = query.all()
+            results = [
+                self._format_comic(
+                    comic,
+                    prefer_parker_rating=prefer_parker_rating,
+                    parker_rating_average=parker_rating_average,
+                    parker_rating_count=parker_rating_count,
+                )
+                for comic, parker_rating_average, parker_rating_count in rows
+            ]
+        else:
+            comics = query.all()
+            results = [self._format_comic(comic, prefer_parker_rating=False) for comic in comics]
 
         return {
             "total": total,
@@ -84,8 +134,16 @@ class SearchService:
 
         # --- ROUTING LOGIC ---
 
+        # --- 0. FTS Routing (High Priority) ---
+        # Intercept "Any" and "Summary" first
+        if field == 'any':
+            return self._build_fts_condition(value, 'contains')
+        # We route 'summary' here to use the fast index
+        elif field == 'summary':
+            return self._build_fts_condition(value, operator)
+
         # 1. Simple Fields (Direct columns on Comic or Series)
-        if field == 'series':
+        elif field == 'series':
             return self._build_simple_field_condition(Series.name, operator, value)
         elif field == 'library':
             # Join is already implicit via Series -> Library, or we add explicit join if needed
@@ -96,8 +154,8 @@ class SearchService:
             return self._build_simple_field_condition(Library.name, operator, value, needs_join=Library)
 
         elif field in ['title', 'number', 'publisher', 'imprint', 'format',
-                       'year', 'series_group', 'summary', 'web',
-                       'age_rating', 'language', 'rating']:
+                       'year', 'series_group', 'web',
+                       'age_rating', 'language']:
             # Map string field name to Column object
             col_map = {
                 'title': Comic.title,
@@ -111,9 +169,14 @@ class SearchService:
                 'web': Comic.web,
                 'age_rating': Comic.age_rating,
                 'language': Comic.language_iso,
-                'rating': Comic.community_rating
             }
             return self._build_simple_field_condition(col_map[field], operator, value)
+        elif field == 'rating':
+            return self._build_numeric_field_condition(Comic.community_rating, operator, value)
+        elif field == 'parker_rating':
+            if self._parker_rating_column is None:
+                return None
+            return self._build_numeric_field_condition(self._parker_rating_column, operator, value)
 
         # 2. Credits (Writer, Penciller, etc.)
         elif field in ['writer', 'penciller', 'inker', 'colorist', 'letterer', 'cover_artist', 'editor']:
@@ -136,6 +199,35 @@ class SearchService:
             return self._build_reading_list_condition(operator, value)
         elif field == 'pull_list':
             return self._build_pull_list_condition(operator, value)
+
+        return None
+
+    @staticmethod
+    def _coerce_numeric_value(value) -> Optional[float]:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    @classmethod
+    def _build_numeric_field_condition(cls, column, operator, value):
+        values = value if isinstance(value, list) else [value]
+        numeric_values = [cls._coerce_numeric_value(v) for v in values]
+        numeric_values = [v for v in numeric_values if v is not None]
+
+        if not numeric_values:
+            return None
+
+        single_val = numeric_values[0]
+
+        if operator == 'equal':
+            return column == single_val
+        elif operator == 'not_equal':
+            return column != single_val
+        elif operator == 'at_least':
+            return column >= single_val
+        elif operator == 'at_most':
+            return column <= single_val
 
         return None
 
@@ -179,7 +271,7 @@ class SearchService:
         if operator == 'equal':  # Exact match on name
             return Comic.credits.any(and_(ComicCredit.role == role, ComicCredit.person.has(Person.name == values[0])))
 
-        elif operator == 'contains':  # OR Logic: Has "Moore" OR "Morrison"
+        elif operator == 'contains': # OR Logic: Has "Moore" OR "Morrison"
             checks = [person_check(v) for v in values]
             return Comic.credits.any(and_(ComicCredit.role == role, or_(*checks)))
 
@@ -188,7 +280,7 @@ class SearchService:
             checks = [person_check(v) for v in values]
             return ~Comic.credits.any(and_(ComicCredit.role == role, or_(*checks)))
 
-        elif operator == 'must_contain':  # AND Logic: Has "Moore" AND Has "Gibbons"
+        elif operator == 'must_contain': # AND Logic: Has "Moore" AND Has "Gibbons"
             # Requires multiple EXISTS clauses
             conditions = []
             for v in values:
@@ -205,8 +297,8 @@ class SearchService:
         if operator == 'equal':
             return relationship.any(name_column == values[0])
 
-        elif operator == 'contains':  # OR
-            return relationship.any(name_column.in_(values))  # Exact match from list
+        elif operator == 'contains': # OR
+            return relationship.any(name_column.in_(values)) # Exact match from list
             # OR if you want partial match:
             # checks = [name_column.ilike(f"%{v}%") for v in values]
             # return relationship.any(or_(*checks))
@@ -214,7 +306,7 @@ class SearchService:
         elif operator == 'does_not_contain' or operator == 'not_equal':
             return ~relationship.any(name_column.in_(values))
 
-        elif operator == 'must_contain':  # AND
+        elif operator == 'must_contain': # AND
             conditions = [relationship.any(name_column == v) for v in values]
             return and_(*conditions)
 
@@ -223,17 +315,30 @@ class SearchService:
     @staticmethod
     def _build_collection_condition(operator: str, value):
         """Build condition for collections"""
+        is_collection_metadata_enabled = Comic.volume.has(
+            Volume.series.has(Series.library.has(Library.parse_collections == True))
+        )
+
         if operator == 'equal':
-            return Comic.collection_items.any(
-                CollectionItem.collection.has(Collection.name == value)
+            return and_(
+                is_collection_metadata_enabled,
+                Comic.collection_items.any(
+                    CollectionItem.collection.has(Collection.name == value)
+                ),
             )
         elif operator == 'contains':
             if isinstance(value, list):
-                return Comic.collection_items.any(
-                    CollectionItem.collection.has(Collection.name.in_(value))
+                return and_(
+                    is_collection_metadata_enabled,
+                    Comic.collection_items.any(
+                        CollectionItem.collection.has(Collection.name.in_(value))
+                    ),
                 )
-            return Comic.collection_items.any(
-                CollectionItem.collection.has(Collection.name.ilike(f"%{value}%"))
+            return and_(
+                is_collection_metadata_enabled,
+                Comic.collection_items.any(
+                    CollectionItem.collection.has(Collection.name.ilike(f"%{value}%"))
+                ),
             )
 
         return None
@@ -241,23 +346,35 @@ class SearchService:
     @staticmethod
     def _build_reading_list_condition(operator: str, value):
         """Build condition for reading lists"""
+        is_reading_list_metadata_enabled = Comic.volume.has(
+            Volume.series.has(Series.library.has(Library.parse_reading_lists == True))
+        )
+
         if operator == 'equal':
-            return Comic.reading_list_items.any(
-                ReadingListItem.reading_list.has(ReadingList.name == value)
+            return and_(
+                is_reading_list_metadata_enabled,
+                Comic.reading_list_items.any(
+                    ReadingListItem.reading_list.has(ReadingList.name == value)
+                ),
             )
         elif operator == 'contains':
             if isinstance(value, list):
-                return Comic.reading_list_items.any(
-                    ReadingListItem.reading_list.has(ReadingList.name.in_(value))
+                return and_(
+                    is_reading_list_metadata_enabled,
+                    Comic.reading_list_items.any(
+                        ReadingListItem.reading_list.has(ReadingList.name.in_(value))
+                    ),
                 )
-            return Comic.reading_list_items.any(
-                ReadingListItem.reading_list.has(ReadingList.name.ilike(f"%{value}%"))
+            return and_(
+                is_reading_list_metadata_enabled,
+                Comic.reading_list_items.any(
+                    ReadingListItem.reading_list.has(ReadingList.name.ilike(f"%{value}%"))
+                ),
             )
 
         return None
 
-    @staticmethod
-    def _build_empty_condition(field: str, is_empty: bool):
+    def _build_empty_condition(self, field: str, is_empty: bool):
         """Build condition for checking if field is empty/null"""
 
         field_map = {
@@ -273,6 +390,13 @@ class SearchService:
             'language': Comic.language_iso,
         }
 
+        if field == 'parker_rating':
+            if self._parker_rating_column is None:
+                return None
+            if is_empty:
+                return self._parker_rating_column.is_(None)
+            return self._parker_rating_column.isnot(None)
+
         # For relationship fields
         if field == 'character':
             return ~Comic.characters.any() if is_empty else Comic.characters.any()
@@ -281,9 +405,19 @@ class SearchService:
         elif field == 'location':
             return ~Comic.locations.any() if is_empty else Comic.locations.any()
         elif field == 'collection':
-            return ~Comic.collection_items.any() if is_empty else Comic.collection_items.any()
+            is_collection_metadata_enabled = Comic.volume.has(
+                Volume.series.has(Series.library.has(Library.parse_collections == True))
+            )
+            if is_empty:
+                return or_(~is_collection_metadata_enabled, ~Comic.collection_items.any())
+            return and_(is_collection_metadata_enabled, Comic.collection_items.any())
         elif field == 'reading_list':
-            return ~Comic.reading_list_items.any() if is_empty else Comic.reading_list_items.any()
+            is_reading_list_metadata_enabled = Comic.volume.has(
+                Volume.series.has(Series.library.has(Library.parse_reading_lists == True))
+            )
+            if is_empty:
+                return or_(~is_reading_list_metadata_enabled, ~Comic.reading_list_items.any())
+            return and_(is_reading_list_metadata_enabled, Comic.reading_list_items.any())
         elif field in ['writer', 'penciller', 'inker', 'colorist', 'letterer', 'cover_artist', 'editor']:
             if is_empty:
                 return ~Comic.credits.any(ComicCredit.role == field)
@@ -327,24 +461,129 @@ class SearchService:
 
         return None
 
+    def _build_fts_condition(self, value, operator='contains'):
+        """
+        Builds a high-performance Full Text Search condition.
+        Returns: Comic.id IN (SELECT rowid FROM comics_fts ...)
+        """
+        if not value:
+            return None
+
+        # 1. Prepare Terms based on Operator
+        fts_query = ""
+        if operator == 'must_contain' and isinstance(value, list):
+            # AND Logic: "term1" AND "term2"
+            # matches rows containing BOTH
+            sanitized = [f'"{v}"' for v in value]
+            fts_query = " AND ".join(sanitized)
+        elif isinstance(value, list):
+            # Fallback for lists (usually OR logic)
+            # "term1" OR "term2"
+            sanitized = [f'"{v}"' for v in value]
+            fts_query = " OR ".join(sanitized)
+        else:
+            # Single Value (Standard)
+            term = str(value)
+            # Wrap in quotes to handle spaces safely (e.g. "Spider Man")
+            # Add wildcard only for standard 'contains/equal' to be helpful
+            # * for prefix matching (e.g. "Amaz*" finds "Amazing")
+            # For specific exclusions, maybe exact match is better, but prefix is usually expected
+            fts_query = f'"{term}" *'
+
+
+        # 2. The Subquery
+        # "Find the IDs of all comics where our indexed text matches the term"
+        # rowid in FTS maps to Comic.id because of content_rowid='id'
+        subquery = text("SELECT rowid FROM comics_fts WHERE comics_fts MATCH :term")
+
+        # 3. Execution & ID List
+        # We execute the subquery immediately to get the IDs.
+        # (SQLAlchemy 1.4+ can usually nest this better, but for FTS/Virtual tables
+        # explicit execution is often safer/clearer).
+        try:
+            matched_ids = self.db.execute(subquery, {"term": fts_query}).scalars().all()
+        except Exception:
+            # Fallback if table doesn't exist or query fails
+            return None
+
+        # 4. Handle Negative Operators (Invert the ID list)
+        if operator in ['does_not_contain', 'not_equal']:
+            if not matched_ids:
+                # If "not containing X", and we found ZERO comics with X,
+                # then ALL comics are valid. Return None (no filter).
+                return None
+
+            # Return: ID NOT IN (matches)
+            return ~Comic.id.in_(matched_ids)
+
+        # 5. Handle Positive Operators
+        if not matched_ids:
+            # Found nothing, so return a False condition
+            return Comic.id == -1
+
+        # 4. Return Condition
+        return Comic.id.in_(matched_ids)
+
+
     @staticmethod
-    def _apply_sorting(query, sort_by: str, sort_order: str):
+    def _build_parker_rating_subquery():
+        return (
+            select(
+                UserComicRating.comic_id.label("comic_id"),
+                func.avg(UserComicRating.rating).label("parker_rating_average"),
+                func.count(UserComicRating.user_id).label("parker_rating_count"),
+            )
+            .group_by(UserComicRating.comic_id)
+            .subquery()
+        )
+
+    @staticmethod
+    def _should_prefer_parker_rating(request: SearchRequest) -> bool:
+        if request.sort_by == 'parker_rating':
+            return True
+        return any(filter_item.field == 'parker_rating' for filter_item in request.filters)
+
+    @staticmethod
+    def _request_needs_parker_stats(request: SearchRequest) -> bool:
+        if request.sort_by == 'parker_rating':
+            return True
+        return any(filter_item.field == 'parker_rating' for filter_item in request.filters)
+
+    @staticmethod
+    def _apply_sorting(
+        query,
+        sort_by: str,
+        sort_order: str,
+        parker_rating_column=None,
+        parker_rating_count_column=None,
+    ):
         if sort_by == 'series':
             col = Series.name
+            effective_sort_by = 'series'
         elif sort_by == 'year':
             col = Comic.year
+            effective_sort_by = 'year'
         elif sort_by == 'title':
             col = Comic.title
+            effective_sort_by = 'title'
         elif sort_by == 'page_count':
             col = Comic.page_count
+            effective_sort_by = 'page_count'
         elif sort_by == 'rating':
             col = Comic.community_rating
+            effective_sort_by = 'rating'
+        elif sort_by == 'parker_rating' and parker_rating_column is not None:
+            col = parker_rating_column
+            effective_sort_by = 'parker_rating'
         elif sort_by == 'updated':
             col = Comic.updated_at
+            effective_sort_by = 'updated'
         elif sort_by == 'created':  # (Explicit)
             col = Comic.created_at
+            effective_sort_by = 'created'
         else:
             col = Comic.created_at # Default fallback
+            effective_sort_by = 'created'
 
         if sort_order == 'desc':
             # Primary Sort
@@ -352,17 +591,61 @@ class SearchService:
         else:
             query = query.order_by(col.asc())
 
+        issue_order = [
+            Volume.volume_number.asc(),
+            cast(Comic.number, Float).asc(),
+            Comic.number.asc(),
+            Comic.id.asc(),
+        ]
+
         # SECONDARY SORT (Stability)
-        # If sorting by Rating, Year, or Page Count, ties are common.
-        # Always break ties with Series Name -> Number
-        if sort_by in ['rating', 'year', 'page_count']:
-            query = query.order_by(Series.name.asc(), Comic.number.asc())
+        # Ties are common across dates, years, ratings, counts, and names.
+        # Keep paging deterministic with the familiar Series -> Volume -> Issue order.
+        if effective_sort_by == 'parker_rating':
+            if parker_rating_count_column is not None:
+                query = query.order_by(
+                    parker_rating_count_column.desc(),
+                    Series.name.asc(),
+                    *issue_order,
+                )
+            else:
+                query = query.order_by(Series.name.asc(), *issue_order)
+        elif effective_sort_by == 'series':
+            query = query.order_by(*issue_order)
+        elif effective_sort_by in ['rating', 'year', 'page_count', 'title', 'updated', 'created']:
+            query = query.order_by(Series.name.asc(), *issue_order)
 
         return query
 
     @staticmethod
-    def _format_comic(comic: Comic) -> dict:
+    def _format_comic(
+        comic: Comic,
+        *,
+        prefer_parker_rating: bool = False,
+        parker_rating_average: Optional[float] = None,
+        parker_rating_count: Optional[int] = None,
+    ) -> dict:
         """Format comic for response grid"""
+
+        parker_average = float(parker_rating_average) if parker_rating_average is not None else None
+        parker_count = int(parker_rating_count or 0)
+
+        if prefer_parker_rating and parker_average is not None and parker_average > 0:
+            rating_mode = "parker"
+            rating_value = parker_average
+            rating_label = "Parker Rating"
+        elif prefer_parker_rating:
+            rating_mode = "none"
+            rating_value = None
+            rating_label = None
+        elif comic.community_rating and comic.community_rating > 0:
+            rating_mode = "source"
+            rating_value = comic.community_rating
+            rating_label = "Source Rating"
+        else:
+            rating_mode = "none"
+            rating_value = None
+            rating_label = None
 
         return {
             "id": comic.id,
@@ -373,6 +656,11 @@ class SearchService:
             "year": comic.year,
             "publisher": comic.publisher,
             "format": comic.format,
-            "thumbnail_path": f"/api/comics/{comic.id}/thumbnail",
-            "community_rating": comic.community_rating
+            "thumbnail_path": get_thumbnail_url(comic.id, comic.updated_at),
+            "community_rating": comic.community_rating,
+            "parker_rating_average": parker_average,
+            "parker_rating_count": parker_count,
+            "rating_mode": rating_mode,
+            "rating_value": rating_value,
+            "rating_label": rating_label,
         }

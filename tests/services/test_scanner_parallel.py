@@ -1,0 +1,677 @@
+import multiprocessing
+import zipfile
+from queue import Empty
+from types import SimpleNamespace
+
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+import app.services.scanner as scanner_module
+from app.database import Base
+from app.models import (
+    CBLSource,
+    Collection,
+    CollectionItem,
+    Comic,
+    LibraryRoot,
+    ReadingList,
+    ReadingListItem,
+    Series,
+    Volume,
+)
+from app.services.scanner import LibraryScanner
+from tests.factories import create_comic, create_library_with_root
+
+
+class DummyQuery:
+    def __init__(self, model, existing, library_roots):
+        self._model = model
+        self._existing = existing
+        self._library_roots = library_roots
+
+    def join(self, *_args, **_kwargs):
+        return self
+
+    def filter(self, *_args, **_kwargs):
+        return self
+
+    def order_by(self, *_args, **_kwargs):
+        return self
+
+    def all(self):
+        if self._model is LibraryRoot:
+            return list(self._library_roots)
+        if self._model is CBLSource:
+            return []
+        return list(self._existing)
+
+    def first(self):
+        return self._library_roots[0] if self._library_roots else None
+
+
+class DummyDB:
+    def __init__(self, existing, library_root=None):
+        self._existing = existing
+        if library_root is None:
+            self._library_roots = []
+        elif isinstance(library_root, list):
+            self._library_roots = library_root
+        else:
+            self._library_roots = [library_root]
+        self.commit_calls = 0
+
+    def query(self, model, *_args, **_kwargs):
+        return DummyQuery(model, self._existing, self._library_roots)
+
+    def commit(self):
+        self.commit_calls += 1
+
+
+class FakeQueue:
+    def __init__(self, initial_get_items=None):
+        self.put_items = []
+        self._get_items = list(initial_get_items or [])
+
+    def put(self, item):
+        self.put_items.append(item)
+
+    def get(self, timeout=None):
+        if not self._get_items:
+            raise AssertionError("Queue.get() called with no prepared values")
+        return self._get_items.pop(0)
+
+
+class FakeProcess:
+    instances = []
+    force_stuck = False
+
+    def __init__(self, target=None, args=None, kwargs=None):
+        self.target = target
+        self.args = args or ()
+        self.kwargs = kwargs or {}
+        self.started = False
+        self.joined = False
+        self.terminated = False
+        self.alive = False
+        FakeProcess.instances.append(self)
+
+    def start(self):
+        self.started = True
+        self.alive = True
+
+    def join(self, timeout=None):
+        self.joined = True
+        if not self.force_stuck:
+            self.alive = False
+
+    def is_alive(self):
+        return self.alive
+
+    def terminate(self):
+        self.terminated = True
+        self.alive = False
+
+
+class FakePool:
+    last_processes = None
+
+    def __init__(self, processes):
+        self.processes = processes
+        FakePool.last_processes = processes
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def imap_unordered(self, worker_fn, tasks):
+        for task in reversed(tasks):
+            yield worker_fn(task)
+
+
+class TimeoutQueue(FakeQueue):
+    def get(self, timeout=None):
+        raise Empty()
+
+
+def fake_worker(file_input):
+    if isinstance(file_input, dict):
+        file_path = file_input["file_path"]
+        context = {
+            key: file_input[key]
+            for key in ("library_root_id", "library_root_path")
+            if key in file_input
+        }
+    else:
+        file_path = file_input
+        context = {}
+
+    return {
+        "file_path": file_path,
+        "mtime": 1.0,
+        "size": 123,
+        "metadata": {"page_count": 1, "raw_metadata": {}},
+        "error": False,
+        **context,
+    }
+
+
+def _create_file(path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"x")
+    return path
+
+
+def _create_cbz_with_comicinfo(
+    path,
+    *,
+    series: str,
+    number: str,
+    title: str,
+    series_group: str | None = None,
+    alternate_series: str | None = None,
+    alternate_number: str | None = None,
+):
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    parts = [
+        "<ComicInfo>",
+        f"<Series>{series}</Series>",
+        f"<Number>{number}</Number>",
+        f"<Title>{title}</Title>",
+    ]
+
+    if series_group:
+        parts.append(f"<SeriesGroup>{series_group}</SeriesGroup>")
+    if alternate_series:
+        parts.append(f"<AlternateSeries>{alternate_series}</AlternateSeries>")
+    if alternate_number:
+        parts.append(f"<AlternateNumber>{alternate_number}</AlternateNumber>")
+
+    parts.append("</ComicInfo>")
+    xml = "".join(parts)
+
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("001.jpg", b"not-a-real-image-but-good-enough-for-page-detection")
+        archive.writestr("ComicInfo.xml", xml.encode("utf-8"))
+
+
+def _disable_container_cleanup(scanner):
+    scanner.reading_list_service.cleanup_empty_lists = lambda: None
+    scanner.collection_service.cleanup_empty_collections = lambda: None
+
+
+def test_scan_parallel_orchestrates_pool_writer_and_summary(monkeypatch, tmp_path):
+    library_path = tmp_path / "library"
+    unchanged = _create_file(library_path / "unchanged.cbz")
+    changed = _create_file(library_path / "changed.cbz")
+    new_file = _create_file(library_path / "new.cbz")
+
+    library_root = SimpleNamespace(id=1, path=str(library_path))
+    existing = [
+        SimpleNamespace(
+            library_root_id=1, relative_path="unchanged.cbz",
+            file_modified_at=unchanged.stat().st_mtime + 30,
+        ),
+        SimpleNamespace(
+            library_root_id=1, relative_path="changed.cbz",
+            file_modified_at=changed.stat().st_mtime - 30,
+        ),
+    ]
+
+    db = DummyDB(existing, library_root=library_root)
+    library = SimpleNamespace(name="Test", id=42, last_scanned=None)
+    scanner = LibraryScanner(library, db)
+
+    scanner._reconcile_sidecars = lambda *_args, **_kwargs: None
+    scanner._cleanup_missing_files = lambda *_args, **_kwargs: 0
+    _disable_container_cleanup(scanner)
+
+    result_queue = FakeQueue()
+    stats_queue = FakeQueue([
+        {"summary": True, "imported": 2, "updated": 0, "errors": 0, "skipped": 0}
+    ])
+    queues = [result_queue, stats_queue]
+
+    FakeProcess.instances = []
+    FakePool.last_processes = None
+
+    monkeypatch.setattr(scanner_module, "Queue", lambda: queues.pop(0))
+    monkeypatch.setattr(scanner_module, "metadata_worker", fake_worker)
+    monkeypatch.setattr(scanner_module.multiprocessing, "Process", FakeProcess)
+    monkeypatch.setattr(scanner_module.multiprocessing, "Pool", FakePool)
+    monkeypatch.setattr(scanner_module, "get_cached_setting", lambda _key, default=0: default)
+
+    result = scanner.scan_parallel(force=False, worker_limit=3)
+
+    assert result["skipped"] == 1
+    assert result["imported"] == 2
+    assert result["updated"] == 0
+    assert result["errors"] == 0
+
+    assert len(FakeProcess.instances) == 1
+    assert FakeProcess.instances[0].started is True
+    assert FakeProcess.instances[0].joined is True
+    assert FakeProcess.instances[0].kwargs["parse_reading_lists"] is True
+    assert FakeProcess.instances[0].kwargs["parse_collections"] is True
+    assert FakeProcess.instances[0].kwargs["parse_story_arcs"] is True
+
+    assert FakePool.last_processes == 3
+
+    queued_payloads = [item for item in result_queue.put_items if item is not None]
+    assert len(queued_payloads) == 2
+    assert {payload["file_path"] for payload in queued_payloads} == {str(changed), str(new_file)}
+    assert {payload["library_root_id"] for payload in queued_payloads} == {1}
+    assert {payload["library_root_path"] for payload in queued_payloads} == {str(library_path)}
+    assert result_queue.put_items[-1] is None
+
+
+def test_scan_parallel_no_tasks_skips_parallel_components(monkeypatch, tmp_path):
+    library_path = tmp_path / "library"
+    unchanged = _create_file(library_path / "only.cbz")
+
+    library_root = SimpleNamespace(id=1, path=str(library_path))
+    existing = [
+        SimpleNamespace(
+            library_root_id=1, relative_path="only.cbz",
+            file_modified_at=unchanged.stat().st_mtime + 30,
+        ),
+    ]
+
+    db = DummyDB(existing, library_root=library_root)
+    library = SimpleNamespace(name="Test", id=7, last_scanned=None)
+    scanner = LibraryScanner(library, db)
+
+    scanner._reconcile_sidecars = lambda *_args, **_kwargs: None
+    scanner._cleanup_missing_files = lambda *_args, **_kwargs: 0
+    _disable_container_cleanup(scanner)
+
+    def _should_not_start(*_args, **_kwargs):
+        raise AssertionError("Parallel components should not start when there are no tasks")
+
+    monkeypatch.setattr(scanner_module.multiprocessing, "Process", _should_not_start)
+    monkeypatch.setattr(scanner_module.multiprocessing, "Pool", _should_not_start)
+    monkeypatch.setattr(scanner_module, "get_cached_setting", lambda _key, default=0: default)
+
+    result = scanner.scan_parallel(force=False, worker_limit=2)
+
+    assert result["skipped"] == 1
+    assert result["imported"] == 0
+    assert result["updated"] == 0
+    assert result["errors"] == 0
+
+
+def test_scan_parallel_auto_worker_count_uses_half_cores(monkeypatch, tmp_path):
+    library_path = tmp_path / "library"
+    _create_file(library_path / "new.cbz")
+
+    library_root = SimpleNamespace(id=1, path=str(library_path))
+    db = DummyDB(existing=[], library_root=library_root)
+    library = SimpleNamespace(name="Test", id=99, last_scanned=None)
+    scanner = LibraryScanner(library, db)
+
+    scanner._reconcile_sidecars = lambda *_args, **_kwargs: None
+    scanner._cleanup_missing_files = lambda *_args, **_kwargs: 0
+    _disable_container_cleanup(scanner)
+
+    result_queue = FakeQueue()
+    stats_queue = FakeQueue([
+        {"summary": True, "imported": 1, "updated": 0, "errors": 0, "skipped": 0}
+    ])
+    queues = [result_queue, stats_queue]
+
+    FakePool.last_processes = None
+    FakeProcess.instances = []
+
+    monkeypatch.setattr(scanner_module, "Queue", lambda: queues.pop(0))
+    monkeypatch.setattr(scanner_module, "metadata_worker", fake_worker)
+    monkeypatch.setattr(scanner_module.multiprocessing, "Process", FakeProcess)
+    monkeypatch.setattr(scanner_module.multiprocessing, "Pool", FakePool)
+    monkeypatch.setattr(scanner_module.multiprocessing, "cpu_count", lambda: 8)
+    monkeypatch.setattr(scanner_module, "get_cached_setting", lambda *_args, **_kwargs: 0)
+
+    result = scanner.scan_parallel(force=False, worker_limit=0)
+
+    assert result["imported"] == 1
+    assert FakePool.last_processes == 4
+
+
+def test_scan_parallel_timeout_terminates_stuck_writer(monkeypatch, tmp_path):
+    library_path = tmp_path / "library"
+    _create_file(library_path / "new.cbz")
+
+    library_root = SimpleNamespace(id=1, path=str(library_path))
+    db = DummyDB(existing=[], library_root=library_root)
+    library = SimpleNamespace(name="Test", id=100, last_scanned=None)
+    scanner = LibraryScanner(library, db)
+
+    scanner._reconcile_sidecars = lambda *_args, **_kwargs: None
+    scanner._cleanup_missing_files = lambda *_args, **_kwargs: 0
+    _disable_container_cleanup(scanner)
+
+    result_queue = FakeQueue()
+    stats_queue = TimeoutQueue()
+    queues = [result_queue, stats_queue]
+
+    FakePool.last_processes = None
+    FakeProcess.instances = []
+    FakeProcess.force_stuck = True
+
+    monkeypatch.setattr(scanner_module, "Queue", lambda: queues.pop(0))
+    monkeypatch.setattr(scanner_module, "metadata_worker", fake_worker)
+    monkeypatch.setattr(scanner_module.multiprocessing, "Process", FakeProcess)
+    monkeypatch.setattr(scanner_module.multiprocessing, "Pool", FakePool)
+    monkeypatch.setattr(
+        scanner_module,
+        "get_cached_setting",
+        lambda key, default=0: 10 if "timeout" in key else default,
+    )
+
+    with pytest.raises(TimeoutError):
+        scanner.scan_parallel(force=False, worker_limit=1)
+
+    writer_proc = FakeProcess.instances[0]
+    assert writer_proc.joined is True
+    assert writer_proc.terminated is True
+    assert result_queue.put_items[-1] is None
+
+    FakeProcess.force_stuck = False
+
+
+def test_scan_parallel_pool_error_still_signals_and_joins_writer(monkeypatch, tmp_path):
+    library_path = tmp_path / "library"
+    _create_file(library_path / "new.cbz")
+
+    library_root = SimpleNamespace(id=1, path=str(library_path))
+    db = DummyDB(existing=[], library_root=library_root)
+    library = SimpleNamespace(name="Test", id=101, last_scanned=None)
+    scanner = LibraryScanner(library, db)
+
+    scanner._reconcile_sidecars = lambda *_args, **_kwargs: None
+    scanner._cleanup_missing_files = lambda *_args, **_kwargs: 0
+    _disable_container_cleanup(scanner)
+
+    result_queue = FakeQueue()
+    stats_queue = FakeQueue([])
+    queues = [result_queue, stats_queue]
+
+    FakeProcess.instances = []
+    FakeProcess.force_stuck = False
+
+    class ExplodingPool(FakePool):
+        def imap_unordered(self, worker_fn, tasks):
+            raise RuntimeError("pool exploded")
+
+    monkeypatch.setattr(scanner_module, "Queue", lambda: queues.pop(0))
+    monkeypatch.setattr(scanner_module, "metadata_worker", fake_worker)
+    monkeypatch.setattr(scanner_module.multiprocessing, "Process", FakeProcess)
+    monkeypatch.setattr(scanner_module.multiprocessing, "Pool", ExplodingPool)
+    monkeypatch.setattr(scanner_module, "get_cached_setting", lambda _key, default=0: default)
+
+    with pytest.raises(RuntimeError, match="pool exploded"):
+        scanner.scan_parallel(force=False, worker_limit=2)
+
+    writer_proc = FakeProcess.instances[0]
+    assert writer_proc.joined is True
+    assert writer_proc.terminated is False
+    assert result_queue.put_items[-1] is None
+
+
+def test_scan_parallel_requested_workers_capped_by_cpu_count(monkeypatch, tmp_path):
+    library_path = tmp_path / "library"
+    _create_file(library_path / "new.cbz")
+
+    library_root = SimpleNamespace(id=1, path=str(library_path))
+    db = DummyDB(existing=[], library_root=library_root)
+    library = SimpleNamespace(name="Test", id=102, last_scanned=None)
+    scanner = LibraryScanner(library, db)
+
+    scanner._reconcile_sidecars = lambda *_args, **_kwargs: None
+    scanner._cleanup_missing_files = lambda *_args, **_kwargs: 0
+    _disable_container_cleanup(scanner)
+
+    result_queue = FakeQueue()
+    stats_queue = FakeQueue([
+        {"summary": True, "imported": 1, "updated": 0, "errors": 0, "skipped": 0}
+    ])
+    queues = [result_queue, stats_queue]
+
+    FakePool.last_processes = None
+    FakeProcess.instances = []
+
+    monkeypatch.setattr(scanner_module, "Queue", lambda: queues.pop(0))
+    monkeypatch.setattr(scanner_module, "metadata_worker", fake_worker)
+    monkeypatch.setattr(scanner_module.multiprocessing, "Process", FakeProcess)
+    monkeypatch.setattr(scanner_module.multiprocessing, "Pool", FakePool)
+    monkeypatch.setattr(scanner_module.multiprocessing, "cpu_count", lambda: 4)
+
+    def _settings(key, default=0):
+        if key == "system.parallel_metadata_workers":
+            return 99
+        return default
+
+    monkeypatch.setattr(scanner_module, "get_cached_setting", _settings)
+
+    result = scanner.scan_parallel(force=False, worker_limit=0)
+
+    assert result["imported"] == 1
+    assert FakePool.last_processes == 4
+
+
+def test_scan_parallel_swallows_sentinel_put_error_during_failure_cleanup(monkeypatch, tmp_path):
+    library_path = tmp_path / "library"
+    _create_file(library_path / "new.cbz")
+
+    library_root = SimpleNamespace(id=1, path=str(library_path))
+    db = DummyDB(existing=[], library_root=library_root)
+    library = SimpleNamespace(name="Test", id=103, last_scanned=None)
+    scanner = LibraryScanner(library, db)
+
+    scanner._reconcile_sidecars = lambda *_args, **_kwargs: None
+    scanner._cleanup_missing_files = lambda *_args, **_kwargs: 0
+    _disable_container_cleanup(scanner)
+
+    class ExplodingPutQueue(FakeQueue):
+        def put(self, item):
+            raise RuntimeError("result queue unavailable")
+
+    result_queue = ExplodingPutQueue()
+    stats_queue = FakeQueue([])
+    queues = [result_queue, stats_queue]
+
+    FakeProcess.instances = []
+    FakeProcess.force_stuck = False
+
+    class ExplodingPool(FakePool):
+        def imap_unordered(self, worker_fn, tasks):
+            raise RuntimeError("pool exploded")
+
+    monkeypatch.setattr(scanner_module, "Queue", lambda: queues.pop(0))
+    monkeypatch.setattr(scanner_module, "metadata_worker", fake_worker)
+    monkeypatch.setattr(scanner_module.multiprocessing, "Process", FakeProcess)
+    monkeypatch.setattr(scanner_module.multiprocessing, "Pool", ExplodingPool)
+    monkeypatch.setattr(scanner_module, "get_cached_setting", lambda _key, default=0: default)
+
+    with pytest.raises(RuntimeError, match="pool exploded"):
+        scanner.scan_parallel(force=False, worker_limit=2)
+
+    writer_proc = FakeProcess.instances[0]
+    assert writer_proc.joined is True
+    assert writer_proc.terminated is False
+
+
+def test_scan_parallel_passes_library_metadata_flags_to_writer(monkeypatch, tmp_path):
+    library_path = tmp_path / "library"
+    _create_file(library_path / "new.cbz")
+
+    library_root = SimpleNamespace(id=1, path=str(library_path))
+    db = DummyDB(existing=[], library_root=library_root)
+    library = SimpleNamespace(
+        name="Flagged",
+        id=104,
+        last_scanned=None,
+        parse_reading_lists=False,
+        parse_collections=False,
+        parse_story_arcs=False,
+    )
+    scanner = LibraryScanner(library, db)
+
+    scanner._reconcile_sidecars = lambda *_args, **_kwargs: None
+    scanner._cleanup_missing_files = lambda *_args, **_kwargs: 0
+    _disable_container_cleanup(scanner)
+
+    result_queue = FakeQueue()
+    stats_queue = FakeQueue([
+        {"summary": True, "imported": 1, "updated": 0, "errors": 0, "skipped": 0}
+    ])
+    queues = [result_queue, stats_queue]
+
+    FakePool.last_processes = None
+    FakeProcess.instances = []
+
+    monkeypatch.setattr(scanner_module, "Queue", lambda: queues.pop(0))
+    monkeypatch.setattr(scanner_module, "metadata_worker", fake_worker)
+    monkeypatch.setattr(scanner_module.multiprocessing, "Process", FakeProcess)
+    monkeypatch.setattr(scanner_module.multiprocessing, "Pool", FakePool)
+    monkeypatch.setattr(scanner_module, "get_cached_setting", lambda _key, default=0: default)
+
+    scanner.scan_parallel(force=False, worker_limit=1)
+
+    writer_kwargs = FakeProcess.instances[0].kwargs
+    assert writer_kwargs["parse_reading_lists"] is False
+    assert writer_kwargs["parse_collections"] is False
+    assert writer_kwargs["parse_story_arcs"] is False
+
+
+def test_scan_parallel_real_pool_and_writer_smoke(monkeypatch, tmp_path):
+    library_path = tmp_path / "library"
+    _create_cbz_with_comicinfo(
+        library_path / "alpha.cbz",
+        series="Smoke Series",
+        number="1",
+        title="Alpha",
+        series_group="Smoke Collection",
+        alternate_series="Smoke Event",
+        alternate_number="1",
+    )
+    _create_cbz_with_comicinfo(
+        library_path / "beta.cbz",
+        series="Smoke Series",
+        number="2",
+        title="Beta",
+        series_group="Smoke Collection",
+        alternate_series="Smoke Event",
+        alternate_number="2",
+    )
+
+    db_path = tmp_path / "parallel-smoke.db"
+    db_url = f"sqlite:///{db_path.as_posix()}"
+    monkeypatch.setenv("DATABASE_URL", db_url)
+
+    # Force a fresh-import spawn context so the real writer process resolves the
+    # temp DATABASE_URL consistently on both Windows and Linux.
+    spawn_ctx = multiprocessing.get_context("spawn")
+    monkeypatch.setattr(scanner_module, "Queue", spawn_ctx.Queue)
+    monkeypatch.setattr(scanner_module.multiprocessing, "Process", spawn_ctx.Process)
+    monkeypatch.setattr(scanner_module.multiprocessing, "Pool", spawn_ctx.Pool)
+
+    engine = create_engine(
+        db_url,
+        connect_args={"check_same_thread": False, "timeout": 60},
+    )
+    SessionLocal = sessionmaker(autoflush=False, bind=engine)
+    Base.metadata.create_all(bind=engine)
+
+    db = SessionLocal()
+    try:
+        library = create_library_with_root(db, "Parallel Smoke", str(library_path))
+        db.commit()
+
+        scanner = LibraryScanner(library, db)
+        result = scanner.scan_parallel(force=False, worker_limit=2)
+
+        assert result["imported"] == 2
+        assert result["updated"] == 0
+        assert result["deleted"] == 0
+        assert result["errors"] == 0
+    finally:
+        db.close()
+
+    verify_db = SessionLocal()
+    try:
+        assert verify_db.query(Comic).count() == 2
+
+        collection = verify_db.query(Collection).filter(Collection.name == "Smoke Collection").one()
+        reading_list = verify_db.query(ReadingList).filter(ReadingList.name == "Smoke Event").one()
+
+        assert verify_db.query(CollectionItem).filter(CollectionItem.collection_id == collection.id).count() == 2
+        assert verify_db.query(ReadingListItem).filter(ReadingListItem.reading_list_id == reading_list.id).count() == 2
+    finally:
+        verify_db.close()
+        engine.dispose()
+
+
+def test_scan_parallel_self_heals_legacy_comic_missing_root_stamp(monkeypatch, tmp_path):
+    """
+    Confirms an existing comic whose file is unchanged still gets skipped (not
+    re-imported) once its identity is already correctly stamped -- the scanner's
+    matching purely by (library_root_id, relative_path) must find it without
+    ever routing it through the metadata writer.
+    """
+    library_path = tmp_path / "library"
+    library_path.mkdir(parents=True, exist_ok=True)
+    alpha_path = _create_file(library_path / "alpha.cbz")
+
+    db_path = tmp_path / "self-heal.db"
+    db_url = f"sqlite:///{db_path.as_posix()}"
+    monkeypatch.setenv("DATABASE_URL", db_url)
+
+    spawn_ctx = multiprocessing.get_context("spawn")
+    monkeypatch.setattr(scanner_module, "Queue", spawn_ctx.Queue)
+    monkeypatch.setattr(scanner_module.multiprocessing, "Process", spawn_ctx.Process)
+    monkeypatch.setattr(scanner_module.multiprocessing, "Pool", spawn_ctx.Pool)
+
+    engine = create_engine(
+        db_url,
+        connect_args={"check_same_thread": False, "timeout": 60},
+    )
+    SessionLocal = sessionmaker(autoflush=False, bind=engine)
+    Base.metadata.create_all(bind=engine)
+
+    db = SessionLocal()
+    try:
+        library = create_library_with_root(db, "Self Heal", str(library_path))
+        root = library.active_root
+        db.commit()
+
+        series = Series(name="Self Heal Series", library_id=library.id)
+        volume = Volume(series=series, volume_number=1)
+        db.add_all([series, volume])
+        db.flush()
+
+        comic = create_comic(
+            db, volume, root, "alpha.cbz",
+            number="1",
+            filename="alpha.cbz",
+            file_modified_at=alpha_path.stat().st_mtime,
+            page_count=1,
+        )
+        db.commit()
+
+        scanner = LibraryScanner(library, db)
+        result = scanner.scan_parallel(force=False, worker_limit=1)
+
+        # Unchanged file -> never sent to the metadata writer.
+        assert result["imported"] == 0
+        assert result["updated"] == 0
+        assert result["skipped"] == 1
+        assert result["deleted"] == 0
+
+        db.refresh(comic)
+        assert comic.library_root_id == root.id
+        assert comic.relative_path == "alpha.cbz"
+    finally:
+        db.close()
+        engine.dispose()

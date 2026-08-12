@@ -6,9 +6,11 @@
             else if(typeof collection !== 'undefined') { return `context_type=collection&context_id=${this.collection.id}`; }
             else { return ''; }
         },
+        get includeReaderReturnTo() {
+            return !(typeof readingList !== 'undefined' || typeof collection !== 'undefined');
+        },
         get isSelected() { return $store.batch && $store.batch.has(comic.id, 'comic'); },
         updateStatus(e) {
-            console.log('event received');
             // Check if my ID was included in the batch
             if (e.detail.ids.includes(comic.id)) {
                 this.isRead = e.detail.read;
@@ -20,14 +22,14 @@
 
      }" @comics-updated.window="updateStatus($event)">
 
-    <a :href="`/reader/${comic.id}?${readerQueryParams}`" class="block group relative cursor-pointer">
+    <a :href="window.parker.readerRoute(comic.id, readerQueryParams, { includeReturnTo: includeReaderReturnTo })" class="block group relative cursor-pointer">
 
         <div class="aspect-[2/3] bg-gray-700 rounded-lg overflow-hidden relative shadow-md transition-all duration-200 group-hover:scale-[1.02]"
              :class="isSelected ? 'ring-4 ring-blue-500/80 scale-[0.98]' : ''">
 
             <div class="absolute top-2 left-2 z-40 cursor-pointer transition-opacity duration-200"
                  :class="($store.batch.active || isSelected) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
-                 @click.prevent.stop="$store.batch.toggle(comic.id, 'comic', comic.read)">
+                 x-on:click.prevent.stop="$store.batch.toggle(comic.id, 'comic', comic.read)">
 
                 <div class="w-6 h-6 rounded-full border-2 flex items-center justify-center shadow-lg transition-all duration-200 bg-black/40 backdrop-blur-sm"
                      :class="isSelected ? 'bg-blue-600 border-blue-600 scale-110' : 'border-white/70 hover:bg-black/60'">
@@ -62,10 +64,10 @@
                 </div>
             </template>
 
-            <template x-if="comic.community_rating && comic.community_rating > 0">
-                <div class="absolute bottom-2 right-2 z-10 bg-black/70 text-yellow-400 text-[10px] font-bold px-1.5 py-0.5 rounded backdrop-blur-sm border border-white/10 flex items-center gap-0.5">
+            <template x-if="comic.rating_mode && comic.rating_mode !== 'none' && comic.rating_value && comic.rating_value > 0">
+                <div class="absolute bottom-2 z-10 min-h-[22px] bg-black/70 text-yellow-400 text-[10px] font-bold px-1.5 py-1 rounded shadow-md backdrop-blur-sm border border-white/10 flex items-center gap-0.5" :class="comic.format && comic.format !== 'Comic' ? 'right-1' : 'right-2'" :title="comic.rating_label || ''">
                     <span>★</span>
-                    <span x-text="Number(comic.community_rating).toFixed(1)"></span>
+                    <span x-text="Number(comic.rating_value).toFixed(1)"></span>
                 </div>
             </template>
 
@@ -86,12 +88,12 @@
     </a>
 
     <div class="mt-2">
-        <a :href="`/comics/${comic.id}`" class="block group/text cursor-pointer">
+        <a :href="window.parker.route('pages.comic_detail', { comic_id: comic.id })" class="block group/text cursor-pointer">
             <div class="flex justify-between items-baseline">
-                <p class="font-bold text-gray-200 truncate group-hover/text:text-blue-400 transition-colors" x-text="`#${comic.number}`"></p>
+                <p class="font-bold text-gray-200 truncate group-hover/text:text-blue-400 transition-colors" x-text="comic.number ? `#${comic.number}` : '--'"></p>
                 <p class="text-xs text-gray-500" x-text="comic.year"></p>
             </div>
-            <p class="text-sm text-gray-400 truncate group-hover/text:text-gray-300 transition-colors" x-text="comic.title || `Issue ${comic.number}`"></p>
+            <p class="text-sm text-gray-400 truncate group-hover/text:text-gray-300 transition-colors" x-text="comic.title || (comic.number ? `Issue ${comic.number}` : 'Unnumbered')"></p>
         </a>
     </div>
 </div>

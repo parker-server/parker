@@ -1,14 +1,16 @@
 {% extends "base.html" %}
 
-{% block title %}Kavita Migration - Comic Server{% endblock %}
+{% block title %}Kavita Migration - Parker{% endblock %}
 
 {% block content %}
 <div class="max-w-4xl mx-auto" x-data="migrationTool()">
-    
-    <div class="flex justify-between items-center mb-8">
-        <h1 class="text-3xl font-bold text-white">Kavita Migration Tool ➡️</h1>
-        <a href="/admin" class="text-gray-400 hover:text-white transition-colors">← Back to Admin</a>
-    </div>
+
+    {% from "partials/admin_header.html" import admin_header %}
+    {{ admin_header(
+        title="Kavita Migration Tool",
+        description="Import Kavita users and reading progress into Parker."
+    ) }}
+
 
     <div class="bg-gray-800 rounded-lg p-8 border border-gray-700 shadow-xl space-y-6">
         <div class="text-sm text-yellow-400 bg-yellow-900/30 p-4 rounded-lg border border-yellow-800">
@@ -89,7 +91,14 @@ function migrationTool() {
         },
 
         async runMigration() {
-            if(!confirm("Are you sure you want to proceed? Please ensure you have backed up your Parker database.")) return;
+
+            const confirmed = await window.parker.dialog.confirm(
+                "Migrate Kavita data?",
+                "Are you sure you want to proceed? Please ensure you have backed up your Parker database.",
+                { isDestructive: true, confirmText: 'Migrate' }
+            );
+
+            if(!confirmed){ return; }
 
             this.loading = true;
             this.message = '';
@@ -99,7 +108,7 @@ function migrationTool() {
             formData.append('user_strategy', this.userStrategy);
 
             try {
-                const res = await fetch(window.url('/api/migration/run'), {
+                const res = await fetch(window.parker.route('migration.kavita_migration'), {
                     method: 'POST',
                     body: formData,
                 });

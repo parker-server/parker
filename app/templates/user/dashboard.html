@@ -1,102 +1,570 @@
 {% extends "base.html" %}
 
-{% block title %}My Dashboard - Comic Server{% endblock %}
+{% block title %}My Dashboard - Parker{% endblock %}
+
+{% block head %}
+<style>
+.animate-bounce-once {
+    animation: bounce 1s 3; /* Runs the bounce animation exactly 3 times */
+}
+</style>
+
+{% endblock %}
 
 {% block content %}
-<div class="max-w-6xl mx-auto space-y-8" x-data="dashboard()">
+<div class="max-w-7xl mx-auto space-y-8" x-data="dashboard()">
 
-    <div class="bg-gray-800 rounded-xl p-8 border border-gray-700 shadow-xl flex flex-col md:flex-row items-center gap-8 relative overflow-hidden">
-        
-        <div class="absolute top-0 right-0 w-64 h-64 bg-blue-600 rounded-full mix-blend-multiply filter blur-3xl opacity-10 animate-blob"></div>
-        
-        <div class="relative group">
-            <div class="w-32 h-32 rounded-full overflow-hidden border-4 border-gray-700 bg-gray-900 flex items-center justify-center shadow-lg">
-                <template x-if="data?.user?.avatar_url">
-                    <img :src="data.user.avatar_url" class="w-full h-full object-cover">
-                </template>
-                <template x-if="!data?.user?.avatar_url">
-                    <span class="text-4xl font-bold text-gray-500" x-text="data?.user?.username?.charAt(0).toUpperCase()"></span>
-                </template>
-            </div>
-            
-            <label class="absolute inset-0 bg-black/60 flex items-center justify-center rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
-                <span class="text-xs text-white font-bold">Change</span>
-                <input type="file" class="hidden" accept="image/*" @change="uploadAvatar($event)">
-            </label>
-        </div>
+    <template x-if="shouldShowYearInReviewBanner() && !bannerDismissed" x-cloak>
+        <div class="relative bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 rounded-xl p-6 mb-8 shadow-2xl overflow-hidden group">
+            <button
+                x-on:click="dismissBanner()"
+                class="absolute top-4 right-4 text-white/50 hover:text-white p-2 rounded-full hover:bg-white/10 transition-colors z-20"
+                title="Dismiss"
+            >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
 
-        <div class="text-center md:text-left flex-1 z-10">
-            <h1 class="text-4xl font-bold text-white mb-2" x-text="data?.user?.username"></h1>
-            <p class="text-gray-400">Member since <span x-text="formatDate(data?.user?.created_at)"></span></p>
+            <div class="relative flex flex-col md:flex-row items-center justify-between gap-6 pr-8">
+                <div class="flex items-center gap-5">
+                    <div class="text-4xl animate-bounce [animation-iteration-count:3]">🎊</div>
+                    <div class="space-y-1">
+                        <h2 class="text-2xl font-black text-white tracking-tight">
+                            Your <span x-text="reviewYear"></span> Journey is Ready!
+                        </h2>
+                        <p class="text-white/80 text-sm">Relive your favorite series and reading milestones from this past year.</p>
+                    </div>
+                </div>
 
-            <div class="mt-3">
-                <a href="/user/settings" class="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors border border-gray-600 hover:border-gray-400 rounded-full px-3 py-1">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                    Account Settings
+                <a :href="window.parker.route('pages.user_year_in_review') + '?year=' + reviewYear"
+                   class="bg-white text-gray-900 px-8 py-3 rounded-full font-black text-sm uppercase tracking-wider hover:bg-gray-100 hover:scale-105 transition-all shadow-lg text-center">
+                    View My Review
                 </a>
             </div>
+        </div>
+    </template>
 
-            <div class="grid grid-cols-3 gap-4 mt-6 max-w-lg">
-                <div class="bg-gray-900/50 p-3 rounded-lg border border-gray-700 text-center">
-                    <div class="text-2xl font-bold text-blue-400" x-text="data?.stats?.issues_read"></div>
-                    <div class="text-xs text-gray-500 uppercase tracking-wider">Issues Read</div>
+    <template x-if="shouldShowSocialInsightsPrompt()" x-cloak>
+        <div class="rounded-xl border border-blue-500/30 bg-blue-950/30 p-5 shadow-xl">
+            <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div class="space-y-1">
+                    <div class="text-xs font-bold uppercase tracking-wider text-blue-300">Parker Social Insights</div>
+                    <h2 class="text-xl font-bold text-white">Help anonymous social rails feel more alive</h2>
+                    <p class="max-w-3xl text-sm text-gray-300">
+                        Parker can include your reading activity in anonymous aggregate features like reader counts and Popular with Others. No one sees your individual reading history.
+                    </p>
                 </div>
-                <div class="bg-gray-900/50 p-3 rounded-lg border border-gray-700 text-center">
-                    <div class="text-2xl font-bold text-green-400" x-text="data?.stats?.time_read"></div>
-                    <div class="text-xs text-gray-500 uppercase tracking-wider">Time Spent</div>
+                <div class="flex flex-col gap-2 sm:flex-row">
+                    <button
+                        type="button"
+                        x-on:click="enableSocialInsights()"
+                        class="rounded-full bg-blue-600 px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-blue-500"
+                    >
+                        Enable Insights
+                    </button>
+                    <button
+                        type="button"
+                        x-on:click="dismissSocialInsightsPrompt()"
+                        class="rounded-full border border-gray-600 px-5 py-2.5 text-sm font-bold text-gray-300 transition-colors hover:border-gray-400 hover:text-white"
+                    >
+                        Not Now
+                    </button>
                 </div>
-                <div class="bg-gray-900/50 p-3 rounded-lg border border-gray-700 text-center">
-                    <div class="text-2xl font-bold text-purple-400" x-text="formatNumber(data?.stats?.pages_turned)"></div>
-                    <div class="text-xs text-gray-500 uppercase tracking-wider">Pages Turned</div>
+            </div>
+        </div>
+    </template>
+
+
+    <!-- User Header with Core Stats -->
+    <div class="bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl p-4 md:p-6 border border-gray-700 shadow-xl flex flex-col md:flex-row md:items-center gap-4 md:gap-6 relative overflow-hidden">
+
+        <div class="absolute top-0 right-0 w-64 h-64 bg-blue-600 rounded-full mix-blend-multiply filter blur-3xl opacity-10 animate-blob"></div>
+
+        <!-- Avatar -->
+        <div class="flex items-center gap-3 md:gap-4 flex-1 z-10 min-w-0">
+            <div class="relative group flex-shrink-0" x-on:mouseleave="avatarCueSuppressed = false">
+                <div class="w-14 h-14 md:w-24 md:h-24 rounded-full overflow-hidden border-2 md:border-4 border-gray-700 bg-gray-900 flex items-center justify-center shadow-lg">
+                    <template x-if="data?.user?.avatar_url">
+                        <img :src="data.user.avatar_url" class="w-full h-full object-cover">
+                    </template>
+                    <template x-if="!data?.user?.avatar_url">
+                        <span class="text-xl md:text-3xl font-bold text-gray-500" x-text="data?.user?.username?.charAt(0).toUpperCase()"></span>
+                    </template>
                 </div>
+                <label
+                    class="absolute inset-0 bg-black/70 flex items-center justify-center rounded-full transition-opacity cursor-pointer"
+                    :class="avatarCueSuppressed ? 'opacity-0' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'"
+                    title="Update Avatar"
+                    @click="avatarCueSuppressed = true"
+                >
+                    <input
+                        type="file"
+                        class="sr-only"
+                        accept="image/*"
+                        @cancel="clearAvatarPicker($event)"
+                        @change="uploadAvatar($event)"
+                    >
+                    <span class="px-2 text-center text-[10px] md:text-xs font-bold uppercase text-white leading-tight">Update Avatar</span>
+                </label>
+            </div>
+
+            <!-- User Info -->
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center justify-between md:justify-start md:gap-4">
+                    <div class="flex items-center gap-3">
+                        <h1 class="text-lg md:text-3xl font-bold text-white truncate" x-text="data?.user?.username"></h1>
+
+                        <template x-if="data?.active_streak >= 3">
+                            <div class="flex items-center gap-1 bg-orange-500/20 border border-orange-500/50 px-2 py-0.5 rounded-full shadow-[0_0_10px_rgba(249,115,22,0.3)]">
+                                <span class="text-sm md:text-base">🔥</span>
+                                <span class="text-[10px] md:text-xs font-black text-orange-400 uppercase tracking-tighter"
+                                      x-text="`${data.active_streak} Day Streak`"
+                                ></span>
+                            </div>
+                        </template>
+
+                        <p class="text-gray-400 text-[10px] md:text-sm">Since <span x-text="formatDate(data?.user?.created_at)"></span></p>
+                    </div>
+
+                    <a :href="window.parker.route('pages.user_settings')" class="flex-shrink-0 flex items-center gap-1.5 text-[10px] md:text-xs text-gray-400 hover:text-white transition-colors border border-gray-600 hover:border-gray-400 rounded-full px-2 py-1 md:px-3 md:py-1.5">
+                        <svg class="w-3 h-3 md:w-3.5 md:h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        </svg>
+                        <span>Settings</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-2 md:gap-3 z-10 w-full md:w-auto">
+            <div class="bg-gray-900/50 py-1.5 px-2 md:p-3 rounded-lg border border-gray-700 text-center hover:border-blue-500 transition-colors">
+                <div class="text-base md:text-xl font-bold text-blue-400" x-text="data?.stats?.issues_read"></div>
+                <div class="text-[8px] md:text-[10px] text-gray-500 uppercase tracking-wider">Read</div>
+            </div>
+            <div class="bg-gray-900/50 py-1.5 px-2 md:p-3 rounded-lg border border-gray-700 text-center hover:border-green-500 transition-colors">
+                <div class="text-base md:text-xl font-bold text-green-400" x-text="data?.stats?.time_read"></div>
+                <div class="text-[8px] md:text-[10px] text-gray-500 uppercase tracking-wider">Time</div>
+            </div>
+            <div class="bg-gray-900/50 py-1.5 px-2 md:p-3 rounded-lg border border-gray-700 text-center hover:border-purple-500 transition-colors">
+                <div class="text-base md:text-xl font-bold text-purple-400" x-text="formatNumber(data?.stats?.pages_turned)"></div>
+                <div class="text-[8px] md:text-[10px] text-gray-500 uppercase tracking-wider">Pages</div>
             </div>
         </div>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        <div class="lg:col-span-2 space-y-4">
-            <div class="flex justify-between items-center">
-                <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                    <span>📖</span> Continue Reading
-                </h2>
-                <a :href="window.url('/continue-reading')" class="text-xs text-blue-400 hover:text-white">View All</a>
+    <!-- Quick Stats Grid (Always Visible) -->
+    <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+
+        <!-- Series Progress -->
+        <div class="bg-gray-800 rounded-lg p-3 md:p-6 border border-gray-700 hover:border-blue-500/50 transition-colors">
+            <div class="flex items-center gap-2 mb-2 md:mb-4">
+                <span class="text-lg md:text-2xl">📚</span>
+                <h3 class="font-bold text-white text-xs md:text-base">Series Progress</h3>
+            </div>
+            <div class="space-y-1 md:space-y-3">
+                <div>
+                    <div class="flex items-baseline gap-1">
+                        <div class="text-xl md:text-3xl font-bold text-blue-400" x-text="data?.stats?.series_explored || 0"></div>
+                        <div class="hidden md:inline text-sm text-gray-500">different series started</div>
+                        <div class="md:hidden text-[8px] text-gray-500 uppercase font-bold">Explored</div>
+                    </div>
+                </div>
+
+                <div class="w-full h-1 md:h-2 bg-gray-700 rounded-full overflow-hidden">
+                    <div class="h-full bg-green-500"
+                         :style="`width: ${data?.stats?.series_explored > 0 ? (data.stats.series_completed / data.stats.series_explored * 100) : 0}%`"
+                         style="transition: width 1s ease-in-out;">
+                    </div>
+                </div>
+
+                <div class="text-[9px] md:text-xs text-gray-400">
+                    <span class="text-green-400 font-bold" x-text="data?.stats?.series_completed || 0"></span>
+                    <span class="hidden md:inline">series fully completed</span>
+                    <span class="md:hidden">completed</span>
+
+                    <template x-if="data?.stats?.series_explored > 0">
+                        <span class="ml-1 text-gray-600">
+                            (<span x-text="Math.round((data.stats.series_completed / data.stats.series_explored) * 100)"></span>%)
+                        </span>
+                    </template>
+                </div>
+            </div>
+        </div>
+
+        <!-- Library Progress -->
+        <div class="bg-gray-800 rounded-lg p-3 md:p-6 border border-gray-700 hover:border-purple-500/50 transition-colors">
+            <div class="flex items-center gap-2 mb-2 md:mb-4">
+                <span class="text-lg md:text-2xl">🗂️</span>
+                <h3 class="font-bold text-white text-xs md:text-base">Library Progress</h3>
+            </div>
+            <div class="space-y-1 md:space-y-3">
+                <div>
+                    <div class="flex items-baseline gap-1">
+                        <div class="text-xl md:text-3xl font-bold text-purple-400" x-text="`${data?.collection?.read_percentage || 0}%`"></div>
+                        <div class="hidden md:inline text-sm text-gray-500 font-medium">of your collection read</div>
+                    </div>
+                </div>
+
+                <div class="w-full h-1 md:h-2 bg-gray-700 rounded-full overflow-hidden">
+                    <div class="h-full bg-purple-500"
+                         :style="`width: ${data?.collection?.read_percentage || 0}%`"
+                         style="transition: width 1s ease-in-out;">
+                    </div>
+                </div>
+
+                <div class="text-[9px] md:text-xs text-gray-400">
+                    <span class="text-white font-bold" x-text="data?.stats?.completed_comics || 0"></span>
+                    <span class="hidden md:inline">comics completed</span>
+                    <span class="md:hidden">read</span>
+
+                    <span class="mx-1 text-gray-600">/</span>
+
+                    <span x-text="data?.collection?.total_available || 0"></span>
+                    <span class="hidden md:inline">total in library</span>
+                    <span class="md:hidden">total</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Reading Pace -->
+        <div class="bg-gray-800 rounded-lg p-3 md:p-6 border border-gray-700 hover:border-yellow-500/50 transition-colors">
+            <div class="flex items-center gap-2 mb-2 md:mb-4">
+                <span class="text-lg md:text-2xl">⚡</span>
+                <h3 class="font-bold text-white text-xs md:text-base">
+                    <span class="md:hidden">Pace</span>
+                    <span class="hidden md:inline">Reading Pace</span>
+                </h3>
+            </div>
+            <div class="space-y-1 md:space-y-3">
+                <template x-if="data?.stats?.completed_comics > 0">
+                    <div>
+                        <div class="text-sm md:text-xl font-bold text-yellow-400 truncate" x-text="data?.reading_behavior?.reading_pace || 'N/A'"></div>
+                        <div class="hidden md:block text-[10px] text-gray-500 mt-0.5">Your consumption style</div>
+                    </div>
+                </template>
+                <template x-if="data?.stats?.completed_comics === 0">
+                    <div>
+                        <div class="text-sm md:text-xl font-bold text-gray-500 truncate italic">Calculating...</div>
+                        <div class="hidden md:block text-[10px] text-gray-400 mt-0.5">Finish a comic to see your pace</div>
+                    </div>
+                </template>
+
+                <div class="text-[9px] md:text-xs text-gray-400">
+                    <span class="hidden md:inline">Average of</span>
+                    <span class="font-bold text-white" x-text="data?.reading_behavior?.avg_days_to_complete || 0"></span>
+                    <span class="hidden md:inline">days to finish a comic</span>
+                    <span class="md:hidden">days avg</span>
+                </div>
+
+                <div class="hidden md:block pt-1 border-t border-gray-700/50 mt-2" x-show="data?.stats?.completed_comics > 0">
+                    <p class="text-[10px] text-gray-500 italic">
+                        <template x-if="data?.reading_behavior?.reading_pace === 'Binge Reader'">
+                            <span>You finish most issues in under 24 hours!</span>
+                        </template>
+                        <template x-if="data?.reading_behavior?.reading_pace === 'Active Reader'">
+                            <span>You're a consistent weekly reader.</span>
+                        </template>
+                        <template x-if="data?.reading_behavior?.reading_pace === 'Casual Reader'">
+                            <span>You take your time with each issue.</span>
+                        </template>
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Last 30 Days -->
+        <div class="bg-gray-800 rounded-lg p-3 md:p-6 border border-gray-700 hover:border-orange-500/50 transition-colors">
+            <div class="flex items-center gap-2 mb-2 md:mb-4">
+                <span class="text-lg md:text-2xl">📅</span>
+                <h3 class="font-bold text-white text-xs md:text-base">
+                    <span class="md:hidden">Last 30</span>
+                    <span class="hidden md:inline">Recent Activity</span>
+                </h3>
+            </div>
+            <div class="space-y-1 md:space-y-3">
+                <div>
+                    <div class="flex items-baseline gap-1">
+                        <div class="text-xl md:text-3xl font-bold text-orange-400" x-text="data?.reading_behavior?.last_30_days?.comics_read || 0"></div>
+                        <div class="hidden md:inline text-sm text-gray-500">
+                            of your
+                            <a :href="window.parker.route('pages.user_settings')"
+                               class="text-orange-400/80 hover:text-orange-400 hover:underline transition-all decoration-orange-400/30 underline-offset-4 font-medium"
+                               x-text="`${data?.reading_behavior?.monthly_reading_goal || 10}-issue`"
+                               title="Change your monthly goal in settings">
+                            </a>
+                            monthly goal
+                        </div>
+                         <div class="md:hidden text-[8px] text-gray-500 uppercase font-bold">Comics</div>
+                    </div>
+                </div>
+
+                <div class="w-full h-1 md:h-2 bg-gray-700 rounded-full overflow-hidden">
+                    <div class="h-full bg-orange-500"
+                         :style="`width: ${Math.min((data?.reading_behavior?.last_30_days?.comics_read / (data?.reading_behavior?.monthly_reading_goal || 10)) * 100, 100)}%`"
+                         style="transition: width 1s ease-in-out;">
+                    </div>
+                </div>
+
+                <div class="text-[9px] md:text-xs text-gray-400">
+                    <span class="text-white font-bold" x-text="formatNumber(data?.reading_behavior?.last_30_days?.pages_read || 0)"></span>
+                    <span>pages read this month</span>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Collapsible Detailed Analytics -->
+    <div class="bg-gray-800/50 rounded-xl border border-gray-700">
+        <button
+            @click="detailedStatsExpanded = !detailedStatsExpanded"
+            class="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-800/70 transition-colors rounded-xl"
+        >
+            <div class="flex items-center gap-3">
+                <svg class="w-5 h-5 text-gray-400 transition-transform" :class="detailedStatsExpanded ? 'rotate-90' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                </svg>
+                <h2 class="text-lg font-bold text-white">Detailed Statistics</h2>
+            </div>
+            <span class="text-xs text-gray-500" x-text="detailedStatsExpanded ? 'Hide' : 'Show'"></span>
+        </button>
+
+        <div
+            x-show="detailedStatsExpanded"
+            x-collapse
+            class="px-6 pb-6 space-y-6"
+        >
+            <!-- Creators, Publishers, Characters -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4">
+
+                <!-- Top Writers -->
+                <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                    <div class="flex items-center gap-3 mb-4">
+                        <span class="text-2xl">✍️</span>
+                        <h3 class="font-bold text-white">Top Writers</h3>
+                    </div>
+                    <div class="space-y-2">
+                        <template x-for="(writer, index) in data?.creators?.top_writers || []" :key="writer.name">
+                            <div class="flex items-center justify-between p-2 bg-gray-900/50 rounded">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs font-bold text-gray-500" x-text="`#${index + 1}`"></span>
+                                    <a :href="window.parker.route('pages.search', {}, `field=writer&value=${encodeURIComponent(writer.name)}&operator=equal`)">
+                                        <span class="text-sm text-gray-300" x-text="writer.name"></span>
+                                    </a>
+                                </div>
+                                <span class="text-xs text-blue-400" x-text="`${writer.comics_read} comics`"></span>
+                            </div>
+                        </template>
+                        <div x-show="!data?.creators?.top_writers?.length" class="text-center py-4 text-gray-500 text-sm">
+                            No data yet
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Top Artists -->
+                <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                    <div class="flex items-center gap-3 mb-4">
+                        <span class="text-2xl">🎨</span>
+                        <h3 class="font-bold text-white">Top Artists</h3>
+                    </div>
+                    <div class="space-y-2">
+                        <template x-for="(artist, index) in data?.creators?.top_artists || []" :key="artist.name">
+                            <div class="flex items-center justify-between p-2 bg-gray-900/50 rounded">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs font-bold text-gray-500" x-text="`#${index + 1}`"></span>
+                                    <a :href="window.parker.route('pages.search', {}, `field=penciller&value=${encodeURIComponent(artist.name)}&operator=equal`)">
+                                        <span class="text-sm text-gray-300" x-text="artist.name"></span>
+                                    </a>
+                                </div>
+                                <span class="text-xs text-purple-400" x-text="`${artist.comics_read} comics`"></span>
+                            </div>
+                        </template>
+                        <div x-show="!data?.creators?.top_artists?.length" class="text-center py-4 text-gray-500 text-sm">
+                            No data yet
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Top Publishers -->
+                <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                    <div class="flex items-center gap-3 mb-4">
+                        <span class="text-2xl">🏢</span>
+                        <h3 class="font-bold text-white">Top Publishers</h3>
+                    </div>
+                    <div class="space-y-2">
+                        <template x-for="(pub, index) in data?.publishers?.top_publishers || []" :key="pub.name">
+                            <div class="flex items-center justify-between p-2 bg-gray-900/50 rounded">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs font-bold text-gray-500" x-text="`#${index + 1}`"></span>
+                                    <a :href="window.parker.route('pages.search', {}, `field=publisher&value=${encodeURIComponent(pub.name)}&operator=equal`)">
+                                        <span class="text-sm text-gray-300" x-text="pub.name"></span>
+                                    </a>
+                                </div>
+                                <span class="text-xs text-green-400" x-text="`${pub.comics_read} comics`"></span>
+                            </div>
+                        </template>
+                        <div x-show="!data?.publishers?.top_publishers?.length" class="text-center py-4 text-gray-500 text-sm">
+                            No data yet
+                        </div>
+                    </div>
+                </div>
             </div>
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <template x-for="item in data?.continue_reading" :key="item.comic_id">
-                    <a :href="window.url(`/reader/${item.comic_id}`)" class="flex bg-gray-800 rounded-lg overflow-hidden border border-gray-700 hover:border-blue-500 transition-colors group h-32 relative">
-                        <img :src="item.thumbnail" class="w-24 h-full object-cover">
-                        
-                        <div class="p-4 flex flex-col justify-center min-w-0">
-                            <h4 class="font-bold text-white truncate" x-text="item.series_name"></h4>
-                            <p class="text-sm text-gray-400 mb-2" x-text="`Issue #${item.number}`"></p>
-                            
-                            <div class="w-full h-1.5 bg-gray-700 rounded-full mt-auto overflow-hidden">
-                                <div class="h-full bg-blue-500" :style="`width: ${item.percentage}%`"></div>
+            <!-- Genre Breakdown & Characters -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+                <!-- Genre Distribution -->
+                <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                    <div class="flex items-center gap-3 mb-4">
+                        <span class="text-2xl">🎭</span>
+                        <h3 class="font-bold text-white">Genre Diversity</h3>
+                        <span class="ml-auto text-sm text-gray-400" x-text="`${data?.genres?.genres_explored || 0} genres`"></span>
+                    </div>
+                    <div class="space-y-3">
+                        <template x-for="genre in data?.genres?.top_genres || []" :key="genre.name">
+                            <div>
+                                <div class="flex justify-between text-sm mb-1">
+                                    <a :href="window.parker.route('pages.search', {}, `field=genre&value=${encodeURIComponent(genre.name)}&operator=equal`)">
+                                        <span class="text-gray-300" x-text="genre.name"></span>
+                                    </a>
+                                    <span class="text-gray-500" x-text="`${genre.count} (${genre.percentage}%)`"></span>
+                                </div>
+                                <div class="w-full h-2 bg-gray-700 rounded-full overflow-hidden">
+                                    <div class="h-full bg-gradient-to-r from-blue-500 to-purple-500"
+                                         :style="`width: ${genre.percentage}%`">
+                                    </div>
+                                </div>
                             </div>
-                            <div class="text-xs text-gray-500 mt-1 text-right" x-text="`${Math.round(item.percentage)}%`"></div>
+                        </template>
+                        <div x-show="!data?.genres?.top_genres?.length" class="text-center py-4 text-gray-500 text-sm">
+                            No genre data yet
                         </div>
-                        
-                        <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                            <span class="text-white font-bold bg-blue-600 px-3 py-1 text-sm rounded-full shadow-lg">Continue</span>
+                    </div>
+                </div>
+
+                <!-- Top Characters -->
+                <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                    <div class="flex items-center gap-3 mb-4">
+                        <span class="text-2xl">🦸</span>
+                        <h3 class="font-bold text-white">Top Characters</h3>
+                    </div>
+                    <div class="space-y-2">
+                        <template x-for="(char, index) in data?.characters?.top_characters || []" :key="char.name">
+                            <div class="flex items-center justify-between p-2 bg-gray-900/50 rounded">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs font-bold text-gray-500" x-text="`#${index + 1}`"></span>
+                                    <a :href="window.parker.route('pages.search', {}, `field=character&value=${encodeURIComponent(char.name)}&operator=equal`)">
+                                        <span class="text-sm text-gray-300" x-text="char.name"></span>
+                                    </a>
+                                </div>
+                                <span class="text-xs text-yellow-400" x-text="`${char.appearances} appearances`"></span>
+                            </div>
+                        </template>
+                        <div x-show="!data?.characters?.top_characters?.length" class="text-center py-4 text-gray-500 text-sm">
+                            No character data yet
                         </div>
-                    </a>
-                </template>
-                
-                <div x-show="data?.continue_reading?.length === 0" class="col-span-full py-10 text-center text-gray-500 bg-gray-800/50 rounded-lg border-dashed border border-gray-700">
-                    No books in progress. Start reading something!
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-gray-800 rounded-lg p-6 border border-gray-700 mt-6">
+                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                    <div class="flex items-center gap-3">
+                        <span class="text-2xl">🔥</span>
+                        <h3 class="font-bold text-white">Reading Activity</h3>
+                    </div>
+
+                    <div class="flex items-center gap-2 text-[10px] text-gray-500 uppercase tracking-widest bg-gray-900/40 px-3 py-1.5 rounded-full border border-gray-700/50">
+                        <span>Less</span>
+                        <div class="flex gap-1">
+                            <div class="w-3 h-3 rounded-sm bg-gray-700/50"></div>
+                            <div class="w-3 h-3 rounded-sm bg-blue-900"></div>
+                            <div class="w-3 h-3 rounded-sm bg-blue-700"></div>
+                            <div class="w-3 h-3 rounded-sm bg-blue-500"></div>
+                            <div class="w-3 h-3 rounded-sm bg-blue-400"></div>
+                        </div>
+                        <span>More</span>
+                    </div>
+                </div>
+
+                <div class="w-full">
+                    <div class="grid grid-flow-col grid-rows-7 gap-1 md:gap-1.5 w-full"
+                         style="grid-template-columns: repeat(53, minmax(0, 1fr));">
+                        <template x-for="day in heatmapDays">
+                            <div
+                                class="aspect-square w-full rounded-sm transition-all duration-300 cursor-help hover:ring-2 hover:ring-white/20 hover:scale-110 z-10"
+                                :class="getHeatmapColor(day.count)"
+                                :title="`${day.date}: ${day.count} pages active`"
+                            ></div>
+                        </template>
+                    </div>
+                </div>
+
+                <div class="flex justify-between mt-4 text-[10px] text-gray-500 px-1 font-mono uppercase tracking-tighter">
+                    <span>1 year ago</span>
+                    <div class="hidden md:flex gap-8">
+                        <span>Jan</span><span>Feb</span><span>Mar</span><span>Apr</span><span>May</span><span>Jun</span>
+                        <span>Jul</span><span>Aug</span><span>Sep</span><span>Oct</span><span>Nov</span><span>Dec</span>
+                    </div>
+                    <span>Today</span>
                 </div>
             </div>
 
 
-            {# Smart Filters #}
-            <div class="space-y-4 mt-8">
+        </div>
+    </div>
+
+    <!-- Main Content Grid: Continue Reading + Sidebar -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+
+        <!-- Left Column: Continue Reading + Smart Filters -->
+        <div class="lg:col-span-2 space-y-8">
+
+            <!-- Continue Reading -->
+            <div class="space-y-4">
+                <div class="flex justify-between items-center">
+                    <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                        <span>📖</span> Continue Reading
+                    </h2>
+                    <a :href="window.parker.route('pages.continue_reading')" class="text-xs text-blue-400 hover:text-white">View All</a>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <template x-for="item in data?.continue_reading" :key="item.comic_id">
+                        <a :href="window.parker.readerRoute(item.comic_id)" class="flex bg-gray-800 rounded-lg overflow-hidden border border-gray-700 hover:border-blue-500 transition-colors group h-32 relative">
+                            <img :src="item.thumbnail" class="w-24 h-full object-cover">
+
+                            <div class="p-4 flex flex-col justify-center min-w-0 flex-1">
+                                <h4 class="font-bold text-white truncate" x-text="item.series_name"></h4>
+                                <p class="text-sm text-gray-400 mb-2" x-text="`Issue #${item.number}`"></p>
+
+                                <div class="w-full h-1.5 bg-gray-700 rounded-full mt-auto overflow-hidden">
+                                    <div class="h-full bg-blue-500" :style="`width: ${item.percentage}%`"></div>
+                                </div>
+                                <div class="text-xs text-gray-500 mt-1 text-right" x-text="`${Math.round(item.percentage)}%`"></div>
+                            </div>
+
+                            <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                <span class="text-white font-bold bg-blue-600 px-3 py-1 text-sm rounded-full shadow-lg">Continue</span>
+                            </div>
+                        </a>
+                    </template>
+
+                    <div x-show="data?.continue_reading?.length === 0" class="col-span-full py-10 text-center text-gray-500 bg-gray-800/50 rounded-lg border-dashed border border-gray-700">
+                        No books in progress. Start reading something!
+                    </div>
+                </div>
+            </div>
+
+            <!-- Smart Filters -->
+            <div class="space-y-4">
                 <div class="flex justify-between items-center">
                     <h2 class="text-xl font-bold text-white flex items-center gap-2">
                         <span>⚡</span> Smart Filters
                     </h2>
-                    <a href="/search" class="text-xs text-blue-400 hover:text-white">Create New</a>
+                    <a :href="window.parker.route('pages.search')" class="text-xs text-blue-400 hover:text-white">Create New</a>
                 </div>
 
                 <div class="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden shadow-lg">
@@ -104,7 +572,7 @@
                         <thead class="bg-gray-900/50 text-xs uppercase text-gray-500 font-bold border-b border-gray-700">
                             <tr>
                                 <th class="px-6 py-3">Name</th>
-                                <th class="px-6 py-3 text-center">Dashboard</th>
+                                <th class="px-6 py-3 text-center">Pin to Home</th>
                                 <th class="px-6 py-3 text-right">Actions</th>
                             </tr>
                         </thead>
@@ -140,143 +608,215 @@
                                     </td>
                                 </tr>
                             </template>
-
-                            <tr x-show="!data?.smart_lists || data?.smart_lists?.length === 0">
+                            <tr x-show="!data?.smart_lists?.length">
                                 <td colspan="3" class="px-6 py-8 text-center text-gray-500">
-                                    No smart filters yet. <a href="/search" class="text-blue-400 hover:underline">Create one</a> to track specific comics automatically.
+                                    No smart filters yet. Create one to get started!
                                 </td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
             </div>
-
-
         </div>
 
-        <div class="space-y-4">
+        <!-- Right Sidebar: OPDS + Stacks -->
+        <div class="space-y-6">
 
-            <template x-if="data?.opds_enabled">
-                <div class="bg-gradient-to-br from-indigo-900/40 to-gray-800 p-5 rounded-lg border border-indigo-500/30 shadow-lg relative overflow-hidden">
-                    <div class="absolute -top-4 -right-4 w-16 h-16 bg-indigo-500 rounded-full blur-2xl opacity-20"></div>
-
-                    <div class="flex items-center justify-between mb-3 relative z-10">
-                        <h2 class="text-lg font-bold text-white flex items-center gap-2">
-                            <span>📱</span> Connect Reader
-                        </h2>
-                        <span class="text-[10px] bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded border border-indigo-500/30">OPDS</span>
+            <div class="rounded-2xl border border-gray-700 bg-gradient-to-br from-blue-950/40 via-gray-900 to-gray-900 p-5 shadow-xl">
+                <div class="space-y-2">
+                    <div class="flex items-center gap-2">
+                        <span class="text-2xl">+</span>
+                        <h2 class="text-xl font-bold text-white">Following</h2>
                     </div>
-
-                    <p class="text-xs text-gray-400 mb-3">
-                        Read on your tablet using <b>Chunky</b>, <b>Panels</b>, or <b>Tachiyomi</b>.
+                    <p class="text-sm text-gray-400">
+                        Review every followed volume in one place and quickly unfollow books that no longer belong in your incoming queue.
                     </p>
+                </div>
 
-                    <div class="relative flex items-center group">
-                        <input type="text" readonly
-                               :value="window.location.origin + '/opds/'"
-                               class="w-full bg-gray-900/80 border border-gray-600 text-gray-300 text-xs rounded-md px-3 py-2.5 font-mono focus:outline-none focus:border-indigo-500 transition-colors select-all"
-                               id="opds-input">
+                <a :href="window.parker.route('pages.user_following')"
+                   class="mt-4 inline-flex w-full items-center justify-center rounded-full bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700 transition-colors">
+                    Manage Following
+                </a>
+            </div>
 
-                        <button @click="copyToClipboard(window.location.origin + '/opds/')"
-                                class="absolute right-1 p-1.5 bg-gray-700 hover:bg-white hover:text-black text-gray-300 rounded text-xs transition-colors shadow-sm"
-                                title="Copy URL">
-                             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
-                            </svg>
-                        </button>
+            <!-- Stacks -->
+            <div>
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                        <span>🗃️</span> My Stacks
+                    </h2>
+                    <a :href="window.parker.route('pages.stacks')" class="text-xs text-blue-400 hover:text-white">View All</a>
+                </div>
+
+                <div class="space-y-3">
+                    <template x-for="list in data?.pull_lists" :key="list.id">
+                        <a :href="window.parker.route('pages.stack_detail', {list_id: list.id})" class="block bg-gray-800 p-4 rounded-lg border border-gray-700 hover:bg-gray-750 hover:border-gray-500 transition-all">
+                            <div class="flex justify-between items-center">
+                                <span class="font-bold text-white" x-text="list.name"></span>
+                                <span class="bg-gray-700 text-gray-300 text-xs px-2 py-1 rounded-full" x-text="list.count"></span>
+                            </div>
+                        </a>
+                    </template>
+
+                    <button x-on:click="window.location.href=window.parker.route('pages.stacks')" class="w-full py-3 border border-gray-700 border-dashed rounded-lg text-gray-500 hover:text-white hover:border-gray-500 hover:bg-gray-800/50 transition-all text-sm">
+                        + Create New Stack
+                    </button>
+                </div>
+            </div>
+
+
+            <!-- OPDS Feed -->
+            <template x-if="data?.opds_enabled">
+                <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                    <div class="flex items-center gap-3 mb-4">
+                        <span class="text-2xl">📡</span>
+                        <h3 class="font-bold text-white">OPDS Feed</h3>
                     </div>
-
-                    <div class="mt-2 flex items-center gap-2 text-[10px] text-gray-500">
-                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        <span>Use your Parker username & password.</span>
+                    <div class="space-y-3">
+                        <p class="text-sm text-gray-400">Connect your e-reader or comics app</p>
+                        <input id="opds-input"
+                               readonly
+                               :value="`${window.location.origin}${window.parker.url('/opds/')}`"
+                               class="w-full text-xs bg-gray-900 text-gray-300 px-3 py-2 rounded border border-gray-700 font-mono cursor-pointer"
+                               @click="$event.target.select()">
+                        <button @click="copyToClipboard($event.target.previousElementSibling.value)"
+                                class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded text-sm font-bold transition-colors">
+                            Copy URL
+                        </button>
+                        <span class="text-xs text-gray-500 block">Use your Parker username & password.</span>
                     </div>
                 </div>
             </template>
 
 
-            <div class="flex justify-between items-center">
-                <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                    <span>🗃️</span> My Pull Lists
-                </h2>
-                <a :href="window.url('/pull-lists')" class="text-xs text-blue-400 hover:text-white">View All</a>
-            </div>
-
-            <div class="space-y-3">
-                <template x-for="list in data?.pull_lists" :key="list.id">
-                    <a :href="window.url(`/pull-lists/${list.id}`)" class="block bg-gray-800 p-4 rounded-lg border border-gray-700 hover:bg-gray-750 hover:border-gray-500 transition-all">
-                        <div class="flex justify-between items-center">
-                            <span class="font-bold text-white" x-text="list.name"></span>
-                            <span class="bg-gray-700 text-gray-300 text-xs px-2 py-1 rounded-full" x-text="list.count"></span>
-                        </div>
-                    </a>
-                </template>
-                
-                <button x-on:click="window.location.href=window.url('/pull-lists')" class="w-full py-3 border border-gray-700 border-dashed rounded-lg text-gray-500 hover:text-white hover:border-gray-500 hover:bg-gray-800/50 transition-all text-sm">
-                    + Create New List
-                </button>
-            </div>
         </div>
-
     </div>
 </div>
 
 <script>
 function dashboard() {
+
+
+    // Pre-calculate the review year outside the return for clarity
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    const activeReviewYear = (currentMonth === 0) ? currentYear - 1 : currentYear;
+
     return {
         data: null,
-        
+        detailedStatsExpanded: false,  // Collapsed by default
+        avatarCueSuppressed: false,
+        heatmapDays: [], // Array of {date, count}
+        reviewYear:activeReviewYear,
+
+        // IMMEDIATE CHECK: Set the state synchronously during object creation
+        bannerDismissed: window.parker.storage.getString('dismissed_review_year') == activeReviewYear,
+        socialInsightsPromptDismissed: window.parker.storage.getString('dismissed_social_insights_prompt') === 'true',
+
         async init() {
+
             try {
-                const res = await fetch(window.url('/api/users/me/dashboard'));
+                const res = await fetch(window.parker.route('users.dashboard'));
                 if(res.ok) {
                     this.data = await res.json();
                     await this.fetchSmartLists();
+                    this.generateHeatmapDays();
                 }
-            } catch(e) { console.error("Dashboard load failed", e); }
 
+            } catch(e) { console.error("Dashboard load failed", e); }
         },
 
         async uploadAvatar(e) {
             const file = e.target.files[0];
-            if(!file) return;
-            
+            if(!file) {
+                this.clearAvatarPicker(e);
+                return;
+            }
+
             const formData = new FormData();
             formData.append('file', file);
-            
+
             try {
-                const res = await fetch(window.url('/api/users/me/avatar'), {
+                const res = await fetch(window.parker.route('users.upload_avatar'), {
                     method: 'POST',
                     body: formData
                 });
-                
+
                 if(res.ok) {
                     const result = await res.json();
-                    // Force refresh image by appending timestamp
                     this.data.user.avatar_url = result.url + '?t=' + Date.now();
-                    window.comicServer.showToast("Avatar updated!", "success");
+                    window.parker.showToast("Avatar updated!", "success");
                 }
             } catch(e) {
                 console.error(e);
+            } finally {
+                this.clearAvatarPicker(e);
             }
+        },
+
+        clearAvatarPicker(e) {
+            this.avatarCueSuppressed = true;
+            e.target.value = '';
+            e.target.blur();
+        },
+
+        fallbackCopyText(text) {
+            const textarea = document.createElement('textarea');
+            const selection = document.getSelection();
+            const originalRange = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+
+            textarea.value = text;
+            textarea.setAttribute('readonly', '');
+            textarea.style.position = 'fixed';
+            textarea.style.top = '0';
+            textarea.style.left = '-9999px';
+            textarea.style.opacity = '0';
+
+            document.body.appendChild(textarea);
+            textarea.focus();
+            textarea.select();
+            textarea.setSelectionRange(0, textarea.value.length);
+
+            let copied = false;
+
+            try {
+                copied = document.execCommand('copy');
+            } finally {
+                document.body.removeChild(textarea);
+
+                if (originalRange && selection) {
+                    selection.removeAllRanges();
+                    selection.addRange(originalRange);
+                }
+            }
+
+            return copied;
         },
 
         async copyToClipboard(text) {
             try {
-                await navigator.clipboard.writeText(text);
-                window.comicServer.showToast("Feed URL copied!", "success");
+                if (navigator.clipboard?.writeText && window.isSecureContext) {
+                    await navigator.clipboard.writeText(text);
+                } else if (!this.fallbackCopyText(text)) {
+                    throw new Error('Clipboard unavailable');
+                }
+
+                window.parker.showToast("Feed URL copied!", "success");
             } catch (err) {
+                if (this.fallbackCopyText(text)) {
+                    window.parker.showToast("Feed URL copied!", "success");
+                    return;
+                }
+
                 console.error('Failed to copy!', err);
-                // Fallback for non-secure contexts if needed, though simpler is better
-                const input = document.getElementById('opds-input');
-                input.select();
-                document.execCommand('copy');
-                window.comicServer.showToast("Feed URL copied!", "success");
+                window.parker.showToast("Unable to copy feed URL.", "error");
             }
         },
 
         async fetchSmartLists() {
             try {
-                const res = await fetch(window.url('/api/smart-lists/'));
+                const res = await fetch(window.parker.route('smart_lists.list'));
                 if (res.ok) {
                     this.data.smart_lists = await res.json();
                 }
@@ -286,36 +826,120 @@ function dashboard() {
         async toggleSmartListVisibility(list) {
             list.show_on_dashboard = !list.show_on_dashboard;
             try {
-                await fetch(window.url(`/api/smart-lists/${list.id}`), {
+                await fetch(window.parker.route('smart_lists.update', { list_id: list.id }), {
                     method: 'PATCH',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ show_on_dashboard: list.show_on_dashboard })
                 });
             } catch(e) {
-                list.show_on_dashboard = !list.show_on_dashboard; // Revert
+                list.show_on_dashboard = !list.show_on_dashboard;
                 console.error(e);
             }
         },
 
         async deleteSmartList(id) {
-            if(!confirm("Delete this filter?")) return;
+            const confirmed = await window.parker.dialog.confirm(
+                "Delete List?",
+                "Delete this smart filter?",
+                { isDestructive: true, confirmText: 'Remove' }
+            );
+
+            if(!confirmed) return;
             try {
-                const res = await fetch(window.url(`/api/smart-lists/${id}`), { method: 'DELETE' });
+                const res = await fetch(window.parker.route('smart_lists.delete', { list_id: id }), { method: 'DELETE' });
                 if(res.ok) {
                     this.data.smart_lists = this.data.smart_lists.filter(l => l.id !== id);
-                    if(window.comicServer) window.comicServer.showToast("Filter deleted", "success");
+                    if(window.parker) window.parker.showToast("Filter deleted", "success");
                 }
             } catch(e) { console.error(e); }
         },
 
         formatDate(dateStr) {
             if(!dateStr) return '';
-            return new Date(dateStr).toLocaleDateString(undefined, { year: 'numeric', month: 'long' });
+            return window.parker.formatLocalDate(dateStr, { year: 'numeric', month: 'long' });
         },
-        
+
         formatNumber(num) {
             return (num || 0).toLocaleString();
+        },
+
+        generateHeatmapDays() {
+            const days = [];
+            const today = new Date();
+            // Go back 371 days (53 weeks * 7 days) to fill the grid perfectly
+            for (let i = 370; i >= 0; i--) {
+                const d = new Date();
+                d.setDate(today.getDate() - i);
+                const dateStr = d.toISOString().split('T')[0];
+                days.push({
+                    date: dateStr,
+                    count: this.data.heatmap[dateStr] || 0
+                });
+            }
+            this.heatmapDays = days;
+        },
+
+        getHeatmapColor(intensity) {
+            if (intensity === 0) return 'bg-gray-700/50';
+
+            // Low Intensity (Fallback mode or just a few pages)
+            if (intensity < 5) return 'bg-blue-900';
+
+            // Medium Intensity (Standard comic length ~22 pages)
+            if (intensity < 25) return 'bg-blue-700';
+
+            // High Intensity (Multiple issues or a Graphic Novel)
+            if (intensity < 50) return 'bg-blue-500';
+
+            // Peak Intensity
+            return 'bg-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.4)]';
+        },
+
+        shouldShowYearInReviewBanner() {
+
+            // Only show in December or January, and only for 2025 or later
+            const isYearEndPeriod = (currentMonth === 11 || currentMonth === 0);
+            
+            // Launch floor: Don't show banners for years before 2025
+            const isPostLaunch = activeReviewYear >= 2025;
+
+            return isYearEndPeriod && isPostLaunch && (this.data?.stats?.issues_read > 0);
+        },
+
+        dismissBanner() {
+            this.bannerDismissed = true;
+            window.parker.storage.setString('dismissed_review_year', this.reviewYear);
+        },
+
+        shouldShowSocialInsightsPrompt() {
+            return this.data?.user?.social_insights_enabled === false && !this.socialInsightsPromptDismissed;
+        },
+
+        async enableSocialInsights() {
+            try {
+                const res = await fetch(window.parker.route('users.update_preferences'), {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ social_insights_enabled: true })
+                });
+
+                if (!res.ok) throw new Error('Unable to update social insights preference');
+
+                this.data.user.social_insights_enabled = true;
+                this.socialInsightsPromptDismissed = true;
+                window.parker.storage.remove('dismissed_social_insights_prompt');
+                window.parker.showToast("Social insights enabled", "success");
+            } catch (e) {
+                console.error(e);
+                window.parker.showToast("Failed to update setting", "error");
+            }
+        },
+
+        dismissSocialInsightsPrompt() {
+            this.socialInsightsPromptDismissed = true;
+            window.parker.storage.setString('dismissed_social_insights_prompt', 'true');
         }
+
     }
 }
 </script>

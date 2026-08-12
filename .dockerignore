@@ -1,0 +1,21 @@
+# Parker runtime data (always mounted as volumes)
+storage/
+
+# Environment & secrets
+.env
+.env.*
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Git & CI
+.git/
+.github/
+
+# Editor/OS junk
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

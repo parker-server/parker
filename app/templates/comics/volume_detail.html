@@ -1,25 +1,27 @@
 {% extends "base.html" %}
 
-{% block title %}Volume Details - Comic Server{% endblock %}
+{% block title %}Volume Details - Parker{% endblock %}
 
 {% block content %}
 
-{% from "partials/page_context.html" import page_context %}
+{% from "partials/page_context.html" import page_context with context %}
 {{ page_context(cover.id, cover.color_palette) }}
+
+{% include "partials/dynamic_background.html" %}
 
 <div class="relative z-10">
 
-    <div class="space-y-6" x-data="volumeDetail()">
+    <div class="space-y-6" x-data="volumeDetail()" x-on:set-read-filter="handleReadFilter($event.detail)" x-on:toggle-sort="handleToggleSort()">
 
-        <div class="flex flex-wrap items-center gap-2 text-gray-400 mb-6 text-sm" x-show="!error" x-cloak>
-            <a :href="window.url(`/library/${volume?.library_id}`)" class="hover:text-white" x-text="volume?.library_name"></a>
+        <div class="flex flex-wrap items-center gap-2 text-gray-400 mb-6 text-sm md:text-base" x-show="!error" x-cloak>
+            <a :href="window.parker.route('pages.library_detail', { library_id: volume?.library_id })" class="py-1 hover:text-white" x-text="volume?.library_name"></a>
             <span>/</span>
-            <a :href="window.url(`/series/${volume?.series_id}`)" class="hover:text-blue-400" x-text="volume?.series_name || 'Series'"></a>
+            <a :href="window.parker.route('pages.series_detail', { series_id: volume?.series_id }) + '?show_series=1'" class="py-1 hover:text-blue-400" x-text="volume?.series_name || 'Series'"></a>
             <span>/</span>
             <span class="text-white" x-text="`Vol ${volume?.volume_number}`"></span>
         </div>
 
-        <div x-show="loading" class="flex justify-center py-20">
+        <div x-show="metaLoading" class="flex justify-center py-20">
             <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
         </div>
 
@@ -33,14 +35,14 @@
                     <button x-on:click="window.history.back()" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors">
                         Go Back
                     </button>
-                    <a :href="window.url('/')" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors">
+                    <a :href="window.parker.route('pages.home')" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors">
                         Home
                     </a>
                 </div>
             </div>
         </div>
 
-        <div x-show="!loading && volume" style="display: none;">
+        <div x-show="!metaLoading && volume" style="display: none;">
 
             <div class="bg-gray-800 rounded-lg p-6 mb-6 shadow-lg border border-gray-700">
 
@@ -49,7 +51,7 @@
                     <div class="flex-shrink-0">
                         <div x-show="volume?.first_issue_id" class="w-40 h-60 md:w-48 md:h-72 bg-gray-700 rounded-lg overflow-hidden shadow-lg border border-gray-600 mx-auto md:mx-0">
                             <img
-                                :src="volume?.first_issue_id ? window.url(`/api/comics/${volume.first_issue_id}/thumbnail?width=300&height=450`) : ''"
+                                :src="volume?.first_issue_id ? window.parker.route('comics.thumbnail', { comic_id: volume.first_issue_id }, 'width=300&height=450') : ''"
                                 class="w-full h-full object-cover"
                             >
                         </div>
@@ -70,6 +72,17 @@
                                     <template x-if="volume?.resume_to?.comic_id">
                                         {%  include "partials/read_volume_button.html" %}
                                     </template>
+                                    <button
+                                        x-on:click="toggleFollow()"
+                                        :disabled="followSaving"
+                                        class="inline-flex items-center gap-2 px-4 py-2 rounded-lg border transition-colors text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed"
+                                        :class="volume?.is_following
+                                            ? 'bg-green-900/30 border-green-700 text-green-200 hover:bg-green-900/40'
+                                            : 'bg-gray-700 border-gray-600 text-gray-200 hover:bg-gray-600 hover:text-white'"
+                                        :title="volume?.is_following ? 'Unfollow this volume' : 'Follow this volume'"
+                                    >
+                                        <span x-text="volume?.is_following ? 'Following' : 'Follow'"></span>
+                                    </button>
                                 </div>
 
                                 <div class="mb-4 text-gray-300 flex flex-wrap items-center justify-center md:justify-start gap-2">
@@ -134,7 +147,7 @@
                                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-600" viewBox="0 0 20 20" fill="currentColor">
                                                     <path d="M2 11a1 1 0 011-1h16a1 1 0 011 1v6a1 1 0 01-1 1H3a1 1 0 01-1-1v-6zM2 7a1 1 0 011-1h16a1 1 0 011 1v3a1 1 0 01-1 1H3a1 1 0 01-1-1V7zM2 3a1 1 0 011-1h16a1 1 0 011 1v3a1 1 0 01-1 1H3a1 1 0 01-1-1V3z" />
                                                 </svg>
-                                                <span x-text="formatBytes(volume?.file_size)"></span>
+                                                <span x-text="window.parker.formatBytes(volume?.file_size)"></span>
                                             </span>
 
                                         </div>
@@ -163,6 +176,28 @@
                                         </template>
                                     </div>
 
+                                </div>
+                            </div>
+                        </div>
+
+                        {# First Issue summary promoted #}
+                        <div x-show="volume?.first_issue_summary" class="mt-6 text-gray-300 bg-gray-900/50 p-4 rounded-lg border border-gray-700/50">
+                            <h3 class="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Volume Synopsis</h3>
+
+                            <div x-data="{ expandedSummary: false }">
+                                <div
+                                    class="text-sm leading-relaxed whitespace-pre-line text-base transition-all duration-300"
+                                    :class="!expandedSummary && (volume?.first_issue_summary || '').length > 280 ? 'summary-line-clamp' : ''"
+                                    x-text="volume?.first_issue_summary"
+                                ></div>
+
+                                <div class="mt-2">
+                                    <button
+                                        x-show="(volume?.first_issue_summary || '').length > 280"
+                                        @click="expandedSummary = !expandedSummary"
+                                        class="text-blue-400 hover:text-blue-300 text-xs font-black uppercase transition-colors"
+                                        x-text="expandedSummary ? 'Show Less ↑' : 'Read More ↓'"
+                                    ></button>
                                 </div>
                             </div>
                         </div>
@@ -211,7 +246,7 @@
                     </template>
 
                     <button
-                        x-on:click="activeTab = 'details'"
+                        x-on:click="switchTab('details')"
                         :class="activeTab === 'details' ? 'bg-gray-700 text-white border-b-2 border-blue-500' : 'text-gray-400 hover:text-white hover:bg-gray-750'"
                         class="px-8 py-4 font-medium transition-colors whitespace-nowrap"
                     >
@@ -222,40 +257,61 @@
                 <div class="p-6">
 
                     <div x-show="['issues', 'annuals', 'specials'].includes(activeTab)">
-                        <div x-show="gridLoading" class="py-12 text-center">
+
+                        {% include "partials/issues_toolbar.html" %}
+
+                        <div x-show="loading && items.length === 0" class="py-12 text-center">
                             <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
-                            <p class="text-gray-400">Loading...</p>
+                            <p class="text-gray-400">Loading comics...</p>
                         </div>
 
-                        <div x-show="!gridLoading && currentItems.length > 0">
+                        <div x-show="items.length > 0">
                             <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                                <template x-for="comic in currentItems" :key="comic.id">
+                                <template x-for="comic in items" :key="comic.id">
                                     {% include "partials/comic_card.html" %}
                                 </template>
                             </div>
 
-                            <div class="mt-8 flex justify-center items-center space-x-4 border-t border-gray-700 pt-6">
-                                <button
-                                    x-on:click="changePage(currentPage - 1)"
-                                    :disabled="currentPage === 1"
-                                    class="px-4 py-2 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors"
-                                >
-                                    Previous
-                                </button>
-                                <span class="text-gray-400">
-                                    Page <span class="text-white font-bold" x-text="currentPage"></span> of <span x-text="Math.ceil(totalItems / pageSize)"></span>
-                                </span>
-                                <button
-                                    x-on:click="changePage(currentPage + 1)"
-                                    :disabled="currentPage >= Math.ceil(totalItems / pageSize)"
-                                    class="px-4 py-2 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors"
-                                >
-                                    Next
-                                </button>
+                            {# Pagination controls #}
+                            <div class="mt-8 pt-6 border-t border-gray-700">
+
+                                <template x-if="paginationMode === 'infinite'">
+                                    <div x-ref="loadSentinel" class="py-8 text-center">
+                                        <span x-show="loading" class="text-blue-400 animate-pulse">Loading more issues...</span>
+                                        <span x-show="!loading && page >= maxPage() && total > 0" class="text-gray-600 text-sm">
+                                            End of list
+                                        </span>
+                                    </div>
+                                </template>
+
+                                <template x-if="paginationMode === 'classic'">
+                                    <div class="flex justify-center items-center space-x-4">
+                                        <button
+                                            x-on:click="changePage(page - 1)"
+                                            :disabled="page === 1"
+                                            class="px-4 py-2 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-white"
+                                        >
+                                            Previous
+                                        </button>
+
+                                        <span class="text-gray-400">
+                                            Page <span class="text-white font-bold" x-text="page"></span> of <span x-text="maxPage()"></span>
+                                        </span>
+
+                                        <button
+                                            x-on:click="changePage(page + 1)"
+                                            :disabled="page >= maxPage()"
+                                            class="px-4 py-2 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-white"
+                                        >
+                                            Next
+                                        </button>
+                                    </div>
+                                </template>
                             </div>
+
                         </div>
 
-                        <div x-show="!gridLoading && currentItems.length === 0" class="text-center py-20 text-gray-500">
+                        <div x-show="!loading && items.length === 0" class="text-center py-20 text-gray-500">
                             <p>No comics found in this section.</p>
                         </div>
                     </div>
@@ -269,71 +325,184 @@
                     </div>
 
                     <div x-show="activeTab === 'details'">
-                        <div class="space-y-8">
-                            <template x-if="volume?.details?.writers?.length > 0">
+                        <div x-show="detailsLoading && !detailsLoaded" class="py-12 text-center">
+                            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                            <p class="text-gray-400">Loading details...</p>
+                        </div>
+
+                        <div x-show="detailsError" class="bg-red-900/20 text-red-400 p-4 rounded-lg border border-red-800 mb-6">
+                            <p x-text="detailsError"></p>
+                        </div>
+
+                        <div x-show="detailsLoaded && !hasAnyDetails" class="text-center py-20 text-gray-500">
+                            <p>No details found for this volume.</p>
+                        </div>
+
+                        <div x-show="detailsLoaded || hasAnyDetails" class="space-y-8">
+                            <template x-if="details.writers.loaded && details.writers.items.length > 0">
                                 <div>
-                                    <h3 class="text-lg font-bold mb-3 text-gray-200">Writers</h3>
+                                    <div class="mb-3 flex flex-wrap items-center gap-2">
+                                        <h3 class="text-lg font-bold text-gray-200">Writers</h3>
+                                        <span x-show="details.writers.total > details.writers.items.length" class="text-xs text-gray-500" x-text="`${details.writers.items.length} of ${details.writers.total}`"></span>
+                                    </div>
                                     <div class="flex flex-wrap gap-2">
-                                        <template x-for="name in volume.details.writers" :key="name">
+                                        <template x-for="name in details.writers.items" :key="name">
                                             {% with type='writer', item='name' %}
                                                 {% include "partials/tag_chip.html" %}
                                             {% endwith %}
                                         </template>
                                     </div>
+                                    <button
+                                        x-show="details.writers.hasMore"
+                                        x-on:click="loadDetailsCategory('writers')"
+                                        :disabled="details.writers.loading"
+                                        class="mt-3 px-3 py-1.5 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-60 disabled:cursor-not-allowed text-sm text-white transition-colors"
+                                    >
+                                        <span x-show="!details.writers.loading" x-text="`Show ${remainingDetailCount('writers')} more`"></span>
+                                        <span x-show="details.writers.loading">Loading...</span>
+                                    </button>
+                                    <button
+                                        x-show="details.writers.items.length > detailPageSize"
+                                        x-on:click="collapseDetailsCategory('writers')"
+                                        :disabled="details.writers.loading"
+                                        class="mt-3 ml-2 px-3 py-1.5 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-60 disabled:cursor-not-allowed text-sm text-gray-200 border border-gray-700 transition-colors"
+                                    >
+                                        Show Less
+                                    </button>
                                 </div>
                             </template>
 
-                            <template x-if="volume?.details?.pencillers?.length > 0">
+                            <template x-if="details.pencillers.loaded && details.pencillers.items.length > 0">
                                 <div>
-                                    <h3 class="text-lg font-bold mb-3 text-gray-200">Pencillers</h3>
+                                    <div class="mb-3 flex flex-wrap items-center gap-2">
+                                        <h3 class="text-lg font-bold text-gray-200">Pencillers</h3>
+                                        <span x-show="details.pencillers.total > details.pencillers.items.length" class="text-xs text-gray-500" x-text="`${details.pencillers.items.length} of ${details.pencillers.total}`"></span>
+                                    </div>
                                     <div class="flex flex-wrap gap-2">
-                                        <template x-for="name in volume.details.pencillers" :key="name">
+                                        <template x-for="name in details.pencillers.items" :key="name">
                                             {% with type='penciller', item='name' %}
                                                 {% include "partials/tag_chip.html" %}
                                             {% endwith %}
                                         </template>
                                     </div>
+                                    <button
+                                        x-show="details.pencillers.hasMore"
+                                        x-on:click="loadDetailsCategory('pencillers')"
+                                        :disabled="details.pencillers.loading"
+                                        class="mt-3 px-3 py-1.5 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-60 disabled:cursor-not-allowed text-sm text-white transition-colors"
+                                    >
+                                        <span x-show="!details.pencillers.loading" x-text="`Show ${remainingDetailCount('pencillers')} more`"></span>
+                                        <span x-show="details.pencillers.loading">Loading...</span>
+                                    </button>
+                                    <button
+                                        x-show="details.pencillers.items.length > detailPageSize"
+                                        x-on:click="collapseDetailsCategory('pencillers')"
+                                        :disabled="details.pencillers.loading"
+                                        class="mt-3 ml-2 px-3 py-1.5 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-60 disabled:cursor-not-allowed text-sm text-gray-200 border border-gray-700 transition-colors"
+                                    >
+                                        Show Less
+                                    </button>
                                 </div>
                             </template>
 
                             <div class="border-t border-gray-700 my-6"></div>
 
-                            <template x-if="volume?.details?.characters?.length > 0">
+                            <template x-if="details.characters.loaded && details.characters.items.length > 0">
                                 <div>
-                                    <h3 class="text-lg font-bold mb-3 text-gray-200">Characters</h3>
+                                    <div class="mb-3 flex flex-wrap items-center gap-2">
+                                        <h3 class="text-lg font-bold text-gray-200">Characters</h3>
+                                        <span x-show="details.characters.total > details.characters.items.length" class="text-xs text-gray-500" x-text="`${details.characters.items.length} of ${details.characters.total}`"></span>
+                                    </div>
                                     <div class="flex flex-wrap gap-2">
-                                        <template x-for="name in volume.details.characters" :key="name">
+                                        <template x-for="name in details.characters.items" :key="name">
                                             {% with type='character', item='name' %}
                                                 {% include "partials/tag_chip.html" %}
                                             {% endwith %}
                                         </template>
                                     </div>
+                                    <button
+                                        x-show="details.characters.hasMore"
+                                        x-on:click="loadDetailsCategory('characters')"
+                                        :disabled="details.characters.loading"
+                                        class="mt-3 px-3 py-1.5 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-60 disabled:cursor-not-allowed text-sm text-white transition-colors"
+                                    >
+                                        <span x-show="!details.characters.loading" x-text="`Show ${remainingDetailCount('characters')} more`"></span>
+                                        <span x-show="details.characters.loading">Loading...</span>
+                                    </button>
+                                    <button
+                                        x-show="details.characters.items.length > detailPageSize"
+                                        x-on:click="collapseDetailsCategory('characters')"
+                                        :disabled="details.characters.loading"
+                                        class="mt-3 ml-2 px-3 py-1.5 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-60 disabled:cursor-not-allowed text-sm text-gray-200 border border-gray-700 transition-colors"
+                                    >
+                                        Show Less
+                                    </button>
                                 </div>
                             </template>
 
-                            <template x-if="volume?.details?.teams?.length > 0">
+                            <template x-if="details.teams.loaded && details.teams.items.length > 0">
                                 <div>
-                                    <h3 class="text-lg font-bold mb-3 text-gray-200">Teams</h3>
+                                    <div class="mb-3 flex flex-wrap items-center gap-2">
+                                        <h3 class="text-lg font-bold text-gray-200">Teams</h3>
+                                        <span x-show="details.teams.total > details.teams.items.length" class="text-xs text-gray-500" x-text="`${details.teams.items.length} of ${details.teams.total}`"></span>
+                                    </div>
                                     <div class="flex flex-wrap gap-2">
-                                        <template x-for="name in volume.details.teams" :key="name">
+                                        <template x-for="name in details.teams.items" :key="name">
                                             {% with type='team', item='name' %}
                                                 {% include "partials/tag_chip.html" %}
                                             {% endwith %}
                                         </template>
                                     </div>
+                                    <button
+                                        x-show="details.teams.hasMore"
+                                        x-on:click="loadDetailsCategory('teams')"
+                                        :disabled="details.teams.loading"
+                                        class="mt-3 px-3 py-1.5 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-60 disabled:cursor-not-allowed text-sm text-white transition-colors"
+                                    >
+                                        <span x-show="!details.teams.loading" x-text="`Show ${remainingDetailCount('teams')} more`"></span>
+                                        <span x-show="details.teams.loading">Loading...</span>
+                                    </button>
+                                    <button
+                                        x-show="details.teams.items.length > detailPageSize"
+                                        x-on:click="collapseDetailsCategory('teams')"
+                                        :disabled="details.teams.loading"
+                                        class="mt-3 ml-2 px-3 py-1.5 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-60 disabled:cursor-not-allowed text-sm text-gray-200 border border-gray-700 transition-colors"
+                                    >
+                                        Show Less
+                                    </button>
                                 </div>
                             </template>
 
-                            <template x-if="volume?.details?.locations?.length > 0">
+                            <template x-if="details.locations.loaded && details.locations.items.length > 0">
                                 <div>
-                                    <h3 class="text-lg font-bold mb-3 text-gray-200">Locations</h3>
+                                    <div class="mb-3 flex flex-wrap items-center gap-2">
+                                        <h3 class="text-lg font-bold text-gray-200">Locations</h3>
+                                        <span x-show="details.locations.total > details.locations.items.length" class="text-xs text-gray-500" x-text="`${details.locations.items.length} of ${details.locations.total}`"></span>
+                                    </div>
                                     <div class="flex flex-wrap gap-2">
-                                        <template x-for="name in volume.details.locations" :key="name">
+                                        <template x-for="name in details.locations.items" :key="name">
                                             {% with type='location', item='name' %}
                                                 {% include "partials/tag_chip.html" %}
                                             {% endwith %}
                                         </template>
                                     </div>
+                                    <button
+                                        x-show="details.locations.hasMore"
+                                        x-on:click="loadDetailsCategory('locations')"
+                                        :disabled="details.locations.loading"
+                                        class="mt-3 px-3 py-1.5 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-60 disabled:cursor-not-allowed text-sm text-white transition-colors"
+                                    >
+                                        <span x-show="!details.locations.loading" x-text="`Show ${remainingDetailCount('locations')} more`"></span>
+                                        <span x-show="details.locations.loading">Loading...</span>
+                                    </button>
+                                    <button
+                                        x-show="details.locations.items.length > detailPageSize"
+                                        x-on:click="collapseDetailsCategory('locations')"
+                                        :disabled="details.locations.loading"
+                                        class="mt-3 ml-2 px-3 py-1.5 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-60 disabled:cursor-not-allowed text-sm text-gray-200 border border-gray-700 transition-colors"
+                                    >
+                                        Show Less
+                                    </button>
                                 </div>
                             </template>
                         </div>
@@ -342,6 +511,22 @@
                 </div>
             </div>
         </div>
+
+        <div x-show="recommendationLanes.length > 0" x-cloak class="mt-12 space-y-12">
+            <template x-for="lane in recommendationLanes" :key="lane.title">
+                <div>
+                    <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+                        <h2 class="text-xl font-bold text-white" x-text="lane.title"></h2>
+                    </div>
+
+                    <div class="flex space-x-6 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                        <template x-for="series in lane.items" :key="series.id">
+                            {% include "partials/series_card.html" %}
+                        </template>
+                    </div>
+                </div>
+            </template>
+        </div>
     </div>
 
 </div>
@@ -349,21 +534,58 @@
 <script>
 function volumeDetail() {
     return {
+
+        ...window.parker.paginationMixin(
+            'volumes.issues',
+            function() { return { volume_id: this.volumeId }; },
+            {
+                pageSize: 48,
+                mode: '{{ get_system_setting("ui.pagination_mode", "infinite") }}',
+                // 2. Map Filters to Query Params
+                getQueryParams: function() {
+                    return {
+                        type: this.currentType,
+                        read_filter: this.readFilter,
+                        sort_order: this.sortOrder
+                    };
+                }
+            }
+        ),
+
+
         volumeId: {{ volume_id }},
         volume: null,
-        loading: true,
+        metaLoading: true,
 
         // Tab State
         activeTab: 'issues',
 
         // Grid Data
-        gridLoading: false,
-        currentItems: [],
-        currentPage: 1,
-        pageSize: 48,
-        totalItems: 0,
         currentType: 'plain',
+
+        readFilter: 'all', // 'all', 'read', 'unread'
+        sortOrder: 'asc',  // 'asc', 'desc'
+        isReverseNumbering: false,
+        storyArcScope: 'volume',
+        storyArcScopeId: {{ volume_id }},
+
+        paginationMode: '{{ get_system_setting("ui.pagination_mode", "infinite") }}',
+
         error: null,
+        followSaving: false,
+        recommendationLanes: [],
+        detailPageSize: 25,
+        detailCategories: ['writers', 'pencillers', 'characters', 'teams', 'locations'],
+        details: {
+            writers: { items: [], total: 0, hasMore: false, loaded: false, loading: false },
+            pencillers: { items: [], total: 0, hasMore: false, loaded: false, loading: false },
+            characters: { items: [], total: 0, hasMore: false, loaded: false, loading: false },
+            teams: { items: [], total: 0, hasMore: false, loaded: false, loading: false },
+            locations: { items: [], total: 0, hasMore: false, loaded: false, loading: false },
+        },
+        detailsLoaded: false,
+        detailsLoading: false,
+        detailsError: null,
 
         async init() {
             await this.loadVolumeSummary();
@@ -373,27 +595,51 @@ function volumeDetail() {
                 this.currentType = 'all';
             }
 
-            this.fetchIssues();
+            this.loadItems();
+            this.loadRecommendationsForSingleVolumeSeries();
         },
 
         async loadVolumeSummary() {
             try {
-                const res = await fetch(window.url(`/api/volumes/${this.volumeId}`));
+                const res = await fetch(window.parker.route('volumes.detail', { volume_id: this.volumeId } ));
                 if (res.status === 404) {
                    this.error = {
                         title: "Volume Not Found",
                         message: "The volume you are looking for does not exist or may have been deleted."
                     };
-                    this.loading = false;
+                    this.metaLoading = false;
                     return;
                 }
 
                 if (!res.ok) throw new Error("Failed to load volume");
                 this.volume = await res.json();
-                document.title = `${this.volume.series_name} Vol ${this.volume.volume_number} - Comic Server`;
-                this.loading = false;
+                document.title = `${this.volume.series_name} Vol ${this.volume.volume_number} - Parker`;
+                this.metaLoading = false;
+
+                this.isReverseNumbering = this.volume.is_reverse_numbering;
+
+                if (this.isReverseNumbering) {
+                    this.sortOrder = 'desc';
+                }
+
             } catch (e) {
                 console.error(e);
+            } finally { this.metaLoading = false; }
+        },
+
+        async loadRecommendationsForSingleVolumeSeries() {
+            if (!this.volume || this.volume.series_volume_count !== 1) {
+                this.recommendationLanes = [];
+                return;
+            }
+
+            try {
+                const res = await fetch(window.parker.route('series.recommendations', { series_id: this.volume.series_id }));
+                if (res.ok) {
+                    this.recommendationLanes = await res.json();
+                }
+            } catch (e) {
+                console.error("Failed to load recommendations", e);
             }
         },
 
@@ -406,12 +652,16 @@ function volumeDetail() {
         switchTab(tabName) {
             this.activeTab = tabName;
 
+            if (tabName === 'details') {
+                this.loadDetails();
+            }
+
             // If details or arcs, we don't need to fetch issues
             if (['details', 'arcs'].includes(tabName)) return;
 
             // Reset Pagination
-            this.currentPage = 1;
-            this.currentItems = [];
+            this.page = 1;
+            this.items = [];
 
             // Map tabs to API types
             // Logic Update: If Standalone, 'issues' requests 'all'
@@ -426,31 +676,122 @@ function volumeDetail() {
             }
 
             this.currentType = typeParam;
-            this.fetchIssues();
+            this.loadItems(); // Mixin call
         },
 
-        async fetchIssues() {
-            this.gridLoading = true;
+        async loadDetails(force = false) {
+            if ((this.detailsLoaded && !force) || this.detailsLoading) return;
+
+            this.detailsLoading = true;
+            this.detailsError = null;
+
             try {
-                const url = window.url(`/api/volumes/${this.volumeId}/issues?type=${this.currentType}&page=${this.currentPage}&size=${this.pageSize}`);
-                const res = await fetch(url);
-                const data = await res.json();
-                this.currentItems = data.items;
-                this.totalItems = data.total;
-                window.scrollTo({ top: 0, behavior: 'smooth' });
+                await Promise.all(this.detailCategories.map((category) => this.loadDetailsCategory(category, true, true)));
+                this.detailsLoaded = true;
             } catch (e) {
-                console.error("Failed to load issues", e);
+                console.error(e);
+                this.detailsError = "Could not load volume details.";
             } finally {
-                this.gridLoading = false;
+                this.detailsLoading = false;
             }
         },
 
-        changePage(newPage) {
-            if (newPage < 1) return;
-            const maxPage = Math.ceil(this.totalItems / this.pageSize);
-            if (newPage > maxPage) return;
-            this.currentPage = newPage;
-            this.fetchIssues();
+        async loadDetailsCategory(category, reset = false, bubbleError = false) {
+            const state = this.details[category];
+            if (!state || state.loading || (!reset && !state.hasMore)) return;
+
+            state.loading = true;
+            this.detailsError = null;
+
+            try {
+                const offset = reset ? 0 : state.items.length;
+                const query = new URLSearchParams({
+                    category: category,
+                    offset: offset,
+                    limit: this.detailPageSize,
+                });
+                const res = await fetch(window.parker.route('volumes.details', { volume_id: this.volumeId }, query.toString()));
+
+                if (!res.ok) {
+                    throw new Error("Failed to load volume detail metadata");
+                }
+
+                const payload = await res.json();
+                const items = (payload.items || []).map((item) => item.name).filter(Boolean);
+                state.items = reset ? items : state.items.concat(items);
+                state.total = payload.total || 0;
+                state.hasMore = Boolean(payload.has_more);
+                state.loaded = true;
+            } catch (e) {
+                this.detailsError = "Could not load volume details.";
+                if (bubbleError) throw e;
+            } finally {
+                state.loading = false;
+            }
+        },
+
+        remainingDetailCount(category) {
+            const state = this.details[category];
+            if (!state) return 0;
+            return Math.min(this.detailPageSize, Math.max((state.total || 0) - state.items.length, 0));
+        },
+
+        collapseDetailsCategory(category) {
+            const state = this.details[category];
+            if (!state || state.items.length <= this.detailPageSize) return;
+
+            state.items = state.items.slice(0, this.detailPageSize);
+            state.hasMore = state.total > state.items.length;
+        },
+
+        get hasAnyDetails() {
+            return Object.values(this.details).some((state) => state.items.length > 0);
+        },
+
+        // Event Listener Handlers (Called via x-on in HTML)
+        handleReadFilter(val) {
+            this.readFilter = val;
+            this.page = 1;
+            this.loadItems();
+        },
+
+        handleToggleSort() {
+            this.sortOrder = this.sortOrder === 'asc' ? 'desc' : 'asc';
+            this.page = 1;
+            this.loadItems();
+        },
+
+        async toggleFollow() {
+            if (!this.volume || this.followSaving) return;
+
+            const method = this.volume.is_following ? 'DELETE' : 'POST';
+            this.followSaving = true;
+
+            try {
+                const res = await fetch(
+                    window.parker.route('volumes.follow', { volume_id: this.volumeId }),
+                    { method }
+                );
+
+                if (res.ok) {
+                    this.volume.is_following = !this.volume.is_following;
+                    if (window.parker) {
+                        window.parker.showToast(
+                            this.volume.is_following ? 'Now following volume' : 'Volume unfollowed',
+                            'success'
+                        );
+                    }
+                } else if (window.parker) {
+                    window.parker.showToast('Unable to update follow state', 'error');
+                }
+            } catch (e) {
+                console.error(e);
+                if (window.parker) {
+                    window.parker.showToast('Unable to update follow state', 'error');
+                }
+            } finally {
+                this.followSaving = false;
+            }
         },
 
         formatMissing(issues) {
@@ -475,8 +816,18 @@ function volumeDetail() {
             return ranges.join(", ");
         },
 
-
-
+        getSortLabel() {
+            if (this.isReverseNumbering) {
+                // For Countdown:
+                // DESC = 51 (Oldest/Start)
+                // ASC = 1 (Newest/End)
+                return this.sortOrder === 'desc' ? 'Oldest First' : 'Newest First';
+            }
+            // Standard Series:
+            // ASC = 1 (Oldest/Start)
+            // DESC = 500 (Newest/End)
+            return this.sortOrder === 'asc' ? 'Oldest First' : 'Newest First';
+        },
     }
 }
 </script>

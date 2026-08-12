@@ -5,10 +5,10 @@
             type="search"
             x-model="query"
             @input.debounce.300ms="fetchResults()"
-            @keydown.escape="close()"
-            @click.away="close()"
-            @focus="isOpen = query.length > 1"
-            placeholder="Search library..."
+            @keydown.escape.prevent.stop="close(true)"
+            x-on:click.away="close()"
+            x-on:focus="isOpen = query.length > 1"
+            placeholder="Search library... (Ctrl+K)"
             class="w-full px-4 py-2 bg-gray-700 text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 pl-10 transition-shadow"
             autocomplete="off"
         >
@@ -32,7 +32,7 @@
             <div>
                 <div class="px-4 py-2 bg-gray-900/50 text-xs font-bold text-gray-400 uppercase tracking-wider sticky top-0 backdrop-blur-sm">Series</div>
                 <template x-for="item in results.series" :key="item.id">
-                    <a :href="`/series/${item.id}`" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
+                    <a :href="window.parker.route('pages.series_detail', {series_id: item.id })" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
                         <span class="text-xl group-hover:scale-110 transition-transform">📚</span>
                         <div class="min-w-0">
                             <div class="font-bold text-white truncate" x-text="item.name"></div>
@@ -47,7 +47,7 @@
             <div>
                 <div class="px-4 py-2 bg-gray-900/50 text-xs font-bold text-gray-400 uppercase tracking-wider sticky top-0 backdrop-blur-sm">Collections</div>
                 <template x-for="item in results.collections" :key="item.id">
-                    <a :href="`/collections/${item.id}`" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
+                    <a :href="window.parker.route('pages.collection_detail', { collection_id: item.id })" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
                         <span class="text-xl group-hover:scale-110 transition-transform">📦</span>
                         <div class="font-bold text-white truncate" x-text="item.name"></div>
                     </a>
@@ -59,7 +59,7 @@
             <div>
                 <div class="px-4 py-2 bg-gray-900/50 text-xs font-bold text-gray-400 uppercase tracking-wider sticky top-0 backdrop-blur-sm">Reading Lists</div>
                 <template x-for="item in results.reading_lists" :key="item.id">
-                    <a :href="`/reading-lists/${item.id}`" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
+                    <a :href="window.parker.route('pages.reading_list_detail', {reading_list_id: item.id })" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
                         <span class="text-xl group-hover:scale-110 transition-transform">📖</span>
                         <div class="font-bold text-white truncate" x-text="item.name"></div>
                     </a>
@@ -71,7 +71,7 @@
             <div>
                 <div class="px-4 py-2 bg-gray-900/50 text-xs font-bold text-gray-400 uppercase tracking-wider sticky top-0 backdrop-blur-sm">People</div>
                 <template x-for="item in results.people" :key="item.id">
-                    <a :href="`/search?field=writer&value=${encodeURIComponent(item.name)}&operator=contains`" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
+                    <a :href="personSearchHref(item)" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
                         <span class="text-xl group-hover:scale-110 transition-transform">👤</span>
                         <div class="font-bold text-white truncate" x-text="item.name"></div>
                     </a>
@@ -84,7 +84,7 @@
                 <div class="px-4 py-2 bg-gray-900/50 text-xs font-bold text-gray-400 uppercase tracking-wider sticky top-0 backdrop-blur-sm">Tags</div>
 
                 <template x-for="item in results.characters" :key="'char'+item.id">
-                    <a :href="`/search?field=character&value=${encodeURIComponent(item.name)}&operator=contains`" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
+                    <a :href="window.parker.route('pages.timelines', {}, `type=character&name=${encodeURIComponent(item.name)}`)" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
                         <span class="text-xl group-hover:scale-110 transition-transform">🦸‍♂️</span>
                         <div class="min-w-0">
                             <div class="font-bold text-white truncate" x-text="item.name"></div>
@@ -94,7 +94,7 @@
                 </template>
 
                 <template x-for="item in results.teams" :key="'team'+item.id">
-                    <a :href="`/search?field=team&value=${encodeURIComponent(item.name)}&operator=contains`" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
+                    <a :href="window.parker.route('pages.timelines', {}, `type=team&name=${encodeURIComponent(item.name)}`)" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
                         <span class="text-xl group-hover:scale-110 transition-transform">🛡️</span>
                         <div class="min-w-0">
                             <div class="font-bold text-white truncate" x-text="item.name"></div>
@@ -104,7 +104,7 @@
                 </template>
 
                 <template x-for="item in results.locations" :key="'loc'+item.id">
-                    <a :href="`/search?field=location&value=${encodeURIComponent(item.name)}&operator=contains`" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
+                    <a :href="window.parker.route('pages.search', {}, `field=location&value=${encodeURIComponent(item.name)}&operator=contains`)" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
                         <span class="text-xl group-hover:scale-110 transition-transform">📍</span>
                         <div class="min-w-0">
                             <div class="font-bold text-white truncate" x-text="item.name"></div>
@@ -117,9 +117,9 @@
 
         <template x-if="results.pull_lists?.length > 0">
             <div>
-                <div class="px-4 py-2 bg-gray-900/50 text-xs font-bold text-gray-400 uppercase tracking-wider sticky top-0 backdrop-blur-sm">Pull Lists</div>
+                <div class="px-4 py-2 bg-gray-900/50 text-xs font-bold text-gray-400 uppercase tracking-wider sticky top-0 backdrop-blur-sm">Stacks</div>
                 <template x-for="item in results.pull_lists" :key="item.id">
-                    <a :href="`/pull-lists/${item.id}`" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
+                    <a :href="window.parker.route('pages.stack_detail', { list_id: item.id })" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
                         <span class="text-xl group-hover:scale-110 transition-transform">🗃️</span>
                         <div class="font-bold text-white truncate" x-text="item.name"></div>
                     </a>
@@ -128,7 +128,7 @@
         </template>
 
 
-        <a :href="`/search?field=series&value=${encodeURIComponent(query)}&operator=contains`" class="block px-4 py-3 bg-gray-750 text-center text-blue-400 hover:text-white hover:bg-gray-700 text-sm font-medium border-t border-gray-700">
+        <a :href="window.parker.route('pages.search', {}, `field=series&value=${encodeURIComponent(query)}&operator=contains`)" class="block px-4 py-3 bg-gray-750 text-center text-blue-400 hover:text-white hover:bg-gray-700 text-sm font-medium border-t border-gray-700">
             Advanced Search for "<span x-text="query"></span>"
         </a>
     </div>

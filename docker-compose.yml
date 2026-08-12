@@ -1,21 +1,21 @@
 version: '3.8'
 
 services:
-  comic-server:
+  parker:
     build: .
-    container_name: comic-server
+    container_name: parker
     user: "${UID}:${GID}"
     ports:
-      - "8000:8000"
+      - "${PARKER_PORT:-8000}:8000"
     volumes:
       - ./comics:/comics:ro  # Mount your comics directory
       - ./data:/app/storage
     environment:
       - DATABASE_URL=sqlite:////app/storage/database/comics.db
       - COMICS_PATH=/comics
-      - APP_NAME=Comic Server
-      # Generate a strong key: openssl rand -hex 32
-      - SECRET_KEY=CHANGE_THIS_TO_A_REAL_SECRET_KEY
+      - "SECRET_KEY=${SECRET_KEY:?Set SECRET_KEY in .env to a unique random value. Generate one with: openssl rand -hex 32}"
+      - INITIAL_ADMIN_USERNAME=${INITIAL_ADMIN_USERNAME:-admin}
+      - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:-}
       # If you need to tell the app where unrar is in the container
       # (Note: standard Linux unrar path is usually /usr/bin/unrar)
       - UNRAR_PATH=/usr/bin/unrar

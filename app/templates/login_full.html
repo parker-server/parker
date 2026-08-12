@@ -3,21 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - Parker</title>
+    {% set configured_instance_name = (get_system_setting("general.app_name", "Parker") or "")|trim %}
+    {% set instance_name = configured_instance_name or "Parker" %}
+    <title>Login - {{ instance_name }} | Parker</title>
 
-    <script>
-        // Global Configuration
-        window.APP_CONFIG = {
-            baseUrl: "{{ base_url }}" || "",
-        };
+    {# Used for including context-sensitive path data #}
+    {% from "partials/config_context.html" import config_context %}
+    {{ config_context(request, base_url) }}
 
-        // JS Helper Function
-        window.url = function(path) {
-            const base = window.APP_CONFIG.baseUrl;
-            const cleanPath = path.startsWith('/') ? path.slice(1) : path;
-            return base ? `${base}/${cleanPath}` : `/${cleanPath}`;
-        };
-    </script>
+    <script src="{{ base_url }}/static/js/storage.js?v={{ asset_version('static/js/storage.js') }}"></script>
 
     <script src="https://cdn.tailwindcss.com"></script>
 
@@ -46,14 +40,31 @@
 
     <!-- Background Images Layer (z-0) -->
     <div class="absolute inset-0 z-0">
-        <div class="absolute inset-0 bg-cover bg-center"
-             :style="`background-image: url('${currentImage}')`">
-        </div>
 
-        <div class="absolute inset-0 bg-cover bg-center transition-opacity duration-1000"
-             :class="isTransitioning ? 'opacity-100' : 'opacity-0'"
-             :style="`background-image: url('${nextImage}')`">
-        </div>
+        {% if login_bg_style == 'cycling_static_covers' %}
+            <!-- Cycling Covers -->
+            <div class="absolute inset-0 bg-cover bg-center"
+                 :style="`background-image: url('${currentImage}')`">
+            </div>
+
+            <div class="absolute inset-0 bg-cover bg-center transition-opacity duration-1000"
+                 :class="isTransitioning ? 'opacity-100' : 'opacity-0'"
+                 :style="`background-image: url('${nextImage}')`">
+            </div>
+        {% elif login_bg_style == 'solid_color' %}
+            <!-- Solid Color (static) -->
+            <div class="absolute inset-0"
+                 style="background: {{ login_solid_color }}">
+            </div>
+        {% elif login_bg_style == 'static_cover' %}
+            <!-- Static Cover (non-cycling) -->
+            <div class="absolute inset-0 bg-cover bg-center"
+                 style="background-image: url('{{ base_url }}/static/img/login-covers/{{ login_static_cover }}')">
+            </div>
+        {% else %}
+            <!-- None - Just gradient -->
+            <div class="absolute inset-0 bg-gray-900"></div>
+        {% endif %}
     </div>
 
     <!-- Gradient Overlays (z-10) -->
@@ -70,15 +81,15 @@
         <div class="w-full max-w-md space-y-8 p-10 bg-black/40 backdrop-blur-md rounded-2xl border border-white/10 shadow-2xl">
 
             <div class="text-center">
-                <h1 class="text-4xl font-bold tracking-tight text-white mb-2">Parker</h1>
-                <p class="text-gray-400 text-sm">Sign in to your comic server</p>
+                <h1 class="text-4xl font-bold tracking-tight text-white mb-2">{{ instance_name }}</h1>
+                <p class="text-gray-400 text-sm">Sign in to your Parker comic server</p>
             </div>
 
             <form class="mt-8 space-y-6" @submit.prevent="login">
                 <div class="space-y-4">
                     <div>
                         <label for="username" class="sr-only">Username</label>
-                        <input id="username" name="username" type="text" x-model="username" required
+                        <input id="username" name="username" type="text" x-model="username" required autofocus
                                class="relative block w-full rounded-lg border-0 bg-gray-800/50 text-white ring-1 ring-inset ring-gray-600 placeholder:text-gray-400 focus:z-10 focus:ring-2 focus:ring-inset focus:ring-blue-500 sm:text-sm sm:leading-6 px-4 py-3 shadow-inner"
                                placeholder="Username" autocomplete="off">
                     </div>
@@ -106,7 +117,8 @@
         </div>
 
         <div class="absolute bottom-6 text-gray-500 text-xs">
-            Powered by Parker v1.0
+            Powered by
+            <a href="https://github.com/parker-server/parker" target="_blank" class="text-gray-500 hover:text-blue-400 font-bold transition-colors">{{ app_name }}</a> <span class="mx-1">v{{ app_version }}</span>
         </div>
 
     </div>
@@ -134,6 +146,9 @@ function loginCycler() {
         error: null,
         loading: false,
 
+        // Background Type
+        bgStyle: '{{ login_bg_style }}',
+
         // Background State
         images: [],
         currentIndex: 0,
@@ -143,28 +158,21 @@ function loginCycler() {
 
         // Seasonal FX State
         activeEffect: '{{ active_effect or "" }}',
-        fxEnabled: localStorage.getItem('parker-fx-enabled') !== 'false',
+        fxEnabled: window.parker.storage.get('fx.enabled', true) !== false,
 
         init() {
-            this.fetchBackgrounds();
+            if (this.bgStyle === 'cycling_static_covers') {
+                this.loadStaticCovers();
+            }
         },
 
-        async fetchBackgrounds() {
-            try {
-                // Fetch random covers from our new endpoint
-                const res = await fetch(window.url('/api/comics/random/backgrounds'));
-                if (res.ok) {
-                    this.images = await res.json();
-                    if (this.images.length > 0) {
-                        this.currentImage = this.images[0];
-                        // Start cycling if we have more than 1 image
-                        if (this.images.length > 1) {
-                            this.startCycling();
-                        }
-                    }
+        loadStaticCovers() {
+            this.images = {{ login_static_cover_urls | default([]) | tojson }};
+            if (this.images.length > 0) {
+                this.currentImage = this.images[0];
+                if (this.images.length > 1) {
+                    this.startCycling();
                 }
-            } catch (e) {
-                console.error("Failed to load backgrounds", e);
             }
         },
 
@@ -199,7 +207,7 @@ function loginCycler() {
 
         toggleFx() {
             this.fxEnabled = !this.fxEnabled;
-            localStorage.setItem('parker-fx-enabled', this.fxEnabled);
+            window.parker.storage.set('fx.enabled', this.fxEnabled);
         },
 
         async login() {
@@ -212,7 +220,7 @@ function loginCycler() {
 
             try {
 
-                const res = await fetch(window.url('/api/auth/token'), {
+                const res = await fetch(window.parker.url('/api/auth/token'), {
                     method: 'POST',
                     body: formData
                 });
@@ -224,7 +232,10 @@ function loginCycler() {
                 }
 
                 // Store Token for API calls (Alpine/JS)
-                localStorage.setItem('token', data.access_token);
+                window.parker.storage.setString('token', data.access_token);
+
+                // Store Refresh Token (Long-lived)
+                window.parker.storage.setString('refresh_token', data.refresh_token);
 
                 // Store Token for Server-Side Rendering (HTML Routes)
                 document.cookie = `access_token=${data.access_token}; path=/; max-age=${data.lifetime_in_seconds}; SameSite=Lax`;
@@ -238,10 +249,10 @@ function loginCycler() {
                 // 2. Validate it (Security: Prevent Open Redirects to external sites)
                 // We only allow relative paths that start with "/"
                 if (nextUrl && nextUrl.startsWith('/') && !nextUrl.startsWith('//')) {
-                    window.location.href = window.url(nextUrl);
+                    window.location.href = window.parker.url(nextUrl);
                 } else {
                     // Default Fallback
-                    window.location.href = window.url('/');
+                    window.location.href = window.parker.url('/');
                 }
 
             } catch (e) {

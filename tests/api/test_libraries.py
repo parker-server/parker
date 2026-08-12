@@ -1,10 +1,85 @@
+import json
+from unittest.mock import patch
+
+import pytest
+
 from app.main import app
 from app.api.deps import get_current_user
+from app.api.libraries import LIBRARY_NAME_REQUIRED_MESSAGE
+from app.models.comic import Comic, Volume
+from app.models.collection import Collection, CollectionItem
+from app.models.job import JobStatus, JobType, ScanJob
 from app.models.library import Library
+from app.models.library_root import LibraryRoot
+from app.models.interactions import UserLibraryPin
+from app.models.reading_list import ReadingList, ReadingListItem
+from app.models.reading_progress import ReadingProgress
+from app.models.series import Series
+from app.services.library_relocation import LIBRARY_SCAN_ACTIVE_MESSAGE, NO_RELOCATION_MATCHES_MESSAGE
+from tests.factories import create_comic, create_library_with_root
+
+
+def _create_library_series_fixture(db, *, lib_name: str):
+    library = create_library_with_root(db, lib_name, f"/tmp/{lib_name}")
+    root = library.active_root
+    series_alpha = Series(name="The Alpha", library=library)
+    series_beta = Series(name="Beta", library=library)
+    series_reverse = Series(name="Countdown", library=library)
+
+    vol_alpha = Volume(series=series_alpha, volume_number=1)
+    vol_beta = Volume(series=series_beta, volume_number=1)
+    vol_reverse = Volume(series=series_reverse, volume_number=1)
+
+    db.add_all([series_alpha, series_beta, series_reverse, vol_alpha, vol_beta, vol_reverse])
+    db.flush()
+
+    alpha_two = create_comic(
+        db, vol_alpha, root, "alpha-2.cbz",
+        number="2", title="The Alpha #2", year=2002, filename="alpha-2.cbz", page_count=20,
+    )
+    alpha_one = create_comic(
+        db, vol_alpha, root, "alpha-1.cbz",
+        number="1", title="The Alpha #1", year=2001, filename="alpha-1.cbz", page_count=20,
+    )
+
+    beta_five = create_comic(
+        db, vol_beta, root, "beta-5.cbz",
+        number="5", title="Beta Annual", year=2005, format="annual", filename="beta-5.cbz", page_count=20,
+    )
+    beta_three = create_comic(
+        db, vol_beta, root, "beta-3.cbz",
+        number="3", title="Beta Special", year=2003, format="one-shot", filename="beta-3.cbz", page_count=20,
+    )
+
+    reverse_one = create_comic(
+        db, vol_reverse, root, "countdown-1.cbz",
+        number="1", title="Countdown #1", year=2001, filename="countdown-1.cbz", page_count=20,
+    )
+    reverse_four = create_comic(
+        db, vol_reverse, root, "countdown-4.cbz",
+        number="4", title="Countdown #4", year=2004, filename="countdown-4.cbz", page_count=20,
+    )
+
+    db.commit()
+
+    return {
+        "library": library,
+        "series_alpha": series_alpha,
+        "series_beta": series_beta,
+        "series_reverse": series_reverse,
+        "alpha_one": alpha_one,
+        "beta_three": beta_three,
+        "reverse_four": reverse_four,
+        "alpha_comics": [alpha_two, alpha_one],
+    }
+
+
+def _write_comic_file(path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"comic")
 
 
 def test_admin_can_create_library(admin_client, db):
-    """Test that an admin can create a library via API"""
     payload = {"name": "Marvel Comics", "path": "/data/marvel"}
 
     response = admin_client.post("/api/libraries/", json=payload)
@@ -13,39 +88,1370 @@ def test_admin_can_create_library(admin_client, db):
     data = response.json()
     assert data["name"] == "Marvel Comics"
     assert data["id"] is not None
+    assert data["parse_reading_lists"] is True
+    assert data["parse_collections"] is True
+    assert data["parse_story_arcs"] is True
 
-    # Verify DB
     lib = db.query(Library).first()
     assert lib.name == "Marvel Comics"
+    assert lib.parse_reading_lists is True
+    assert lib.parse_collections is True
+    assert lib.parse_story_arcs is True
+
+    root = db.query(LibraryRoot).filter_by(library_id=lib.id).first()
+    assert root is not None
+    assert root.path == "/data/marvel"
+    assert root.is_active is True
+
+
+def test_create_library_rejects_blank_name(admin_client, db):
+    response = admin_client.post("/api/libraries/", json={"name": "   ", "path": "/data/blank"})
+
+    assert response.status_code == 422
+    assert LIBRARY_NAME_REQUIRED_MESSAGE in response.text
+    assert db.query(LibraryRoot).filter_by(path="/data/blank").first() is None
+
+
+def test_create_library_trims_name_before_saving(admin_client, db):
+    response = admin_client.post("/api/libraries/", json={"name": "  Trimmed Library  ", "path": "/data/trimmed"})
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "Trimmed Library"
+
+    lib = db.query(Library).filter_by(name="Trimmed Library").first()
+    assert lib is not None
+
+
+def test_create_library_rolls_back_if_root_creation_fails(admin_client, db, monkeypatch):
+    import app.api.libraries as libraries_module
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(libraries_module, "LibraryRoot", _boom)
+
+    with pytest.raises(RuntimeError):
+        admin_client.post("/api/libraries/", json={"name": "Atomic Test", "path": "/tmp/atomic"})
+
+    assert db.query(Library).filter_by(name="Atomic Test").first() is None
+
+
+def test_create_library_duplicate_name_returns_400(admin_client, db):
+    create_library_with_root(db, "Duplicate", "/tmp/dup")
+
+    response = admin_client.post("/api/libraries/", json={"name": "Duplicate", "path": "/tmp/other"})
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Library name already exists"}
+
+
+def test_create_library_rejects_case_insensitive_duplicate_name(admin_client, db):
+    create_library_with_root(db, "Marvel", "/tmp/marvel")
+
+    response = admin_client.post("/api/libraries/", json={"name": "marvel", "path": "/tmp/marvel-lower"})
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Library name already exists"}
+
+
+def test_create_library_rejects_overlapping_child_path(admin_client, db):
+    create_library_with_root(db, "Main Library", "/tmp/comics")
+
+    response = admin_client.post(
+        "/api/libraries/",
+        json={"name": "Marvel", "path": "/tmp/comics/Marvel/"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "Library path overlaps with existing library 'Main Library'"
+    }
+
+
+def test_create_library_rejects_overlapping_parent_path(admin_client, db):
+    create_library_with_root(db, "Marvel", "/tmp/comics/Marvel")
+
+    response = admin_client.post(
+        "/api/libraries/",
+        json={"name": "Main Library", "path": "/tmp/comics"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "Library path overlaps with existing library 'Marvel'"
+    }
 
 
 def test_user_rls_security(client, db, admin_user, normal_user):
-    """
-    Complex Scenario:
-    1. Admin creates a Library.
-    2. Admin CAN see it.
-    3. Regular User (not assigned) CANNOT see it.
-    """
-    # 1. Setup Data directly in DB (faster than API calls)
-    lib = Library(name="Secret Library", path="/tmp")
-    db.add(lib)
-    db.commit()
+    lib = create_library_with_root(db, "Secret Library", "/tmp")
 
-    # ACT AS ADMIN
-    # Manually override the dependency to be the Admin
     app.dependency_overrides[get_current_user] = lambda: admin_user
 
-
-    # 2. Admin Check
     resp_admin = client.get("/api/libraries/")
     assert resp_admin.status_code == 200
     assert len(resp_admin.json()) == 1
 
-    # ACT AS USER
-    # Manually override the dependency to be the Normal User
     app.dependency_overrides[get_current_user] = lambda: normal_user
 
-    # 3. User Check (Should be empty list due to RLS)
     resp_user = client.get("/api/libraries/")
     assert resp_user.status_code == 200
     assert len(resp_user.json()) == 0
+
+
+def test_get_library_detail_requires_access(auth_client, db):
+    library = create_library_with_root(db, "Hidden", "/tmp/hidden")
+
+    response = auth_client.get(f"/api/libraries/{library.id}")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Library not found"}
+
+
+def test_get_library_detail_as_admin(admin_client, db):
+    library = create_library_with_root(db, "Visible", "/tmp/visible")
+
+    response = admin_client.get(f"/api/libraries/{library.id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["id"] == library.id
+    assert payload["name"] == "Visible"
+    assert payload["pinned"] is False
+    assert payload["path"] == "/tmp/visible"
+    assert payload["roots"][0]["path"] == "/tmp/visible"
+
+
+def test_library_list_and_detail_hide_paths_for_non_admin(auth_client, db, normal_user):
+    library = create_library_with_root(db, "User Visible Paths", "/tmp/user-visible-paths")
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    list_response = auth_client.get("/api/libraries/")
+    detail_response = auth_client.get(f"/api/libraries/{library.id}")
+
+    assert list_response.status_code == 200
+    list_payload = list_response.json()
+    assert len(list_payload) == 1
+    assert list_payload[0]["name"] == "User Visible Paths"
+    assert list_payload[0]["path"] is None
+    assert list_payload[0]["roots"] == []
+
+    assert detail_response.status_code == 200
+    detail_payload = detail_response.json()
+    assert detail_payload["name"] == "User Visible Paths"
+    assert detail_payload["path"] is None
+    assert detail_payload["roots"] == []
+
+
+def test_admin_can_browse_library_paths_within_configured_root(admin_client, monkeypatch, tmp_path):
+    root = tmp_path / "comics"
+    zeta = root / "Zeta"
+    alpha = root / "Alpha"
+    nested = alpha / "Nested"
+    nested.mkdir(parents=True)
+    zeta.mkdir(parents=True)
+    (root / "comic.cbz").write_text("not a directory")
+    monkeypatch.setattr("app.api.libraries.settings.comics_path", root)
+
+    root_response = admin_client.get("/api/libraries/browse/paths")
+
+    assert root_response.status_code == 200
+    root_payload = root_response.json()
+    assert root_payload["root"] == root.resolve().as_posix()
+    assert root_payload["current"] == root.resolve().as_posix()
+    assert root_payload["parent"] is None
+    assert root_payload["entries"] == [
+        {"name": "Alpha", "path": alpha.resolve().as_posix()},
+        {"name": "Zeta", "path": zeta.resolve().as_posix()},
+    ]
+
+    child_response = admin_client.get(
+        "/api/libraries/browse/paths",
+        params={"path": str(alpha)},
+    )
+
+    assert child_response.status_code == 200
+    child_payload = child_response.json()
+    assert child_payload["current"] == alpha.resolve().as_posix()
+    assert child_payload["parent"] == root.resolve().as_posix()
+    assert child_payload["entries"] == [{"name": "Nested", "path": nested.resolve().as_posix()}]
+
+
+def test_library_path_browser_rejects_non_admin(auth_client, monkeypatch, tmp_path):
+    root = tmp_path / "comics"
+    root.mkdir()
+    monkeypatch.setattr("app.api.libraries.settings.comics_path", root)
+
+    response = auth_client.get("/api/libraries/browse/paths")
+
+    assert response.status_code == 400
+
+
+def test_library_path_browser_rejects_outside_paths(admin_client, monkeypatch, tmp_path):
+    root = tmp_path / "comics"
+    outside = tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    monkeypatch.setattr("app.api.libraries.settings.comics_path", root)
+
+    response = admin_client.get(
+        "/api/libraries/browse/paths",
+        params={"path": str(outside)},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Path must be within the configured comics root"}
+
+
+def test_library_path_browser_reports_missing_root(admin_client, monkeypatch, tmp_path):
+    missing_root = tmp_path / "missing"
+    monkeypatch.setattr("app.api.libraries.settings.comics_path", missing_root)
+
+    response = admin_client.get("/api/libraries/browse/paths")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Configured comics root was not found"}
+
+
+def test_user_can_pin_and_unpin_accessible_library_idempotently(auth_client, db, normal_user):
+    library = create_library_with_root(db, "Pinned Access", "/tmp/pinned-access")
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    first_pin = auth_client.post(f"/api/libraries/{library.id}/pin")
+    second_pin = auth_client.post(f"/api/libraries/{library.id}/pin")
+
+    assert first_pin.status_code == 200
+    assert second_pin.status_code == 200
+    assert first_pin.json() == {"library_id": library.id, "pinned": True}
+    assert second_pin.json() == {"library_id": library.id, "pinned": True}
+    assert db.query(UserLibraryPin).filter_by(user_id=normal_user.id, library_id=library.id).count() == 1
+
+    list_payload = auth_client.get("/api/libraries/").json()
+    assert list_payload[0]["pinned"] is True
+
+    detail_payload = auth_client.get(f"/api/libraries/{library.id}").json()
+    assert detail_payload["pinned"] is True
+
+    first_unpin = auth_client.delete(f"/api/libraries/{library.id}/pin")
+    second_unpin = auth_client.delete(f"/api/libraries/{library.id}/pin")
+
+    assert first_unpin.status_code == 200
+    assert second_unpin.status_code == 200
+    assert first_unpin.json() == {"library_id": library.id, "pinned": False}
+    assert second_unpin.json() == {"library_id": library.id, "pinned": False}
+    assert db.query(UserLibraryPin).filter_by(user_id=normal_user.id, library_id=library.id).count() == 0
+
+
+def test_user_cannot_pin_inaccessible_library(auth_client, db):
+    library = create_library_with_root(db, "Pinned Hidden", "/tmp/pinned-hidden")
+
+    pin_response = auth_client.post(f"/api/libraries/{library.id}/pin")
+    unpin_response = auth_client.delete(f"/api/libraries/{library.id}/pin")
+
+    assert pin_response.status_code == 404
+    assert unpin_response.status_code == 404
+
+
+def test_get_library_series_sorts_and_computes_cover_and_read_state(auth_client, db, normal_user):
+    data = _create_library_series_fixture(db, lib_name="series-fixture")
+    normal_user.accessible_libraries.append(data["library"])
+    db.commit()
+
+    db.add_all([
+        ReadingProgress(
+            user_id=normal_user.id,
+            comic_id=data["alpha_comics"][0].id,
+            current_page=20,
+            total_pages=20,
+            completed=True,
+        ),
+        ReadingProgress(
+            user_id=normal_user.id,
+            comic_id=data["alpha_comics"][1].id,
+            current_page=20,
+            total_pages=20,
+            completed=True,
+        ),
+    ])
+    db.commit()
+
+    response = auth_client.get(f"/api/libraries/{data['library'].id}/series?page=1&size=10")
+
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["total"] == 3
+    assert payload["page"] == 1
+    assert payload["size"] == 10
+
+    items = payload["items"]
+    assert [item["id"] for item in items] == [
+        data["series_alpha"].id,
+        data["series_beta"].id,
+        data["series_reverse"].id,
+    ]
+    assert [item["start_year"] for item in items] == [2001, 2003, 2004]
+    assert [item["read"] for item in items] == [True, False, False]
+
+    assert items[0]["thumbnail_path"].startswith(f"/api/comics/{data['alpha_one'].id}/thumbnail?v=")
+    assert items[1]["thumbnail_path"].startswith(f"/api/comics/{data['beta_three'].id}/thumbnail?v=")
+    assert items[2]["thumbnail_path"].startswith(f"/api/comics/{data['reverse_four'].id}/thumbnail?v=")
+
+
+def test_get_library_series_empty_page_returns_empty_items(auth_client, db, normal_user):
+    library = create_library_with_root(db, "No-Series", "/tmp/no-series")
+
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    response = auth_client.get(f"/api/libraries/{library.id}/series?page=1&size=5")
+
+    assert response.status_code == 200
+    assert response.json() == {"total": 0, "page": 1, "size": 5, "items": []}
+
+
+def test_update_library_applies_fields_and_refreshes_watches(admin_client, db):
+    library = create_library_with_root(
+        db,
+        "UpdateMe",
+        "/tmp/update-me",
+        watch_mode=False,
+        parse_reading_lists=True,
+        parse_collections=True,
+        parse_story_arcs=True,
+    )
+
+    with patch("app.api.libraries.library_watcher.refresh_watches") as mock_refresh:
+        response = admin_client.patch(
+            f"/api/libraries/{library.id}",
+            json={
+                "name": "Updated",
+                "path": "/tmp/update-me",
+                "watch_mode": True,
+                "parse_reading_lists": False,
+                "parse_collections": False,
+                "parse_story_arcs": False,
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["name"] == "Updated"
+    assert payload["path"] == "/tmp/update-me"
+    assert payload["watch_mode"] is True
+    assert payload["parse_reading_lists"] is False
+    assert payload["parse_collections"] is False
+    assert payload["parse_story_arcs"] is False
+    mock_refresh.assert_called_once()
+
+
+def test_update_library_disabling_metadata_flags_preserves_existing_metadata_rows(admin_client, db):
+    library = create_library_with_root(
+        db,
+        "Cleanup Metadata",
+        "/tmp/cleanup-metadata",
+        parse_reading_lists=True,
+        parse_collections=True,
+        parse_story_arcs=True,
+    )
+    root = library.active_root
+    series = Series(name="Cleanup Series", library=library)
+    volume = Volume(series=series, volume_number=1)
+    comic = Comic(
+        volume=volume,
+        number="1",
+        title="Cleanup Issue",
+        filename="cleanup.cbz",
+        library_root_id=root.id,
+        relative_path="cleanup.cbz",
+        alternate_series="Event Alpha",
+        alternate_number="1",
+        series_group="Group Alpha",
+        story_arc="Arc Alpha",
+    )
+
+    reading_list = ReadingList(name="Event Alpha")
+    collection = Collection(name="Group Alpha")
+    db.add_all([series, volume, comic, reading_list, collection])
+    db.flush()
+
+    reading_list_item = ReadingListItem(reading_list_id=reading_list.id, comic_id=comic.id, position=1.0)
+    collection_item = CollectionItem(collection_id=collection.id, comic_id=comic.id)
+    db.add_all([reading_list_item, collection_item])
+    db.commit()
+
+    with patch("app.api.libraries.library_watcher.refresh_watches"):
+        response = admin_client.patch(
+            f"/api/libraries/{library.id}",
+            json={
+                "parse_reading_lists": False,
+                "parse_collections": False,
+                "parse_story_arcs": False,
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["parse_reading_lists"] is False
+    assert payload["parse_collections"] is False
+    assert payload["parse_story_arcs"] is False
+
+    db.refresh(comic)
+    assert comic.alternate_series == "Event Alpha"
+    assert comic.alternate_number == "1"
+    assert comic.series_group == "Group Alpha"
+    assert comic.story_arc == "Arc Alpha"
+
+    assert db.query(ReadingListItem).filter(ReadingListItem.comic_id == comic.id).count() == 1
+    assert db.query(CollectionItem).filter(CollectionItem.comic_id == comic.id).count() == 1
+    assert db.query(ReadingList).filter(ReadingList.name == "Event Alpha").count() == 1
+    assert db.query(Collection).filter(Collection.name == "Group Alpha").count() == 1
+
+
+def test_update_library_reenabling_metadata_flags_queues_rehydrate_job(admin_client, db):
+    library = create_library_with_root(
+        db,
+        "Rehydrate Metadata",
+        "/tmp/rehydrate-metadata",
+        parse_reading_lists=False,
+        parse_collections=False,
+        parse_story_arcs=False,
+    )
+    root = library.active_root
+
+    series = Series(name="Rehydrate Series", library=library)
+    volume = Volume(series=series, volume_number=1)
+
+    restorable = Comic(
+        volume=volume,
+        number="1",
+        title="Restorable Issue",
+        filename="restorable.cbz",
+        library_root_id=root.id,
+        relative_path="restorable.cbz",
+        metadata_json=json.dumps(
+            {
+                "alternate_series": "Event Beta",
+                "alternate_number": "5",
+                "series_group": "Group Beta",
+                "story_arc": "Arc Beta",
+            }
+        ),
+    )
+
+    missing_source = Comic(
+        volume=volume,
+        number="2",
+        title="Missing Source",
+        filename="missing-source.cbz",
+        library_root_id=root.id,
+        relative_path="missing-source.cbz",
+        metadata_json=None,
+    )
+
+    db.add_all([series, volume, restorable, missing_source])
+    db.commit()
+
+    with (
+        patch("app.api.libraries.library_watcher.refresh_watches"),
+        patch(
+            "app.api.libraries.scan_manager.add_metadata_rehydrate_task",
+            return_value={"status": "queued", "job_id": 321, "message": "Metadata rehydrate queued"},
+        ) as mock_queue,
+    ):
+        response = admin_client.patch(
+            f"/api/libraries/{library.id}",
+            json={
+                "parse_reading_lists": True,
+                "parse_collections": True,
+                "parse_story_arcs": True,
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["parse_reading_lists"] is True
+    assert payload["parse_collections"] is True
+    assert payload["parse_story_arcs"] is True
+    assert payload["rehydration"]["status"] == "queued"
+    assert payload["rehydration"]["job_id"] == 321
+    mock_queue.assert_called_once_with(library.id)
+
+    db.refresh(restorable)
+    db.refresh(missing_source)
+
+    assert restorable.alternate_series is None
+    assert restorable.alternate_number is None
+    assert restorable.series_group is None
+    assert restorable.story_arc is None
+
+    assert missing_source.alternate_series is None
+    assert missing_source.alternate_number is None
+    assert missing_source.series_group is None
+    assert missing_source.story_arc is None
+
+    assert db.query(ReadingList).filter(ReadingList.name == "Event Beta").count() == 0
+    assert db.query(Collection).filter(Collection.name == "Group Beta").count() == 0
+    assert db.query(ReadingListItem).filter(ReadingListItem.comic_id == restorable.id).count() == 0
+    assert db.query(CollectionItem).filter(CollectionItem.comic_id == restorable.id).count() == 0
+
+
+def test_update_library_rejects_duplicate_name(admin_client, db):
+    original = create_library_with_root(db, "Original", "/tmp/original")
+    create_library_with_root(db, "Taken", "/tmp/taken")
+
+    response = admin_client.patch(f"/api/libraries/{original.id}", json={"name": "Taken"})
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Library name already exists"}
+
+
+def test_update_library_rejects_case_insensitive_duplicate_name(admin_client, db):
+    original = create_library_with_root(db, "Original", "/tmp/original")
+    create_library_with_root(db, "Marvel", "/tmp/marvel")
+
+    response = admin_client.patch(f"/api/libraries/{original.id}", json={"name": "marvel"})
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Library name already exists"}
+
+
+def test_update_library_allows_case_change_for_same_library(admin_client, db):
+    original = create_library_with_root(db, "Marvel", "/tmp/marvel")
+
+    with patch("app.api.libraries.library_watcher.refresh_watches"):
+        response = admin_client.patch(f"/api/libraries/{original.id}", json={"name": "MARVEL"})
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "MARVEL"
+
+    db.refresh(original)
+    assert original.name == "MARVEL"
+
+
+def test_update_library_rejects_blank_name(admin_client, db):
+    original = create_library_with_root(db, "Original", "/tmp/original")
+
+    response = admin_client.patch(f"/api/libraries/{original.id}", json={"name": "   "})
+
+    assert response.status_code == 422
+    assert LIBRARY_NAME_REQUIRED_MESSAGE in response.text
+
+    db.refresh(original)
+    assert original.name == "Original"
+
+
+def test_update_library_trims_name_before_saving(admin_client, db):
+    original = create_library_with_root(db, "Original", "/tmp/original")
+
+    with patch("app.api.libraries.library_watcher.refresh_watches"):
+        response = admin_client.patch(f"/api/libraries/{original.id}", json={"name": "  Renamed  "})
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "Renamed"
+
+    db.refresh(original)
+    assert original.name == "Renamed"
+
+
+def test_update_library_rejects_changed_path(admin_client, db):
+    original = create_library_with_root(db, "Original", "/tmp/original")
+
+    response = admin_client.patch(
+        f"/api/libraries/{original.id}",
+        json={"path": "/tmp/relocated"},
+    )
+
+    assert response.status_code == 400
+    assert "temporarily disabled" in response.json()["detail"]
+
+    db.refresh(original)
+    assert original.active_root.path == "/tmp/original"
+
+
+def test_update_library_allows_unchanged_path(admin_client, db):
+    original = create_library_with_root(db, "Original", "/tmp/original")
+
+    response = admin_client.patch(
+        f"/api/libraries/{original.id}",
+        json={"name": "Renamed", "path": "/tmp/original"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "Renamed"
+    assert response.json()["path"] == "/tmp/original"
+
+
+def test_library_payload_includes_roots_and_root_counts(admin_client, db):
+    library = create_library_with_root(db, "Root Payload", "/tmp/root-payload/active")
+    active_root = library.active_root
+    disabled_root = LibraryRoot(
+        library_id=library.id,
+        path="/tmp/root-payload/disabled",
+        is_active=False,
+    )
+    db.add(disabled_root)
+    series = Series(name="Root Payload Series", library=library)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
+    db.flush()
+
+    create_comic(db, volume, active_root, "active.cbz", filename="active.cbz")
+    create_comic(db, volume, disabled_root, "disabled.cbz", filename="disabled.cbz")
+    db.commit()
+
+    detail = admin_client.get(f"/api/libraries/{library.id}")
+
+    assert detail.status_code == 200
+    payload = detail.json()
+    assert payload["path"] == "/tmp/root-payload/active"
+    assert payload["active_root_count"] == 1
+    assert [(root["path"], root["is_active"], root["comic_count"]) for root in payload["roots"]] == [
+        ("/tmp/root-payload/active", True, 1),
+        ("/tmp/root-payload/disabled", False, 1),
+    ]
+
+    listed = admin_client.get("/api/libraries/").json()[0]
+    assert listed["roots"][0]["comic_count"] == 1
+    assert listed["roots"][1]["comic_count"] == 1
+
+
+def test_admin_can_add_library_root_without_queueing_scan(admin_client, db):
+    library = create_library_with_root(db, "Add Root", "/tmp/add-root/main", watch_mode=True)
+
+    with (
+        patch("app.api.libraries.library_watcher.refresh_watches") as mock_refresh,
+        patch("app.api.libraries.scan_manager.add_task") as mock_scan,
+    ):
+        response = admin_client.post(
+            f"/api/libraries/{library.id}/roots",
+            json={"path": "  /tmp/add-root/archive  "},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["library_id"] == library.id
+    assert payload["path"] == "/tmp/add-root/archive"
+    assert payload["is_active"] is True
+    assert payload["comic_count"] == 0
+    mock_refresh.assert_called_once()
+    mock_scan.assert_not_called()
+
+    roots = db.query(LibraryRoot).filter(LibraryRoot.library_id == library.id).order_by(LibraryRoot.id).all()
+    assert [root.path for root in roots] == ["/tmp/add-root/main", "/tmp/add-root/archive"]
+
+
+def test_add_library_root_rejects_same_library_overlap(admin_client, db):
+    library = create_library_with_root(db, "Same Library Overlap", "/tmp/same-overlap")
+
+    response = admin_client.post(
+        f"/api/libraries/{library.id}/roots",
+        json={"path": "/tmp/same-overlap/child"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "Library root path overlaps with existing root for library 'Same Library Overlap'"
+    }
+
+
+def test_add_library_root_rejects_cross_library_overlap(admin_client, db):
+    create_library_with_root(db, "Other Library Overlap", "/tmp/cross-overlap")
+    target = create_library_with_root(db, "Target Library", "/tmp/target-overlap")
+
+    response = admin_client.post(
+        f"/api/libraries/{target.id}/roots",
+        json={"path": "/tmp/cross-overlap/child"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "Library root path overlaps with existing library 'Other Library Overlap'"
+    }
+
+
+def test_disable_library_root_preserves_existing_comics(admin_client, db):
+    library = create_library_with_root(db, "Disable Root", "/tmp/disable-root/main", watch_mode=True)
+    second_root = LibraryRoot(library_id=library.id, path="/tmp/disable-root/archive", is_active=True)
+    db.add(second_root)
+    series = Series(name="Disable Root Series", library=library)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
+    db.flush()
+
+    comic = create_comic(db, volume, second_root, "archive.cbz", filename="archive.cbz")
+    db.commit()
+
+    with patch("app.api.libraries.library_watcher.refresh_watches") as mock_refresh:
+        response = admin_client.patch(
+            f"/api/libraries/{library.id}/roots/{second_root.id}",
+            json={"is_active": False},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["is_active"] is False
+    assert payload["comic_count"] == 1
+    mock_refresh.assert_called_once()
+
+    db.refresh(second_root)
+    assert second_root.is_active is False
+    assert db.get(Comic, comic.id) is not None
+
+
+def test_enable_library_root_rejects_legacy_overlap(admin_client, db):
+    library = create_library_with_root(db, "Enable Root Overlap", "/tmp/enable-root")
+    disabled_root = LibraryRoot(
+        library_id=library.id,
+        path="/tmp/enable-root/child",
+        is_active=False,
+    )
+    db.add(disabled_root)
+    db.commit()
+
+    response = admin_client.patch(
+        f"/api/libraries/{library.id}/roots/{disabled_root.id}",
+        json={"is_active": True},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "Library root path overlaps with existing root for library 'Enable Root Overlap'"
+    }
+
+
+def test_remove_empty_library_root(admin_client, db):
+    library = create_library_with_root(db, "Remove Empty Root", "/tmp/remove-empty/main", watch_mode=True)
+    empty_root = LibraryRoot(library_id=library.id, path="/tmp/remove-empty/archive", is_active=True)
+    db.add(empty_root)
+    db.commit()
+
+    with patch("app.api.libraries.library_watcher.refresh_watches") as mock_refresh:
+        response = admin_client.delete(f"/api/libraries/{library.id}/roots/{empty_root.id}")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "library_id": library.id,
+        "root_id": empty_root.id,
+        "removed": True,
+        "deleted_comics": 0,
+        "deleted_volumes": 0,
+        "deleted_series": 0,
+    }
+    assert db.get(LibraryRoot, empty_root.id) is None
+    mock_refresh.assert_called_once()
+
+
+def test_remove_library_root_with_comics_requires_explicit_delete(admin_client, db):
+    library = create_library_with_root(db, "Remove Guard Root", "/tmp/remove-guard")
+    root = library.active_root
+    series = Series(name="Remove Guard Series", library=library)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
+    db.flush()
+    create_comic(db, volume, root, "guard.cbz", filename="guard.cbz")
+    db.commit()
+
+    response = admin_client.delete(f"/api/libraries/{library.id}/roots/{root.id}")
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": (
+            "Library root has 1 comic records. "
+            "Pass delete_comics=true to remove the root and delete those records."
+        )
+    }
+    assert db.get(LibraryRoot, root.id) is not None
+
+
+def test_remove_library_root_with_delete_comics_prunes_empty_containers(admin_client, db):
+    library = create_library_with_root(db, "Remove Comics Root", "/tmp/remove-comics")
+    root = library.active_root
+    series = Series(name="Remove Comics Series", library=library)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
+    db.flush()
+
+    comic = create_comic(db, volume, root, "delete-me.cbz", filename="delete-me.cbz")
+    db.commit()
+
+    response = admin_client.delete(f"/api/libraries/{library.id}/roots/{root.id}?delete_comics=true")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "library_id": library.id,
+        "root_id": root.id,
+        "removed": True,
+        "deleted_comics": 1,
+        "deleted_volumes": 1,
+        "deleted_series": 1,
+    }
+    assert db.get(LibraryRoot, root.id) is None
+    assert db.get(Comic, comic.id) is None
+    assert db.get(Volume, volume.id) is None
+    assert db.get(Series, series.id) is None
+
+
+def test_root_lifecycle_rejects_scanning_library(admin_client, db):
+    library = create_library_with_root(db, "Busy Root", "/tmp/busy-root")
+    library.is_scanning = True
+    db.commit()
+
+    response = admin_client.post(
+        f"/api/libraries/{library.id}/roots",
+        json={"path": "/tmp/busy-root/archive"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Library roots cannot be changed while a scan is queued or running"}
+
+
+def test_library_root_endpoints_require_admin(auth_client, db):
+    library = create_library_with_root(db, "Root Admin Only", "/tmp/root-admin-only")
+
+    response = auth_client.get(f"/api/libraries/{library.id}/roots")
+
+    assert response.status_code == 400
+
+
+def test_preview_library_relocation_returns_counts_without_updating_root(admin_client, db, tmp_path):
+    current_root_path = tmp_path / "api-current"
+    proposed_root_path = tmp_path / "api-proposed"
+    current_root_path.mkdir()
+    proposed_root_path.mkdir()
+
+    library = create_library_with_root(db, "API Relocation Preview", str(current_root_path))
+    root = library.active_root
+    series = Series(name="API Preview Series", library=library)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
+    db.flush()
+
+    create_comic(db, volume, root, "Alpha/one.cbz", filename="one.cbz")
+    create_comic(db, volume, root, "Beta/two.cbz", filename="two.cbz")
+    db.commit()
+
+    library_id = library.id
+    root_id = root.id
+    _write_comic_file(proposed_root_path / "Alpha" / "one.cbz")
+    _write_comic_file(proposed_root_path / "Extra" / "three.cbz")
+
+    response = admin_client.post(
+        f"/api/libraries/{library_id}/relocation/preview",
+        json={"path": str(proposed_root_path)},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["library_id"] == library_id
+    assert payload["root_id"] == root_id
+    assert payload["current_path"] == str(current_root_path)
+    assert payload["proposed_path"] == proposed_root_path.resolve().as_posix()
+    assert payload["total_existing"] == 2
+    assert payload["total_scanned"] == 2
+    assert payload["matched_count"] == 1
+    assert payload["missing_count"] == 1
+    assert payload["new_count"] == 1
+    assert payload["confirm_blocked"] is False
+    assert payload["confirm_blocked_reason"] is None
+    assert payload["matched_samples"][0]["relative_path"] == "Alpha/one.cbz"
+    assert payload["missing_samples"][0]["relative_path"] == "Beta/two.cbz"
+    assert payload["new_samples"][0]["relative_path"] == "Extra/three.cbz"
+
+    db.refresh(root)
+    assert root.path == str(current_root_path)
+
+
+def test_preview_library_relocation_marks_all_missing_as_not_confirmable(admin_client, db, tmp_path):
+    current_root_path = tmp_path / "api-all-missing-current"
+    proposed_root_path = tmp_path / "api-all-missing-proposed"
+    current_root_path.mkdir()
+    proposed_root_path.mkdir()
+
+    library = create_library_with_root(db, "API All Missing Preview", str(current_root_path))
+    root = library.active_root
+    series = Series(name="API All Missing Series", library=library)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
+    db.flush()
+
+    create_comic(db, volume, root, "Alpha/one.cbz", filename="one.cbz")
+    db.commit()
+
+    response = admin_client.post(
+        f"/api/libraries/{library.id}/relocation/preview",
+        json={"path": str(proposed_root_path)},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total_existing"] == 1
+    assert payload["matched_count"] == 0
+    assert payload["missing_count"] == 1
+    assert payload["confirm_blocked"] is True
+    assert payload["confirm_blocked_reason"] == NO_RELOCATION_MATCHES_MESSAGE
+
+    db.refresh(root)
+    assert root.path == str(current_root_path)
+
+
+def test_preview_library_relocation_rejects_scanning_library(admin_client, db, tmp_path):
+    current_root_path = tmp_path / "api-scanning-current"
+    proposed_root_path = tmp_path / "api-scanning-proposed"
+    current_root_path.mkdir()
+    proposed_root_path.mkdir()
+
+    library = create_library_with_root(db, "API Scanning Preview", str(current_root_path))
+    library.is_scanning = True
+    db.commit()
+
+    response = admin_client.post(
+        f"/api/libraries/{library.id}/relocation/preview",
+        json={"path": str(proposed_root_path)},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": LIBRARY_SCAN_ACTIVE_MESSAGE}
+
+
+def test_preview_library_relocation_rejects_queued_scan_job(admin_client, db, tmp_path):
+    current_root_path = tmp_path / "api-queued-current"
+    proposed_root_path = tmp_path / "api-queued-proposed"
+    current_root_path.mkdir()
+    proposed_root_path.mkdir()
+
+    library = create_library_with_root(db, "API Queued Preview", str(current_root_path))
+    db.add(ScanJob(library_id=library.id, job_type=JobType.SCAN, status=JobStatus.PENDING))
+    db.commit()
+
+    response = admin_client.post(
+        f"/api/libraries/{library.id}/relocation/preview",
+        json={"path": str(proposed_root_path)},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": LIBRARY_SCAN_ACTIVE_MESSAGE}
+
+
+def test_preview_library_relocation_requires_root_id_when_multiple_roots_are_active(admin_client, db, tmp_path):
+    first_root_path = tmp_path / "api-first"
+    second_root_path = tmp_path / "api-second"
+    proposed_root_path = tmp_path / "api-proposed"
+    first_root_path.mkdir()
+    second_root_path.mkdir()
+    proposed_root_path.mkdir()
+
+    library = create_library_with_root(db, "API Multi Root Preview", str(first_root_path))
+    second_root = LibraryRoot(library_id=library.id, path=str(second_root_path), is_active=True)
+    db.add(second_root)
+    db.commit()
+
+    default_response = admin_client.post(
+        f"/api/libraries/{library.id}/relocation/preview",
+        json={"path": str(proposed_root_path)},
+    )
+
+    assert default_response.status_code == 400
+    assert default_response.json() == {
+        "detail": "root_id is required when a library has multiple active roots"
+    }
+
+    explicit_response = admin_client.post(
+        f"/api/libraries/{library.id}/relocation/preview",
+        json={"path": str(proposed_root_path), "root_id": second_root.id},
+    )
+
+    assert explicit_response.status_code == 200
+    assert explicit_response.json()["root_id"] == second_root.id
+
+
+def test_preview_library_relocation_rejects_sibling_root_overlap(admin_client, db, tmp_path):
+    first_root_path = tmp_path / "api-sibling-first"
+    second_root_path = tmp_path / "api-sibling-second"
+    first_root_path.mkdir()
+    second_root_path.mkdir()
+
+    library = create_library_with_root(db, "API Sibling Preview", str(first_root_path))
+    first_root_id = library.active_root.id
+    db.add(LibraryRoot(library_id=library.id, path=str(second_root_path), is_active=True))
+    db.commit()
+
+    response = admin_client.post(
+        f"/api/libraries/{library.id}/relocation/preview",
+        json={"path": str(second_root_path), "root_id": first_root_id},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "Relocation path overlaps with existing root for library 'API Sibling Preview'"
+    }
+
+
+def test_preview_library_relocation_returns_404_for_missing_library(admin_client, tmp_path):
+    proposed_root_path = tmp_path / "missing-api-proposed"
+    proposed_root_path.mkdir()
+
+    response = admin_client.post(
+        "/api/libraries/999999/relocation/preview",
+        json={"path": str(proposed_root_path)},
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Library not found"}
+
+
+def test_confirm_library_relocation_updates_root_without_queuing_scan(admin_client, db, tmp_path):
+    current_root_path = tmp_path / "confirm-api-current"
+    proposed_root_path = tmp_path / "confirm-api-proposed"
+    current_root_path.mkdir()
+    proposed_root_path.mkdir()
+
+    library = create_library_with_root(db, "API Confirm Relocation", str(current_root_path))
+    root = library.active_root
+    series = Series(name="API Confirm Series", library=library)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
+    db.flush()
+
+    matched = create_comic(db, volume, root, "Alpha/one.cbz", filename="one.cbz")
+    missing = create_comic(db, volume, root, "Beta/two.cbz", filename="two.cbz")
+    db.commit()
+
+    library_id = library.id
+    root_id = root.id
+    matched_id = matched.id
+    missing_id = missing.id
+
+    _write_comic_file(proposed_root_path / "Alpha" / "one.cbz")
+    _write_comic_file(proposed_root_path / "Extra" / "three.cbz")
+
+    with (
+        patch("app.api.libraries.library_watcher.refresh_watches") as mock_refresh_watches,
+        patch("app.api.libraries.scan_manager.add_task") as mock_add_scan_task,
+    ):
+        response = admin_client.post(
+            f"/api/libraries/{library_id}/relocation/confirm",
+            json={"path": str(proposed_root_path)},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["library_id"] == library_id
+    assert payload["root_id"] == root_id
+    assert payload["relocated"] is True
+    assert payload["previous_path"] == str(current_root_path)
+    assert payload["current_path"] == proposed_root_path.resolve().as_posix()
+    assert payload["proposed_path"] == proposed_root_path.resolve().as_posix()
+    assert payload["matched_count"] == 1
+    assert payload["missing_count"] == 1
+    assert payload["new_count"] == 1
+    assert payload["scan_recommended"] is True
+    assert payload["scan_reasons"] == [
+        "Verify relocated archives and refresh metadata if files changed",
+        "Reconcile existing comics that were missing at the new root",
+        "Import new archive files found at the new root",
+    ]
+
+    mock_refresh_watches.assert_called_once()
+    mock_add_scan_task.assert_not_called()
+
+    db.refresh(root)
+    assert root.path == proposed_root_path.resolve().as_posix()
+    assert db.get(Comic, matched_id).relative_path == "Alpha/one.cbz"
+    assert db.get(Comic, missing_id).relative_path == "Beta/two.cbz"
+
+
+def test_confirm_library_relocation_rejects_active_scan_job(admin_client, db, tmp_path):
+    current_root_path = tmp_path / "confirm-api-active-current"
+    proposed_root_path = tmp_path / "confirm-api-active-proposed"
+    current_root_path.mkdir()
+    proposed_root_path.mkdir()
+
+    library = create_library_with_root(db, "API Confirm Active Scan", str(current_root_path))
+    root = library.active_root
+    series = Series(name="API Confirm Active Scan Series", library=library)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
+    db.flush()
+
+    create_comic(db, volume, root, "Alpha/one.cbz", filename="one.cbz")
+    db.add(ScanJob(library_id=library.id, job_type=JobType.CLEANUP, status=JobStatus.RUNNING))
+    db.commit()
+
+    _write_comic_file(proposed_root_path / "Alpha" / "one.cbz")
+
+    with (
+        patch("app.api.libraries.library_watcher.refresh_watches") as mock_refresh_watches,
+        patch("app.api.libraries.scan_manager.add_task") as mock_add_scan_task,
+    ):
+        response = admin_client.post(
+            f"/api/libraries/{library.id}/relocation/confirm",
+            json={"path": str(proposed_root_path)},
+        )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": LIBRARY_SCAN_ACTIVE_MESSAGE}
+    mock_refresh_watches.assert_not_called()
+    mock_add_scan_task.assert_not_called()
+
+    db.refresh(root)
+    assert root.path == str(current_root_path)
+
+
+def test_confirm_library_relocation_rejects_all_missing(admin_client, db, tmp_path):
+    current_root_path = tmp_path / "confirm-api-all-missing-current"
+    proposed_root_path = tmp_path / "confirm-api-all-missing-proposed"
+    current_root_path.mkdir()
+    proposed_root_path.mkdir()
+
+    library = create_library_with_root(db, "API Confirm All Missing", str(current_root_path))
+    root = library.active_root
+    series = Series(name="API Confirm All Missing Series", library=library)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
+    db.flush()
+
+    create_comic(db, volume, root, "Alpha/one.cbz", filename="one.cbz")
+    db.commit()
+
+    with (
+        patch("app.api.libraries.library_watcher.refresh_watches") as mock_refresh_watches,
+        patch("app.api.libraries.scan_manager.add_task") as mock_add_scan_task,
+    ):
+        response = admin_client.post(
+            f"/api/libraries/{library.id}/relocation/confirm",
+            json={"path": str(proposed_root_path)},
+        )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": NO_RELOCATION_MATCHES_MESSAGE}
+    mock_refresh_watches.assert_not_called()
+    mock_add_scan_task.assert_not_called()
+
+    db.refresh(root)
+    assert root.path == str(current_root_path)
+
+
+def test_confirm_library_relocation_returns_404_for_missing_library(admin_client, tmp_path):
+    proposed_root_path = tmp_path / "missing-confirm-api-proposed"
+    proposed_root_path.mkdir()
+
+    response = admin_client.post(
+        "/api/libraries/999999/relocation/confirm",
+        json={"path": str(proposed_root_path)},
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Library not found"}
+
+
+def test_update_library_returns_404_for_missing_library(admin_client):
+    response = admin_client.patch("/api/libraries/999999", json={"name": "Nope"})
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Library not found"}
+
+
+def test_delete_library_success_and_not_found(admin_client, db):
+    library = create_library_with_root(db, "DeleteMe", "/tmp/delete-me")
+
+    success = admin_client.delete(f"/api/libraries/{library.id}")
+    assert success.status_code == 200
+    assert success.json() == {"message": "Library deleted"}
+    assert db.query(Library).filter(Library.id == library.id).first() is None
+
+    missing = admin_client.delete("/api/libraries/999999")
+    assert missing.status_code == 404
+    assert missing.json() == {"detail": "Library not found"}
+
+
+def test_scan_library_passes_force_flag_to_scan_manager(admin_client, db):
+    library = create_library_with_root(db, "ScanMe", "/tmp/scan-me")
+
+    expected = {"status": "queued", "job_id": 55, "message": "Queued"}
+    with patch("app.api.libraries.scan_manager.add_task", return_value=expected) as mock_add_task:
+        response = admin_client.post(f"/api/libraries/{library.id}/scan?force=true")
+
+    assert response.status_code == 200
+    assert response.json() == expected
+    mock_add_task.assert_called_once_with(library.id, force=True)
+
+
+def test_scan_library_returns_404_for_missing_library(admin_client):
+    response = admin_client.post("/api/libraries/999999/scan")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Library not found"}
+
+
+def test_has_library_access_helper_paths(db, normal_user, admin_user):
+    from app.api.libraries import _has_library_access
+
+    allowed_library = create_library_with_root(db, "Helper Allowed", "/tmp/helper-allowed")
+    denied_library = create_library_with_root(db, "Helper Denied", "/tmp/helper-denied")
+
+    normal_user.accessible_libraries.append(allowed_library)
+    db.commit()
+
+    assert _has_library_access(allowed_library.id, normal_user) is True
+    assert _has_library_access(denied_library.id, normal_user) is False
+    assert _has_library_access(denied_library.id, admin_user) is True
+
+
+def test_list_libraries_applies_limit_for_superuser(admin_client, db):
+    create_library_with_root(db, "A Library", "/tmp/a")
+    create_library_with_root(db, "B Library", "/tmp/b")
+    create_library_with_root(db, "C Library", "/tmp/c")
+
+    response = admin_client.get("/api/libraries/?limit=2")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 2
+    assert [row["name"] for row in payload] == ["A Library", "B Library"]
+
+
+def test_list_libraries_applies_limit_for_normal_user(auth_client, db, normal_user):
+    lib_a = create_library_with_root(db, "Limit User A", "/tmp/limit-user-a")
+    lib_b = create_library_with_root(db, "Limit User B", "/tmp/limit-user-b")
+    lib_c = create_library_with_root(db, "Limit User C", "/tmp/limit-user-c")
+
+    normal_user.accessible_libraries.extend([lib_b, lib_a, lib_c])
+    db.commit()
+
+    response = auth_client.get("/api/libraries/?limit=2")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 2
+    assert [row["name"] for row in payload] == ["Limit User A", "Limit User B"]
+
+
+def test_list_libraries_filters_stats_by_age_restriction(auth_client, db, normal_user):
+    library = create_library_with_root(db, "Age Stats Library", "/tmp/age-stats-library")
+    root = library.active_root
+
+    safe_series = Series(name="Safe Stats Series", library=library)
+    safe_volume = Volume(series=safe_series, volume_number=1)
+    safe_comic = Comic(
+        volume=safe_volume,
+        number="1",
+        title="Safe Stats Comic",
+        age_rating="Teen",
+        filename="safe-stats.cbz",
+        library_root_id=root.id,
+        relative_path="safe-stats.cbz",
+    )
+
+    banned_series = Series(name="Banned Stats Series", library=library)
+    banned_volume = Volume(series=banned_series, volume_number=1)
+    banned_comic = Comic(
+        volume=banned_volume,
+        number="1",
+        title="Banned Stats Comic",
+        age_rating="Mature 17+",
+        filename="banned-stats.cbz",
+        library_root_id=root.id,
+        relative_path="banned-stats.cbz",
+    )
+
+    db.add_all([safe_series, safe_volume, safe_comic, banned_series, banned_volume, banned_comic])
+    normal_user.accessible_libraries.append(library)
+    normal_user.max_age_rating = "Teen"
+    normal_user.allow_unknown_age_ratings = False
+    db.commit()
+
+    response = auth_client.get("/api/libraries/")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 1
+    assert payload[0]["stats"] == {"series": 1, "issues": 1}
+
+
+def test_get_library_series_filters_by_age_restriction(auth_client, db, normal_user):
+    library = create_library_with_root(db, "Age Series Library", "/tmp/age-series-library")
+    root = library.active_root
+
+    safe_series = Series(name="Safe Series", library=library)
+    safe_volume = Volume(series=safe_series, volume_number=1)
+    safe_comic = Comic(
+        volume=safe_volume,
+        number="1",
+        title="Safe Comic",
+        age_rating="Teen",
+        filename="safe-series.cbz",
+        library_root_id=root.id,
+        relative_path="safe-series.cbz",
+    )
+
+    banned_series = Series(name="Banned Series", library=library)
+    banned_volume = Volume(series=banned_series, volume_number=1)
+    banned_comic = Comic(
+        volume=banned_volume,
+        number="1",
+        title="Banned Comic",
+        age_rating="Mature 17+",
+        filename="banned-series.cbz",
+        library_root_id=root.id,
+        relative_path="banned-series.cbz",
+    )
+
+    db.add_all([safe_series, safe_volume, safe_comic, banned_series, banned_volume, banned_comic])
+    normal_user.accessible_libraries.append(library)
+    normal_user.max_age_rating = "Teen"
+    normal_user.allow_unknown_age_ratings = False
+    db.commit()
+
+    response = auth_client.get(f"/api/libraries/{library.id}/series?page=1&size=10")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert len(payload["items"]) == 1
+    assert payload["items"][0]["id"] == safe_series.id
+
+
+def test_get_library_series_cover_fallback_handles_non_numeric_numbers(auth_client, db, normal_user):
+    library = create_library_with_root(db, "Library Non Numeric", "/tmp/library-non-numeric")
+    root = library.active_root
+    series = Series(name="Non Numeric Series", library=library)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
+    db.flush()
+
+    comic_alpha = create_comic(
+        db, volume, root, "non-numeric-a.cbz",
+        number="A", title="Non Numeric A", year=2024, filename="non-numeric-a.cbz",
+    )
+    comic_two = create_comic(
+        db, volume, root, "non-numeric-2.cbz",
+        number="2", title="Non Numeric #2", year=2023, filename="non-numeric-2.cbz",
+    )
+
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    response = auth_client.get(f"/api/libraries/{library.id}/series?page=1&size=10")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert payload["items"][0]["start_year"] == 2023
+
+
+def test_create_library_with_watch_mode_refreshes_watcher(admin_client):
+    with patch("app.api.libraries.library_watcher.refresh_watches") as mock_refresh:
+        response = admin_client.post(
+            "/api/libraries/",
+            json={"name": "Watched Library", "path": "/tmp/watched-library", "watch_mode": True},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["watch_mode"] is True
+    assert payload["parse_reading_lists"] is True
+    assert payload["parse_collections"] is True
+    assert payload["parse_story_arcs"] is True
+    mock_refresh.assert_called_once()

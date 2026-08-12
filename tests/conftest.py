@@ -1,10 +1,14 @@
-import pytest
+import os
 from typing import Generator
+
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from unittest.mock import MagicMock
+
+os.environ.setdefault("SECRET_KEY", "parker-test-secret-key-not-for-production-000000")
 
 from app.api.deps import get_db
 from app.core.security import get_password_hash
@@ -81,12 +85,15 @@ def client(db) -> Generator:
             pass
 
     app.dependency_overrides[get_db] = override_get_db
+    app.state.skip_admin_bootstrap = True
 
-    with TestClient(app) as c:
-        yield c
-
-    # Reset overrides after test
-    app.dependency_overrides.clear()
+    try:
+        with TestClient(app) as c:
+            yield c
+    finally:
+        # Reset overrides after test
+        app.dependency_overrides.clear()
+        app.state.skip_admin_bootstrap = False
 
 
 # 4. USER FIXTURES

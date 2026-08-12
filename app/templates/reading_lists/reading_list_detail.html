@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 
-{% block title %}Reading List - Comic Server{% endblock %}
+{% block title %}Reading List - Parker{% endblock %}
 
 {% block content %}
 <div class="space-y-6" x-data="readingListDetail()">
     <div x-show="!error" class="flex items-center space-x-4" x-cloak>
-        <a :href="window.url('/reading-lists')" class="text-blue-400 hover:text-blue-300">
+        <a :href="window.parker.route('pages.reading_lists')" class="text-blue-400 hover:text-blue-300">
             ← Back to Reading Lists
         </a>
     </div>
@@ -24,7 +24,7 @@
                 <button x-on:click="window.history.back()" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors">
                     Go Back
                 </button>
-                <a :href="window.url('/')" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors">
+                <a :href="window.parker.route('pages.home')" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors">
                     Home
                 </a>
             </div>
@@ -33,23 +33,49 @@
 
     <div x-show="!loading && !error && readingList" style="display: none;">
 
-        <div class="bg-gray-800 rounded-lg p-6 mb-6 shadow-lg border-l-4 border-l-green-500">
-            <div class="flex items-start justify-between">
-                <div class="flex-1">
-                    <div class="flex items-center gap-3 mb-2">
-                        <h1 class="text-3xl font-bold text-white" x-text="readingList?.name"></h1>
-                        <span x-show="readingList?.auto_generated" class="bg-gray-700 text-xs px-2 py-1 rounded text-gray-300 border border-gray-600">Auto-Generated</span>
+<div class="bg-gray-800 rounded-lg p-6 mb-6 shadow-lg border-l-4 border-l-green-500">
+            <div class="flex flex-col md:flex-row items-start justify-between gap-6">
+
+                <div class="flex-1 w-full">
+                    <div class="flex flex-wrap items-center gap-3 mb-2">
+                        <h1 class="text-2xl md:text-3xl font-bold text-white break-words" x-text="readingList?.name"></h1>
+
+                        <span x-show="readingList?.source && readingList.source !== 'manual'" class="bg-gray-700 text-xs px-2 py-1 rounded text-gray-300 border border-gray-600 whitespace-nowrap" x-text="readingList?.source_label"></span>
+
                         {% from "partials/cover_browser_link.html" import cover_browser_link %}
                         {{ cover_browser_link("reading_list", reading_list_id) }}
                     </div>
-                    <p class="text-gray-400 mt-2 text-lg" x-text="readingList?.description"></p>
+
+                    <p class="text-gray-400 mt-2 text-base md:text-lg" x-text="readingList?.description"></p>
                     <div class="mt-4 text-sm text-gray-500 font-mono">
                         <span x-text="`${readingList?.comic_count || 0} comics`"></span>
                     </div>
                 </div>
-                <button class="bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-6 rounded-lg shadow-lg transition-colors flex items-center gap-2" x-on:click="startReading()" x-show="readingList?.comics?.length > 0">
-                    <span class="text-xl">📖</span> Start Reading
-                </button>
+
+                <div class="w-full md:w-auto flex items-stretch shadow-lg rounded-lg" x-show="readingList?.comics?.length > 0" x-data="{ menuOpen: false }">
+
+                    <button class="flex-1 md:flex-none bg-green-600 hover:bg-green-500 text-white font-bold py-3 px-6 md:py-2 md:px-4 rounded-l-lg transition-colors flex items-center justify-center gap-2 border-r border-green-700 whitespace-nowrap" x-on:click="startReading(false)">
+                        <span class="text-xl">📖</span> Start Reading
+                    </button>
+
+                    <div class="relative">
+                        <button class="bg-green-600 hover:bg-green-500 text-white font-bold px-3 rounded-r-lg transition-colors h-full flex items-center justify-center" x-on:click="menuOpen = !menuOpen" x-on:click.away="menuOpen = false">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                            </svg>
+                        </button>
+
+                        <div x-show="menuOpen" class="absolute right-0 mt-2 w-48 bg-gray-800 rounded-md shadow-xl border border-gray-700 z-50 overflow-hidden" x-cloak x-transition>
+                            <button x-on:click="startReading(true)" class="w-full text-left px-4 py-3 text-sm text-gray-300 hover:bg-gray-700 hover:text-white flex items-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M3.707 2.293a1 1 0 00-1.414 1.414l14 14a1 1 0 001.414-1.414l-1.473-1.473A10.014 10.014 0 0019.542 10C18.268 5.943 14.478 3 10 3a9.958 9.958 0 00-4.512 1.074l-1.78-1.781zm4.261 4.26l1.514 1.515a2.003 2.003 0 012.45 2.45l1.514 1.514a4 4 0 00-5.478-5.478z" clip-rule="evenodd" />
+                                    <path d="M12.454 16.697L9.75 13.992a4 4 0 01-3.742-3.741L2.335 6.578A9.98 9.98 0 00.458 10c1.274 4.057 5.065 7 9.542 7 .847 0 1.669-.105 2.454-.303z" />
+                                </svg>
+                                Read Incognito
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -164,7 +190,7 @@ function readingListDetail() {
 
         async init() {
             try {
-                const res = await fetch(window.url(`/api/reading-lists/${this.readingListId}`));
+                const res = await fetch(window.parker.route('reading_lists.detail', { list_id: this.readingListId }));
 
                 if (res.status === 404) {
                     this.error = {
@@ -177,7 +203,7 @@ function readingListDetail() {
 
                 if (!res.ok) throw new Error('Not found');
                 this.readingList = await res.json();
-                document.title = `${this.readingList.name} - Comic Server`;
+                document.title = `${this.readingList.name} - Parker`;
             } catch (err) {
                 console.error(err);
             } finally {
@@ -185,9 +211,11 @@ function readingListDetail() {
             }
         },
 
-        startReading() {
+        startReading(incognito = false) {
             if (this.readingList?.comics?.length > 0) {
-                window.location.href = window.url(`/reader/${this.readingList.comics[0].id}?context_type=reading_list&context_id=${this.readingList.id}`);
+                let qs = `context_type=reading_list&context_id=${this.readingList.id}`;
+                if (incognito) qs += '&incognito=true';
+                window.location.href = window.parker.readerRoute(this.readingList.comics[0].id, qs, { includeReturnTo: false });
             }
         }
     }

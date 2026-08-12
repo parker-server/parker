@@ -1,7 +1,10 @@
+import logging
+
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
 from typing import Optional, List
 from app.models import ReadingProgress, Comic, Volume
+from app.models.activity_log import ActivityLog
 
 class ReadingProgressService:
     """
@@ -12,6 +15,7 @@ class ReadingProgressService:
     def __init__(self, db: Session, user_id: int = 1):
         self.db = db
         self.user_id = user_id
+        self.logger = logging.getLogger(__name__)
 
     def get_progress(self, comic_id: int) -> Optional[ReadingProgress]:
         """Get reading progress for a comic"""
@@ -20,13 +24,23 @@ class ReadingProgressService:
             ReadingProgress.comic_id == comic_id
         ).first()
 
-    def update_progress(self, comic_id: int, current_page: int, total_pages: int = None) -> ReadingProgress:
+    def update_progress(self,
+                        comic_id: int,
+                        current_page: int,
+                        total_pages: int = None,
+                        context_type: str = None,  # Track source
+                        context_id: int = None  # Track source ID
+                        ) -> ReadingProgress:
         """
-        Update reading progress for a comic.
+        Update reading progress and log activity delta for a comic.
         NOTE: Caller must run db.commit() to persist changes.
         """
+
         # Get or create progress record
         progress = self.get_progress(comic_id)
+
+        # Capture the old page for delta calculation
+        old_page = progress.current_page if progress else 0
 
         if not progress:
             # Get total pages from comic if not provided
@@ -58,6 +72,27 @@ class ReadingProgressService:
             progress.completed = True
         else:
             progress.completed = False
+
+        # 3. Create Activity Log Entry if needed
+
+
+        pages_turned = current_page - old_page
+
+        if pages_turned > 0:
+
+            self.logger.debug(f"Logging user {self.user_id} activity for {pages_turned} turned page(s)")
+
+            log_entry = ActivityLog(
+                user_id=self.user_id,
+                comic_id=comic_id,
+                pages_read=pages_turned,
+                start_page=old_page,
+                end_page=current_page,
+                context_type=context_type,
+                context_id=context_id
+            )
+            self.db.add(log_entry)
+
 
         # CHANGED: Flush only. Checks constraints but doesn't write to disk.
         self.db.flush()

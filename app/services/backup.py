@@ -2,15 +2,19 @@ import logging
 import sqlite3
 import tarfile
 import os
+import time
 from datetime import datetime
 from pathlib import Path
-from app.config import settings
 
+from app.config import settings
+from app.core.settings_loader import get_system_setting
+
+logger = logging.getLogger(__name__)
 
 class BackupService:
-    def create_backup(self) -> dict:
 
-        logger = logging.getLogger(__name__)
+    @staticmethod
+    def create_backup() -> dict:
 
         """
         Perform a hot backup of the SQLite database and compress it.
@@ -55,9 +59,45 @@ class BackupService:
             if temp_db_path.exists():
                 os.remove(temp_db_path)
 
+        # 4. Enforce Retention Policy
+        BackupService.cleanup_old_backups(backup_dir)
+
         return {
             "filename": archive_path.name,
             "path": str(archive_path),
             "size_bytes": archive_path.stat().st_size,
             "timestamp": timestamp
         }
+
+    @staticmethod
+    def cleanup_old_backups(backup_dir: Path):
+        """
+        Delete backups older than the configured retention days.
+        """
+        retention_days = 7  # Default
+
+        # Use the loader helper to fetch safely without manual session management
+        retention_days = get_system_setting("backup.retention_days", 7)
+
+        # If 0, assume "Keep Forever"
+        if retention_days <= 0:
+            return
+
+        logger.info(f"Running backup cleanup (Retention: {retention_days} days)")
+
+        # Calculate cutoff time (in seconds)
+        cutoff_time = time.time() - (retention_days * 86400)
+
+        count = 0
+        for file in backup_dir.glob("comics_backup_*.tar.gz"):
+            try:
+                # Check file modification time
+                if file.stat().st_mtime < cutoff_time:
+                    os.remove(file)
+                    count += 1
+                    logger.info(f"Deleted old backup: {file.name}")
+            except Exception as e:
+                logger.error(f"Failed to delete {file.name}: {e}")
+
+        if count > 0:
+            logger.info(f"Cleaned up {count} old backup(s).")

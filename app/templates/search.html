@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Advanced Search - Comic Server{% endblock %}
+{% block title %}Advanced Search - Parker{% endblock %}
 
 {% block content %}
 <div class="max-w-6xl mx-auto" x-data="searchBuilder()">
@@ -93,7 +93,7 @@
 
         <div class="space-y-4">
             <template x-for="(rule, index) in rules" :key="rule.id">
-                <div class="flex flex-col md:flex-row gap-3 items-start md:items-center bg-gray-900/50 p-3 rounded-lg border border-gray-700/50">
+                <div class="flex flex-col md:flex-row gap-3 items-start bg-gray-900/50 p-3 rounded-lg border border-gray-700/50">
 
                     <select x-model="rule.field" x-on:change="resetRule(rule)" class="w-full md:w-48 bg-gray-700 text-white rounded px-3 py-2 border border-gray-600 outline-none">
                         <optgroup label="Metadata">
@@ -105,7 +105,8 @@
                             <option value="imprint">Imprint</option>
                             <option value="summary">Summary</option>
                             <option value="web">Web/Wiki Link</option>
-                            <option value="rating">Community Rating</option>
+                            <option value="rating">Source Rating</option>
+                            <option value="parker_rating">Parker Rating</option>
                             <option value="age_rating">Age Rating</option>
                             <option value="language">Language (ISO)</option>
                         </optgroup>
@@ -114,6 +115,8 @@
                             <option value="penciller">Penciller</option>
                             <option value="inker">Inker</option>
                             <option value="colorist">Colorist</option>
+                            <option value="letterer">Letterer</option>
+                            <option value="cover_artist">Cover Artist</option>
                             <option value="editor">Editor</option>
                         </optgroup>
                         <optgroup label="Tags">
@@ -126,32 +129,54 @@
                             <option value="library">Library</option>
                             <option value="collection">Collection</option>
                             <option value="reading_list">Reading List</option>
-                            <option value="pull_list">Pull List</option>
+                            <option value="pull_list">Stack</option>
                         </optgroup>
                     </select>
 
-                    <select x-model="rule.operator" class="w-full md:w-40 bg-gray-700 text-white rounded px-3 py-2 border border-gray-600 outline-none">
-                        <option value="equal">Equals</option>
-                        <option value="not_equal">Not Equals</option>
-                        <option value="contains">Contains (Any)</option>
-                        <option value="does_not_contain">Does Not Contain</option>
-                        <option value="must_contain">Must Contain (All)</option>
-                        <option value="is_empty">Is Empty</option>
-                        <option value="is_not_empty">Is Not Empty</option>
+                    <select
+                        x-model="rule.operator"
+                        x-effect="$el.value = rule.operator"
+                        class="w-full md:w-40 bg-gray-700 text-white rounded px-3 py-2 border border-gray-600 outline-none"
+                    >
+                        <template x-for="option in operatorOptions(rule.field)" :key="`${rule.id}-${option.value}`">
+                            <option :value="option.value" :selected="rule.operator === option.value" x-text="option.label"></option>
+                        </template>
                     </select>
 
                     <div class="flex-1 w-full" x-show="!['is_empty', 'is_not_empty'].includes(rule.operator)">
 
-                        <div x-show="['title', 'year', 'summary', 'web', 'rating'].includes(rule.field)">
-                            <input type="text" x-on:keydown.enter="performSearch()" x-model="rule.value" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600 outline-none focus:border-blue-500">
+                        <div x-show="usesSimpleInput(rule.field) && !usesNumericInput(rule.field)">
+                            <input
+                                type="text"
+                                x-on:keydown.enter="performSearch()"
+                                x-model="rule.value"
+                                :class="ruleHasValidationError(rule) ? 'border-amber-500 focus:border-amber-400' : 'border-gray-600 focus:border-blue-500'"
+                                class="w-full bg-gray-700 text-white rounded px-3 py-2 border outline-none"
+                            >
                         </div>
 
-                        <div x-show="!['title', 'year', 'summary', 'web', 'rating'].includes(rule.field)">
+                        <div x-show="usesNumericInput(rule.field)">
+                            <input
+                                type="number"
+                                step="0.1"
+                                min="0"
+                                max="5"
+                                x-on:keydown.enter="performSearch()"
+                                x-model="rule.value"
+                                :class="ruleHasValidationError(rule) ? 'border-amber-500 focus:border-amber-400' : 'border-gray-600 focus:border-blue-500'"
+                                class="w-full bg-gray-700 text-white rounded px-3 py-2 border outline-none"
+                            >
+                        </div>
+
+                        <div x-show="!usesSimpleInput(rule.field)">
                             <div
                                 x-data="tagInput(rule)"
                                 class="relative w-full"
                             >
-                                <div class="bg-gray-700 border border-gray-600 rounded p-1 flex flex-wrap gap-2 min-h-[42px]">
+                                <div
+                                    :class="ruleHasValidationError(rule) ? 'border-amber-500' : 'border-gray-600'"
+                                    class="bg-gray-700 border rounded p-1 flex flex-wrap gap-2 min-h-[42px]"
+                                >
                                     <template x-for="(tag, i) in tags" :key="i">
                                         <span class="bg-blue-600 text-white text-sm px-2 py-0.5 rounded flex items-center">
                                             <span x-text="tag"></span>
@@ -185,6 +210,12 @@
                             </div>
                         </div>
 
+                        <p
+                            x-show="ruleHasValidationError(rule)"
+                            x-text="ruleValidationMessage(rule)"
+                            class="mt-2 text-sm text-amber-400"
+                        ></p>
+
                     </div>
 
                     <button x-on:click="removeRule(index)" class="text-red-400 hover:text-red-300 p-2 hover:bg-red-900/30 rounded" title="Remove Rule">
@@ -206,14 +237,22 @@
             <div class="flex items-center space-x-6">
                 <div class="flex items-center space-x-2">
                     <span class="text-gray-400 text-sm">Sort By</span>
-                    <select x-model="sortBy" class="bg-gray-700 text-white rounded px-2 py-1 text-sm border border-gray-600 outline-none">
+                    <select x-model="sortBy" x-on:change="handleSortByChange()" class="bg-gray-700 text-white rounded px-2 py-1 text-sm border border-gray-600 outline-none">
                         <option value="created">Date Added</option>
                         <option value="updated">Date Updated</option>
                         <option value="year">Release Year</option>
                         <option value="series">Series Name</option>
                         <option value="title">Issue Title</option>
                         <option value="page_count">Page Count</option>
-                        <option value="rating">Community Rating</option>
+                        <option value="rating">Source Rating</option>
+                        <option value="parker_rating">Parker Rating</option>
+                    </select>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <span class="text-gray-400 text-sm">Order</span>
+                    <select x-model="sortOrder" class="bg-gray-700 text-white rounded px-2 py-1 text-sm border border-gray-600 outline-none">
+                        <option value="asc" x-text="sortOrderLabel('asc')">Ascending</option>
+                        <option value="desc" x-text="sortOrderLabel('desc')">Descending</option>
                     </select>
                 </div>
                 <div class="flex items-center space-x-2">
@@ -222,7 +261,12 @@
                 </div>
             </div>
 
-            <button x-on:click="performSearch()" class="w-full md:w-auto bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-8 rounded-lg shadow-lg flex items-center justify-center gap-2 transition-colors">
+            <button
+                x-on:click="performSearch()"
+                :disabled="loading"
+                :class="loading ? 'bg-gray-600 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-500'"
+                class="w-full md:w-auto text-white font-bold py-2 px-8 rounded-lg shadow-lg flex items-center justify-center gap-2 transition-colors"
+            >
                 <span x-show="loading" class="animate-spin">↻</span>
                 <span>Search Comics</span>
             </button>
@@ -351,7 +395,7 @@ document.addEventListener('alpine:init', () => {
             }
             try {
                 // Call our API
-                const res = await fetch(window.url(`/api/search/suggestions?field=${rule.field}&query=${this.input}`));
+                const res = await fetch(window.parker.route('search.suggestions', {}, `field=${rule.field}&query=${this.input}`));
                 this.suggestions = await res.json();
             } catch(e) { console.error(e); }
         },
@@ -405,6 +449,7 @@ document.addEventListener('alpine:init', () => {
         totalResults: 0,
         loading: false,
         hasSearched: false,
+        showValidationErrors: false,
         nextId: 2,
 
         savedSearches: [],
@@ -419,6 +464,19 @@ document.addEventListener('alpine:init', () => {
         async init() {
             await this.loadSavedList();
             this.checkUrlParams();
+        },
+
+        applyHydratedFilters(filters) {
+            if (!Array.isArray(filters) || filters.length === 0) return false;
+
+            this.rules = filters.map((filter, index) => ({
+                id: Date.now() + index + Math.random(),
+                field: filter.field,
+                operator: filter.operator || 'contains',
+                value: this.normalizeRuleValue(filter.field, filter.value)
+            }));
+
+            return true;
         },
 
         checkUrlParams() {
@@ -443,22 +501,76 @@ document.addEventListener('alpine:init', () => {
             // 1. Handle Sorting overrides
             if (params.has('sort_by')) {
                 this.sortBy = params.get('sort_by');
-                // Optional: Handle sort order if you passed it (e.g. &sort_order=asc)
-                // We default to 'desc' in the model, but you could read it here if needed.
                 shouldSearch = true;
             }
 
             if (params.has('sort_order')) {
-                // You might need to add `sortOrder` to your Alpine data object if it isn't there,
-                // or just pass it directly to the API payload if UI doesn't have a toggle for it.
-                // The current UI relies on hardcoded 'desc' in performSearch or API defaults.
                 this.sortOrder = params.get('sort_order');
+            }
+
+            if (params.has('state_key') && window.parker.searchHandoff) {
+                const hydrated = window.parker.searchHandoff.load(params.get('state_key'));
+                if (hydrated) {
+                    if (hydrated.match) {
+                        this.match = hydrated.match;
+                    }
+
+                    if (hydrated.sortBy) {
+                        this.sortBy = hydrated.sortBy;
+                        shouldSearch = true;
+                    }
+
+                    if (hydrated.sortOrder) {
+                        this.sortOrder = hydrated.sortOrder;
+                    }
+
+                    if (hydrated.limit) {
+                        const hydratedLimit = parseInt(hydrated.limit, 10);
+                        if (!Number.isNaN(hydratedLimit) && hydratedLimit > 0) {
+                            this.limit = hydratedLimit;
+                        }
+                    }
+
+                    if (hydrated.libraryId) {
+                        this.contextLibraryId = parseInt(hydrated.libraryId, 10);
+                        if (!Number.isNaN(this.contextLibraryId)) {
+                            this.fetchLibraryName(this.contextLibraryId);
+                            shouldSearch = true;
+                        }
+                    }
+
+                    if (this.applyHydratedFilters(hydrated.filters)) {
+                        shouldSearch = true;
+                    }
+                }
+            }
+
+            if (params.has('match')) {
+                this.match = params.get('match');
+            }
+
+            if (params.has('limit')) {
+                const urlLimit = parseInt(params.get('limit'), 10);
+                if (!Number.isNaN(urlLimit) && urlLimit > 0) {
+                    this.limit = urlLimit;
+                }
+            }
+
+            if (params.has('filters')) {
+                try {
+                    const parsedFilters = JSON.parse(params.get('filters'));
+                    if (this.applyHydratedFilters(parsedFilters)) {
+                        shouldSearch = true;
+                    }
+                } catch (error) {
+                    console.error('Failed to parse search filters from URL', error);
+                }
             }
 
             // 2. Handle Filters (Deep Linking)
             // Allow search if 'field' exists AND ('value' OR 'operator' exists)
             // This supports ?field=summary&operator=is_empty
-            if (params.has('field') && (params.has('value') || params.has('operator'))) {
+            if (!params.has('filters') && params.has('field') && (params.has('value') || params.has('operator'))) {
                 const field = params.get('field');
                 const value = params.get('value');
                 // Default to 'contains' if not specified
@@ -466,12 +578,10 @@ document.addEventListener('alpine:init', () => {
 
                 // Overwrite the default rule with the URL rule
                 this.rules = [{
-                    id: 1,
+                    id: Date.now(),
                     field: field,
                     operator: operator,
-                    // Check if value exists before wrapping in array.
-                    // If null, return empty array [] which TagInput can handle.
-                    value: value ? [value] : []
+                    value: this.normalizeRuleValue(field, value)
 
                 }];
 
@@ -501,6 +611,48 @@ document.addEventListener('alpine:init', () => {
             this.rules.push({ id: this.nextId++, field: 'character', operator: 'contains', value: [] });
         },
 
+        usesSimpleInput(field) {
+            return ['title', 'year', 'summary', 'web', 'rating', 'parker_rating'].includes(field);
+        },
+
+        usesNumericInput(field) {
+            return ['rating', 'parker_rating'].includes(field);
+        },
+
+        normalizeRuleValue(field, value) {
+            if (this.usesSimpleInput(field)) {
+                if (Array.isArray(value)) return value[0] ?? '';
+                return value ?? '';
+            }
+
+            if (Array.isArray(value)) return value;
+            if (value === null || value === undefined || value === '') return [];
+            return [value];
+        },
+
+        operatorOptions(field) {
+            if (['rating', 'parker_rating'].includes(field)) {
+                return [
+                    { value: 'equal', label: 'Equals' },
+                    { value: 'not_equal', label: 'Not Equals' },
+                    { value: 'at_least', label: 'At Least' },
+                    { value: 'at_most', label: 'At Most' },
+                    { value: 'is_empty', label: 'Is Empty' },
+                    { value: 'is_not_empty', label: 'Is Not Empty' },
+                ];
+            }
+
+            return [
+                { value: 'equal', label: 'Equals' },
+                { value: 'not_equal', label: 'Not Equals' },
+                { value: 'contains', label: 'Contains (Any)' },
+                { value: 'does_not_contain', label: 'Does Not Contain' },
+                { value: 'must_contain', label: 'Must Contain (All)' },
+                { value: 'is_empty', label: 'Is Empty' },
+                { value: 'is_not_empty', label: 'Is Not Empty' },
+            ];
+        },
+
         removeRule(index) {
             // Don't remove the last rule, just reset it
             if (this.rules.length === 1) {
@@ -512,9 +664,92 @@ document.addEventListener('alpine:init', () => {
 
         resetRule(rule) {
             rule.value = []; // Clear values when field changes
+            const options = this.operatorOptions(rule.field);
+            if (!options.some(option => option.value === rule.operator)) {
+                rule.operator = options[0].value;
+            }
+        },
+
+        ruleRequiresValue(rule) {
+            return !['is_empty', 'is_not_empty'].includes(rule.operator);
+        },
+
+        ruleHasValue(rule) {
+            if (!this.ruleRequiresValue(rule)) return true;
+
+            if (Array.isArray(rule.value)) {
+                return rule.value.length > 0;
+            }
+
+            if (typeof rule.value === 'number') {
+                return !Number.isNaN(rule.value);
+            }
+
+            if (typeof rule.value === 'string') {
+                return rule.value.trim() !== '';
+            }
+
+            return rule.value !== null && rule.value !== undefined;
+        },
+
+        ruleValidationMessage(rule) {
+            if (!this.ruleRequiresValue(rule) || this.ruleHasValue(rule)) {
+                return '';
+            }
+
+            return 'Enter a value or choose "Is Empty".';
+        },
+
+        ruleHasValidationError(rule) {
+            return this.showValidationErrors && this.ruleValidationMessage(rule) !== '';
+        },
+
+        hasValidationErrors() {
+            return this.rules.some(rule => this.ruleValidationMessage(rule) !== '');
+        },
+
+        ensureValidRules() {
+            if (!this.hasValidationErrors()) {
+                this.showValidationErrors = false;
+                return true;
+            }
+
+            this.showValidationErrors = true;
+            window.parker.showToast('Enter a value for each rule or choose "Is Empty".', 'warning');
+            return false;
+        },
+
+        defaultSortOrder(sortBy) {
+            return ['series', 'title'].includes(sortBy) ? 'asc' : 'desc';
+        },
+
+        handleSortByChange() {
+            this.sortOrder = this.defaultSortOrder(this.sortBy);
+        },
+
+        sortOrderLabel(order) {
+            if (['series', 'title'].includes(this.sortBy)) {
+                return order === 'asc' ? 'A to Z' : 'Z to A';
+            }
+
+            if (['created', 'updated', 'year'].includes(this.sortBy)) {
+                return order === 'desc' ? 'Newest First' : 'Oldest First';
+            }
+
+            if (this.sortBy === 'page_count') {
+                return order === 'desc' ? 'Most Pages' : 'Fewest Pages';
+            }
+
+            if (['rating', 'parker_rating'].includes(this.sortBy)) {
+                return order === 'desc' ? 'Highest First' : 'Lowest First';
+            }
+
+            return order === 'asc' ? 'Ascending' : 'Descending';
         },
 
         async performSearch() {
+            if (!this.ensureValidRules()) return;
+
             this.loading = true;
             this.hasSearched = true;
             this.results = []; // Clear previous results while loading
@@ -523,7 +758,7 @@ document.addEventListener('alpine:init', () => {
             console.log("payload", payload);
 
             try {
-                const res = await fetch(window.url('/api/comics/search'), {
+                const res = await fetch(window.parker.route('comics.search'), {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(payload)
@@ -545,8 +780,8 @@ document.addEventListener('alpine:init', () => {
             try {
 
                 const [savedRes, smartRes] = await Promise.all([
-                    fetch(window.url('/api/saved-searches/')),
-                    fetch(window.url('/api/smart-lists/'))
+                    fetch(window.parker.route('saved_searches.list')),
+                    fetch(window.parker.route('smart_lists.list'))
                 ]);
 
                 if (savedRes.ok) this.savedSearches = await savedRes.json();
@@ -572,6 +807,7 @@ document.addEventListener('alpine:init', () => {
 
          async saveSearch() {
             if (!this.newSearchName.trim()) return;
+            if (!this.ensureValidRules()) return;
 
             const payload = {
                 name: this.newSearchName,
@@ -579,7 +815,7 @@ document.addEventListener('alpine:init', () => {
             };
 
             try {
-                const res = await fetch(window.url('/api/saved-searches/'), {
+                const res = await fetch(window.parker.route('saved_searches.create'), {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(payload)
@@ -590,16 +826,23 @@ document.addEventListener('alpine:init', () => {
                     this.newSearchName = '';
                     this.loadedListId = null;
                     await this.loadSavedList();
-                    window.comicServer.showToast("Search configuration saved!", "success");
+                    window.parker.showToast("Search configuration saved!", "success");
                 }
             } catch(e) { console.error(e); }
         },
 
         async deleteSearch(id) {
-            if(!confirm("Delete this saved search?")) return;
-            await fetch(window.url(`/api/saved-searches/${id}`), { method: 'DELETE' });
+
+            const confirmed = await window.parker.dialog.confirm(
+                "Delete Item?",
+                "Delete this saved search?",
+                { isDestructive: true, confirmText: 'Delete' }
+            );
+
+            if(!confirmed) return;
+            await fetch(window.parker.route('saved_searches.delete', { search_id: id }), { method: 'DELETE' });
             await this.loadSavedList(); // Refresh list
-            window.comicServer.showToast("Saved Search deleted", "success");
+            window.parker.showToast("Saved Search deleted", "success");
         },
 
         applySearch(item) {
@@ -621,7 +864,7 @@ document.addEventListener('alpine:init', () => {
                     id: Date.now() + i + Math.random(),
                     field: f.field,
                     operator: f.operator,
-                    value: f.value
+                    value: this.normalizeRuleValue(f.field, f.value)
                 }));
             } else {
                 this.rules = [{ id: Date.now() + 1 + Math.random(), field: 'series', operator: 'contains', value: [] }];
@@ -672,9 +915,10 @@ document.addEventListener('alpine:init', () => {
         async saveAsSmartList() {
 
             if (!this.newSearchName.trim()) {
-                alert("Please enter a name first.");
+                await window.parker.dialog.alert('Error', 'Please enter a name first.');
                 return;
             }
+            if (!this.ensureValidRules()) return;
 
             // Reuse the payload builder so the logic matches exactly
             const payload = {
@@ -686,7 +930,7 @@ document.addEventListener('alpine:init', () => {
 
                 if(this.loadedListId === null) {
                     // Create
-                    const res = await fetch(window.url('/api/smart-lists/'), {
+                    const res = await fetch(window.parker.route('smart_lists.create'), {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify(payload)
@@ -694,15 +938,15 @@ document.addEventListener('alpine:init', () => {
 
                     if (res.ok) {
                         this.saveModalOpen = false;
-                        window.comicServer.showToast("Smart List created!", "success");
+                        window.parker.showToast("Smart List created!", "success");
                         this.newSearchName = '';
                     } else {
-                        window.comicServer.showToast("Failed to create list.", "error");
+                        window.parker.showToast("Failed to create list.", "error");
                     }
 
                 } else {
                     // Update
-                    const res = await fetch(window.url(`/api/smart-lists/${this.loadedListId}`), {
+                    const res = await fetch(window.parker.route('smart_lists.update', { list_id: this.loadedListId }), {
                         method: 'PATCH',
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify(payload)
@@ -710,21 +954,21 @@ document.addEventListener('alpine:init', () => {
 
                     if (res.ok) {
                         this.saveModalOpen = false;
-                        window.comicServer.showToast("Smart List updated!", "success");
+                        window.parker.showToast("Smart List updated!", "success");
                     } else {
-                        window.comicServer.showToast("Failed to update list.", "error");
+                        window.parker.showToast("Failed to update list.", "error");
                     }
                 }
             } catch(e) {
                 console.error(e);
-                window.comicServer.showToast("Network error.", "error");
+                window.parker.showToast("Network error.", "error");
             }
         },
 
         // Helper to get name (Optional polish)
         async fetchLibraryName(id) {
             try {
-                const res = await fetch(window.url(`/api/libraries/${id}`));
+                const res = await fetch(window.parker.route('libraries.detail', { library_id: id }));
                 if(res.ok) {
                     const lib = await res.json();
                     this.contextLibraryName = lib.name;

@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Integer, String, DateTime, ForeignKey, Table
+from sqlalchemy import Boolean, Column, Integer, String, DateTime, ForeignKey, JSON, Table
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from app.database import Base
@@ -20,6 +20,13 @@ class User(Base):
     username = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     avatar_path = Column(String, nullable=True)
+    social_insights_enabled = Column("share_progress_enabled", Boolean, default=True)
+
+    max_age_rating = Column(String, nullable=True, default=None)
+    allow_unknown_age_ratings = Column(Boolean, default=False)
+    monthly_reading_goal = Column(Integer, default=10)
+    home_rail_layout = Column(JSON, nullable=True)
+
 
     # Permissions
     is_active = Column(Boolean, default=True)
@@ -28,10 +35,13 @@ class User(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     last_login = Column(DateTime, nullable=True)
 
+    #======================
     # Relationships
+    #======================
 
     # When a user is deleted, delete their reading history too
     reading_progress = relationship("ReadingProgress", back_populates="user", cascade="all, delete-orphan")
+    bookmarks = relationship("Bookmark", back_populates="user", cascade="all, delete-orphan")
 
     # Many-to-Many Relationship
     # We use a string "Library" to avoid circular imports if Library imports User
@@ -39,3 +49,6 @@ class User(Base):
 
     # Pull Lists Relationship. use the string "PullList" to avoid circular imports.
     pull_lists = relationship("PullList", back_populates="user", cascade="all, delete-orphan")
+
+    # Use cascade="all, delete-orphan" so that if a user is deleted, their logs are wiped too
+    activity_logs = relationship("ActivityLog", back_populates="user", cascade="all, delete-orphan")

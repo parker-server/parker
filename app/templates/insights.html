@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}Insights - Parker{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto space-y-10">
+    <section class="rounded-3xl border border-gray-700 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 px-6 md:px-8 py-10 shadow-2xl">
+        <div class="max-w-3xl">
+            <p class="text-xs font-bold uppercase tracking-[0.3em] text-blue-300">Insights</p>
+            <h1 class="mt-3 text-4xl md:text-5xl font-black text-white tracking-tight">Metadata views that help patterns jump out.</h1>
+            <p class="mt-4 text-sm md:text-base leading-7 text-gray-400">
+                Parker's insights pages turn structured metadata into visual exploration. Start with a collaboration view, spot the strongest relationships, then jump straight into Advanced Search to inspect the exact books behind the signal.
+            </p>
+        </div>
+    </section>
+
+    <section class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <a href="{{ url('/timelines') }}" class="group rounded-lg border border-gray-700 bg-gray-800/80 hover:border-blue-500/60 hover:bg-gray-800 px-6 py-6 shadow-xl transition-all">
+            <h2 class="text-2xl font-black text-white">Library Timeline</h2>
+            <p class="mt-3 text-sm leading-6 text-gray-400">
+                Build a chronological view for a character or team from tags embedded in your comic files.
+            </p>
+
+            <div class="mt-6 inline-flex items-center gap-2 text-sm font-bold text-blue-300 group-hover:text-blue-200">
+                Open Library Timeline
+                <span aria-hidden="true">&rarr;</span>
+            </div>
+        </a>
+
+        <a href="{{ url('/insights/creator-chemistry') }}" class="group rounded-3xl border border-gray-700 bg-gray-800/80 hover:border-blue-500/60 hover:bg-gray-800 px-6 py-6 shadow-xl transition-all">
+            <h2 class="text-2xl font-black text-white">Creator Chemistry</h2>
+            <p class="mt-3 text-sm leading-6 text-gray-400">
+                See which writers, pencillers, inkers, colorists, and editors show up together most often across your library.
+            </p>
+
+            <div class="mt-6 inline-flex items-center gap-2 text-sm font-bold text-blue-300 group-hover:text-blue-200">
+                Open Creator Chemistry
+                <span aria-hidden="true">&rarr;</span>
+            </div>
+        </a>
+
+        <a href="{{ url('/insights/character-chemistry') }}" class="group rounded-3xl border border-gray-700 bg-gray-800/80 hover:border-emerald-500/60 hover:bg-gray-800 px-6 py-6 shadow-xl transition-all">
+            <h2 class="text-2xl font-black text-white">Character Chemistry</h2>
+            <p class="mt-3 text-sm leading-6 text-gray-400">
+                Explore which characters co-appear most often, surface recurring team-ups, and jump into the matching issues in one click.
+            </p>
+
+            <div class="mt-6 inline-flex items-center gap-2 text-sm font-bold text-emerald-300 group-hover:text-emerald-200">
+                Open Character Chemistry
+                <span aria-hidden="true">&rarr;</span>
+            </div>
+        </a>
+
+        <a href="{{ url('/insights/writer-character') }}" class="group rounded-3xl border border-gray-700 bg-gray-800/80 hover:border-amber-500/60 hover:bg-gray-800 px-6 py-6 shadow-xl transition-all">
+            <h2 class="text-2xl font-black text-white">Writer to Character</h2>
+            <p class="mt-3 text-sm leading-6 text-gray-400">
+                See which writers are most closely associated with which characters, then jump straight into the matching books.
+            </p>
+
+            <div class="mt-6 inline-flex items-center gap-2 text-sm font-bold text-amber-300 group-hover:text-amber-200">
+                Open Writer to Character
+                <span aria-hidden="true">&rarr;</span>
+            </div>
+        </a>
+
+        <a href="{{ url('/insights/artist-character') }}" class="group rounded-3xl border border-gray-700 bg-gray-800/80 hover:border-rose-500/60 hover:bg-gray-800 px-6 py-6 shadow-xl transition-all">
+            <h2 class="text-2xl font-black text-white">Artist to Character</h2>
+            <p class="mt-3 text-sm leading-6 text-gray-400">
+                See which artists are most strongly associated with which characters, based on penciller credits in your library metadata.
+            </p>
+
+            <div class="mt-6 inline-flex items-center gap-2 text-sm font-bold text-rose-300 group-hover:text-rose-200">
+                Open Artist to Character
+                <span aria-hidden="true">&rarr;</span>
+            </div>
+        </a>
+    </section>
+</div>
+{% endblock %}

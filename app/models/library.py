@@ -1,3 +1,5 @@
+from typing import Optional
+
 from sqlalchemy import Column, Integer, String, DateTime, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
@@ -9,9 +11,11 @@ class Library(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False)
-    path = Column(String, nullable=False)
     scan_on_startup = Column(Boolean, default=False)
     watch_mode = Column(Boolean, default=False)  # Real-time watching
+    parse_reading_lists = Column(Boolean, default=True, nullable=False)
+    parse_collections = Column(Boolean, default=True, nullable=False)
+    parse_story_arcs = Column(Boolean, default=True, nullable=False)
 
     last_scanned = Column(DateTime, nullable=True)
     is_scanning = Column(Boolean, default=False)
@@ -19,3 +23,12 @@ class Library(Base):
 
     # Relationships - use string reference to avoid circular import
     series = relationship("Series", back_populates="library", cascade="all, delete-orphan")
+    roots = relationship("LibraryRoot", back_populates="library", cascade="all, delete-orphan")
+
+    @property
+    def active_root(self) -> Optional["LibraryRoot"]:
+        return next((r for r in self.roots if r.is_active), None)
+
+    @property
+    def active_roots(self) -> list["LibraryRoot"]:
+        return [r for r in self.roots if r.is_active]

@@ -17,3 +17,4 @@ class SystemSetting(Base):
 
     # Store valid choices here when applicable
     options = Column(JSON, nullable=True)
+    depends_on = Column(JSON, nullable=True) # Used for cascading / linked dropdowns

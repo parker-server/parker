@@ -32,7 +32,22 @@ class ComicArchive:
         self.archive = self._open_archive()
 
     def _open_archive(self):
-        """Open the appropriate archive handler"""
+        """Open the appropriate archive handler with fallback for mislabeled extensions"""
+        # 1. Try to detect the format based on file signatures first (most reliable)
+        if zipfile.is_zipfile(self.filepath):
+            if self.extension != ".cbz":
+                logger.warning(f"Mislabeled archive: {self.filepath.name} is ZIP but labeled as {self.extension}")
+                self.extension = ".cbz"
+            return zipfile.ZipFile(self.filepath)
+
+        if rarfile.is_rarfile(self.filepath):
+            if self.extension != ".cbr":
+                logger.warning(f"Mislabeled archive: {self.filepath.name} is RAR but labeled as {self.extension}")
+                self.extension = ".cbr"
+            return rarfile.RarFile(self.filepath)
+
+        # 2. Fall back to extension-based opening if detection failed
+        # This provides standard library error messages if the file is corrupted
         if self.extension == ".cbz":
             return zipfile.ZipFile(self.filepath)
         elif self.extension == ".cbr":
@@ -56,7 +71,7 @@ class ComicArchive:
     def get_pages(self) -> List[str]:
         """Get sorted list of image files (pages) - filter out non-images"""
         # Valid image extensions
-        image_extensions = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff'}
+        image_extensions = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff', '.jxl', '.avif'}
 
         # Files to explicitly ignore (common in comic archives)
         ignore_patterns = {'thumbs.db', '.ds_store', 'comicinfo.xml', '__macosx'}
@@ -86,14 +101,17 @@ class ComicArchive:
         def sort_key(filename):
             """
             Multi-stage sort key:
-            1. Priority: Explicit covers ('fc', 'cover') come first (0 vs 1).
+            1. Priority: Explicit covers ('fc', 'cover') come first (0), end-pages ('z-') come last (2).
             2. Natural: Numbers sorted numerically (1, 2, 10).
             3. Symbols: Separators de-prioritized so 'c01a' < 'c01-'.
             """
             # 1. Normalize case
             text = filename.lower()
 
-            # 2. COVER PRIORITY
+            # 2. PRIORITY BUCKETING
+            # Check for explicit end-of-archive naming conventions like 'z.', 'z-', 'zz_'
+            if re.match(r'^z+[\W_]', text):
+                priority = 2
             # Check for explicit cover naming conventions using regex word boundaries.
             # Regex updated to handle:
             # - Underscore prefixes (e.g. "_cover") which \b misses because _ is a word char
@@ -101,8 +119,11 @@ class ComicArchive:
             # This ensures "scan01" doesn't trigger it (0 is a word char), but "scan.jpg" does.
             # Pattern: (Start/NonWord/_) + Keyword + (End/NonWord/_)
             # matches " fc ", "fc.", "-fc", etc.
-            # 0 = Cover (Highest Priority), 1 = Standard Page
-            is_cover = 0 if re.search(r'(?:^|[\W_])(fc|cover|front|scan)(?:$|[\W_])', text) else 1
+            # 0 = Cover (Highest), 1 = Standard, 2 = End Page (Lowest)
+            elif re.search(r'(?:^|[\W_])(fc|cover|front|scan)(?:$|[\W_])', text):
+                priority = 0
+            else:
+                priority = 1
 
             # 3. SEPARATOR HACK (From previous fix)
             # Replace separators with high-ASCII char '~' to ensure letters sort before symbols.
@@ -114,7 +135,7 @@ class ComicArchive:
             natural_parts = [int(c) if c.isdigit() else c for c in re.split(r'(\d+)', text)]
 
             # Return tuple: (Priority, Natural_Sort_Parts)
-            return (is_cover, natural_parts)
+            return (priority, natural_parts)
 
         # ------------------------------
         pages.sort(key=sort_key)

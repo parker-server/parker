@@ -3,8 +3,12 @@
 
 {% macro page_context(id, colors) %}
 <script>
-    window.PAGE_CONTEXT = {
-        imageUrl: "/api/comics/{{ id }}/thumbnail",
+
+    const cid = "{{ id }}";
+
+    window.parker.page_color_context = {
+        backgroundStyle: "{{ background_style if background_style else 'NONE' }}",
+        imageUrl: window.parker.route('comics.thumbnail', { comic_id: cid }),
         colors: {
             primary: '{{ colors.primary if colors and colors.primary else "#111111" }}',
             secondary: '{{ colors.secondary if colors and colors.secondary else "#222222" }}',

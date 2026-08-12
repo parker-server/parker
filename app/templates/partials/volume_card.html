@@ -1,9 +1,9 @@
-<a :href="`/volumes/${volume.volume_id}`" class="block group">
+<a :href="window.parker.route('pages.volume_detail', {volume_id: volume.volume_id })" class="block group">
     <div class="aspect-[2/3] bg-gray-700 rounded-lg overflow-hidden relative shadow-md transition-transform duration-200 group-hover:scale-[1.02]">
 
         <template x-if="volume.first_issue_id">
             <img
-                :src="`/api/comics/${volume.first_issue_id}/thumbnail`"
+                :src="window.parker.route('comics.thumbnail', {comic_id: volume.first_issue_id }, `v=${volume.thumbnail_hash}`)"
                 :alt="`Volume ${volume.volume_number}`"
                 class="w-full h-full object-cover transition-opacity duration-300"
                 loading="lazy"

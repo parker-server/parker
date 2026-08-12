@@ -1,21 +1,22 @@
 {% extends "base.html" %}
 
-{% block title %}Comic Details - Comic Server{% endblock %}
+{% block title %}Comic Details - Parker{% endblock %}
 
 {% block content %}
 
-{% from "partials/page_context.html" import page_context %}
+{% from "partials/page_context.html" import page_context with context %}
 {{ page_context(comic_id, comic.color_palette) }}
 
+{% include "partials/dynamic_background.html" %}
 
 <div class="relative z-10">
 
-    <div class="max-w-6xl mx-auto" x-data="comicDetail()">
+    <div class="max-w-6xl mx-auto" x-data="comicDetail()" x-on:pull-list-item-added.window="handlePullListItemAdded($event.detail)">
 
-        <div class="flex items-center space-x-2 text-gray-400 mb-6 text-sm" x-show="!error" x-cloak>
-            <a :href="window.url(`/library/${comic?.library_id}`)" class="hover:text-white" x-text="comic?.library_name"></a>
+        <div class="flex items-center space-x-2 text-gray-400 mb-6 text-sm md:text-base" x-show="!error" x-cloak>
+            <a :href="window.parker.route('pages.library_detail', { library_id: comic?.library_id })" class="py-1 hover:text-white" x-text="comic?.library_name"></a>
             <span>/</span>
-            <a :href="window.url(`/series/${comic?.series_id}`)" class="hover:text-blue-400" x-text="comic?.series || 'Series'"></a>
+            <a :href="window.parker.route('pages.series_detail', { series_id: comic?.series_id})" class="py-1 hover:text-blue-400" x-text="comic?.series || 'Series'"></a>
             <span>/</span>
             <span class="text-white" x-text="`#${comic?.number}`"></span>
         </div>
@@ -34,7 +35,7 @@
                     <button x-on:click="window.history.back()" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors">
                         Go Back
                     </button>
-                    <a :href="window.url('/')" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors">
+                    <a :href="window.parker.route('pages.home')" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors">
                         Home
                     </a>
                 </div>
@@ -46,7 +47,7 @@
             <div class="md:col-span-1 space-y-6">
                 <div class="w-64 mx-auto md:w-full aspect-[2/3] bg-gray-800 rounded-lg overflow-hidden shadow-2xl relative group border border-gray-700">
                     <img
-                        :src="window.url(`/api/comics/${comicId}/thumbnail?width=400&height=600`)"
+                        :src="window.parker.route('comics.thumbnail', { comic_id: comicId }, `v=${comic?.thumbnail_hash}&width=400&height=600`)"
                         :alt="comic?.title"
                         class="w-full h-full object-cover"
                     >
@@ -56,14 +57,21 @@
 
                     {% include "partials/read_comic_button.html" %}
 
-                    <button
-                        x-on:click="$dispatch('open-add-to-pull-list', { id: comicId, type: 'comic' })"
-                        class="w-full bg-gray-700 hover:bg-gray-600 text-gray-200 font-bold py-2 px-4 rounded-lg transition-colors border border-gray-600 flex items-center justify-center gap-2">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                            <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
-                        </svg>
-                        Add to Pull List
-                    </button>
+                    <div>
+                        <button
+                            x-on:click="$dispatch('open-add-to-pull-list', { id: comicId, type: 'comic' })"
+                            class="w-full bg-gray-700 hover:bg-gray-600 text-gray-200 font-bold py-2 px-4 rounded-lg transition-colors border border-gray-600 flex items-center justify-center gap-2 flex-wrap">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
+                            </svg>
+                            <span>Add to Stack</span>
+                            <span x-show="comic?.stack_membership_count > 0"
+                                  x-cloak
+                                  data-stack-membership
+                                  class="text-sm font-medium text-gray-400"
+                                  x-text="stackMembershipLabel()"></span>
+                        </button>
+                    </div>
 
 
                     <div class="grid grid-cols-2 gap-3">
@@ -76,10 +84,49 @@
                     </div>
                 </div>
 
+                <template x-if="comic?.bookmarks?.length">
+                    <div class="overflow-hidden rounded-lg border border-gray-700 bg-gray-800 shadow-lg">
+                        <div class="flex items-start justify-between gap-4 border-b border-gray-700 px-4 py-4">
+                            <div class="min-w-0">
+                                <h3 class="font-bold text-gray-200">Bookmarks</h3>
+                                <p class="mt-1 text-xs text-gray-400">Jump directly to saved pages from here.</p>
+                            </div>
+                            <span class="whitespace-nowrap rounded-full border border-gray-600 bg-gray-900 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-300">
+                                <span x-text="comic.bookmarks.length"></span> saved
+                            </span>
+                        </div>
+
+                        <div class="max-h-72 overflow-y-auto">
+                            <template x-for="bookmark in comic.bookmarks" :key="bookmark.id">
+                                <a :href="bookmarkReaderHref(bookmark)"
+                                   data-detail-bookmark-link
+                                   class="group block border-b border-gray-700/80 px-4 py-3 transition-colors hover:bg-gray-700/40 last:border-b-0">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div class="min-w-0">
+                                            <p class="truncate text-sm font-semibold text-white" x-text="bookmark.label || `Page ${bookmark.page_index + 1}`"></p>
+                                            <p class="mt-1 text-xs text-gray-400">
+                                                <span class="font-semibold text-blue-300" x-text="`Page ${bookmark.page_index + 1}`"></span>
+                                                <span x-show="bookmark.label">saved jump point</span>
+                                            </p>
+                                        </div>
+                                        <span class="shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-500 transition-colors group-hover:text-blue-300">
+                                            Open
+                                        </span>
+                                    </div>
+                                </a>
+                            </template>
+                        </div>
+
+                        <p x-show="hasResumePage()" class="border-t border-gray-700 px-4 py-3 text-xs text-gray-400">
+                            Bookmark launches preserve your current resume page until you choose otherwise in the reader.
+                        </p>
+                    </div>
+                </template>
+
                 <div class="bg-gray-800 rounded-lg p-4 space-y-4 border border-gray-700">
                     <h3 class="font-bold text-gray-300 border-b border-gray-700 pb-2">File Info</h3>
 
-                    <div>
+                    <div x-show="comic?.file_path">
                         <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Location</div>
                         <div class="text-xs font-mono text-gray-400 bg-black/30 p-2 rounded break-all select-all border border-gray-700/50" x-text="comic?.file_path"></div>
                     </div>
@@ -87,7 +134,7 @@
                     <div class="grid grid-cols-2 gap-4">
                         <div>
                             <div class="text-[10px] text-gray-500 uppercase tracking-wider">Size</div>
-                            <div class="text-sm text-gray-300" x-text="window.comicServer.formatBytes(comic?.file_size)"></div>
+                            <div class="text-sm text-gray-300" x-text="window.parker.formatBytes(comic?.file_size)"></div>
                         </div>
                         <div>
                             <div class="text-[10px] text-gray-500 uppercase tracking-wider">Pages</div>
@@ -119,16 +166,6 @@
                     <div class="flex items-center gap-3 mt-4 text-sm text-gray-300">
                         <span x-text="comic?.year" class="bg-gray-700 px-2 py-1 rounded"></span>
 
-                        <template x-if="comic?.community_rating && comic?.community_rating > 0">
-                            <div class="flex items-center gap-1 bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 px-2 py-1 rounded" title="Community Rating">
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-3 h-3">
-                                    <path fill-rule="evenodd" d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.007 5.404.433c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.433 2.082-5.006z" clip-rule="evenodd" />
-                                </svg>
-                                <span class="font-bold text-xs" x-text="Number(comic.community_rating).toFixed(1)"></span>
-                            </div>
-                        </template>
-
-
                         {% with publisher_ref="comic?.publisher" %}
                             {% include "partials/publisher_link.html" %}
                         {% endwith %}
@@ -146,8 +183,8 @@
                         </template>
 
                         <template x-if="comic?.web">
-                            <a :href="comic.web" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1 text-green-400 hover:text-green-300 transition-colors border border-green-500/30 px-2 py-1 rounded hover:bg-green-500/10" title="View on ComicVine">
-                                <span>ComicVine</span>
+                            <a :href="comic.web" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1 text-green-400 hover:text-green-300 transition-colors border border-green-500/30 px-2 py-1 rounded hover:bg-green-500/10" :title="comic.web_title || 'Open web link'">
+                                <span x-text="comic.web_label || 'Web Link'"></span>
                                 <span class="text-xs">↗</span>
                             </a>
                         </template>
@@ -165,6 +202,69 @@
 
                     </div>
                 </div>
+
+                <div class="bg-gray-800/80 border border-gray-700 rounded-xl p-4 shadow-lg">
+                    <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                        <div>
+                            <div class="text-[10px] uppercase tracking-[0.2em] text-blue-300/80 font-bold">Parker Rating</div>
+                            <div class="flex items-baseline gap-2 mt-1.5">
+                                <span class="text-2xl font-bold text-white" x-text="comic?.parker_rating_average ? Number(comic.parker_rating_average).toFixed(1) : '--'"></span>
+                                <span class="text-sm text-gray-400" x-text="comic?.parker_rating_count ? `${comic.parker_rating_count} rating${comic.parker_rating_count === 1 ? '' : 's'}` : 'No Parker ratings yet'"></span>
+                            </div>
+                            <p class="text-[11px] text-gray-500 mt-0.5">This server's rating for this issue.</p>
+                        </div>
+
+                        <template x-if="comic?.source_rating && comic?.source_rating > 0">
+                            <div class="bg-yellow-500/10 text-yellow-300 border border-yellow-500/20 rounded-lg px-3 py-1.5 text-sm">
+                                <div class="text-[10px] uppercase tracking-wider text-yellow-200/80 font-bold mb-0.5">Source Rating</div>
+                                <div class="font-semibold" x-text="Number(comic.source_rating).toFixed(1)"></div>
+                            </div>
+                        </template>
+                    </div>
+
+                    <div class="mt-3 grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto] gap-3 md:items-center" @mouseleave="hoverRating = 0">
+                        <div class="text-sm text-gray-300 order-2 md:order-1">
+                            <div class="flex flex-col sm:flex-row sm:items-center gap-2">
+                                <span x-text="comic?.user_rating ? `Your rating: ${comic.user_rating}/5` : 'Rate this comic to get Parker started.'"></span>
+                                <button
+                                    x-show="comic?.user_rating"
+                                    type="button"
+                                    class="text-red-300 hover:text-white border border-red-500/30 hover:border-red-400/60 px-2.5 py-0.5 rounded transition-colors disabled:opacity-50 w-fit"
+                                    :disabled="submittingRating"
+                                    @click="clearRating()"
+                                >
+                                    Remove Rating
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center gap-1 justify-start md:justify-end order-1 md:order-2">
+                            <template x-for="star in [1, 2, 3, 4, 5]" :key="star">
+                                <button
+                                    type="button"
+                                    class="p-0.5 transition-colors disabled:opacity-50"
+                                    :disabled="submittingRating"
+                                    @mouseenter="hoverRating = star"
+                                    @click="setRating(star)"
+                                    :title="`Rate ${star} star${star === 1 ? '' : 's'}`"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-7 h-7 transition-colors"
+                                         :class="star <= activeRating ? 'text-yellow-400' : 'text-gray-600 hover:text-yellow-200'">
+                                        <path fill-rule="evenodd" d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.007 5.404.433c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.433 2.082-5.006z" clip-rule="evenodd" />
+                                    </svg>
+                                </button>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+
+                <template x-if="comic?.parker_readers_count">
+                    <div class="bg-blue-950/20 border border-blue-500/20 rounded-xl p-4 shadow-lg">
+                        <div class="text-[10px] uppercase tracking-[0.2em] text-blue-300/80 font-bold">Parker Activity</div>
+                        <div class="mt-1 text-lg font-semibold text-white" x-text="`Read by ${comic.parker_readers_count} Parker users`"></div>
+                        <p class="text-sm text-gray-400 mt-1">Based on opted-in completed reads on this server.</p>
+                    </div>
+                </template>
 
                 <div x-show="comic?.summary" x-data="{ expanded: false, maxLength: 400 }">
                     <h3 class="text-lg font-bold text-gray-200 mb-2">Summary</h3>
@@ -320,6 +420,12 @@ function comicDetail() {
         comic: null,
         loading: true,
         error: null,
+        hoverRating: 0,
+        submittingRating: false,
+
+        get activeRating() {
+            return this.hoverRating || this.comic?.user_rating || 0;
+        },
 
         init() {
             this.loadComic();
@@ -327,7 +433,7 @@ function comicDetail() {
 
         async loadComic() {
             try {
-                const res = await fetch(window.url(`/api/comics/${this.comicId}`));
+                const res = await fetch(window.parker.route('comics.detail', { comic_id: this.comicId }));
                 if (res.status === 404) {
                    this.error = {
                         title: "Comic Not Found",
@@ -340,19 +446,113 @@ function comicDetail() {
                 if (!res.ok) throw new Error("Comic not found");
                 this.comic = await res.json();
                 this.loading = false;
-                document.title = `${this.comic?.series} #${this.comic?.number} - Comic Server`;
+                document.title = `${this.comic?.series} #${this.comic?.number} - Parker`;
             } catch (e) {
                 console.error(e);
             }
         },
 
         async markRead() {
-            await fetch(window.url(`/api/progress/${this.comicId}/mark-read`), { method: 'POST' });
-            // You could show a toast here
+            await fetch(window.parker.route('progress.mark_comic_as_read',{ comic_id: this.comicId }), { method: 'POST' });
+            if (this.comic) {
+                this.comic = { ...this.comic, read_status: 'completed', resume_page: null };
+            }
         },
 
         async markUnread() {
-            await fetch(window.url(`/api/progress/${this.comicId}`), { method: 'DELETE' });
+            await fetch(window.parker.route('progress.mark_comic_as_unread', { comic_id: this.comicId }), { method: 'DELETE' });
+            if (this.comic) {
+                this.comic = { ...this.comic, read_status: 'new', resume_page: null };
+            }
+        },
+
+        hasResumePage() {
+            return Number.isInteger(this.comic?.resume_page) && this.comic.resume_page > 0;
+        },
+
+        stackMembershipLabel() {
+            const count = this.comic?.stack_membership_count;
+            if (!Number.isInteger(count) || count <= 0) {
+                return '';
+            }
+
+            return `(in ${count} stack${count === 1 ? '' : 's'})`;
+        },
+
+        bookmarkReaderHref(bookmark) {
+            const params = new URLSearchParams();
+            params.set('page', bookmark.page_index);
+
+            if (this.hasResumePage() && this.comic.resume_page !== bookmark.page_index) {
+                params.set('bookmark_origin_page', this.comic.resume_page);
+            }
+
+            return window.parker.readerRoute(this.comicId, params.toString());
+        },
+
+        handlePullListItemAdded(detail) {
+            if (!this.comic || detail?.comicId !== this.comicId) {
+                return;
+            }
+
+            const currentCount = Number.isInteger(this.comic.stack_membership_count)
+                ? this.comic.stack_membership_count
+                : 0;
+
+            this.comic = {
+                ...this.comic,
+                stack_membership_count: currentCount + 1,
+            };
+        },
+
+        applyRatingState(data) {
+            if (!this.comic) return;
+            this.comic = { ...this.comic, ...data };
+            this.hoverRating = 0;
+        },
+
+        async setRating(rating) {
+            if (this.submittingRating) return;
+            this.submittingRating = true;
+
+            try {
+                const res = await fetch(window.parker.route('comics.set_rating', { comic_id: this.comicId }), {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ rating })
+                });
+
+                if (!res.ok) throw new Error('Failed to save rating');
+                const data = await res.json();
+                this.applyRatingState(data);
+                if (window.parker) window.parker.showToast('Parker rating saved', 'success');
+            } catch (e) {
+                console.error(e);
+                if (window.parker) window.parker.showToast('Failed to save Parker rating', 'error');
+            } finally {
+                this.submittingRating = false;
+            }
+        },
+
+        async clearRating() {
+            if (this.submittingRating) return;
+            this.submittingRating = true;
+
+            try {
+                const res = await fetch(window.parker.route('comics.delete_rating', { comic_id: this.comicId }), {
+                    method: 'DELETE'
+                });
+
+                if (!res.ok) throw new Error('Failed to remove rating');
+                const data = await res.json();
+                this.applyRatingState(data);
+                if (window.parker) window.parker.showToast('Parker rating removed', 'success');
+            } catch (e) {
+                console.error(e);
+                if (window.parker) window.parker.showToast('Failed to remove Parker rating', 'error');
+            } finally {
+                this.submittingRating = false;
+            }
         },
 
     }

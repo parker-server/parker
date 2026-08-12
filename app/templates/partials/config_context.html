@@ -1,0 +1,108 @@
+{# Used for including context-sensitive path data #}
+
+{% macro config_context(request, base_url) %}
+<script>
+
+    // Global Configuration
+    const PARKER_CONFIG = {
+        baseUrl: "{{ base_url }}" || "",
+    };
+    window.parker = {...(window.parker || {}), config: PARKER_CONFIG };
+
+    // JS Helper Function
+    get_url = function(path) {
+        const base = window.parker.config.baseUrl;
+        const cleanPath = path.startsWith('/') ? path.slice(1) : path;
+        return base ? `${base}/${cleanPath}` : `/${cleanPath}`;
+    };
+    window.parker = {...(window.parker || {}), url: get_url };
+
+
+    const API_ROUTES = {{ routes(request) | tojson }};
+
+    /**
+     * Usage: route('api.items.show', { item_id: 123 })
+     */
+    get_route = function(path, params = {}, rawQuery = '') {
+
+        // path can be "comics.detail" or "pages.home"
+        const parts = path.split('.');
+        let urlObj = API_ROUTES;
+
+        for (const part of parts) {
+            if (urlObj && urlObj.hasOwnProperty(part)) {
+                urlObj = urlObj[part];
+            } else {
+                console.error(`Route "${path}" not found in API_ROUTES.`);
+                return '#';
+            }
+        }
+
+        let url = urlObj;
+
+        // Create a copy of params so we can modify it without side effects
+        let remainingParams = { ...params };
+
+        // Replace Path Parameters
+        // We look for patterns like {id} or {item_id} in the URL string
+        url = url.replace(/\{(\w+)\}/g, (match, key) => {
+            if (remainingParams.hasOwnProperty(key)) {
+                const value = remainingParams[key];
+                // Remove this key from the list so it doesn't get added to the query string later
+                delete remainingParams[key];
+                return value;
+            }
+            // If the path needs a param (e.g. {id}) but you didn't provide it,
+            // we keep the placeholder or you could throw an error here.
+            console.warn(`Route "${name}" expects parameter "{${key}}" but it was not provided.`);
+            return match;
+        });
+
+        // specific "object" parameters to query string
+        const paramString = new URLSearchParams(remainingParams).toString();
+
+        // Clean up the user's raw query string (remove leading '?' or '&' if present)
+        let extraString = rawQuery ? rawQuery.toString().replace(/^[?&]/, '') : '';
+
+        // Merge them
+        // We have two potential sources of query params: paramString and extraString
+        let fullQuery = [];
+        if (paramString) fullQuery.push(paramString);
+        if (extraString) fullQuery.push(extraString);
+
+        if (fullQuery.length > 0) {
+            // specific check: does the url already have a '?' (rare in FastAPI path definitions but possible)
+            const separator = url.includes('?') ? '&' : '?';
+            url += separator + fullQuery.join('&');
+        }
+
+        const base = window.parker.config.baseUrl;
+        const finalUrl = url.startsWith('/') ? url : `/${url}`;
+
+        return base ? `${base}${finalUrl}` : finalUrl;
+    };
+
+    window.parker = {...(window.parker || {}), route: get_route };
+
+    get_current_relative_url = function() {
+        return `${window.location.pathname}${window.location.search}`;
+    };
+
+    window.parker = {...(window.parker || {}), currentRelativeUrl: get_current_relative_url };
+
+    build_reader_route = function(comicId, rawQuery = '', options = {}) {
+        const query = new URLSearchParams(rawQuery ? rawQuery.toString().replace(/^[?&]/, '') : '');
+        const includeReturnTo = options.includeReturnTo !== false;
+        const returnTo = typeof options.returnTo === 'string' ? options.returnTo : get_current_relative_url();
+
+        if (includeReturnTo && returnTo && !query.has('return_to')) {
+            query.set('return_to', returnTo);
+        }
+
+        return get_route('pages.reader', { comic_id: comicId }, query.toString());
+    };
+
+    window.parker = {...(window.parker || {}), readerRoute: build_reader_route };
+
+</script>
+{% endmacro %}

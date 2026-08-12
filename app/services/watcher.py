@@ -2,12 +2,15 @@ import time
 import logging
 import threading
 from pathlib import Path
+from sqlalchemy.orm import selectinload
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from app.database import SessionLocal
 from app.models.library import Library
 from app.services.scan_manager import scan_manager
-from app.config import settings
+from app.services.settings_service import SettingsService
+
+from app.core.settings_loader import get_cached_setting
 
 
 class LibraryEventHandler(FileSystemEventHandler):
@@ -49,7 +52,6 @@ class LibraryEventHandler(FileSystemEventHandler):
                 return
             self._timer = None
 
-        print(f"Watcher: Batch window ended for Library {self.library_id}. Queuing scan...")
         self.logger.info(f"Watcher: Batch window ended for Library {self.library_id}. Queuing scan...")
         scan_manager.add_task(self.library_id, force=False)
 
@@ -80,8 +82,10 @@ class LibraryEventHandler(FileSystemEventHandler):
         # If no timer, start one.
         with self._lock:
             if not self._stopped and not self._timer:
-                print(f"Watcher: Change detected in Library {self.library_id} ({event.event_type}: {path.name}). Starting {self.batch_window_seconds}s batch window.")
-                self.logger.info(f"Watcher: Change detected in Library {self.library_id} ({event.event_type}: {path.name}). Starting {self.batch_window_seconds}s batch window.")
+
+                self.logger.debug(f"Watcher: Change detected in Library {self.library_id} ({event.event_type}: {path.name}). Starting {self.batch_window_seconds}s batch window.")
+
+                # Start timer
                 self._timer = threading.Timer(self.batch_window_seconds, self._trigger_scan)
                 self._timer.start()
 
@@ -101,7 +105,7 @@ class LibraryWatcher:
 
         self.logger = logging.getLogger(__name__)
         self.observer = Observer()
-        self.watches = {}  # Map library_id -> watch_object
+        self.watches = {}  # Map (library_id, root_id) -> (watch_object, handler)
         self.is_running = False
         self._initialized = True
 
@@ -111,7 +115,6 @@ class LibraryWatcher:
             self.refresh_watches()
             self.observer.start()
             self.is_running = True
-            print("Library Watcher Started")
             self.logger.info("Library Watcher Started")
 
     def stop(self):
@@ -127,38 +130,57 @@ class LibraryWatcher:
         db = SessionLocal()
         try:
             # 1. Get all libraries that should be watched
-            libraries = db.query(Library).filter(Library.watch_mode == True).all()
-            active_ids = {lib.id for lib in libraries}
-            current_ids = set(self.watches.keys())
+            libraries = (
+                db.query(Library)
+                .options(selectinload(Library.roots))
+                .filter(Library.watch_mode == True)
+                .all()
+            )
+            active_roots = {
+                (lib.id, root.id): (lib, root)
+                for lib in libraries
+                for root in lib.active_roots
+            }
+            active_keys = set(active_roots.keys())
+            current_keys = set(self.watches.keys())
+
+            # Fetch Dynamic Setting (Default 600s if missing)
+            # We fetch it once per refresh so all new watches use the updated value.
+            # (Existing watches won't update their timeout until they are restarted, which is fine)
+            batch_window = _get_batch_window_seconds()
 
             # 2. Add new watches
             for lib in libraries:
-                if lib.id not in self.watches:
-                    try:
-                        print(f"Starting watch for: {lib.path}")
-                        self.logger.info(f"Starting watch for: {lib.path}")
-                        handler = LibraryEventHandler(lib.id, settings.batch_window_seconds)
-                        watch = self.observer.schedule(handler, lib.path, recursive=True)
+                if not lib.active_roots:
+                    self.logger.error(f"Library {lib.id} ('{lib.name}') has no active roots; skipping watch")
 
-                        # Store both so we can cancel the handler later
-                        self.watches[lib.id] = (watch, handler)
-                    except Exception as e:
-                        print(f"Failed to watch {lib.path}: {e}")
-                        self.logger.error(f"Failed to watch {lib.path}: {e}")
+            for key, (lib, active_root) in active_roots.items():
+                if key in self.watches:
+                    continue
+
+                try:
+                    self.logger.info(f"Starting watch for: {active_root.path}")
+                    handler = LibraryEventHandler(lib.id, int(batch_window))
+                    watch = self.observer.schedule(handler, active_root.path, recursive=True)
+
+                    # Store both so we can cancel the handler later
+                    self.watches[key] = (watch, handler)
+                except Exception as e:
+                    self.logger.error(f"Failed to watch {active_root.path}: {e}")
 
             # 3. Remove old watches (if disabled in DB)
-            for lib_id in current_ids:
-                if lib_id not in active_ids:
-                    print(f"Stopping watch for Library {lib_id}")
-                    self.logger.info(f"Stopping watch for Library {lib_id}")
-                    watch, handler = self.watches[lib_id]
+            for key in current_keys:
+                if key not in active_keys:
+                    lib_id, root_id = key
+                    self.logger.info(f"Stopping watch for Library {lib_id} root {root_id}")
+                    watch, handler = self.watches[key]
 
                     # Cancel any pending timer
                     handler.stop()
 
                     # Unschedule from watchdog
                     self.observer.unschedule(watch)
-                    del self.watches[lib_id]
+                    del self.watches[key]
 
         finally:
             db.close()
@@ -166,3 +188,14 @@ class LibraryWatcher:
 
 # Global Instance
 library_watcher = LibraryWatcher()
+
+
+def _get_batch_window_seconds() -> int:
+    raw_value = get_cached_setting("scanning.batch_window", 600)
+    try:
+        seconds = int(raw_value)
+    except (TypeError, ValueError):
+        return 600
+
+    min_value = SettingsService.min_value_for("scanning.batch_window") or 0
+    return max(seconds, min_value)

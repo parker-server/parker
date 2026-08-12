@@ -3,16 +3,18 @@
 {% block title %}Job History - Admin{% endblock %}
 
 {% block content %}
+
+
+
 <div class="max-w-6xl mx-auto" x-data="jobHistory">
-    <div class="flex justify-between items-center mb-6">
-        <h1 class="text-3xl font-bold text-white">System Job History</h1>
-        <button 
-            @click="loadJobs()" 
-            class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-white flex items-center gap-2"
-        >
-            <span :class="{'animate-spin': loading}">↻</span> Refresh
-        </button>
-    </div>
+
+    {% from "partials/admin_header.html" import admin_header %}
+    {{ admin_header(
+        title="Job History",
+        description="",
+        refresh_func="loadJobs()",
+        loading_var="loading"
+    ) }}
 
     <div class="bg-gray-800 rounded-xl overflow-hidden shadow-lg border border-gray-700">
         <div class="overflow-x-auto">
@@ -36,7 +38,12 @@
                             <td class="px-6 py-4">
                                 <span
                                     class="px-2 py-1 text-xs font-bold rounded border uppercase"
-                                    :class="job.job_type === 'scan' ? 'bg-blue-900/30 text-blue-200 border-blue-800' : 'bg-purple-900/30 text-purple-200 border-purple-800'"
+                                    :class="{
+                                        'bg-blue-900/30 text-blue-200 border-blue-800': job.job_type === 'scan',
+                                        'bg-purple-900/30 text-purple-200 border-purple-800': job.job_type === 'thumbnail',
+                                        'bg-orange-900/30 text-orange-200 border-orange-800': job.job_type === 'cleanup',
+                                        'bg-cyan-900/30 text-cyan-200 border-cyan-800': job.job_type === 'metadata_rehydrate'
+                                    }"
                                     x-text="job.job_type || 'scan'"
                                 ></span>
                             </td>
@@ -75,6 +82,18 @@
                                             </span>
                                         </template>
 
+                                        <template x-if="job.job_type === 'cleanup'">
+                                            <span class="text-orange-300">
+                                                <span x-text="getTotalCleaned(job.summary)"></span> cleaned
+                                            </span>
+                                        </template>
+
+                                        <template x-if="job.job_type === 'metadata_rehydrate'">
+                                            <span class="text-cyan-300">
+                                                <span x-text="(job.summary.reading_lists_restored || 0) + (job.summary.collections_restored || 0) + (job.summary.story_arcs_restored || 0)"></span> restored
+                                            </span>
+                                        </template>
+
                                         <span x-show="job.summary.errors > 0" class="text-red-400 ml-1" x-text="`(${job.summary.errors} err)`"></span>
                                     </span>
                                 </template>
@@ -84,7 +103,7 @@
                             <td class="px-6 py-4 text-sm" x-text="formatDate(job.created_at)"></td>
 
                             <td class="px-6 py-4">
-                                <button @click="viewDetails(job)" class="text-blue-400 hover:text-blue-300 text-sm font-semibold">Details</button>
+                                <button x-on:click="viewDetails(job)" class="text-blue-400 hover:text-blue-300 text-sm font-semibold">Details</button>
                             </td>
                         </tr>
                     </template>
@@ -92,6 +111,7 @@
             </table>
         </div>
     </div>
+
 
     <div x-show="selectedJob" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm" x-transition.opacity style="display: none;">
         <div class="bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full mx-4 border border-gray-700" @click.away="selectedJob = null">
@@ -124,6 +144,7 @@
                                     <div class="text-xs text-gray-500 uppercase">Deleted</div>
                                 </div>
                             </div>
+
                         </template>
 
                         <template x-if="selectedJob.job_type === 'thumbnail'">
@@ -143,6 +164,115 @@
                             </div>
                         </template>
 
+                        <template x-if="selectedJob.job_type === 'cleanup'">
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
+                                <div class="bg-orange-900/20 p-3 rounded border border-orange-900/40">
+                                    <div class="text-xl font-bold text-orange-300" x-text="selectedJob.summary.series || 0"></div>
+                                    <div class="text-[10px] text-gray-400 uppercase">Series</div>
+                                </div>
+                                <div class="bg-orange-900/20 p-3 rounded border border-orange-900/40">
+                                    <div class="text-xl font-bold text-orange-300" x-text="selectedJob.summary.volumes || 0"></div>
+                                    <div class="text-[10px] text-gray-400 uppercase">Volumes</div>
+                                </div>
+                                <div class="bg-gray-700/30 p-3 rounded border border-gray-700">
+                                    <div class="text-xl font-bold text-gray-300"
+                                         x-text="(selectedJob.summary.characters || 0) + (selectedJob.summary.teams || 0) + (selectedJob.summary.locations || 0) + (selectedJob.summary.people || 0)">
+                                    </div>
+                                    <div class="text-[10px] text-gray-500 uppercase">Unused Tags</div>
+                                </div>
+                                <div class="bg-gray-700/30 p-3 rounded border border-gray-700">
+                                    <div class="text-xl font-bold text-gray-300"
+                                         x-text="(selectedJob.summary.empty_lists || 0) + (selectedJob.summary.empty_collections || 0)">
+                                    </div>
+                                    <div class="text-[10px] text-gray-500 uppercase">Empty Lists</div>
+                                </div>
+                            </div>
+                        </template>
+
+                        <template x-if="selectedJob.job_type === 'metadata_rehydrate'">
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
+                                <div class="bg-cyan-900/20 p-3 rounded border border-cyan-900/40">
+                                    <div class="text-xl font-bold text-cyan-300" x-text="selectedJob.summary.comics_scanned || 0"></div>
+                                    <div class="text-[10px] text-gray-400 uppercase">Comics Scanned</div>
+                                </div>
+                                <div class="bg-cyan-900/20 p-3 rounded border border-cyan-900/40">
+                                    <div class="text-xl font-bold text-cyan-300"
+                                         x-text="(selectedJob.summary.reading_lists_restored || 0) + (selectedJob.summary.collections_restored || 0) + (selectedJob.summary.story_arcs_restored || 0)">
+                                    </div>
+                                    <div class="text-[10px] text-gray-400 uppercase">Metadata Restored</div>
+                                </div>
+                                <div class="bg-gray-700/30 p-3 rounded border border-gray-700">
+                                    <div class="text-xl font-bold text-gray-300"
+                                         x-text="(selectedJob.summary.source_metadata_missing || 0) + (selectedJob.summary.source_metadata_invalid || 0)">
+                                    </div>
+                                    <div class="text-[10px] text-gray-500 uppercase">Missing/Invalid Source</div>
+                                </div>
+                                <div class="bg-gray-700/30 p-3 rounded border border-gray-700">
+                                    <div class="text-xl font-bold text-gray-300" x-text="selectedJob.summary.force_scan_recommended ? 'Yes' : 'No'"></div>
+                                    <div class="text-[10px] text-gray-500 uppercase">Force Scan Recommended</div>
+                                </div>
+                            </div>
+                        </template>
+
+                        <!-- Unified Error Details (SCAN + THUMBNAIL) -->
+                        <template x-if="selectedJob.summary?.error_details && selectedJob.summary.error_details.length > 0">
+                            <div class="mt-8">
+
+                                <h4 class="font-bold text-red-400 mb-3">
+                                    <span x-text="selectedJob.job_type === 'thumbnail' ? 'Thumbnail Errors' : 'Scan Errors'"></span>
+                                </h4>
+
+                                <template x-if="selectedJob.job_type === 'thumbnail'">
+                                    <div class="bg-red-900/10 border border-red-900/30 rounded-lg overflow-hidden">
+
+                                        <table class="w-full text-xs font-mono text-red-200">
+                                            <thead class="bg-red-900/20 text-red-300 uppercase text-[10px]">
+                                                <tr>
+                                                    <th class="px-3 py-2 text-left">Comic ID</th>
+                                                    <th class="px-3 py-2 text-left">File</th>
+                                                    <th class="px-3 py-2 text-left">Error</th>
+                                                </tr>
+                                            </thead>
+
+                                            <tbody>
+                                                <template x-for="err in selectedJob.summary.error_details" :key="err.comic_id">
+                                                    <tr class="border-t border-red-900/20 hover:bg-red-900/10">
+                                                        <td class="px-3 py-1 max-w-[260px] truncate" :title="err.comic_id" x-text="err.comic_id"></td>
+                                                        <td class="px-3 py-1 max-w-[260px] truncate" :title="err.file_path" x-text="err.file_path"></td>
+                                                        <td class="px-3 py-1 max-w-[260px] truncate" :title="err.message" x-text="err.message"></td>
+                                                    </tr>
+                                                </template>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </template>
+
+                                <!-- SCAN: Compact table-style list -->
+                                <template x-if="selectedJob.job_type === 'scan' || !selectedJob.job_type">
+                                    <div class="bg-red-900/10 border border-red-900/30 rounded-lg overflow-hidden">
+                                        <table class="w-full text-xs font-mono text-red-200">
+                                            <thead class="bg-red-900/20 text-red-300 uppercase text-[10px]">
+                                                <tr>
+                                                    <th class="px-3 py-2 text-left">File</th>
+                                                    <th class="px-3 py-2 text-left">Error</th>
+                                                </tr>
+                                            </thead>
+
+                                            <tbody>
+                                                <template x-for="err in selectedJob.summary.error_details" :key="err.file_path">
+                                                    <tr class="border-t border-red-900/20 hover:bg-red-900/10">
+                                                        <td class="px-3 py-1 max-w-[260px] truncate" :title="err.file_path" x-text="err.file_path"></td>
+                                                        <td class="px-3 py-1 max-w-[260px] truncate" :title="err.message" x-text="err.message"></td>
+                                                    </tr>
+                                                </template>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </template>
+
+                            </div>
+                        </template>
+
                     </div>
                 </template>
 
@@ -155,6 +285,9 @@
             </div>
         </div>
     </div>
+
+
+
 </div>
 
 <script>
@@ -169,7 +302,7 @@
             async loadJobs() {
                 this.loading = true;
                 try {
-                    const response = await fetch(window.url('/api/jobs?limit=50'));
+                    const response = await fetch(window.parker.route('jobs.list', {}, 'limit=50'));
                     if(response.ok) this.jobs = await response.json();
                 } catch (e) { console.error(e); }
                 finally { this.loading = false; }
@@ -177,13 +310,19 @@
 
             viewDetails(job) { this.selectedJob = job; },
 
+            // Helper to sum all deleted items for the table view
+            getTotalCleaned(summary) {
+                if (!summary) return 0;
+                return Object.values(summary).reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0);
+            },
+
             formatDuration(seconds) {
                 if (!seconds && seconds !== 0) return '--';
                 if (seconds < 60) return `${Math.round(seconds)}s`;
                 return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
             },
 
-            formatDate(dateStr) { return new Date(dateStr).toLocaleString(); }
+            formatDate(dateStr) { return window.parker.formatLocalDateTime(dateStr); }
         }))
     })
 </script>

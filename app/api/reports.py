@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, case, Integer, desc, or_, tuple_
+from sqlalchemy.orm import contains_eager, joinedload
 from typing import List, Annotated
 
 from app.api.deps import SessionDep, AdminUser, PaginationParams, PaginatedResponse
@@ -11,7 +12,7 @@ from app.core.comic_helpers import get_format_filters
 router = APIRouter()
 
 
-@router.get("/missing", response_model=PaginatedResponse)
+@router.get("/missing", response_model=PaginatedResponse, name="missing_issues")
 async def get_missing_issues_report(
         db: SessionDep,
         user: AdminUser,
@@ -103,7 +104,7 @@ async def get_missing_issues_report(
     }
 
 
-@router.get("/storage/libraries")
+@router.get("/storage/libraries", name="library_storage")
 async def get_library_storage_report(db: SessionDep, user: AdminUser):
     """
     Breakdown of storage usage per Library.
@@ -136,7 +137,7 @@ async def get_library_storage_report(db: SessionDep, user: AdminUser):
     ]
 
 
-@router.get("/storage/series")
+@router.get("/storage/series", name="series_storage")
 async def get_series_storage_report(db: SessionDep, user: AdminUser, limit: int = 20):
     """
     Top 20 'Heaviest' Series by disk size.
@@ -170,7 +171,7 @@ async def get_series_storage_report(db: SessionDep, user: AdminUser, limit: int 
     ]
 
 
-@router.get("/storage/formats")
+@router.get("/storage/formats", name="format")
 async def get_format_report(db: SessionDep, user: AdminUser):
     """
     Breakdown of file formats (CBZ, CBR, PDF, etc).
@@ -205,7 +206,7 @@ def format_ranges(numbers: List[int]) -> str:
     return ", ".join(ranges)
 
 
-@router.get("/metadata")
+@router.get("/metadata", name="metadata_health")
 async def get_metadata_health_report(db: SessionDep, user: AdminUser):
     """
     Analyzes library for missing metadata fields and potential issues.
@@ -217,6 +218,11 @@ async def get_metadata_health_report(db: SessionDep, user: AdminUser):
     # Define the checks
     # Each check is a tuple: (Label, SQLAlchemy Filter, Severity)
     checks = [
+        (
+            "Unknown Series (Scan Fallback)",
+            Comic.volume.has(Volume.series.has(Series.name == "Unknown Series")),
+            "error"
+        ),
         (
             "Missing Summary",
             or_(Comic.summary == None, Comic.summary == ""),
@@ -257,7 +263,13 @@ async def get_metadata_health_report(db: SessionDep, user: AdminUser):
 
         if count > 0:
             # Get a sample of up to 5 items for the preview
-            sample = db.query(Comic).filter(criteria).limit(5).all()
+            sample = (
+                db.query(Comic)
+                .options(joinedload(Comic.volume).joinedload(Volume.series))
+                .filter(criteria)
+                .limit(5)
+                .all()
+            )
             sample_data = [f"{c.series_group or c.volume.series.name} #{c.number}" for c in sample]
 
             report.append({
@@ -286,7 +298,7 @@ async def get_metadata_health_report(db: SessionDep, user: AdminUser):
     }
 
 
-@router.get("/duplicates", response_model=PaginatedResponse)
+@router.get("/duplicates", response_model=PaginatedResponse, name="duplicate")
 async def get_duplicate_report(
         db: SessionDep,
         user: AdminUser,
@@ -319,6 +331,12 @@ async def get_duplicate_report(
         .join(Comic.volume)
         .join(Volume.series)
         .join(Series.library)
+        .options(
+            contains_eager(Comic.volume)
+            .contains_eager(Volume.series)
+            .contains_eager(Series.library),
+            joinedload(Comic.library_root),
+        )
         .filter(
             tuple_(Comic.volume_id, Comic.number, Comic.format).in_(dupe_keys)
         )
@@ -347,7 +365,7 @@ async def get_duplicate_report(
         grouped_report[key]["files"].append({
             "id": c.id,
             "filename": c.filename,
-            "path": c.file_path,
+            "path": c.absolute_path,
             "size_bytes": c.file_size,
             "created_at": c.created_at
         })
@@ -369,7 +387,7 @@ async def get_duplicate_report(
     }
 
 
-@router.get("/corrupt", response_model=PaginatedResponse)
+@router.get("/corrupt", response_model=PaginatedResponse, name="corrupt_files")
 async def get_corrupt_files_report(
         db: SessionDep,
         user: AdminUser,
@@ -388,6 +406,12 @@ async def get_corrupt_files_report(
         .join(Comic.volume)
         .join(Volume.series)
         .join(Series.library)
+        .options(
+            contains_eager(Comic.volume)
+            .contains_eager(Volume.series)
+            .contains_eager(Series.library),
+            joinedload(Comic.library_root),
+        )
         .filter(criteria)
         .order_by(Comic.page_count, Comic.file_size)  # Smallest/Emptyest first
     )
@@ -407,7 +431,7 @@ async def get_corrupt_files_report(
             "title": c.title,
             "page_count": c.page_count,
             "file_size": c.file_size,
-            "path": c.file_path,
+            "path": c.absolute_path,
             "filename": c.filename
         })
 

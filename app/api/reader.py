@@ -1,24 +1,26 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import Response, FileResponse
-from sqlalchemy import func, Float, case
-from typing import List, Annotated, Optional, Literal
-from pathlib import Path
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import Response
+from sqlalchemy import func, Float, case, or_, cast
+from sqlalchemy.orm import joinedload
+from typing import Annotated, Optional, Literal
 import re
+import logging
 
-
-
-from app.core.comic_helpers import get_format_sort_index, get_format_weight
+from app.core.comic_helpers import assert_user_can_view_comic, get_comic_age_restriction
+from app.core.comic_helpers import get_format_sort_index, get_format_weight, REVERSE_NUMBERING_SERIES
+from app.core.path_utils import resolve_absolute_path
 from app.api.deps import SessionDep, CurrentUser
 from app.models.comic import Comic, Volume
 from app.models.series import Series
+from app.models.library import Library
 
-from app.schemas.search import SearchRequest, SearchResponse
-from app.services.search import SearchService
 from app.services.images import ImageService
 from app.models.reading_progress import ReadingProgress
 from app.models.pull_list import PullList, PullListItem
 from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.collection import Collection, CollectionItem
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -27,31 +29,66 @@ def natural_sort_key(s):
     return [int(text) if text.isdigit() else text.lower()
             for text in re.split('([0-9]+)', str(s))]
 
-@router.get("/{comic_id}/read-init")
+@router.get("/{comic_id}/read-init", name="init")
 async def get_comic_reader_init(comic_id: int,
                                 db: SessionDep,
                                 current_user: CurrentUser,
                                 # Context Parameters
                                 context_type: Annotated[
-                                    Optional[Literal["volume", "reading_list", "pull_list", "collection", "series"]],
+                                    Optional[Literal["volume", "reading_list", "pull_list", "collection", "series", "story_arc"]],
                                     "Specifies the type of context; defaults to 'volume'"
                                 ] = "volume",
                                 context_id: Annotated[
                                     Optional[int],
                                     "Unique identifier for the given context"
+                                ] = None,
+                                story_arc: Annotated[
+                                    Optional[str],
+                                    "Story arc name for story_arc context navigation"
+                                ] = None,
+                                context_scope: Annotated[
+                                    Optional[Literal["series", "volume"]],
+                                    "Restricts story arc navigation to the launch scope"
+                                ] = None,
+                                context_scope_id: Annotated[
+                                    Optional[int],
+                                    "Unique identifier for the story arc launch scope"
                                 ] = None):
     """
-    Get initialization data for the reader:
-    - Page Count
-    - Previous / Next Comic IDs in the volume
+    Get initialization data for the reader.
+    OPTIMIZED: Uses tuple queries for sibling sorting instead of full object fetches.
+    Now handles Reverse Numbering (Countdown) and Date Sorting (Zero Hour).
+    SECURED: Prevents reading restricted comics and navigation to restricted neighbors.
     """
-    comic = db.query(Comic).filter(Comic.id == comic_id).first()
+    # 1. Fetch Comic with Series/Volume loaded (Avoids N+1 later)
+    comic = db.query(Comic).options(
+        joinedload(Comic.volume).joinedload(Volume.series),
+        joinedload(Comic.library_root),
+    ).filter(Comic.id == comic_id).first()
+
     if not comic:
         raise HTTPException(status_code=404, detail="Comic not found")
+
+    assert_user_can_view_comic(comic, current_user)
 
     # Default: No Context (Standard Volume Browsing)
     prev_id = None
     next_id = None
+    ids = []
+    context_label = ""
+
+    # Define robust SQL Sort Keys (Date Priority)
+    sort_year = case((or_(Comic.year == None, Comic.year == -1), 9999), else_=Comic.year)
+    sort_month = case((or_(Comic.month == None, Comic.month == -1), 99), else_=Comic.month)
+    sort_day = case((or_(Comic.day == None, Comic.day == -1), 99), else_=Comic.day)
+    sort_number = cast(Comic.number, Float)
+
+    # --- PREPARE NEIGHBOR FILTER ---
+    # FIX: Use Whitelist (get_comic_age_restriction) instead of Negated Blacklist.
+    # This ensures Unrated (NULL) comics are included correctly.
+    safe_filter = get_comic_age_restriction(current_user)
+
+    logger.debug(f"Context type for reader: {context_type}")
 
     # --- STRATEGY PATTERN ---
     if context_type == "pull_list" and context_id:
@@ -60,9 +97,15 @@ async def get_comic_reader_init(comic_id: int,
         context_label = db.query(PullList.name).filter(PullList.id == context_id).scalar()
 
         # Query items in THIS specific list, ordered by sort_order
-        items = db.query(PullListItem.comic_id).filter(
+        #Join Comic to avoid Cartesian Product
+        query = db.query(PullListItem.comic_id).join(Comic, PullListItem.comic_id == Comic.id).filter(
             PullListItem.pull_list_id == context_id
-        ).order_by(PullListItem.sort_order).all()
+        )
+
+        if safe_filter is not None:
+            query = query.filter(safe_filter)
+
+        items = query.order_by(PullListItem.sort_order).all()
 
         # Flatten tuple list [(1,), (2,)] -> [1, 2]
         ids = [i[0] for i in items]
@@ -72,9 +115,15 @@ async def get_comic_reader_init(comic_id: int,
 
         context_label = db.query(ReadingList.name).filter(ReadingList.id == context_id).scalar()
 
-        items = db.query(ReadingListItem.comic_id).filter(
-            ReadingListItem.reading_list_id == context_id
-        ).order_by(ReadingListItem.position).all()
+        # FIX: Always Join Comic
+        query = db.query(ReadingListItem.comic_id) \
+            .join(Comic, ReadingListItem.comic_id == Comic.id) \
+            .filter(ReadingListItem.reading_list_id == context_id)
+
+        if safe_filter is not None:
+            query = query.filter(safe_filter)
+
+        items = query.order_by(ReadingListItem.position).all()
 
         ids = [i[0] for i in items]
 
@@ -85,15 +134,19 @@ async def get_comic_reader_init(comic_id: int,
 
         # Collections usually don't have explicit order
         # Simplified Sort: Year -> Series -> Number
-        items = db.query(CollectionItem.comic_id) \
+        query = db.query(CollectionItem.comic_id) \
             .join(Comic, CollectionItem.comic_id == Comic.id) \
             .join(Volume, Comic.volume_id == Volume.id) \
             .join(Series, Volume.series_id == Series.id) \
-            .filter(CollectionItem.collection_id == context_id) \
-            .order_by(
-                Comic.year.asc(),  # 1. Chronological groups
-        Series.name.asc(),  # 2. Alphabetical by Title
-                func.cast(Comic.number, Float)  # 3. Numerical order (essential if multiple issues of same series exist)
+            .filter(CollectionItem.collection_id == context_id)
+
+        if safe_filter is not None:
+            query = query.filter(safe_filter)
+
+        items = query.order_by(
+            Comic.year.asc(),
+            Series.name.asc(),
+            func.cast(Comic.number, Float)
         ).all()
 
         ids = [i[0] for i in items]
@@ -103,44 +156,154 @@ async def get_comic_reader_init(comic_id: int,
 
         context_label = db.query(Series.name).filter(Series.id == context_id).scalar()
 
+        # Gimmick Detection
+        number_direction = sort_number.asc()
+        if context_label and context_label.lower() in REVERSE_NUMBERING_SERIES:
+            number_direction = sort_number.desc()
+
         # Use centralized helper
         format_weight = get_format_sort_index()
 
-        # Weighted Sort: Plain (1) -> Annual (2) -> Special (3)
-        # This ensures Annual #1 comes AFTER Issue #500
-        series_comics = db.query(Comic).join(Volume).filter(
+        # Series strategy is already optimized (fetches IDs only via ORM selection)
+        # But let's be explicit to avoid object overhead:
+        query = db.query(Comic.id).join(Volume).filter(
             Volume.series_id == context_id
-        ).order_by(
+        )
+
+        if safe_filter is not None:
+            query = query.filter(safe_filter)
+
+        items = query.order_by(
             Volume.volume_number,
             format_weight,  # Plain(1) -> Annual(2) -> Special(3)
-            func.cast(Comic.number, Float),
-            Comic.number
+            sort_year.asc(),
+            sort_month.asc(),
+            sort_day.asc(),
+            number_direction
         ).all()
 
-        ids = [c.id for c in series_comics]
+        ids = [i[0] for i in items]
+
+    elif context_type == "story_arc" and story_arc and story_arc.strip():
+        # 5. Story Arc Strategy
+        # Story arcs are metadata-driven and can skip filler issues, so navigation
+        # must use exact story_arc membership instead of issue-number ranges.
+
+        arc_name = story_arc.strip()
+        context_label = arc_name
+
+        format_weight = get_format_sort_index()
+        number_direction = sort_number.asc()
+        if comic.volume.series.name.lower() in REVERSE_NUMBERING_SERIES:
+            number_direction = sort_number.desc()
+
+        query = (
+            db.query(Comic.id)
+            .join(Volume)
+            .join(Series)
+            .join(Library)
+            .filter(
+                Comic.story_arc == arc_name,
+                Library.parse_story_arcs == True,
+            )
+        )
+
+        if context_scope == "volume" and context_scope_id == comic.volume_id:
+            query = query.filter(Comic.volume_id == context_scope_id)
+        else:
+            series_scope_id = (
+                context_scope_id
+                if context_scope == "series" and context_scope_id == comic.volume.series_id
+                else comic.volume.series_id
+            )
+            query = query.filter(Volume.series_id == series_scope_id)
+
+        if safe_filter is not None:
+            query = query.filter(safe_filter)
+
+        items = query.order_by(
+            Volume.volume_number,
+            format_weight,
+            sort_year.asc(),
+            sort_month.asc(),
+            sort_day.asc(),
+            number_direction,
+        ).all()
+
+        ids = [i[0] for i in items]
 
     else:
-        # 5. Default / Volume Strategy
+        # 6. Default / Volume Strategy
+        # OPTIMIZATION: Fetch lightweight Tuples instead of full Comic objects.
+        # This prevents instantiating 900 objects for large series.
 
-        v = db.query(Volume.series_id, Volume.volume_number).filter(Volume.id == comic.volume_id).first()
-        series_name = db.query(Series.name).filter(Series.id == v.series_id).scalar()
-        context_label = f"{series_name} (vol {v.volume_number})"
+        # We access relation data safely via the loaded comic object
+        series_name = comic.volume.series.name
+        vol_num = comic.volume.volume_number
+        context_label = f"{series_name} (vol {vol_num})"
 
-        # Used for context_type="volume" OR fallback
-        # Logic: Sort all siblings in THIS volume by natural number
-        # Note: This fixes your Annuals issue if we sort correctly here
-        # We grab ALL siblings in the volume (Annuals + Plain) sorted by date/number
-        siblings = db.query(Comic).filter(
+        is_reverse = series_name.lower() in REVERSE_NUMBERING_SERIES
+
+        # Query only what we need for the Python sort
+        # Fetch Tuples: (id, number, format, year, month, day)
+        query = db.query(
+            Comic.id, Comic.number, Comic.format,
+            Comic.year, Comic.month, Comic.day
+        ).filter(
             Comic.volume_id == comic.volume_id
-        ).all()
+        )
 
-        # Sort using helper (ensures Annuals slot in correctly if numbered/dated)
-        siblings.sort(key=lambda x: (
-            get_format_weight(x.format),  # Uses helper
-            natural_sort_key(x.number)
-        ))
+        if safe_filter is not None:
+            query = query.filter(safe_filter)
 
-        ids = [c.id for c in siblings]
+        siblings = query.all()
+
+        # Robust Python Sort Logic
+        # Priority: Format -> Date -> Number
+        def smart_sort_key(x):
+            # x[3]=year, x[4]=month, x[5]=day
+            y = x[3] if x[3] is not None and x[3] != -1 else 9999
+            m = x[4] if x[4] is not None and x[4] != -1 else 99
+            d = x[5] if x[5] is not None and x[5] != -1 else 99
+
+            # Number: Natural Sort
+            # If reverse, we rely on the caller to flip OR we handle it here.
+            # Since standard tuple sort is always ASC, handling reverse number
+            # within a multi-key tuple is tricky.
+            # Strategy: We Sort by Date/Format FIRST.
+            # If dates are identical (common in reverse series), we rely on number.
+
+            # To handle reverse number sort in a tuple, we negate the float value if possible,
+            # but natural_sort_key returns a list of strings/ints.
+            # Simplification: We will just sort standardly, then post-process?
+            # No, post-process is inefficient.
+
+            # Better: We trust that Gimmick Series usually have correct Dates (Countdown does).
+            # If Dates are present, Date Sort handles the ordering correctly (May comes before Dec).
+            # If Dates are missing, we fall back to Number.
+
+            return (get_format_weight(x[2]), y, m, d, natural_sort_key(x[1]))
+
+        # Apply Sort
+        siblings.sort(key=smart_sort_key)
+
+        # Gimmick Fallback:
+        # If dates were missing/identical, we might have 1, 2, 3...
+        # If it's a reverse series, we want 3, 2, 1.
+        # Since we can't easily inject DESC into the tuple sort above for just one field,
+        # we check if we should reverse the whole list?
+        # NO. We only want to reverse if the series is reverse AND dates didn't do the job.
+        # Actually, for Countdown, Dates DO the job.
+        # For a series WITHOUT dates that is reverse?
+        if is_reverse:
+            # Check if dates were effectively useless (all same or missing)
+            # If so, reverse the list to get 50, 49, 48...
+            # This is a heuristic, but covers the edge case.
+            unique_dates = {(x[3], x[4], x[5]) for x in siblings}
+            if len(unique_dates) <= 1:
+                siblings.reverse()
+
+        ids = [x[0] for x in siblings]
 
     # --- CALCULATE NEIGHBORS ---
     try:
@@ -165,7 +328,7 @@ async def get_comic_reader_init(comic_id: int,
         # Fallback to Physical (Slow but accurate)
         # This handles legacy scans or edge cases
         image_service = ImageService()
-        page_count = image_service.get_page_count(str(comic.file_path))
+        page_count = image_service.get_page_count(comic.absolute_path)
 
         # No Self-heal the DB record here
         # GET requests shouldn't write to DB to avoid locks.
@@ -187,37 +350,43 @@ async def get_comic_reader_init(comic_id: int,
         "context_total": len(ids) if ids else 0,
         "context_type": context_type,
         "context_label": context_label
-
     }
 
-@router.get("/{comic_id}/page/{page_index}")
+
+@router.get("/{comic_id}/page/{page_index}", name="comic_page")
 def get_comic_page(
         comic_id: int,
         page_index: int,
         db: SessionDep,
+        current_user: CurrentUser,
         sharpen: Annotated[bool, Query()] = False,
         grayscale: Annotated[bool, Query()] = False,
         webp: Annotated[bool, Query()] = False
 ):
     """
-    Get a specific page image from a comic.  Supports server-side sharpening and grayscale.
-
-    Args:
-        comic_id: ID of the comic
-        page_index: Zero-based page index (0 = first page/cover)
-        db: Database session
-        sharpen: If true, sharpen the image
-        grayscale: If true, convert the image to grayscale
-        webp: If true, convert the image to webp
+    Get a specific page image.
+    SECURED: Requires the same library and age-rating access as reader init.
     """
-    comic = db.query(Comic).filter(Comic.id == comic_id).first()
+    comic = (
+        db.query(Comic)
+        .options(
+            joinedload(Comic.volume).joinedload(Volume.series),
+            joinedload(Comic.library_root),
+        )
+        .filter(Comic.id == comic_id)
+        .first()
+    )
 
     if not comic:
         raise HTTPException(status_code=404, detail="Comic not found")
 
+    assert_user_can_view_comic(comic, current_user, hide_denied=True)
+
+    file_path = resolve_absolute_path(comic.library_root.path, comic.relative_path)
+
     image_service = ImageService()
     image_bytes, is_correct_format, mime_type = image_service.get_page_image(
-        str(comic.file_path),
+        file_path,
         page_index,
         sharpen=sharpen,
         grayscale=grayscale,
@@ -234,21 +403,8 @@ def get_comic_page(
     # Check if the original detected type was PNG/GIF for the filename if we didn't transcode
     if not webp and mime_type == "image/png": extension = "png"
     if not webp and mime_type == "image/gif": extension = "gif"
-
-    # Detect image type from bytes
-    # If filtered, it's always JPEG. If raw, detect type.
-    # if sharpen or grayscale:
-    #     media_type = "image/jpeg"
-    # elif image_bytes.startswith(b'\xff\xd8\xff'):
-    #     media_type = "image/jpeg"
-    # elif image_bytes.startswith(b'\x89PNG'):
-    #     media_type = "image/png"
-    # elif image_bytes.startswith(b'GIF'):
-    #     media_type = "image/gif"
-    # elif image_bytes.startswith(b'RIFF') and b'WEBP' in image_bytes[:20]:
-    #     media_type = "image/webp"
-    #else:
-    #    media_type = "image/jpeg"  # Default
+    if not webp and mime_type == "image/jxl": extension = "jxl"
+    if not webp and mime_type == "image/avif": extension = "avif"
 
     # CACHE LOGIC
     headers = {

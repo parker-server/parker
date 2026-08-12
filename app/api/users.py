@@ -1,33 +1,36 @@
-import os
-import shutil
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, status, HTTPException, UploadFile, File, Depends
 from fastapi.responses import FileResponse
-from sqlalchemy.orm import joinedload
+from sqlalchemy import or_
+from sqlalchemy.orm import selectinload, contains_eager
 from typing import List, Annotated, Optional
 from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
 from pathlib import Path
-from sqlalchemy import func
+from sqlalchemy import func, not_, and_
 
 
 from app.api.deps import SessionDep, AdminUser, CurrentUser, PaginatedResponse, PaginationParams
 from app.config import settings
-from app.core.comic_helpers import get_reading_time
+from app.core.comic_helpers import get_thumbnail_url, get_banned_comic_condition, get_series_age_restriction
 from app.core.security import verify_password, get_password_hash
-from app.models.comic import Comic
+from app.models.comic import Comic, Volume
 from app.models.user import User
 from app.models.library import Library
 from app.models.reading_progress import ReadingProgress
-from app.models.pull_list import PullList
+from app.models.pull_list import PullList, PullListItem
 from app.services.images import ImageService
 from app.services.settings_service import SettingsService
+from app.services.statistics import StatisticsService
+
+def get_stats_service(db: SessionDep, user: CurrentUser) -> StatisticsService:
+    return StatisticsService(db, user)
 
 router = APIRouter()
 
 MAX_AVATAR_SIZE_BYTES = 5 * 1024 * 1024 # 5 MB
 
 # Schemas
-
 class UserBase(BaseModel):
     email: str | None = None
     username: str | None = None
@@ -46,6 +49,8 @@ class UserCreateRequest(UserBase):
     password: str
     is_superuser: bool = False
     library_ids: List[int] = Field(default_factory=list)
+    max_age_rating: Optional[str] = None
+    allow_unknown_age_ratings: bool = False
 
 class UserUpdateRequest(UserBase):
     password: str | None = None
@@ -53,7 +58,8 @@ class UserUpdateRequest(UserBase):
     is_superuser: bool | None = None
     is_active: bool | None = None
     library_ids: List[int] | None = None
-
+    max_age_rating: Optional[str] = None
+    allow_unknown_age_ratings: Optional[bool] = None
 
 class UserListResponse(BaseModel):
     id: int
@@ -66,78 +72,99 @@ class UserListResponse(BaseModel):
     # We don't necessarily need to return the full library objects in the list view,
     # but we might want the IDs for the edit form.
     accessible_library_ids: List[int] = []
+    max_age_rating: Optional[str]
+    allow_unknown_age_ratings: bool
 
 class UserPasswordUpdateRequest(BaseModel):
     current_password: str
     new_password: str = Field(min_length=8)
 
-@router.get("/me/dashboard")
+class UserPreferencesResponse(BaseModel):
+    user_id: int
+    social_insights_enabled: bool
+    monthly_reading_goal: int
+
+class UserPreferencesUpdateRequest(BaseModel):
+    social_insights_enabled: Optional[bool] = None
+    monthly_reading_goal: Optional[int] = Field(None, ge=1)
+
+
+@router.get("/me/dashboard", name="dashboard")
+# Optimized Enhanced Dashboard Endpoint - Add to users.py
+# Reduces number of queries and eliminates N+1 issues
 async def get_user_dashboard(db: SessionDep, current_user: CurrentUser):
     """
-    Aggregate stats and lists for the User Dashboard.
+    Optimized User Dashboard - Minimizes database queries
     """
 
-    # --- Check OPDS Status ---
     settings_svc = SettingsService(db)
     opds_enabled = settings_svc.get("server.opds_enabled")
 
-    # 1. Calculate Stats
-    # Join Progress -> Comic to get page counts
-    stats_query = db.query(
-        func.count(ReadingProgress.id).label('issues_read'),
-        func.sum(Comic.page_count).label('total_pages')
-    ).join(Comic, ReadingProgress.comic_id == Comic.id) \
-        .filter(
+    stats_service = StatisticsService(db, current_user)
+    dashboard_payload = stats_service.get_dashboard_payload()
+
+    # Security filters
+    series_age_filter = get_series_age_restriction(current_user)
+    banned_condition = get_banned_comic_condition(current_user)
+
+    # === PULL LISTS (with eager loading) ===
+    pull_lists_query = db.query(PullList).options(selectinload(PullList.items)) \
+        .filter(PullList.user_id == current_user.id) \
+        .order_by(PullList.updated_at.desc())
+
+    if banned_condition is not None:
+        pull_lists_query = pull_lists_query.filter(
+            not_(PullList.items.any(PullListItem.comic.has(banned_condition)))
+        )
+
+    pull_lists = pull_lists_query.limit(5).all()
+
+    # === CONTINUE READING (with eager loading) ===
+    recent_progress_query = db.query(ReadingProgress) \
+        .join(ReadingProgress.comic).join(Comic.volume).join(Volume.series) \
+        .options(
+        contains_eager(ReadingProgress.comic)
+        .contains_eager(Comic.volume)
+        .contains_eager(Volume.series)
+    ).filter(
         ReadingProgress.user_id == current_user.id,
-        ReadingProgress.completed == True
-    ).first()
-
-    issues_read = stats_query.issues_read or 0
-    total_pages = stats_query.total_pages or 0
-
-    # Calculate Time (1.25 mins per page)
-    time_read_str = get_reading_time(total_pages)
-
-    # 2. Get Pull Lists (Limit 5 for dashboard overview)
-    pull_lists = db.query(PullList).filter(PullList.user_id == current_user.id) \
-        .order_by(PullList.updated_at.desc()).limit(5).all()
-
-    # 3. Get "Continue Reading" (Limit 6)
-    # We fetch the progress rows, then format them
-    recent_progress = db.query(ReadingProgress).filter(
-        ReadingProgress.user_id == current_user.id,
-        ReadingProgress.completed == False,
+        or_(ReadingProgress.completed == False, ReadingProgress.completed == None),
         ReadingProgress.current_page > 0
-    ).order_by(ReadingProgress.last_read_at.desc()).limit(6).all()
+    )
 
-    continue_reading = []
-    for p in recent_progress:
-        continue_reading.append({
+    if series_age_filter is not None:
+        recent_progress_query = recent_progress_query.filter(series_age_filter)
+
+    recent_progress = recent_progress_query \
+        .order_by(ReadingProgress.last_read_at.desc()) \
+        .limit(6).all()
+
+    continue_reading = [
+        {
             "comic_id": p.comic.id,
             "series_name": p.comic.volume.series.name,
             "number": p.comic.number,
             "percentage": p.progress_percentage,
-            "thumbnail": f"/api/comics/{p.comic.id}/thumbnail"
-        })
+            "thumbnail": get_thumbnail_url(p.comic.id, p.comic.updated_at)
+        }
+        for p in recent_progress
+    ]
 
     return {
         "opds_enabled": opds_enabled,
         "user": {
             "username": current_user.username,
             "created_at": current_user.created_at,
-            "avatar_url": f"/api/users/{current_user.id}/avatar" if current_user.avatar_path else None
-        },
-        "stats": {
-            "issues_read": issues_read,
-            "pages_turned": total_pages,
-            "time_read": time_read_str
+            "avatar_url": f"/api/users/{current_user.id}/avatar" if current_user.avatar_path else None,
+            "social_insights_enabled": current_user.social_insights_enabled,
         },
         "pull_lists": [{"id": pl.id, "name": pl.name, "count": len(pl.items)} for pl in pull_lists],
-        "continue_reading": continue_reading
+        "continue_reading": continue_reading,
+        **dashboard_payload,
     }
 
 
-@router.post("/me/avatar")
+@router.post("/me/avatar", name="upload_avatar")
 async def upload_avatar(
         file: UploadFile = File(...),
         db: SessionDep = SessionDep,
@@ -151,7 +178,7 @@ async def upload_avatar(
     content = await file.read()
     if len(content) > MAX_AVATAR_SIZE_BYTES:
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail="File too large. Maximum size is 5MB."
         )
 
@@ -179,7 +206,7 @@ async def upload_avatar(
     }
 
 # Helper to serve avatar (add to users router or generic image router)
-@router.get("/{user_id}/avatar")
+@router.get("/{user_id}/avatar", name="avatar")
 async def get_avatar(user_id: int, db: SessionDep):
     """Serve user avatar"""
     user = db.query(User).filter(User.id == user_id).first()
@@ -196,7 +223,41 @@ async def get_avatar(user_id: int, db: SessionDep):
 
     return FileResponse(file_path)
 
-@router.put("/me/password")
+@router.get("/me/preferences", name="preferences")
+async def get_preferences(db: SessionDep, current_user: CurrentUser):
+    """Get user preferences"""
+    user = db.query(User).filter(User.id == current_user.id).first()
+
+    # Check if user exists and has an avatar set
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return {
+        "social_insights_enabled": user.social_insights_enabled,
+        "monthly_reading_goal": current_user.monthly_reading_goal,
+    }
+
+@router.patch("/me/preferences", name="update_preferences")
+async def update_preferences(payload: UserPreferencesUpdateRequest, db: SessionDep, current_user: CurrentUser):
+    """Update user preferences"""
+
+    have_settings_changed = False
+
+    if payload.social_insights_enabled is not None:
+        current_user.social_insights_enabled = payload.social_insights_enabled
+        have_settings_changed = True
+
+    if payload.monthly_reading_goal is not None:
+        current_user.monthly_reading_goal = payload.monthly_reading_goal
+        have_settings_changed = True
+
+    if have_settings_changed:
+        db.add(current_user)
+        db.commit()
+
+    return {"status": "success", "message": "Preferences updated"}
+
+@router.put("/me/password", name="update_password")
 async def update_password(
     payload: UserPasswordUpdateRequest,
     db: SessionDep,
@@ -219,8 +280,26 @@ async def update_password(
 
     return {"status": "success", "message": "Password updated successfully"}
 
+
+
+@router.get("/me/year-in-review", name="year_in_review")
+async def get_year_in_review(
+        service: Annotated[StatisticsService, Depends(get_stats_service)],
+        year: Optional[int] = None
+):
+    """
+    Generate a comprehensive Year in Review summary
+    Similar to Spotify Wrapped for comic reading
+    """
+
+    # Default to current year if not specified
+    if year is None:
+        year = datetime.now(timezone.utc).year
+
+    return service.get_year_wrapped(year)
+
 # 1. List Users
-@router.get("/", response_model=PaginatedResponse, tags=["admin"], name="list_users")
+@router.get("/", response_model=PaginatedResponse, tags=["admin"], name="list")
 async def list_users(
         db: SessionDep,
         admin: AdminUser,
@@ -230,7 +309,10 @@ async def list_users(
     query = db.query(User)
     total = query.count()
 
-    users = query.order_by(func.lower(User.username)).options(joinedload(User.accessible_libraries)).offset(params.skip).limit(params.size).all()
+    # OPTIMIZATION: selectinload is usually cleaner for Many-to-Many collections than joinedload
+    users = query.order_by(func.lower(User.username)) \
+        .options(selectinload(User.accessible_libraries)) \
+        .offset(params.skip).limit(params.size).all()
 
     # Helper to format response with IDs
     results = []
@@ -243,7 +325,9 @@ async def list_users(
             "email": u.email,
             "created_at": u.created_at,
             "last_login": u.last_login,
-            "accessible_library_ids": [lib.id for lib in u.accessible_libraries]
+            "accessible_library_ids": [lib.id for lib in u.accessible_libraries],
+            "max_age_rating": u.max_age_rating,
+            "allow_unknown_age_ratings": u.allow_unknown_age_ratings
         })
 
 
@@ -256,7 +340,7 @@ async def list_users(
 
 
 # Create User (Admin Only)
-@router.post("/", response_model=UserListResponse, tags=["admin"], name="create_user")
+@router.post("/", response_model=UserListResponse, tags=["admin"], name="create")
 async def create_user(
         user_in: UserCreateRequest,
         db: SessionDep,
@@ -268,7 +352,7 @@ async def create_user(
 
     # Fetch Libraries
     libraries = []
-    if user_in.library_ids:
+    if not user_in.is_superuser and user_in.library_ids:
         libraries = db.query(Library).filter(Library.id.in_(user_in.library_ids)).all()
 
     user = User(
@@ -277,7 +361,9 @@ async def create_user(
         hashed_password=get_password_hash(user_in.password),
         is_superuser=user_in.is_superuser,
         is_active=True,
-        accessible_libraries = libraries
+        accessible_libraries = libraries,
+        max_age_rating=None if user_in.is_superuser else user_in.max_age_rating,
+        allow_unknown_age_ratings=False if user_in.is_superuser else user_in.allow_unknown_age_ratings
     )
     db.add(user)
     db.commit()
@@ -290,7 +376,7 @@ async def create_user(
 
 
 # Update User (e.g. Change Password)
-@router.patch("/{user_id}", tags=["admin"], name="update_user")
+@router.patch("/{user_id}", tags=["admin"], name="update")
 async def update_user(
         user_id: int,
         updates: UserUpdateRequest,
@@ -310,17 +396,33 @@ async def update_user(
     if updates.is_active is not None:
         user.is_active = updates.is_active
 
-    # Update Libraries
-    if updates.library_ids is not None:
-        libraries = db.query(Library).filter(Library.id.in_(updates.library_ids)).all()
-        user.accessible_libraries = libraries
+    # Update Libraries (with superuser checks)
+    if user.is_superuser:
+
+        # Super users have no library or age restrictions
+        user.accessible_libraries = []
+        user.max_age_rating = None
+        user.allow_unknown_age_ratings = False
+
+    else:
+
+        if updates.library_ids is not None:
+            libraries = db.query(Library).filter(Library.id.in_(updates.library_ids)).all()
+            user.accessible_libraries = libraries
+
+        if updates.max_age_rating is not None:
+            # Allow clearing the rating by sending empty string, or setting it
+            user.max_age_rating = updates.max_age_rating if updates.max_age_rating else None
+
+        if updates.allow_unknown_age_ratings is not None:
+            user.allow_unknown_age_ratings = updates.allow_unknown_age_ratings
 
     db.commit()
+
     return {"message": "User updated"}
 
-
 # 4. Delete User
-@router.delete("/{user_id}", tags=["admin"], name="delete_user")
+@router.delete("/{user_id}", tags=["admin"], name="delete")
 async def delete_user(
         user_id: int,
         db: SessionDep,

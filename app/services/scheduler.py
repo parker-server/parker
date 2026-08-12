@@ -5,8 +5,9 @@ from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
 from app.services.backup import BackupService
-from app.services.maintenance import MaintenanceService
+from app.services.scan_manager import scan_manager
 from app.models.setting import SystemSetting
+from app.models.library import Library
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,12 @@ class SchedulerService:
             "default_interval": "monthly",
             "default_hour": 3,  # 3 AM
             "description": "Orphan Cleanup"
+        },
+        "scan": {
+            "func": "run_scan_job",
+            "default_interval": "daily",
+            "default_hour": 4,  # 4 AM (when no one is reading)
+            "description": "Library Scan"
         }
     }
 
@@ -114,25 +121,50 @@ class SchedulerService:
     def run_backup_job():
         logger.info("Running Scheduled Backup...")
         try:
-            service = BackupService()
-            result = service.create_backup()
+            result = BackupService.create_backup()
             logger.info(f"Backup Complete: {result['filename']}")
         except Exception as e:
             logger.error(f"Backup Failed: {e}")
 
     @staticmethod
     def run_cleanup_job():
+        """
+        OPTIMIZED: Delegates to ScanManager to ensure thread safety.
+        Does not run directly, queues a job.
+        """
         logger.info("Running Scheduled Cleanup...")
+        try:
+            # We call the manager, which handles DB locking, queuing, and daisy-chaining.
+            result = scan_manager.add_cleanup_task()
+
+            if result['status'] == 'queued':
+                logger.info(f"Cleanup Job Queued: ID {result['job_id']}")
+            else:
+                logger.info(f"Cleanup Skipped: {result['message']}")
+
+        except Exception as e:
+            logger.error(f"Failed to queue cleanup: {e}")
+
+
+    @staticmethod
+    def run_scan_job():
+        logger.info("Running Scheduled Library Scan...")
         session = SessionLocal()
         try:
-            service = MaintenanceService(session)
-            stats = service.cleanup_orphans()
-            logger.info(f"Cleanup Complete: {stats}")
+            libraries = session.query(Library).all()
+            if not libraries:
+                logger.info("No libraries to scan.")
+                return
+
+            for lib in libraries:
+                logger.info(f"Queuing scheduled scan for: {lib.name}")
+                # We use force=False so it skips unmodified files (fast)
+                scan_manager.add_task(lib.id, force=False)
+
         except Exception as e:
-            logger.error(f"Cleanup Failed: {e}")
+            logger.error(f"Scheduled Scan Failed: {e}")
         finally:
             session.close()
-
 
 # Singleton accessor
 scheduler_service = SchedulerService()

@@ -1,22 +1,34 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, case, Float, Integer
+from sqlalchemy import func, case, Float, Integer, or_, and_, cast, desc
 from sqlalchemy.orm import joinedload
 
 from typing import List, Annotated
 
-from app.core.comic_helpers import get_format_filters, get_smart_cover, get_reading_time
+from app.core.comic_helpers import (get_format_filters, get_smart_cover, get_reading_time,
+                                    REVERSE_NUMBERING_SERIES, get_age_rating_config, get_thumbnail_url,
+                                    get_series_age_restriction,
+                                    get_resume_target)
 
 from app.api.deps import SessionDep, CurrentUser, VolumeDep
 from app.api.deps import PaginationParams, PaginatedResponse
+from app.api.volume_metadata import (
+    VOLUME_METADATA_CATEGORIES,
+    VOLUME_METADATA_PAGE_SIZE,
+    get_volume_metadata_tags_page,
+)
 
 from app.models.comic import Comic, Volume
 from app.models.series import Series
-from app.models.library import Library
-from app.models.credits import Person, ComicCredit
-from app.models.tags import Character, Team, Location
+from app.models.interactions import UserVolumeFollow
 from app.models.reading_progress import ReadingProgress
 
 router = APIRouter()
+
+
+DETAIL_CATEGORY_PATTERN = "^(" + "|".join(VOLUME_METADATA_CATEGORIES) + ")$"
+
 
 def comic_to_simple_dict(comic: Comic):
     return {
@@ -27,15 +39,231 @@ def comic_to_simple_dict(comic: Comic):
         "year": comic.year,
         "format": comic.format,
         "filename": comic.filename,
-        "thumbnail_path": f"/api/comics/{comic.id}/thumbnail" # TODO: make relative url (no leading /) and let frontend decide base url
+        "thumbnail_path": get_thumbnail_url(comic.id, comic.updated_at)
     }
 
 
-@router.get("/{volume_id}")
+def _assert_volume_allowed_for_user(volume_id: int, db, current_user) -> None:
+    if current_user.is_superuser or not current_user.max_age_rating:
+        return
+
+    allowed_ratings, banned_ratings = get_age_rating_config(current_user)
+
+    # Build the "Banned" filter
+    ban_conditions = [Comic.age_rating.in_(banned_ratings)]
+
+    # If user explicitly disallows Unknowns, treat them as banned
+    if not current_user.allow_unknown_age_ratings:
+        ban_conditions.append(or_(
+            Comic.age_rating == None,
+            Comic.age_rating == "",
+            func.lower(Comic.age_rating) == "unknown"
+        ))
+
+    # Run the check: Does a banned comic exist in this volume?
+    has_banned_content = db.query(Comic.id).filter(
+        Comic.volume_id == volume_id,
+        or_(*ban_conditions)
+    ).first()
+
+    if has_banned_content:
+        raise HTTPException(status_code=403, detail="Volume contains age-restricted content")
+
+
+@router.get("/following", name="following_list")
+def get_followed_volumes(
+        db: SessionDep,
+        current_user: CurrentUser,
+):
+    """List followed volumes the user can still access, with lightweight arrival context."""
+
+    is_plain, _, _ = get_format_filters()
+    not_started_or_read = or_(
+        ReadingProgress.id == None,
+        and_(
+            ReadingProgress.completed == False,
+            or_(ReadingProgress.current_page == None, ReadingProgress.current_page <= 0),
+        ),
+    )
+
+    new_arrivals_count_sq = (
+        db.query(func.count(Comic.id))
+        .outerjoin(
+            ReadingProgress,
+            and_(
+                ReadingProgress.comic_id == Comic.id,
+                ReadingProgress.user_id == current_user.id,
+            ),
+        )
+        .filter(Comic.volume_id == Volume.id)
+        .filter(Comic.created_at > UserVolumeFollow.followed_at)
+        .filter(is_plain)
+        .filter(not_started_or_read)
+        .correlate(Volume, UserVolumeFollow)
+        .scalar_subquery()
+    )
+
+    latest_arrival_created_at_sq = (
+        db.query(func.max(Comic.created_at))
+        .outerjoin(
+            ReadingProgress,
+            and_(
+                ReadingProgress.comic_id == Comic.id,
+                ReadingProgress.user_id == current_user.id,
+            ),
+        )
+        .filter(Comic.volume_id == Volume.id)
+        .filter(Comic.created_at > UserVolumeFollow.followed_at)
+        .filter(is_plain)
+        .filter(not_started_or_read)
+        .correlate(Volume, UserVolumeFollow)
+        .scalar_subquery()
+    )
+
+    latest_arrival_id_sq = (
+        db.query(Comic.id)
+        .outerjoin(
+            ReadingProgress,
+            and_(
+                ReadingProgress.comic_id == Comic.id,
+                ReadingProgress.user_id == current_user.id,
+            ),
+        )
+        .filter(Comic.volume_id == Volume.id)
+        .filter(Comic.created_at > UserVolumeFollow.followed_at)
+        .filter(is_plain)
+        .filter(not_started_or_read)
+        .order_by(
+            desc(Comic.created_at),
+            desc(cast(Comic.number, Float)),
+            desc(Comic.number),
+        )
+        .limit(1)
+        .correlate(Volume, UserVolumeFollow)
+        .scalar_subquery()
+    )
+
+    latest_arrival_title_sq = (
+        db.query(Comic.title)
+        .outerjoin(
+            ReadingProgress,
+            and_(
+                ReadingProgress.comic_id == Comic.id,
+                ReadingProgress.user_id == current_user.id,
+            ),
+        )
+        .filter(Comic.volume_id == Volume.id)
+        .filter(Comic.created_at > UserVolumeFollow.followed_at)
+        .filter(is_plain)
+        .filter(not_started_or_read)
+        .order_by(
+            desc(Comic.created_at),
+            desc(cast(Comic.number, Float)),
+            desc(Comic.number),
+        )
+        .limit(1)
+        .correlate(Volume, UserVolumeFollow)
+        .scalar_subquery()
+    )
+
+    latest_arrival_number_sq = (
+        db.query(Comic.number)
+        .outerjoin(
+            ReadingProgress,
+            and_(
+                ReadingProgress.comic_id == Comic.id,
+                ReadingProgress.user_id == current_user.id,
+            ),
+        )
+        .filter(Comic.volume_id == Volume.id)
+        .filter(Comic.created_at > UserVolumeFollow.followed_at)
+        .filter(is_plain)
+        .filter(not_started_or_read)
+        .order_by(
+            desc(Comic.created_at),
+            desc(cast(Comic.number, Float)),
+            desc(Comic.number),
+        )
+        .limit(1)
+        .correlate(Volume, UserVolumeFollow)
+        .scalar_subquery()
+    )
+
+    query = (
+        db.query(
+            UserVolumeFollow,
+            new_arrivals_count_sq.label("new_arrivals_count"),
+            latest_arrival_created_at_sq.label("latest_arrival_created_at"),
+            latest_arrival_id_sq.label("latest_arrival_id"),
+            latest_arrival_title_sq.label("latest_arrival_title"),
+            latest_arrival_number_sq.label("latest_arrival_number"),
+        )
+        .join(Volume, Volume.id == UserVolumeFollow.volume_id)
+        .join(Series, Series.id == Volume.series_id)
+        .options(
+            joinedload(UserVolumeFollow.volume)
+            .joinedload(Volume.series)
+            .joinedload(Series.library)
+        )
+        .filter(UserVolumeFollow.user_id == current_user.id)
+    )
+
+    if not current_user.is_superuser:
+        allowed_ids = [lib.id for lib in current_user.accessible_libraries]
+        query = query.filter(Series.library_id.in_(allowed_ids))
+
+    series_age_filter = get_series_age_restriction(current_user)
+    if series_age_filter is not None:
+        query = query.filter(series_age_filter)
+
+    rows = query.order_by(
+        desc(new_arrivals_count_sq),
+        desc(latest_arrival_created_at_sq),
+        desc(UserVolumeFollow.followed_at),
+        Series.name.asc(),
+        Volume.volume_number.asc(),
+    ).all()
+
+    payload = []
+    for follow, new_arrivals_count, latest_arrival_created_at, latest_arrival_id, latest_arrival_title, latest_arrival_number in rows:
+        payload.append(
+            {
+                "volume_id": follow.volume_id,
+                "volume_number": follow.volume.volume_number,
+                "series_id": follow.volume.series_id,
+                "series_name": follow.volume.series.name,
+                "library_id": follow.volume.series.library_id,
+                "library_name": follow.volume.series.library.name,
+                "followed_at": follow.followed_at,
+                "new_arrivals_count": int(new_arrivals_count or 0),
+                "latest_arrival": (
+                    {
+                        "comic_id": latest_arrival_id,
+                        "title": latest_arrival_title,
+                        "number": latest_arrival_number,
+                        "created_at": latest_arrival_created_at,
+                    }
+                    if latest_arrival_id is not None else None
+                ),
+            }
+        )
+
+    return payload
+
+
+@router.get("/{volume_id}", name="detail")
 async def get_volume_detail(volume: VolumeDep, db: SessionDep, current_user: CurrentUser):
     """
     Get volume summary with categorized counts.
+    OPTIMIZED: Uses UNION ALL to fetch all metadata lists (writers, characters, etc) in 1 query.
     """
+
+    # Note: VolumeDep handles 404, but we need to check restrictions.
+    # 0. Check Age Restriction: Poison Pill check
+    # If the user has restrictions, we check if this volume contains ANY banned content.
+    _assert_volume_allowed_for_user(volume.id, db, current_user)
+
+
 
     # Filters
     is_plain, is_annual, is_special = get_format_filters()
@@ -49,7 +277,11 @@ async def get_volume_detail(volume: VolumeDep, db: SessionDep, current_user: Cur
         func.max(Comic.year).label('end_year'),
         func.max(Comic.publisher).label('publisher'),
         func.max(Comic.imprint).label('imprint'),
-        func.max(Comic.count).label('max_count'),  # Get the highest 'Count' value found
+
+        # Only look at 'Count' if the issue is a standard (Plain) issue.
+        # This ignores "1 of 1" tags on Specials/One-shots.
+        func.max(case((is_plain, Comic.count))).label('max_count'),
+
         func.sum(Comic.page_count).label('total_pages'),
         func.sum(Comic.file_size).label('total_size')
     ).filter(Comic.volume_id == volume.id).first()
@@ -61,31 +293,33 @@ async def get_volume_detail(volume: VolumeDep, db: SessionDep, current_user: Cur
     # Story Arc Aggregation (Scoped to Volume)
     # 1. Fetch all issues in this volume that have a story_arc defined
     # 2. Sort by Number so we can identify the "First Issue" of the arc
-    arc_rows = db.query(Comic.id, Comic.story_arc, Comic.number) \
-        .filter(Comic.volume_id == volume.id) \
-        .filter(Comic.story_arc != None, Comic.story_arc != "") \
-        .order_by(func.cast(Comic.number, Float), Comic.number) \
-        .all()
+    story_arcs_data = []
+    if volume.series.library.parse_story_arcs:
+        arc_rows = db.query(Comic.id, Comic.story_arc, Comic.number) \
+            .filter(Comic.volume_id == volume.id) \
+            .filter(Comic.story_arc != None, Comic.story_arc != "") \
+            .order_by(func.cast(Comic.number, Float), Comic.number) \
+            .all()
 
-    # Group by Arc Name
-    story_arcs_map = {}
-    for row in arc_rows:
-        name = row.story_arc
-        if name not in story_arcs_map:
-            story_arcs_map[name] = {
-                "name": name,
-                "first_issue_id": row.id,  # First one encountered is the thumbnail/link
-                "count": 0
-            }
-        story_arcs_map[name]["count"] += 1
+        # Group by Arc Name
+        story_arcs_map = {}
+        for row in arc_rows:
+            name = row.story_arc
+            if name not in story_arcs_map:
+                story_arcs_map[name] = {
+                    "name": name,
+                    "first_issue_id": row.id,  # First one encountered is the thumbnail/link
+                    "count": 0
+                }
+            story_arcs_map[name]["count"] += 1
 
-    # Convert to list and sort alphabetically by Arc Name
-    story_arcs_data = sorted(story_arcs_map.values(), key=lambda x: x['name'])
+        # Convert to list and sort alphabetically by Arc Name
+        story_arcs_data = sorted(story_arcs_map.values(), key=lambda x: x['name'])
 
 
     # 2. Find Cover (Plain issues priority)
     base_query = db.query(Comic).filter(Comic.volume_id == volume.id)
-    first_issue = get_smart_cover(base_query)
+    first_issue = get_smart_cover(base_query, series_name=volume.series.name)
 
     # Get colors from the cover of the 1st issue comic
     colors = {"primary": "#000000", "secondary": "#222222"}
@@ -93,23 +327,15 @@ async def get_volume_detail(volume: VolumeDep, db: SessionDep, current_user: Cur
         colors["primary"] = first_issue.color_primary or "#000000"
         colors["secondary"] = first_issue.color_secondary or "#222222"
 
-    # Resume Logic
-    resume_comic_id = None
-    read_status = "new"
+    resume_comic_id, read_status = get_resume_target(
+        db,
+        user_id=current_user.id,
+        volume_id=volume.id,
+        series_name=volume.series.name,
+        first_issue_id=first_issue.id if first_issue else None,
+    )
 
-    last_read = db.query(ReadingProgress).join(Comic) \
-        .filter(Comic.volume_id == volume.id) \
-        .filter(ReadingProgress.user_id == current_user.id) \
-        .order_by(ReadingProgress.last_read_at.desc()) \
-        .first()
-
-    if last_read:
-        resume_comic_id = last_read.comic_id
-        read_status = "in_progress"
-    elif first_issue:
-        resume_comic_id = first_issue.id
-
-    # Status & Missing Issues Calculation
+    # 5. Status & Missing Issues Logic
     status = "ongoing"
     missing_issues = []
     is_completed = False
@@ -158,9 +384,6 @@ async def get_volume_detail(volume: VolumeDep, db: SessionDep, current_user: Cur
             # Example: Count 4 becomes {1, 2, 3, 4}
             expected_set = set(range(1, expected_count + 1))
 
-
-        #expected_set = set(range(1, expected_count + 1))
-
         # Find the difference
         missing_set = expected_set - existing_set
 
@@ -170,28 +393,25 @@ async def get_volume_detail(volume: VolumeDep, db: SessionDep, current_user: Cur
             # Sort the missing numbers for display (e.g., [2, 3, 4])
             missing_issues = sorted(list(missing_set))
 
+    # Calculate Gimmick Flag
+    is_reverse_series = False
+    if volume.series:
+        is_reverse_series = volume.series.name.lower() in REVERSE_NUMBERING_SERIES
 
-    # 3. Aggregated Metadata (Scoped ONLY to this volume)
-    writers = db.query(Person.name).join(ComicCredit).join(Comic) \
-        .filter(Comic.volume_id == volume.id).filter(ComicCredit.role == 'writer').distinct().all()
-
-    pencillers = db.query(Person.name).join(ComicCredit).join(Comic) \
-        .filter(Comic.volume_id == volume.id).filter(ComicCredit.role == 'penciller').distinct().all()
-
-    characters = db.query(Character.name).join(Comic.characters) \
-        .filter(Comic.volume_id == volume.id).distinct().all()
-
-    teams = db.query(Team.name).join(Comic.teams) \
-        .filter(Comic.volume_id == volume.id).distinct().all()
-
-    locations = db.query(Location.name).join(Comic.locations) \
-        .filter(Comic.volume_id == volume.id).distinct().all()
+    follow = db.query(UserVolumeFollow).filter(
+        UserVolumeFollow.user_id == current_user.id,
+        UserVolumeFollow.volume_id == volume.id,
+    ).first()
+    series_volume_count = db.query(func.count(Volume.id)).filter(
+        Volume.series_id == volume.series_id
+    ).scalar() or 0
 
     return {
         "id": volume.id,
         "volume_number": volume.volume_number,
         "series_id": volume.series.id,
         "series_name": volume.series.name,
+        "series_volume_count": series_volume_count,
         "library_id": volume.series.library_id,
         "library_name": volume.series.library.name,
 
@@ -215,31 +435,82 @@ async def get_volume_detail(volume: VolumeDep, db: SessionDep, current_user: Cur
         "start_year": stats.start_year,
         "end_year": stats.end_year,
         "first_issue_id": first_issue.id if first_issue else None,
+        "first_issue_summary": volume.summary_override or (first_issue.summary if first_issue else None),
         "story_arcs": story_arcs_data,
-        "details": {
-            "writers": sorted([r[0] for r in writers]),
-            "pencillers": sorted([r[0] for r in pencillers]),
-            "characters": sorted([r[0] for r in characters]),
-            "teams": sorted([r[0] for r in teams]),
-            "locations": sorted([r[0] for r in locations])
-        },
         "resume_to": {
             "comic_id": resume_comic_id,
             "status": read_status
         },
+        "is_following": bool(follow),
         "colors": colors,
+        "is_reverse_numbering": is_reverse_series,
     }
 
-@router.get("/{volume_id}/issues", response_model=PaginatedResponse)
+
+@router.get("/{volume_id}/details", name="details")
+async def get_volume_metadata_details(
+        volume: VolumeDep,
+        db: SessionDep,
+        current_user: CurrentUser,
+        category: Annotated[str, Query(pattern=DETAIL_CATEGORY_PATTERN)] = "characters",
+        offset: Annotated[int, Query(ge=0)] = 0,
+        limit: Annotated[int, Query(ge=1, le=100)] = VOLUME_METADATA_PAGE_SIZE,
+):
+    _assert_volume_allowed_for_user(volume.id, db, current_user)
+
+    return get_volume_metadata_tags_page(db, [volume.id], category, offset=offset, limit=limit)
+
+
+@router.post("/{volume_id}/follow", name="follow")
+async def follow_volume(volume: VolumeDep, db: SessionDep, current_user: CurrentUser):
+    _assert_volume_allowed_for_user(volume.id, db, current_user)
+
+    follow = db.query(UserVolumeFollow).filter(
+        UserVolumeFollow.user_id == current_user.id,
+        UserVolumeFollow.volume_id == volume.id,
+    ).first()
+
+    if not follow:
+        follow = UserVolumeFollow(
+            user_id=current_user.id,
+            volume_id=volume.id,
+            followed_at=datetime.now(timezone.utc),
+        )
+        db.add(follow)
+        db.commit()
+
+    return {"following": True}
+
+
+@router.delete("/{volume_id}/follow", name="unfollow")
+async def unfollow_volume(volume: VolumeDep, db: SessionDep, current_user: CurrentUser):
+    _assert_volume_allowed_for_user(volume.id, db, current_user)
+
+    follow = db.query(UserVolumeFollow).filter(
+        UserVolumeFollow.user_id == current_user.id,
+        UserVolumeFollow.volume_id == volume.id,
+    ).first()
+
+    if follow:
+        db.delete(follow)
+        db.commit()
+
+    return {"following": False}
+
+
+@router.get("/{volume_id}/issues", response_model=PaginatedResponse, name="issues")
 async def get_volume_issues(
         current_user: CurrentUser,
         volume_id: int,
         params: Annotated[PaginationParams, Depends()],
         db: SessionDep,
-        type: Annotated[str, Query(pattern="^(plain|annual|special|all)$")] = "plain"
+        type: Annotated[str, Query(pattern="^(plain|annual|special|all)$")] = "plain",
+        read_filter: Annotated[str, Query(pattern="^(all|read|unread)$")] = "all",
+        sort_order: Annotated[str, Query(pattern="^(asc|desc)$")] = "asc"
 ):
     """
-    Get paginated issues for a specific volume, filtered by type.
+    Get paginated issues for a specific volume.
+    OPTIMIZED: Eager loads Comic.volume to prevent N+1 in serializer.
     """
 
     # Verify Volume Access First
@@ -254,15 +525,28 @@ async def get_volume_issues(
         raise HTTPException(status_code=404, detail="Volume not found")
 
     # Select Comic AND the completed status
+    # OPTIMIZATION: joinedload(Comic.volume) prevents N+1 when accessing volume_number
     query = db.query(Comic, ReadingProgress.completed).outerjoin(
         ReadingProgress,
         (ReadingProgress.comic_id == Comic.id) & (ReadingProgress.user_id == current_user.id)
-    ).filter(Comic.volume_id == volume_id)
+    ).options(joinedload(Comic.volume)) \
+        .filter(Comic.volume_id == volume_id)
 
+
+    # --- AGE RATING FILTER ---
+    # TODO: If partial views are ever implemented we can uncomment this check
+    # Even if the Volume is allowed, we double-check individual issues (defensive coding)
+    # or just rely on the Volume check?
+    # Logic: If the volume is allowed, technically all comics are allowed (Poison Pill).
+    # BUT: If we change logic later to "Partial View", this line saves us.
+    #age_filter = get_comic_age_restriction(current_user)
+    #if age_filter is not None:
+    #    query = query.filter(age_filter)
+    # -------------------------
 
     is_plain, is_annual, is_special = get_format_filters()
 
-    # Apply Filters
+    # Type Filters
     if type == "plain":
         query = query.filter(is_plain)
     elif type == "annual":
@@ -270,20 +554,35 @@ async def get_volume_issues(
     elif type == "special":
         query = query.filter(is_special)
 
-    total = query.count()
+    # Read Status Filter
+    if read_filter == "read":
+        query = query.filter(ReadingProgress.completed == True)
+    elif read_filter == "unread":
+        query = query.filter(
+            (ReadingProgress.completed == None) |
+            (ReadingProgress.completed == False)
+        )
 
-    # Sort by Numeric Value first, then String Value for variants (10a, 10b)
-    # Cast number to Float for correct numeric sorting
-    # Volume number is already int, so it sorts fine.
-    comics = query.order_by(func.cast(Comic.number, Float), Comic.number) \
-        .offset(params.skip) \
-        .limit(params.size) \
-        .all()
+    # Smart Sorting Strategy
+    # We define the 2-stage sort keys:
+    # 1. Numeric Value (9 before 10)
+    # 2. String Value (10a before 10b)
+    sort_keys = [func.cast(Comic.number, Float), Comic.number]
+
+    if sort_order == "desc":
+        query = query.order_by(*[k.desc() for k in sort_keys])
+    else:
+        query = query.order_by(*[k.asc() for k in sort_keys])
+
+    # Pagination & Execute
+    total = query.count()
+    comics = query.offset(params.skip).limit(params.size).all()
 
     # Map results
     # Unpack the tuple (Comic, completed)
     items = []
     for comic, is_completed in comics:
+        # Now efficient because comic.volume is loaded
         data = comic_to_simple_dict(comic)
         # If is_completed is None (no record) or False, it's unread
         data['read'] = True if is_completed else False

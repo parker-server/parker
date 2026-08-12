@@ -2,66 +2,216 @@
 
 {% block content %}
 <div class="container mx-auto px-4 py-8" x-data="settingsManager()">
-    <h1 class="text-3xl font-bold mb-8 text-white">System Settings</h1>
 
-    <template x-for="(groupSettings, category) in settings" :key="category">
-        <div class="mb-8 bg-gray-800 rounded-lg p-6 border border-gray-700">
-            <h2 class="text-xl font-bold text-blue-400 capitalize mb-4" x-text="category"></h2>
-            
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <template x-for="setting in groupSettings" :key="setting.key">
-                    <div class="bg-gray-900 p-4 rounded border border-gray-700">
-                        <label class="block text-sm font-medium text-gray-400 mb-1" x-text="setting.label"></label>
+    {% from "partials/admin_header.html" import admin_header %}
+    {{ admin_header(
+        title="Settings",
+        description="Adjust Parker application settings."
+    ) }}
 
-                        <template x-if="setting.data_type === 'bool'">
-                            <div class="flex items-center mt-2">
-                                <button 
-                                    @click="update(setting, !setting.value)"
-                                    class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
-                                    :class="setting.value ? 'bg-blue-600' : 'bg-gray-700'"
-                                >
-                                    <span 
-                                        class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
-                                        :class="setting.value ? 'translate-x-5' : 'translate-x-0'"
-                                    ></span>
-                                </button>
-                                <span class="ml-3 text-sm text-gray-300" x-text="setting.value ? 'Enabled' : 'Disabled'"></span>
-                            </div>
-                        </template>
+    <div class="mb-6 rounded-2xl border border-blue-500/20 bg-gradient-to-br from-blue-950/40 via-gray-900 to-gray-900 p-5 shadow-lg">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div class="max-w-2xl">
+                <div class="text-[11px] uppercase tracking-[0.24em] text-blue-300/80 font-bold">Settings Overview</div>
+                <h2 class="mt-2 text-2xl font-bold text-white">Browse by category</h2>
+                <p class="mt-2 text-sm text-gray-300">
+                    Jump to a section or collapse categories to focus on the settings you need.
+                </p>
+            </div>
 
-                        <template x-if="setting.data_type === 'select'">
-                            <div class="flex gap-2">
-                                <select
-                                    x-model="setting.tempValue"
-                                    @change="update(setting, $event.target.value)"
-                                    class="bg-gray-800 text-white px-3 py-2 rounded w-full border border-gray-600 focus:border-blue-500 focus:outline-none appearance-none"
-                                >
-                                    <template x-for="opt in setting.options" :key="opt.value">
-                                        <option :value="opt.value" x-text="opt.label" :selected="opt.value == setting.value"></option>
-                                    </template>
-                                </select>
-                                </div>
-                        </template>
+            <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div class="rounded-xl border border-gray-700 bg-black/20 px-4 py-3">
+                    <div class="text-[10px] uppercase tracking-[0.2em] text-gray-500">Categories</div>
+                    <div class="mt-1 text-xl font-bold text-white" x-text="categoryList.length"></div>
+                </div>
+                <div class="rounded-xl border border-gray-700 bg-black/20 px-4 py-3">
+                    <div class="text-[10px] uppercase tracking-[0.2em] text-gray-500">Available Settings</div>
+                    <div class="mt-1 text-xl font-bold text-white" x-text="availableSettingTotal()"></div>
+                </div>
+                <button
+                    type="button"
+                    class="rounded-xl border border-gray-700 bg-gray-800/80 px-4 py-3 text-left transition-colors hover:border-blue-400/40 hover:bg-gray-800"
+                    x-on:click="expandAll()"
+                >
+                    <div class="text-[10px] uppercase tracking-[0.2em] text-gray-500">View</div>
+                    <div class="mt-1 text-sm font-semibold text-white">Expand All</div>
+                </button>
+                <button
+                    type="button"
+                    class="rounded-xl border border-gray-700 bg-gray-800/80 px-4 py-3 text-left transition-colors hover:border-blue-400/40 hover:bg-gray-800"
+                    x-on:click="collapseAll()"
+                >
+                    <div class="text-[10px] uppercase tracking-[0.2em] text-gray-500">View</div>
+                    <div class="mt-1 text-sm font-semibold text-white">Collapse All</div>
+                </button>
+            </div>
+        </div>
+    </div>
 
-                        <template x-if="setting.data_type !== 'bool' && setting.data_type !== 'select'">
-                            <div class="flex gap-2">
-                                <input
-                                    :type="setting.data_type === 'int' ? 'number' : 'text'" 
-                                    x-model="setting.tempValue" 
-                                    @focus="setting.tempValue = setting.value"
-                                    class="bg-gray-800 text-white px-3 py-2 rounded w-full border border-gray-600 focus:border-blue-500 focus:outline-none"
-                                >
-                                <button 
-                                    @click="update(setting, setting.tempValue)"
-                                    class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded text-sm"
-                                >Save</button>
-                            </div>
-                        </template>
-                        
-                        <p class="text-xs text-gray-500 mt-2" x-text="setting.description"></p>
-                    </div>
+    <div class="mb-6 rounded-2xl border border-gray-800 bg-gray-900/70 p-4 shadow-lg backdrop-blur">
+        <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+                <div class="text-[11px] uppercase tracking-[0.24em] text-gray-500 font-bold">Jump To</div>
+                <p class="mt-1 text-sm text-gray-400">Quick links to each settings category.</p>
+            </div>
+            <div class="flex gap-2 overflow-x-auto pb-1 lg:justify-end">
+                <template x-for="category in categoryList" :key="category">
+                    <button
+                        type="button"
+                        class="whitespace-nowrap rounded-full border px-3 py-2 text-sm transition-colors"
+                        :class="isSectionOpen(category) ? 'border-blue-500/40 bg-blue-500/10 text-blue-200' : 'border-gray-700 bg-gray-800/80 text-gray-300 hover:border-gray-500 hover:text-white'"
+                        x-on:click="jumpToCategory(category)"
+                    >
+                        <span x-text="formatCategory(category)"></span>
+                    </button>
                 </template>
             </div>
+        </div>
+    </div>
+
+    <template x-for="category in categoryList" :key="category">
+        <section
+            class="mb-6 overflow-hidden rounded-2xl border border-gray-800 bg-gray-900/80 shadow-lg"
+            :id="categoryAnchor(category)"
+        >
+            <button
+                type="button"
+                class="flex w-full flex-col gap-4 p-5 text-left transition-colors hover:bg-gray-800/70 sm:flex-row sm:items-center sm:justify-between"
+                x-on:click="toggleSection(category)"
+                :aria-expanded="isSectionOpen(category)"
+            >
+                <div>
+                    <div class="text-[11px] uppercase tracking-[0.24em] text-gray-500 font-bold">Category</div>
+                    <h2 class="mt-1 text-2xl font-bold text-blue-300" x-text="formatCategory(category)"></h2>
+                    <p class="mt-2 text-sm text-gray-400" x-text="categoryDescription(category)"></p>
+                </div>
+
+                <div class="flex items-center gap-3 sm:text-right">
+                    <div class="rounded-xl border border-gray-700 bg-black/20 px-3 py-2">
+                        <div class="text-sm font-semibold text-white" x-text="`${availableSettingsCount(category)} setting${availableSettingsCount(category) === 1 ? '' : 's'}`"></div>
+                    </div>
+                    <div class="flex h-10 w-10 items-center justify-center rounded-full border border-gray-700 bg-gray-800 text-gray-300 transition-transform"
+                         :class="isSectionOpen(category) ? 'rotate-180' : ''">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.51a.75.75 0 01-1.08 0l-4.25-4.51a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+                        </svg>
+                    </div>
+                </div>
+            </button>
+
+            <div x-show="isSectionOpen(category)" x-cloak class="border-t border-gray-800 p-5">
+                <div class="space-y-6">
+                    <template x-for="group in categorySettingGroups(category)" :key="`${category}-${group.name || 'settings'}`">
+                        <div class="space-y-3">
+                            <template x-if="group.name">
+                                <div class="border-b border-gray-800 pb-2">
+                                    <h3 class="text-sm font-bold uppercase tracking-[0.2em] text-gray-400" x-text="group.name"></h3>
+                                </div>
+                            </template>
+
+                            <div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                                <template x-for="setting in group.settings" :key="setting.key">
+                                    <div class="rounded-xl border border-gray-700 bg-gray-950/70 p-4">
+                                        <div class="flex flex-col gap-3">
+                                            <div>
+                                                <div>
+                                                    <label class="block text-sm font-semibold text-white" x-text="setting.label"></label>
+                                                </div>
+                                            </div>
+
+                                            <template x-if="setting.data_type === 'bool'">
+                                                <div class="flex items-center justify-between gap-4 rounded-xl border border-gray-800 bg-gray-900/80 px-4 py-3">
+                                                    <div>
+                                                        <div class="text-sm font-medium text-gray-200" x-text="setting.value ? 'Enabled' : 'Disabled'"></div>
+                                                        <p class="mt-1 text-xs text-gray-500">Applies immediately after saving.</p>
+                                                    </div>
+                                                    <button
+                                                        x-on:click="update(setting, !setting.value)"
+                                                        class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
+                                                        :class="setting.value ? 'bg-blue-600' : 'bg-gray-700'"
+                                                    >
+                                                        <span
+                                                            class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
+                                                            :class="setting.value ? 'translate-x-5' : 'translate-x-0'"
+                                                        ></span>
+                                                    </button>
+                                                </div>
+                                            </template>
+
+                                            <template x-if="setting.data_type === 'select'">
+                                                <div class="flex flex-col gap-3">
+                                                    <select
+                                                        x-model="setting.tempValue"
+                                                        x-on:change="handleSelectChange(setting, $event.target.value)"
+                                                        class="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none transition-colors focus:border-blue-500"
+                                                    >
+                                                        <template x-for="opt in getGroupedOptions(setting.options).orphans" :key="opt.value">
+                                                            <option :value="opt.value" x-text="opt.label" :selected="opt.value == setting.value"></option>
+                                                        </template>
+
+                                                        <template x-for="groupName in getGroupedOptions(setting.options).groupOrder" :key="groupName">
+                                                            <optgroup :label="groupName">
+                                                                <template x-for="opt in getGroupedOptions(setting.options).groups[groupName]" :key="opt.value">
+                                                                    <option :value="opt.value" x-text="opt.label" :selected="opt.value == setting.value"></option>
+                                                                </template>
+                                                            </optgroup>
+                                                        </template>
+                                                    </select>
+
+                                                    <div
+                                                        x-show="isCoverPreviewVisible(setting)"
+                                                        x-transition.opacity.duration.200ms
+                                                        x-cloak
+                                                        class="rounded-xl border border-blue-500/30 bg-blue-500/10 p-3 shadow-lg shadow-blue-950/20"
+                                                    >
+                                                        <div class="flex items-center gap-3">
+                                                            <img
+                                                                :src="coverPreview.url"
+                                                                :alt="`${coverPreview.label} cover preview`"
+                                                                class="h-24 w-16 flex-shrink-0 rounded-md object-cover shadow-lg ring-1 ring-white/10"
+                                                            >
+                                                            <div class="min-w-0">
+                                                                <div class="text-[10px] font-bold uppercase tracking-[0.22em] text-blue-200">Cover Preview</div>
+                                                                <div class="mt-1 truncate text-sm font-semibold text-white" x-text="coverPreview.label"></div>
+                                                                <p class="mt-1 text-xs leading-relaxed text-blue-100/80">Previewing the selected login background cover.</p>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </template>
+
+                                            <template x-if="setting.data_type !== 'bool' && setting.data_type !== 'select'">
+                                                <div class="flex flex-col gap-2 sm:flex-row">
+                                                    <input
+                                                        :type="setting.data_type === 'int' ? 'number' : 'text'"
+                                                        x-model="setting.tempValue"
+                                                        x-on:focus="setting.tempValue = setting.value"
+                                                        :maxlength="inputMaxLength(setting) || null"
+                                                        :min="inputMin(setting) || null"
+                                                        class="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none transition-colors focus:border-blue-500"
+                                                    >
+                                                    <button
+                                                        x-on:click="update(setting, setting.tempValue)"
+                                                        class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-500 sm:w-auto"
+                                                    >Save</button>
+                                                </div>
+                                            </template>
+
+                                            <p class="text-sm leading-relaxed text-gray-400" x-text="setting.description || 'No additional description provided.'"></p>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </section>
+    </template>
+
+    <template x-if="!categoryList.length">
+        <div class="rounded-2xl border border-gray-800 bg-gray-900 p-8 text-center text-gray-400">
+            No settings available.
         </div>
     </template>
 </div>
@@ -70,41 +220,256 @@
 function settingsManager() {
     return {
         settings: {},
-        
+        categoryList: [],
+        openSections: {},
+        coverPreview: {
+            key: null,
+            url: '',
+            label: '',
+            visible: false,
+            timeoutId: null,
+        },
+
         async init() {
-            const res = await fetch(window.url('/api/settings/'));
+            const res = await fetch(window.parker.route('settings.list'));
             this.settings = await res.json();
-            
+
             // Initialize tempValue for inputs (so we don't bind directly to the committed value until save)
             Object.values(this.settings).flat().forEach(s => {
                 s.tempValue = s.value;
             });
+
+            this.categoryList = Object.keys(this.settings);
+            this.initializeSections();
+        },
+
+        /**
+         * Check if a dependent setting should be shown
+         */
+        isDependent(setting) {
+            if (!setting.depends_on) return true;
+
+            const parentKey = setting.depends_on.key;
+            const requiredValue = setting.depends_on.value;
+
+            // Find the parent setting across all categories
+            const parentSetting = Object.values(this.settings)
+                .flat()
+                .find(s => s.key === parentKey);
+
+            return parentSetting && parentSetting.value === requiredValue;
+        },
+
+        initializeSections() {
+            const shouldCollapseForMobile = window.matchMedia('(max-width: 767px)').matches;
+            this.openSections = {};
+            this.categoryList.forEach((category, index) => {
+                this.openSections[category] = shouldCollapseForMobile ? index === 0 : true;
+            });
+        },
+
+        formatCategory(category) {
+            return String(category || '')
+                .split(/[_\s-]+/)
+                .filter(Boolean)
+                .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+                .join(' ');
+        },
+
+        categoryDescription(category) {
+            const descriptions = {
+                appearance: 'Reader-facing presentation, background, and browsing behavior.',
+                backup: 'Retention and protection settings for stored backups.',
+                general: 'Core application identity and logging defaults.',
+                scanning: 'How Parker reacts to filesystem activity and scan timing.',
+                server: 'External access and integration features.',
+                system: 'Scheduled maintenance and heavier processing controls.',
+            };
+
+            return descriptions[category] || 'Configuration options for this part of Parker.';
+        },
+
+        categoryAnchor(category) {
+            return `settings-category-${category}`;
+        },
+
+        jumpToCategory(category) {
+            this.openSections[category] = true;
+
+            this.$nextTick(() => {
+                const target = document.getElementById(this.categoryAnchor(category));
+                if (target) {
+                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            });
+        },
+
+        toggleSection(category) {
+            this.openSections[category] = !this.openSections[category];
+        },
+
+        isSectionOpen(category) {
+            return !!this.openSections[category];
+        },
+
+        expandAll() {
+            this.categoryList.forEach(category => {
+                this.openSections[category] = true;
+            });
+        },
+
+        collapseAll() {
+            this.categoryList.forEach(category => {
+                this.openSections[category] = false;
+            });
+        },
+
+        availableSettingsCount(category) {
+            return this.visibleSettings(category).length;
+        },
+
+        availableSettingTotal() {
+            return this.categoryList.reduce((total, category) => total + this.availableSettingsCount(category), 0);
+        },
+
+        visibleSettings(category) {
+            return (this.settings[category] || [])
+                .filter(setting => !setting.depends_on || this.isDependent(setting));
+        },
+
+        categorySettingGroups(category) {
+            const groups = [];
+            const byName = {};
+
+            this.visibleSettings(category).forEach(setting => {
+                const name = setting.display_group || '';
+                if (!byName[name]) {
+                    byName[name] = { name, settings: [] };
+                    groups.push(byName[name]);
+                }
+                byName[name].settings.push(setting);
+            });
+
+            return groups;
+        },
+
+        inputMaxLength(setting) {
+            if (setting.key === 'general.app_name') return 32;
+            return null;
+        },
+
+        inputMin(setting) {
+            return setting.min_value !== undefined && setting.min_value !== null ? setting.min_value : null;
+        },
+
+        isLoginStaticCoverSetting(setting) {
+            return setting && setting.key === 'ui.login_static_cover';
+        },
+
+        findSettingOption(setting, value) {
+            return (setting.options || [])
+                .find(opt => String(opt.value) === String(value));
+        },
+
+        coverPreviewUrl(filename) {
+            if (!filename) return '';
+            return window.parker.url(`/static/img/login-covers/${filename}`);
+        },
+
+        isCoverPreviewVisible(setting) {
+            return this.isLoginStaticCoverSetting(setting)
+                && this.coverPreview.visible
+                && this.coverPreview.key === setting.key;
+        },
+
+        showCoverPreview(setting, value) {
+            if (!this.isLoginStaticCoverSetting(setting)) return;
+
+            const option = this.findSettingOption(setting, value);
+            if (!option) return;
+
+            if (this.coverPreview.timeoutId) {
+                clearTimeout(this.coverPreview.timeoutId);
+            }
+
+            this.coverPreview = {
+                key: setting.key,
+                url: this.coverPreviewUrl(option.value),
+                label: option.label,
+                visible: true,
+                timeoutId: null,
+            };
+
+            this.coverPreview.timeoutId = setTimeout(() => {
+                this.coverPreview.visible = false;
+                this.coverPreview.timeoutId = null;
+            }, 3500);
+        },
+
+        handleSelectChange(setting, newValue) {
+            this.showCoverPreview(setting, newValue);
+            this.update(setting, newValue);
+        },
+
+        /**
+         * Transforms a flat list of options into a structure for rendering groups.
+         * Returns: { orphans: [], groups: { "GroupName": [opt, opt] } }
+         */
+        getGroupedOptions(options) {
+            const orphans = [];
+            const groups = {};
+
+            // Maintain insertion order for groups
+            const groupOrder = [];
+
+            options.forEach(opt => {
+                if (opt.group) {
+                    if (!groups[opt.group]) {
+                        groups[opt.group] = [];
+                        groupOrder.push(opt.group);
+                    }
+                    groups[opt.group].push(opt);
+                } else {
+                    orphans.push(opt);
+                }
+            });
+
+            return { orphans, groups, groupOrder };
         },
 
         async update(setting, newValue) {
             // Optimistic Update
             const oldVal = setting.value;
-            setting.value = newValue; 
+            setting.value = newValue;
 
             try {
-                const res = await fetch(window.url(`/api/settings/${setting.key}`), {
+                const res = await fetch(window.parker.route('settings.update', {key: setting.key }), {
                     method: 'PATCH',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ value: newValue })
                 });
-                
-                if(!res.ok) throw new Error();
-                
+
+                if(!res.ok) {
+                    let message = "Error saving setting";
+                    try {
+                        const payload = await res.json();
+                        if (payload.detail) message = payload.detail;
+                    } catch(parseError) {}
+                    throw new Error(message);
+                }
+
                 // Refresh local state to match server format
                 const updated = await res.json();
-                setting.value = updated.value; 
-                window.comicServer.showToast("Setting saved", "success");
+                setting.value = updated.value;
+                setting.tempValue = updated.value;
+                window.parker.showToast("Setting saved", "success");
             } catch(e) {
                 setting.value = oldVal; // Revert
-                window.comicServer.showToast("Error saving setting", "error");
+                setting.tempValue = oldVal;
+                window.parker.showToast(e.message || "Error saving setting", "error");
             }
         },
-        
+
     }
 }
 </script>

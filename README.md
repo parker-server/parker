@@ -1,42 +1,237 @@
-# Comic Server
+# Parker Comic Server
 
-## 🌟 Core Features
+Parker is a self‑hosted media server for comic books (CBZ/CBR). It follows a **“Filesystem is Truth”** philosophy, parsing metadata directly from `ComicInfo.xml` inside archives. Parker is currently at **Version 0.1.29 (Stable)**.
 
-### 1. High-Performance Library Management
-* **Batch Scanner:** Processes massive libraries (25k+ files) in minutes using batched DB commits and SQLite WAL mode.
-* **Smart Hierarchy:** Organizes files into Libraries -> Series -> Volumes -> Issues.
-* **Metadata Extraction:** Automatically parses `ComicInfo.xml` from `.cbz` and `.cbr` archives.
+https://github.com/parker-server/parker/wiki/Getting-Started
 
-### 2. Modern User Experience
-* **Reactive UI:** Built with **FastAPI (Jinja2) + Alpine.js**, providing a SPA-like feel without the build complexity.
-* **Component Architecture:** Reusable cards and list items ensure UI consistency across Search, Collections, and Detail views.
-* **Web Reader:** A responsive reader with metadata inspection, page caching, and progress tracking.
+---
 
-### 3. Discovery & Curation
-* **Advanced Search:** Rule-based search engine supporting complex logic (e.g., "Writer = Moore AND Character = Swamp Thing").
-* **Auto-Suggestions:** "Find-as-you-type" autocomplete for all metadata fields.
-* **Collections & Reading Lists:** Automatic and manual grouping of content.
+## ✨ Features
 
-### 4. Security & Multi-User
-* **Role-Based Access:** Standard Users can browse/read; only Admins can Scan/Delete.
-* **Secure Auth:** OAuth2 with JWT tokens and SHA-256/Bcrypt password hashing.
-* **Personalized Progress:** Reading history is tracked per-user.
+- **Library Management**
+  - Hierarchy: `Library → Series → Volume → Comic`
+  - Rich metadata (credits, tags, page counts, colors)
+  - Admin folder browser for selecting server-side library paths under `COMICS_PATH`
+  - Multi-root libraries with explicit add, disable, relocate, and remove controls
+  - Reading Lists, Collections, Story Arcs, Stacks, Smart Lists
+  - CBL-derived reading lists from uploaded files, direct HTTPS imports, and the DieselTech catalog
+  - Volume-level `Following` for future issue tracking by run
+  - Optional single-volume series shortcut to open the volume detail page directly
+  - Paginated Details tabs for large series and volume metadata sets
 
-## 🏗 Architecture & Tech Stack
-* **Backend:** Python 3.10+, FastAPI, SQLAlchemy, Pydantic v2.
-* **Database:** SQLite (WAL Mode enabled).
-* **Frontend:** TailwindCSS, Alpine.js v3, HTMX.
-* **Deployment:** Docker & Docker Compose support.
+- **User System**
+  - Multi‑library access with row‑level security
+  - Age-rating-aware access control
+  - Anonymous Social Insights participation is enabled for new users by default, with an account-level opt-out
+  - Avatar uploads
+  - Hybrid authentication (JWT + secure cookies)
 
-## 📂 Key File Structure
-* `app/api/`: REST endpoints (Secured with Dependency Injection).
-* `app/services/`: Business logic (Scanner, Search Engine, Image Processing).
-* `app/models/`: SQLAlchemy database definitions.
-* `templates/`: Jinja2 HTML templates using partials for modularity.
-* `storage/`: Persistent volume for Database and Thumbnails.
+- **Reader**
+  - Context‑aware navigation (series, volume, lists, story arcs)
+  - Manga mode (RTL), double‑page spreads, `Long View`
+  - Per-book reader overrides for view mode, double-page, and reading direction
+  - Incognito reading sessions that avoid persisting per-book overrides
+  - Zero‑latency engine with preloading and swipe navigation
+  - Separate per-comic bookmarks with detour-safe resume handling
+  - Smart close behavior that returns readers to the page they launched from
+  - Image inspection tools
 
-## ✅ Final Validation
-1.  **Deployment:** `docker-compose up -d --build` successfully starts the container.
-2.  **Security:** `/api/auth/register` creates the initial Superuser.
-3.  **Ingestion:** Scanner successfully imports a sample library and generates thumbnails.
-4.  **Usage:** Reading progress is saved and persists across reloads.
+- **Discovery**
+  - Netflix‑style home page with content rails
+  - Anonymous aggregate social insights such as reader counts and `Popular with Others`
+  - `Continue Reading`, `Jump Back In`, `Trending`, and `New from Following`
+  - Pinned library rails for recently updated series from favorite libraries
+  - Per-user Home rail customization for reordering or hiding discovery rails
+  - Library Timeline for character and team histories generated from embedded metadata
+  - Recommendations by creator or metadata
+  - Random gems, recently added/updated series with recency-aware volume covers
+
+- **Reports Dashboard**
+  - Missing Issues
+  - Storage Analysis
+  - Duplicate Detector
+  - Metadata Health
+  - Corrupt / Low Page Count
+
+- **Scanning**
+  - Background ScanManager with priority queues
+  - Configurable job history retention for completed and failed background jobs
+  - Timestamp bubbling for updated series
+  - Physical page count validation
+  - ⚡ Parallel Thumbnail Generation (Optional)
+    - Multiprocessing pipeline for thumbnails
+    - Distributes image decoding, resizing, WebP encoding, and palette extraction across CPU cores
+    - Dedicated writer process batches SQLite commits safely
+    - On an 8‑core i7 6th gen., 3,541 comics dropped from 13m40s → 1m58s
+    - Fully opt‑in via Settings; 0 = auto (use all cores), values above CPU count are clamped
+
+- **Visuals**
+  - Dynamic backgrounds from cover colors
+  - Cover Browser gallery mode with lazy-loaded manifests for very large runs
+
+- **Format Support**
+  - Native archive support for `CBZ` and `CBR`
+  - Backend image-pipeline compatibility for `AVIF`
+  - Experimental backend support for `JPEG XL` (`JXL`), with browser-dependent native reading support
+
+- **Enrichment**
+  - Auto‑populated event descriptions
+  - Reading time estimates
+
+- **Search**
+  - Advanced rule‑based search builder
+  - Saved searches → Smart Lists
+  - Secure autocomplete
+
+- **OPDS Support**
+  - OPDS 1.2 compliant feeds
+  - Paginated library and series feeds
+  - Dublin Core metadata
+  - Legacy client authentication
+  - JPEG cover thumbnails for reader compatibility
+  - Android reader compatibility improvements
+  - User dashboard integration
+
+- **WebP Transcoding**
+  - On‑the‑fly conversion for bandwidth savings
+  - Smart resizing and thresholds
+  - Per‑device opt‑in
+
+---
+
+## 🛠 Tech Stack
+
+- **Backend:** Python 3.10+, FastAPI, SQLAlchemy, Alembic, APScheduler, Watchdog
+- **Frontend:** Jinja2, Alpine.js, TailwindCSS (CDN)
+- **Image Processing:** Pillow, Color Thief
+- **Deployment:** Docker / Docker Compose
+- **Database:** SQLite (WAL mode) with FTS5
+
+---
+
+## 🔒 Architecture Highlights
+
+- **Row‑Level Security:** Users restricted to accessible libraries
+- **Dependency Injection:** Security enforced via `ComicDep`, `SeriesDep`, `VolumeDep`
+- **Context‑Aware Reader:** Strategy pattern for next/prev navigation
+- **Soft Landing Errors:** Inline UI errors instead of hard redirects
+- **Hybrid Settings:** Environment variables + DB runtime preferences
+
+---
+
+## 📊 Data Model
+
+- Libraries, Series, Volumes, Comics
+- Collections, Reading Lists, Stacks, Smart Lists
+- User access control
+- Batch operations (mark read/unread, add to lists)
+
+---
+
+## 🚀 Getting Started
+
+https://github.com/parker-server/parker/wiki/Getting-Started
+
+### Local Python Environments
+
+Parker now uses pinned dependency versions in `requirements.txt` and
+`requirements-dev.txt` so local machines, Docker builds, and CI all resolve the
+same package set.
+
+When setting up a new machine or refreshing an existing virtualenv, recreate the
+environment from the pinned files instead of reusing older installed packages.
+
+Windows:
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-dev.txt
+```
+
+macOS / Linux:
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt -r requirements-dev.txt
+```
+
+If behavior differs between machines, verify both are using a freshly created
+virtualenv from these pinned requirements.
+
+### Library Browser Root
+
+The admin folder browser is scoped to `COMICS_PATH`. Docker Compose sets this to
+`/comics` by default. For local Python installs, set `COMICS_PATH` in `.env` to
+the local folder Parker should browse from, such as `D:\Comics` or
+`C:\Users\you\Comics`.
+
+### Docker Port Configuration
+
+The Docker image listens on port `8000` inside the container. To change the host
+port exposed by Docker Compose, set `PARKER_PORT` in `.env`; for example,
+`PARKER_PORT=9000` exposes Parker at host port `9000` while the container still
+uses port `8000` internally.
+
+### Secret Key Configuration
+
+Parker requires `SECRET_KEY` to be set before startup. The value signs login
+tokens, so it must be unique per server and kept private. Generate one with:
+
+```bash
+openssl rand -hex 32
+```
+
+Put the generated value in `.env` as `SECRET_KEY=<generated value>`. Parker will
+refuse to start if the key is empty or still uses a known placeholder.
+
+### Initial Admin Bootstrap
+
+On a new database, Parker creates the first administrator from bootstrap
+environment variables instead of using a shared default password.
+
+Set `INITIAL_ADMIN_PASSWORD` before first startup. It must be at least 8
+characters and should be unique to this server. `INITIAL_ADMIN_USERNAME` is
+optional and defaults to `admin`.
+
+```env
+INITIAL_ADMIN_USERNAME=admin
+INITIAL_ADMIN_PASSWORD=<your initial admin password>
+```
+
+After an active administrator exists, Parker ignores these bootstrap values so
+upgrades do not reset or overwrite existing accounts.
+
+### OPDS Reader Compatibility
+
+Parker's OPDS feed serves original comic archives and preserves their file type.
+Reader support varies by app: some Android readers can download a CBR but fail
+to open it if the archive uses RAR5 compression. In that case, use a reader with
+RAR5 support or convert the file to CBZ/RAR4 at the library owner's discretion.
+
+Known client behavior:
+
+- Moon+ Reader can browse Parker OPDS catalogs and read downloaded CBZ files.
+  CBR support depends on the archive's RAR version.
+- Librera can browse Parker OPDS catalogs, but may not acquire/open issues when
+  tapping comic entries.
+
+
+## 📌 Roadmap
+- Improve Documentation
+- Expanded OPDS support
+- Localization
+- Enhanced WebP transcoding pipeline (JXL, AVIF to WebP)
+- Additional unit test coverage
+- Migration tooling improvements
+- Light metadata editing with file writeback (Tentative)
+
+## 🤝 Contributing
+Parker is early‑stage but stable. Contributions are welcome!
+Please check the issues list for open tasks, or propose new features via pull requests.
+
+## 📜 License
+MIT License
+

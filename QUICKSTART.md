@@ -1,214 +1,144 @@
-# Quick Start Guide
+Welcome to Parker! This guide will help you get your personal comic server up and running using Docker.
 
-Get your Comic Server up and running in 5 minutes!
+### Prerequisites
+- Docker installed on your host machine.
+- A directory containing your comic collection (currently supporting .cbz and .cbr).
+- (Optional) Docker Compose for easier management.
 
-## Prerequisites
+## Channel selection
+Parker publishes two Docker image channels:
 
-- Python 3.8 or higher
-- Your comic files (CBZ, CBR format)
-- Comics should have ComicInfo.xml for metadata
+- **Stable (recommended):**
+The latest tag is built from versioned releases and is the recommended option for most users.
 
-## Installation
+`parker:latest`
 
-### Option 1: Quick Setup (Recommended)
+- **Edge**:
+The edge tag is built automatically from every commit to master.
+It includes the newest features and fixes, but may be less stable.
 
-1. **Clone or download the project**
+`parker:edge`
+
+
+### Quick Start (Docker Run)
+If you want to test Parker quickly, run the following command. Replace the paths on the left side of the `:` with your actual local directories:
+
+Generate an initial admin password first and keep it somewhere safe until you
+log in:
+
 ```bash
-cd comic-server
+export PARKER_INITIAL_ADMIN_PASSWORD="$(openssl rand -base64 24)"
+echo "$PARKER_INITIAL_ADMIN_PASSWORD"
 ```
 
-2. **Install dependencies**
 ```bash
-pip install -r requirements.txt
+docker run -d \
+  --name parker \
+  -p 8000:8000 \
+  -v /path/to/config:/app/storage \
+  -v /path/to/comics:/comics:ro \
+  -e BASE_URL=/ \
+  -e COMICS_PATH=/comics \
+  -e SECRET_KEY="$(openssl rand -hex 32)" \
+  -e INITIAL_ADMIN_PASSWORD="$PARKER_INITIAL_ADMIN_PASSWORD" \
+  ghcr.io/parker-server/parker:latest
 ```
 
-3. **Copy environment file**
+Parker listens on port `8000` inside the container. To use a different host port, change the left side of the port mapping. For example, `-p 9000:8000` exposes Parker at `http://localhost:9000`.
+
+### Advanced Configuration via CLI
+You can configure any setting from the .env file directly in your docker run command using the -e flag. This is particularly useful for setting up your environment without manually editing files.
+
+Example: Running on a subpath with Proxy Trust
+
 ```bash
-cp .env.example .env
-# Edit .env with your settings
+docker run -d \
+  --name parker \
+  -p 8000:8000 \
+  -e BASE_URL=/comics \
+  -e COMICS_PATH=/comics \
+  -e SECRET_KEY="$(openssl rand -hex 32)" \
+  -e INITIAL_ADMIN_PASSWORD="$PARKER_INITIAL_ADMIN_PASSWORD" \
+  -e TRUSTED_PROXIES="172.18.0.1,192.168.1.50" \
+  -e ALLOWED_ORIGINS="https://comics.yourdomain.com" \
+  -v /path/to/config:/app/storage \
+  -v /path/to/comics:/comics:ro \
+  ghcr.io/parker-server/parker:latest
 ```
 
-4. **Run the server**
-```bash
-python main.py
+### Recommended Setup (Docker Compose)
+For a more permanent installation, use a `docker-compose.yml` file. This allows you to manage environment variables in a dedicated `.env` file.
+
+docker-compose.yml
+
+```yml
+services:
+  parker:
+    image: ghcr.io/parker-server/parker:latest
+    container_name: parker
+    ports:
+      - "${PARKER_PORT:-8000}:8000"
+    env_file: .env  # Loads your configuration
+    volumes:
+      - /path/to/config:/app/storage
+      - /path/to/comics:/comics:ro
+    restart: unless-stopped
 ```
 
-5. **Open your browser**
+Example .env
 ```
-http://localhost:8000
-```
-
-### Option 2: Docker Setup
-
-1. **Build and run with Docker Compose**
-```bash
-docker-compose up -d
-```
-
-2. **Access the application**
-```
-http://localhost:8000
+PARKER_PORT=8000
+BASE_URL=/
+COMICS_PATH=/comics
+# Generate a unique value first: openssl rand -hex 32
+SECRET_KEY=
+# Optional; defaults to admin
+INITIAL_ADMIN_USERNAME=admin
+# Required only before Parker creates the first administrator
+INITIAL_ADMIN_PASSWORD=
 ```
 
-## First-Time Setup
+### Initial Configuration
+Parker requires `SECRET_KEY` to be set to a unique random value before startup. It will refuse to start if the key is empty or still uses a known placeholder.
 
-### 1. Add Your First Library
+For a new database, Parker also requires `INITIAL_ADMIN_PASSWORD` so it can
+create the first administrator without using a shared default password.
+`INITIAL_ADMIN_USERNAME` defaults to `admin` if omitted. These values are
+ignored after an active administrator exists.
 
-1. Click "Add Library" button
-2. Enter a name (e.g., "My Comics")
-3. Enter the path to your comics folder
-   - Linux/Mac: `/home/user/Comics`
-   - Windows: `C:\Users\YourName\Comics`
-4. Click "Add Library"
+Once the container is running, access the web UI at http://localhost:8000, or the host port you mapped with `PARKER_PORT` / `-p`.
 
-### 2. Scan Your Comics
+Admin Account: log in with the bootstrap username and password you configured before first startup.
 
-1. Click the "Scan" button next to your library
-2. Wait for the scan to complete
-3. Your comics will appear on the home page
+Once logged in, navigate to the administration area at `/admin`, such as `http://localhost:8000/admin`.
 
-### 3. Start Reading!
+Click the 'Libraries' card and click the `Add Library` button.
 
-1. Click any comic cover to open the reader
-2. Use keyboard shortcuts:
-   - Arrow keys or Space to navigate
-   - F for fullscreen
-   - Escape to exit
+Use `Browse` to select a folder under the configured `COMICS_PATH` root. For the Docker examples above, that root is `/comics`.
 
-## Directory Structure
+If entering a path manually, use the path inside the container, such as `/comics` or `/comics/DC`, not the host path from the left side of the Docker volume mapping.
 
-```
-comics/                    # Your comics folder
-├── DC/
-│   ├── Batman/
-│   │   ├── Batman #1.cbz
-│   │   └── Batman #2.cbz
-│   └── Superman/
-└── Marvel/
-    └── Spider-Man/
+Click the `Create Library` button which will save the library.
 
-data/                      # Application data (auto-created)
-├── comics.db             # Database
-└── cache/                # Thumbnail cache
-```
+You will see a row on the page representing your new library.  Click the `Scan` button and confirm to kick off your initial scan.
 
-## Comic File Requirements
+The page will poll for the job to know when it's complete.  You can also review jobs on the 'Scan Jobs' card from the admin home.
 
-### Supported Formats
-- `.cbz` (ZIP archive with images)
-- `.cbr` (RAR archive with images)
-- `.cb7` (7-Zip archive with images)
 
-### Metadata (ComicInfo.xml)
-For best results, your comics should include a `ComicInfo.xml` file:
+### Building from source
 
-```xml
-<?xml version="1.0"?>
-<ComicInfo>
-  <Title>The Amazing Spider-Man</Title>
-  <Series>Amazing Spider-Man</Series>
-  <Number>1</Number>
-  <Year>1963</Year>
-  <Writer>Stan Lee</Writer>
-  <Penciller>Steve Ditko</Penciller>
-  <Publisher>Marvel Comics</Publisher>
-</ComicInfo>
-```
+If you prefer to get into the trenches you can instead directly clone the source code
 
-Tools to add metadata:
-- [ComicTagger](https://github.com/comictagger/comictagger)
-- [Mylar](https://github.com/mylar3/mylar3)
+1. Clone the repository:
 
-## Common Issues
-
-### Comics not showing up
-
-**Problem**: Scanned library but no comics appear
-
-**Solution**:
-1. Check that your path is correct
-2. Verify files are .cbz, .cbr, or .cb7
-3. Check file permissions
-4. Look at server logs for errors
-
-### Images not loading
-
-**Problem**: Comic covers are broken images
-
-**Solution**:
-1. Check that image files exist in comic archives
-2. Verify file isn't corrupted (try opening manually)
-3. Clear browser cache
-4. Restart the server
-
-### Slow performance
-
-**Problem**: Comics load slowly
-
-**Solution**:
-1. Thumbnails will cache after first load
-2. Check your storage speed
-3. Reduce image quality in settings (future feature)
-4. Use SSD storage if possible
-
-## Configuration
-
-Edit `.env` file to customize:
-
-```env
-# Change server port
-PORT=9000
-
-# Change comics directory
-COMICS_PATH=/mnt/nas/comics
-
-# Enable debug mode
-LOG_LEVEL=DEBUG
-```
-
-## Keyboard Shortcuts
-
-### Global
-- `Ctrl/Cmd + K` - Focus search
-- `Ctrl/Cmd + /` - Go to search
-- `Escape` - Close modals
-
-### Reader
-- `←` / `A` - Previous page
-- `→` / `D` / `Space` - Next page
-- `Home` - First page
-- `End` - Last page
-- `F` - Fullscreen
-
-## Next Steps
-
-1. **Organize your library**: Use folders to organize by publisher/series
-2. **Add metadata**: Use ComicTagger to add rich metadata
-3. **Create reading lists**: Group related comics together
-4. **Track progress**: Your reading position is saved automatically
-5. **Search**: Use advanced search to find comics by character, writer, etc.
-
-## Getting Help
-
-- Check the full README.md for detailed documentation
-- Look at server logs for error messages
-- Verify your comic files are valid archives
-
-## Tips for Best Experience
-
-1. **Organize files logically**:
+   ```bash
+   git clone https://github.com/parker-server/parker.git
+   cd parker
    ```
-   Publisher/Series/Series Name #001.cbz
+   
+2. Configure the `docker-compose.yml` with volume mappings, port, etc as explained in the above sections
+
+3. ```bash
+   docker-compose up -d --build
    ```
 
-2. **Use consistent naming**:
-   - Good: `Batman #001 (1940).cbz`
-   - Bad: `batman1.cbz`
-
-3. **Include metadata**: Comics with ComicInfo.xml are searchable and organizable
-
-4. **Keep backups**: Your comics database is in `data/comics.db`
-
-## Enjoy Reading! 📚
-
-Your comic server is now ready to use. Happy reading!

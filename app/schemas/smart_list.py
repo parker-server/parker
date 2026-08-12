@@ -1,5 +1,5 @@
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.schemas.search import SearchRequest
 
@@ -23,5 +23,4 @@ class SmartListResponse(BaseModel):
 
     # We generally don't send the full complex query_config unless needed
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

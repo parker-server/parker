@@ -1,9 +1,21 @@
 import re
 from datetime import datetime
+from pathlib import Path
 from fastapi.templating import Jinja2Templates
 from app.config import settings
+from app.core.settings_loader import get_cached_setting
+from app.core.utils import get_route_map
 
 templates = Jinja2Templates(directory="app/templates")
+
+def route_map_injector(request):
+
+    # Get tags for current route
+    route = request.scope.get("route")
+    tags = getattr(route, "tags", [])
+    include_admin = "admin" in tags
+
+    return get_route_map(request.app, with_admin_routes=include_admin)
 
 
 # URL Helper for Jinja
@@ -17,10 +29,39 @@ def url_builder(path: str) -> str:
     return f"{base}/{clean_path}" if base else f"/{clean_path}"
 
 
+def asset_version(path: str) -> str:
+    """
+    Returns a lightweight cache-busting version for a local asset.
+    Falls back to the application version if the file is missing.
+    """
+    try:
+        return str(int(Path(path).stat().st_mtime))
+    except OSError:
+        return settings.version
+
+
+templates.env.globals["app_version"] = settings.version
+templates.env.globals["app_name"] = settings.app_name
+
 # Inject URL data into Templates
 templates.env.globals["url"] = url_builder
+templates.env.globals["asset_version"] = asset_version
 templates.env.globals["base_url"] = settings.clean_base_url
+templates.env.globals["routes"] = route_map_injector
+templates.env.globals["get_system_setting"] = get_cached_setting
 
+# --- Context Processors (Dynamic Data) ---
+def inject_ui_settings(request):
+    """
+    Dynamically inject UI settings into every request.
+    This ensures changes in settings are reflected immediately.
+    """
+    return {
+        "background_style": get_cached_setting("ui.background_style")
+    }
+
+# Register the processor by appending it to the list
+templates.context_processors.append(inject_ui_settings)
 
 # --- Filters ---
 def slugify(value: str) -> str:
@@ -28,7 +69,7 @@ def slugify(value: str) -> str:
     return re.sub(r'[^a-z0-9]+', '-', value.lower()).strip('-')
 
 
-def format_date(value: datetime, fmt: str = "%Y-%m-%d") -> str:
+def format_date(value: datetime, fmt: str = "%B %d, %Y") -> str:
     """Format a datetime object with a given format string."""
     return value.strftime(fmt) if isinstance(value, datetime) else value
 
@@ -48,15 +89,9 @@ def humanize_number(value: int) -> str:
     return f"{value:,}"  # adds commas
 
 
-def format_date(value, fmt="%B %d, %Y"):
-    from datetime import datetime
-    return value.strftime(fmt) if isinstance(value, datetime) else value
-
-
 # Register filters
 templates.env.filters["slugify"] = slugify
 templates.env.filters["format_date"] = format_date
 templates.env.filters["truncate"] = truncate
 templates.env.filters["pluralize"] = pluralize
 templates.env.filters["humanize_number"] = humanize_number
-templates.env.filters["format_date"] = format_date

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Cover Browser - Comic Server{% endblock %}
+{% block title %}Cover Browser - Parker{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -28,13 +28,26 @@
         position: fixed; inset: 0; z-index: 200;
         background: rgba(0,0,0,0.95);
         overflow: auto; /* Allow native scrolling */
-        display: flex; justify-content: center; align-items: flex-start;
-        cursor: zoom-out;
+        display: flex;
+        cursor: grab;
+        user-select: none; /* Prevents text selection while dragging */
     }
+
+    /* When actively dragging */
+    .zoom-container.is-panning {
+        cursor: grabbing;
+    }
+
     .zoom-image {
         margin: auto;
         max-width: none; /* Allow overflowing */
         box-shadow: 0 0 50px rgba(0,0,0,0.5);
+
+        /* Prevent browser native image dragging */
+        -webkit-user-drag: none;
+        user-select: none;
+        pointer-events: auto; /* Ensure clicks register */
+        flex-shrink: 0; /* Prevent image from trying to fit */
     }
 </style>
 {% endblock %}
@@ -50,12 +63,12 @@
             <div class="w-px h-6 bg-gray-700"></div>
             <div class="flex flex-col">
                 <span class="font-bold text-white text-sm" x-text="contextLabel"></span>
-                <span class="text-xs text-blue-400" x-text="`${currentIndex + 1} / ${items.length}`"></span>
+                <span class="text-xs text-blue-400" x-text="positionLabel"></span>
             </div>
         </div>
 
         <div class="flex items-center gap-3">
-            <button x-show="mode === 'theater'" @click="zoomMode = true" class="text-gray-400 hover:text-white transition-colors" title="Zoom / Inspect (z)">
+            <button x-show="mode === 'theater'" x-on:click="zoomMode = true" class="text-gray-400 hover:text-white transition-colors" title="Zoom / Inspect (z)">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
                 </svg>
@@ -72,19 +85,31 @@
         </div>
     </div>
 
-    <div x-show="mode === 'grid'" class="grid-view scrollbar-thin">
+    <div x-show="mode === 'grid'" class="grid-view scrollbar-thin" x-on:scroll="handleGridScroll($event)">
         <template x-for="(item, index) in items" :key="item.comic_id">
             <div x-on:click="goToIndex(index)" class="cursor-pointer group flex flex-col items-center">
                 <div class="aspect-[2/3] w-full relative rounded-lg overflow-hidden border border-gray-700 group-hover:border-blue-500 transition-all shadow-lg group-hover:scale-105">
-                    <img :src="item.thumbnail_url" loading="lazy" class="w-full h-full object-cover">
+                    <img :src="window.parker.url(item.thumbnail_url)" loading="lazy" class="w-full h-full object-cover">
                     <div x-show="index === currentIndex" class="absolute inset-0 border-4 border-blue-500/50"></div>
                 </div>
                 <span class="mt-2 text-xs text-gray-400 text-center truncate w-full" x-text="item.label"></span>
             </div>
         </template>
+        <div x-show="loading && items.length === 0" class="col-span-full flex justify-center py-12 text-sm text-gray-400">
+            Loading covers...
+        </div>
+        <div x-show="loadingMore" class="col-span-full flex justify-center py-8 text-sm text-gray-400">
+            Loading more covers...
+        </div>
+        <div x-show="loadError" class="col-span-full flex flex-col items-center gap-3 py-10 text-sm text-red-300">
+            <span x-text="loadError"></span>
+            <button x-on:click.stop="loadManifestPage(items.length === 0)" class="px-3 py-1.5 rounded bg-red-900/40 border border-red-700 hover:bg-red-900/60 text-red-100">
+                Retry
+            </button>
+        </div>
     </div>
 
-    <div x-show="mode === 'theater'" class="theater-view" @click="handleZoneClick($event)">
+    <div x-show="mode === 'theater'" class="theater-view" x-on:click="handleZoneClick($event)">
 
         <div class="absolute inset-y-0 left-0 w-1/4 cursor-pointer z-10 hover:bg-white/5 transition-colors"></div>
         <div class="absolute inset-y-0 right-0 w-1/4 cursor-pointer z-10 hover:bg-white/5 transition-colors"></div>
@@ -95,10 +120,10 @@
                 <div class="relative shadow-2xl rounded-sm transition-transform duration-200"
                      :class="doublePage ? 'max-w-[45vw]' : 'max-w-[90vw]'">
 
-                    <img :src="img.thumbnail_url"
+                    <img :src="window.parker.url(img.thumbnail_url)"
                          class="absolute inset-0 w-full h-full object-contain blur-sm brightness-50 z-0">
 
-                    <img :src="window.url(`/api/reader/${img.comic_id}/page/0`)"
+                    <img :src="window.parker.route('reader.comic_page', { comic_id: img.comic_id, page_index: 0 })"
                          class="relative z-10 max-h-[85vh] object-contain"
                          onload="this.previousElementSibling.style.display='none'"
                     >
@@ -112,12 +137,18 @@
         </div>
     </div>
 
-    <div x-show="zoomMode" class="zoom-container" @click.self="zoomMode = false" x-transition.opacity>
+    <div x-show="zoomMode" class="zoom-container" x-ref="zoomContainer"
+         :class="{ 'is-panning': isPanning }"
+         x-on:mousedown="startPan($event)"
+         x-on:mousemove="pan($event)"
+         x-on:mouseup="endPan()"
+         x-on:mouseleave="endPan()"
+         x-on:click.self="zoomMode = false" x-transition.opacity>
         <template x-for="img in currentImages" :key="img.comic_id">
-            <img :src="window.url(`/api/reader/${img.comic_id}/page/0`)" class="zoom-image shadow-2xl">
+            <img :src="window.parker.route('reader.comic_page', { comic_id: img.comic_id, page_index: 0 })" class="zoom-image shadow-2xl">
         </template>
 
-        <button @click="zoomMode = false" class="fixed top-4 right-4 bg-black/50 text-white p-2 rounded-full hover:bg-black/80">
+        <button x-on:click="zoomMode = false" class="fixed top-4 right-4 bg-black/50 text-white p-2 rounded-full hover:bg-black/80">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
         </button>
     </div>
@@ -134,18 +165,48 @@ function coverBrowser() {
         mode: 'grid',
         zoomMode: false,
         items: [],
+        total: 0,
+        hasMore: false,
+        manifestLimit: 60,
         currentIndex: 0,
         doublePage: false,
         loading: true,
+        loadingMore: false,
+        pendingManifestLoad: null,
+        loadError: null,
+
+        isPanning: false,
+        wasPanning: false, // Used to distinguish between a "Click to Close" and a "Drag Release"
+        panStart: { x: 0, y: 0 },
+        scrollStart: { x: 0, y: 0 },
 
         async init() {
-            const url = window.url(`/api/comics/covers/manifest?context_type=${this.contextType}&context_id=${this.contextId}`);
-            const res = await fetch(url);
-            if(res.ok) {
-                const data = await res.json();
-                this.items = data.items;
-            }
-            this.loading = false;
+            await this.loadManifestPage(true);
+
+            // Watch for zoom mode to center the scroll
+            this.$watch('zoomMode', value => {
+                if (value) {
+                    this.$nextTick(() => {
+                        const el = this.$refs.zoomContainer;
+                        if (el) {
+                            // Calculate center position
+                            el.scrollLeft = (el.scrollWidth - el.clientWidth) / 2;
+                            el.scrollTop = (el.scrollHeight - el.clientHeight) / 2;
+                        }
+                    });
+                }
+            });
+
+
+        },
+
+        get positionLabel() {
+            if (this.loading && this.items.length === 0) return 'Loading...';
+
+            const total = this.total || this.items.length;
+            if (total === 0) return '0 / 0';
+
+            return `${Math.min(this.currentIndex + 1, total)} / ${total}`;
         },
 
         get currentImages() {
@@ -159,10 +220,79 @@ function coverBrowser() {
             return [current, next];
         },
 
-        next() {
+        async loadManifestPage(reset = false) {
+            if (!reset && this.loadingMore) return this.pendingManifestLoad;
+            if (!reset && !this.hasMore) return;
+
+            const offset = reset ? 0 : this.items.length;
+            const query = new URLSearchParams({
+                context_type: this.contextType,
+                context_id: String(this.contextId),
+                offset: String(offset),
+                limit: String(this.manifestLimit),
+            });
+            const url = window.parker.route('comics.cover_manifest', {}, query.toString());
+
+            if (reset) {
+                this.loading = true;
+                this.items = [];
+                this.total = 0;
+                this.hasMore = false;
+            } else {
+                this.loadingMore = true;
+            }
+            this.loadError = null;
+
+            this.pendingManifestLoad = (async () => {
+                try {
+                    const res = await fetch(url);
+                    if (!res.ok) throw new Error('Could not load covers.');
+
+                    const data = await res.json();
+                    const newItems = data.items || [];
+                    this.items = reset ? newItems : [...this.items, ...newItems];
+                    this.total = data.total ?? this.items.length;
+                    this.hasMore = Boolean(data.has_more);
+                } catch (error) {
+                    this.loadError = 'Could not load covers.';
+                } finally {
+                    this.loading = false;
+                    this.loadingMore = false;
+                    this.pendingManifestLoad = null;
+                }
+            })();
+
+            return this.pendingManifestLoad;
+        },
+
+        loadMore() {
+            return this.loadManifestPage(false);
+        },
+
+        prefetchAhead() {
+            if (this.hasMore && !this.loadingMore && this.items.length - this.currentIndex <= 10) {
+                this.loadMore();
+            }
+        },
+
+        handleGridScroll(e) {
+            const el = e.currentTarget;
+            if (el.scrollTop + el.clientHeight >= el.scrollHeight - 800) {
+                this.loadMore();
+            }
+        },
+
+        async next() {
             const step = this.doublePage ? 2 : 1;
-            if (this.currentIndex + step < this.items.length) {
-                this.currentIndex += step;
+            const targetIndex = this.currentIndex + step;
+
+            if (targetIndex >= this.items.length && this.hasMore) {
+                await this.loadMore();
+            }
+
+            if (targetIndex < this.items.length) {
+                this.currentIndex = targetIndex;
+                this.prefetchAhead();
             }
         },
 
@@ -178,15 +308,16 @@ function coverBrowser() {
         goToIndex(index) {
             this.currentIndex = index;
             this.mode = 'theater';
+            this.prefetchAhead();
         },
 
-        handleZoneClick(e) {
+        async handleZoneClick(e) {
             const width = window.innerWidth;
             if (e.clientX < width / 3) this.prev();
-            else if (e.clientX > width * 0.66) this.next();
+            else if (e.clientX > width * 0.66) await this.next();
         },
 
-        handleKey(e) {
+        async handleKey(e) {
             if (this.zoomMode) {
                 if (e.key === 'Escape') this.zoomMode = false;
                 return;
@@ -196,7 +327,7 @@ function coverBrowser() {
                 if(this.mode === 'theater') this.mode = 'grid';
                 else this.exit();
             }
-            if(e.key === 'ArrowRight' || e.key === ' ') this.next();
+            if(e.key === 'ArrowRight' || e.key === ' ') await this.next();
             if(e.key === 'ArrowLeft') this.prev();
             if(e.key === 'g') this.mode = 'grid';
             if(e.key === 't') this.mode = 'theater';
@@ -209,13 +340,54 @@ function coverBrowser() {
         },
 
         exit() {
-            if(this.contextType === 'series') window.location.href = `/series/${this.contextId}`;
-            else if(this.contextType === 'volume') window.location.href = `/volumes/${this.contextId}`;
-            else if(this.contextType === 'reading_list') window.location.href = `/reading-lists/${this.contextId}`;
-            else if(this.contextType === 'collection') window.location.href = `/collections/${this.contextId}`;
-            else if(this.contextType === 'pull_list') window.location.href = `/pull-lists/${this.contextId}`;
-            else window.location.href = '/';
-        }
+            if(this.contextType === 'series') window.location.href = window.parker.route('pages.series_detail', { series_id: this.contextId });
+            else if(this.contextType === 'volume') window.location.href = window.parker.route('pages.volume_detail', { volume_id: this.contextId });
+            else if(this.contextType === 'reading_list') window.location.href = window.parker.route('pages.reading_list_detail', { reading_list_id: this.contextId });
+            else if(this.contextType === 'collection') window.location.href = window.parker.route('pages.collection_detail', { collection_id: this.contextId });
+            else if(this.contextType === 'pull_list') window.location.href = window.parker.route('pages.stack_detail', { list_id: this.contextId });
+            else window.location.href = window.parker.route('pages.home');
+        },
+
+        // Panning Functions
+        startPan(e) {
+            // Only allow left mouse button
+            if (e.button !== 0) return;
+
+            this.isPanning = true;
+            this.wasPanning = false;
+
+            this.panStart = { x: e.clientX, y: e.clientY };
+            this.scrollStart = {
+                x: this.$refs.zoomContainer.scrollLeft,
+                y: this.$refs.zoomContainer.scrollTop
+            };
+        },
+
+        pan(e) {
+            if (!this.isPanning) return;
+            e.preventDefault(); // Stop chrome from selecting things
+
+            const dx = e.clientX - this.panStart.x;
+            const dy = e.clientY - this.panStart.y;
+
+            // If we moved more than a few pixels, mark it as a pan operation
+            // (So we don't accidentally close the modal when releasing the mouse)
+            if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+                this.wasPanning = true;
+            }
+
+            // Scroll = Initial - Delta
+            this.$refs.zoomContainer.scrollLeft = this.scrollStart.x - dx;
+            this.$refs.zoomContainer.scrollTop = this.scrollStart.y - dy;
+        },
+
+        endPan() {
+            this.isPanning = false;
+            // Reset wasPanning after a short delay so the @click handler
+            // has time to see that we just finished dragging.
+            setTimeout(() => { this.wasPanning = false; }, 50);
+        },
+
     }
 }
 </script>

@@ -11,7 +11,14 @@
 
     async setBatchReadStatus(isRead) {
         const action = isRead ? 'Read' : 'Unread';
-        if(!confirm(`Mark ${$store.batch.count} items as ${action}?`)) return;
+
+        const confirmed = await window.parker.dialog.confirm(
+            'Mark Item(s)?',
+            `Mark ${$store.batch.count} items as ${action}?`,
+            { isDestructive: false, confirmText: 'Mark' }
+        );
+
+        if(!confirmed) return;
 
         try {
 
@@ -26,14 +33,14 @@
             // This ensures we don't accidentally update Comic #1 when we selected Series #1
             const affectedIds = batchPayload.comic_ids;
 
-            const res = await fetch(window.url('/api/batch/read-status'), {
+            const res = await fetch(window.parker.route('batch.mark_read'), {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(payload)
             });
 
             if(res.ok) {
-                window.comicServer.showToast(`Batch marked as ${action}!`);
+                window.parker.showToast(`Batch marked as ${action}!`);
 
                 // Dispatch update event
                 // This tells every card on the page to check if it needs to update

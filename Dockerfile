@@ -1,7 +1,13 @@
 FROM python:3.11-slim
 
+ARG PARKER_BUILD_COMMIT=
+ENV PARKER_BUILD_COMMIT=${PARKER_BUILD_COMMIT}
+LABEL org.opencontainers.image.revision="${PARKER_BUILD_COMMIT}"
+
 # Set working directory
 WORKDIR /app
+
+USER root
 
 # Enable non-free repositories to install 'unrar' (Required for CBR support)
 # Debian Bookworm (current stable) uses sources.list.d
@@ -25,9 +31,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Create necessary directories
-RUN mkdir -p storage/database storage/cache storage/cover storage/avatars storage/logs
-
 # Expose port
 EXPOSE 8000
 
@@ -35,6 +38,7 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Run migrations AND then start the app
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
-#CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+CMD ["/entrypoint.sh"]
+

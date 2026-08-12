@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Continue Reading - Comic Server{% endblock %}
+{% block title %}Continue Reading - Parker{% endblock %}
 
 {% block content %}
 <div class="space-y-6" x-data="continueReading()">
@@ -43,9 +43,26 @@
         </template>
     </div>
 
+    <div class="mt-12 pt-6 border-t border-gray-700" x-show="!loading && total > 0" style="display: none;">
+        <template x-if="mode === 'infinite'">
+            <div x-ref="loadSentinel" class="py-8 text-center">
+                <span x-show="loading" class="text-blue-400 animate-pulse">Loading more...</span>
+                <span x-show="!loading && page >= maxPage()" class="text-gray-600 text-sm">End of results</span>
+            </div>
+        </template>
+
+        <template x-if="mode === 'classic'">
+            <div x-show="total > size" class="flex justify-center items-center space-x-4">
+                <button @click="changePage(page - 1)" :disabled="page === 1" class="btn-pagination">Previous</button>
+                <span class="text-gray-400">Page <span class="text-white font-bold" x-text="page"></span> of <span x-text="maxPage()"></span></span>
+                <button @click="changePage(page + 1)" :disabled="page >= maxPage()" class="btn-pagination">Next</button>
+            </div>
+        </template>
+    </div>
+
     <div x-show="!loading && items.length === 0" class="text-center py-20 text-gray-400">
         <p class="text-lg" x-text="getEmptyMessage()"></p>
-        <a href="/" class="text-blue-400 hover:underline mt-2 inline-block">Browse Library</a>
+        <a :href="window.parker.route('pages.home')" class="text-blue-400 hover:underline mt-2 inline-block">Browse Library</a>
     </div>
 
 </div>
@@ -53,9 +70,18 @@
 <script>
 function continueReading() {
     return {
+        ...window.parker.paginationMixin(
+            'progress.recent_progress',
+            null,
+            {
+                pageSize: 20,
+                mode: '{{ get_system_setting("ui.pagination_mode", "infinite") }}',
+                getQueryParams() {
+                    return { filter: this.filter };
+                }
+            }
+        ),
         filter: 'in_progress',
-        items: [],
-        loading: true,
 
         init() {
             this.loadItems();
@@ -63,24 +89,8 @@ function continueReading() {
 
         async setFilter(newFilter) {
             this.filter = newFilter;
+            this.page = 1;
             await this.loadItems();
-        },
-
-        async loadItems() {
-            this.loading = true;
-            this.items = []; // Clear to prevent flash
-            try {
-                // Fetch JSON from existing API
-                const res = await fetch(`/api/progress/?filter=${this.filter}&limit=50`);
-                if (res.ok) {
-                    const data = await res.json();
-                    this.items = data.results;
-                }
-            } catch (e) {
-                console.error("Failed to load progress", e);
-            } finally {
-                this.loading = false;
-            }
         },
 
         getEmptyMessage() {
@@ -91,16 +101,24 @@ function continueReading() {
 
         async markRead(comicId) {
             try {
-                await fetch(`/api/progress/${comicId}/mark-read`, { method: 'POST' });
+                await fetch(window.parker.route('progress.mark_comic_as_read', { comic_id: comicId }), { method: 'POST' });
                 // Refresh list to remove item or update status
                 this.loadItems();
             } catch (e) { console.error(e); }
         },
 
         async markUnread(comicId) {
-            if(!confirm("Clear reading progress for this comic?")) return;
+
+            const confirmed = await window.parker.dialog.confirm(
+                "Clear progress?",
+                "Clear reading progress for this comic?",
+                { isDestructive: true, confirmText: 'Clear' }
+            );
+
+            if(!confirmed) { return; }
+
             try {
-                await fetch(`/api/progress/${comicId}`, { method: 'DELETE' });
+                await fetch(window.parker.route('progress.mark_comic_as_unread', { comic_id: comicId} ), { method: 'DELETE' });
                 this.loadItems();
             } catch (e) { console.error(e); }
         }

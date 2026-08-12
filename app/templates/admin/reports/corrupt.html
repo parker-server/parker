@@ -4,21 +4,17 @@
 
 {% block content %}
 <div class="max-w-7xl mx-auto" x-data="corruptReport()">
-    
-    <div class="flex justify-between items-center mb-8">
-        <div>
-            <h1 class="text-3xl font-bold text-white mb-2">Corrupt / Low Page Count</h1>
-            <p class="text-gray-400">Files with fewer than 3 pages. Likely corrupted downloads or promos.</p>
-        </div>
-        <div class="flex items-center gap-4">
-             <span class="text-gray-400" x-show="!loading && totalItems > 0">
-                <span x-text="totalItems"></span> files found
-             </span>
-            <button @click="loadReport(1)" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2">
-                <span :class="loading ? 'animate-spin' : ''">↻</span> Refresh
-            </button>
-        </div>
-    </div>
+
+    {% from "partials/admin_header.html" import admin_header %}
+    {{ admin_header(
+        title="Corrupt / Low Page Count",
+        description="Files with fewer than 3 pages. Likely corrupted downloads or promos.",
+        refresh_func="loadReport(1)",
+        loading_var="loading",
+        back_href=url("/admin/reports"),
+        back_label="Back to Reports"
+    ) }}
+
 
     <div x-show="loading" class="flex justify-center py-20">
         <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
@@ -53,12 +49,12 @@
                                 <div class="text-xs text-gray-500 truncate max-w-md" x-text="item.path" :title="item.path"></div>
                             </td>
                             <td class="px-6 py-4">
-                                <a :href="`/series/${item.series_id}`" class="text-blue-300 hover:text-white" x-text="item.series"></a>
+                                <a :href="window.parker.route('pages.series_detail', { series_id: item.series_id })" class="text-blue-300 hover:text-white" x-text="item.series"></a>
                                 <div class="text-xs text-gray-400" x-text="`Vol ${item.volume} #${item.number}`"></div>
                             </td>
-                            <td class="px-6 py-4 text-right font-mono text-sm text-gray-400" x-text="window.comicServer.formatBytes(item.file_size)"></td>
+                            <td class="px-6 py-4 text-right font-mono text-sm text-gray-400" x-text="window.parker.formatBytes(item.file_size)"></td>
                             <td class="px-6 py-4 text-right">
-                                <a :href="`/comics/${item.id}`" target="_blank" class="text-sm bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-white">Inspect</a>
+                                <a :href="window.parker.route('pages.comic_detail', { comic_id: item.id })" target="_blank" class="text-sm bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-white">Inspect</a>
                             </td>
                         </tr>
                     </template>
@@ -106,7 +102,7 @@ function corruptReport() {
         async loadReport(page) {
             this.loading = true;
             try {
-                const res = await fetch(`/api/reports/corrupt?page=${page}&size=${this.pageSize}`);
+                const res = await fetch(window.parker.route('reports.corrupt_files', {}, `page=${page}&size=${this.pageSize}`));
                 if(res.ok) {
                     const data = await res.json();
                     this.items = data.items;

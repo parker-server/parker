@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List
-import json
 
 from app.api.deps import SessionDep, CurrentUser
 from app.models.smart_list import SmartList
@@ -11,7 +10,7 @@ from app.schemas.smart_list import SmartListResponse, SmartListCreate, SmartList
 router = APIRouter()
 
 
-@router.post("/")
+@router.post("/", name="create")
 def create_smart_list(
         data: SmartListCreate,
         db: SessionDep,
@@ -25,10 +24,11 @@ def create_smart_list(
     )
     db.add(smart_list)
     db.commit()
+    db.refresh(smart_list)
     return smart_list
 
 
-@router.get("/{list_id}/items")
+@router.get("/{list_id}/items", name="execute")
 def execute_smart_list(
         list_id: int,
         db: SessionDep,
@@ -38,7 +38,10 @@ def execute_smart_list(
     """The 'Auto-Fire' Endpoint: Loads config -> Runs Search -> Returns Results"""
 
     # 1. Fetch Config
-    smart_list = db.query(SmartList).filter(SmartList.id == list_id).first()
+    smart_list = db.query(SmartList).filter(
+        SmartList.id == list_id,
+        SmartList.user_id == current_user.id
+    ).first()
     if not smart_list:
         raise HTTPException(status_code=404, detail="List not found")
 
@@ -62,10 +65,10 @@ def execute_smart_list(
     }
 
 
-@router.get("/", response_model=List[SmartListResponse])
+@router.get("/", response_model=List[SmartListResponse], name="list")
 def get_my_smart_lists(db: SessionDep, current_user: CurrentUser):
     """List all smart lists for the current user."""
-    smart_lists = db.query(SmartList).filter(SmartList.user_id == current_user.id).all()
+    smart_lists = db.query(SmartList).filter(SmartList.user_id == current_user.id).order_by(SmartList.name).all()
 
     return [
         {
@@ -81,7 +84,7 @@ def get_my_smart_lists(db: SessionDep, current_user: CurrentUser):
 
 
 
-@router.delete("/{list_id}")
+@router.delete("/{list_id}", name="delete")
 def delete_smart_list(list_id: int, db: SessionDep, current_user: CurrentUser):
     """Delete a smart list."""
     slist = db.query(SmartList).filter(SmartList.id == list_id, SmartList.user_id == current_user.id).first()
@@ -93,7 +96,7 @@ def delete_smart_list(list_id: int, db: SessionDep, current_user: CurrentUser):
     return {"message": "Deleted"}
 
 
-@router.patch("/{list_id}")
+@router.patch("/{list_id}", name="update")
 def update_smart_list(
         list_id: int,
         updates: SmartListUpdate,
@@ -114,7 +117,7 @@ def update_smart_list(
     if updates.show_in_library is not None:
         slist.show_in_library = updates.show_in_library
     if updates.query is not None:
-        slist.query = updates.query = updates.query
+        slist.query_config = updates.query.model_dump()
 
     db.commit()
     db.refresh(slist)

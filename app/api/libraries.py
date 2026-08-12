@@ -1,18 +1,108 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Annotated, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, case
+from sqlalchemy.orm import selectinload
+from datetime import datetime, timezone
+from pathlib import Path as FsPath
+import logging
+import os
 
-from app.core.comic_helpers import get_smart_cover
+from app.config import settings
+from app.core.comic_helpers import get_thumbnail_url, NON_PLAIN_FORMATS, REVERSE_NUMBERING_SERIES, get_series_age_restriction
+from app.core.path_utils import paths_overlap
 from app.models.library import Library
+from app.models.library_root import LibraryRoot
 from app.models.series import Series
 from app.models.comic import Comic, Volume
+from app.models.interactions import UserLibraryPin
 from app.models.reading_progress import ReadingProgress
 from app.services.scan_manager import scan_manager
+from app.services.library_relocation import (
+    DEFAULT_SAMPLE_LIMIT,
+    LibraryRelocationError,
+    confirm_library_root_relocation,
+    ensure_library_root_changes_allowed,
+    preview_library_root_relocation,
+)
 from app.services.watcher import library_watcher
 from app.api.deps import PaginationParams, PaginatedResponse, SessionDep, CurrentUser, AdminUser, LibraryDep
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+LIBRARY_NAME_REQUIRED_MESSAGE = "Library name is required"
+LIBRARY_ROOT_PATH_REQUIRED_MESSAGE = "Library root path is required"
+LIBRARY_ROOT_SCAN_ACTIVE_MESSAGE = "Library roots cannot be changed while a scan is queued or running"
+
+
+def _normalize_library_name(value: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError(LIBRARY_NAME_REQUIRED_MESSAGE)
+    return normalized
+
+
+def _normalize_library_root_path(value: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError(LIBRARY_ROOT_PATH_REQUIRED_MESSAGE)
+    return normalized
+
+
+def _find_library_by_name(
+        db,
+        name: str,
+        *,
+        exclude_library_id: Optional[int] = None,
+) -> Optional[Library]:
+    query = db.query(Library).filter(func.lower(Library.name) == name.lower())
+    if exclude_library_id is not None:
+        query = query.filter(Library.id != exclude_library_id)
+
+    return query.first()
+
+
+def _find_overlapping_root(
+        db,
+        candidate_path: str,
+        *,
+        exclude_root_id: Optional[int] = None,
+        exclude_library_id: Optional[int] = None,
+) -> Optional[LibraryRoot]:
+    query = db.query(LibraryRoot).join(Library)
+    if exclude_root_id is not None:
+        query = query.filter(LibraryRoot.id != exclude_root_id)
+    if exclude_library_id is not None:
+        query = query.filter(LibraryRoot.library_id != exclude_library_id)
+
+    for root in query.all():
+        if paths_overlap(candidate_path, root.path):
+            return root
+
+    return None
+
+
+def _find_overlapping_library(
+        db,
+        candidate_path: str,
+        *,
+        exclude_library_id: Optional[int] = None,
+) -> Optional[Library]:
+    root = _find_overlapping_root(db, candidate_path, exclude_library_id=exclude_library_id)
+    if root is not None:
+        return root.library
+
+    return None
+
+
+def _root_overlap_detail(root: LibraryRoot, library: Library) -> str:
+    library_name = root.library.name if root.library else "unknown"
+    if root.library_id == library.id:
+        return f"Library root path overlaps with existing root for library '{library_name}'"
+
+    return f"Library root path overlaps with existing library '{library_name}'"
+
 
 def _has_library_access(library_id: int, current_user: CurrentUser) -> bool:
 
@@ -26,51 +116,351 @@ def _has_library_access(library_id: int, current_user: CurrentUser) -> bool:
     return True
 
 
-@router.get("/")
-async def list_libraries(db: SessionDep, current_user: CurrentUser):
-    """List libraries accessible to the current user"""
+def _library_root_payload(root: LibraryRoot, *, comic_count: Optional[int] = None) -> dict:
+    payload = {
+        "id": root.id,
+        "library_id": root.library_id,
+        "path": root.path,
+        "is_active": root.is_active,
+        "last_scanned_at": root.last_scanned_at,
+        "last_scan_error": root.last_scan_error,
+        "created_at": root.created_at,
+        "updated_at": root.updated_at,
+    }
+
+    if comic_count is not None:
+        payload["comic_count"] = comic_count
+
+    return payload
+
+
+def _root_comic_counts(db, roots: list[LibraryRoot]) -> dict[int, int]:
+    root_ids = [root.id for root in roots if root.id is not None]
+    if not root_ids:
+        return {}
+
+    return dict(
+        db.query(Comic.library_root_id, func.count(Comic.id))
+        .filter(Comic.library_root_id.in_(root_ids))
+        .group_by(Comic.library_root_id)
+        .all()
+    )
+
+
+def _library_payload(
+        lib: Library,
+        *,
+        pinned: bool = False,
+        stats: Optional[dict] = None,
+        root_comic_counts: Optional[dict[int, int]] = None,
+        include_paths: bool = True,
+) -> dict:
+    active_root = lib.active_root
+    roots = sorted(lib.roots, key=lambda root: root.id)
+    payload = {
+        "id": lib.id,
+        "name": lib.name,
+        "path": active_root.path if include_paths and active_root else None,
+        "roots": (
+            [
+                _library_root_payload(
+                    root,
+                    comic_count=root_comic_counts.get(root.id, 0) if root_comic_counts is not None else None,
+                )
+                for root in roots
+            ]
+            if include_paths
+            else []
+        ),
+        "active_root_count": sum(1 for root in roots if root.is_active),
+        "scan_on_startup": lib.scan_on_startup,
+        "watch_mode": lib.watch_mode,
+        "parse_reading_lists": lib.parse_reading_lists,
+        "parse_collections": lib.parse_collections,
+        "parse_story_arcs": lib.parse_story_arcs,
+        "last_scanned": lib.last_scanned,
+        "is_scanning": lib.is_scanning,
+        "created_at": lib.created_at,
+        "pinned": pinned,
+    }
+
+    if stats is not None:
+        payload["stats"] = stats
+
+    return payload
+
+
+def _get_admin_library(db, library_id: int) -> Library:
+    library = (
+        db.query(Library)
+        .options(selectinload(Library.roots))
+        .filter(Library.id == library_id)
+        .first()
+    )
+    if not library:
+        raise HTTPException(status_code=404, detail="Library not found")
+
+    return library
+
+
+def _get_library_root(library: Library, root_id: int) -> LibraryRoot:
+    root = next((candidate for candidate in library.roots if candidate.id == root_id), None)
+    if root is None:
+        raise HTTPException(status_code=404, detail="Library root not found")
+
+    return root
+
+
+def _ensure_library_roots_mutable(db, library: Library) -> None:
+    try:
+        ensure_library_root_changes_allowed(
+            db,
+            library,
+            message=LIBRARY_ROOT_SCAN_ACTIVE_MESSAGE,
+        )
+    except LibraryRelocationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _delete_comics_for_root(db, root: LibraryRoot) -> dict:
+    comics = db.query(Comic).filter(Comic.library_root_id == root.id).all()
+    volume_ids = {comic.volume_id for comic in comics}
+    series_ids = {
+        series_id
+        for series_id, in db.query(Volume.series_id).filter(Volume.id.in_(volume_ids)).all()
+    } if volume_ids else set()
+
+    for comic in comics:
+        db.delete(comic)
+
+    db.flush()
+
+    deleted_volumes = 0
+    if volume_ids:
+        empty_volumes = db.query(Volume).filter(
+            Volume.id.in_(volume_ids),
+            ~Volume.comics.any(),
+        ).all()
+        deleted_volumes = len(empty_volumes)
+        for volume in empty_volumes:
+            db.delete(volume)
+
+    db.flush()
+
+    deleted_series = 0
+    if series_ids:
+        empty_series = db.query(Series).filter(
+            Series.id.in_(series_ids),
+            ~Series.volumes.any(),
+        ).all()
+        deleted_series = len(empty_series)
+        for series in empty_series:
+            db.delete(series)
+
+    db.flush()
+
+    return {
+        "deleted_comics": len(comics),
+        "deleted_volumes": deleted_volumes,
+        "deleted_series": deleted_series,
+    }
+
+
+def _resolve_library_browser_path(path: Optional[str] = None) -> tuple[FsPath, FsPath]:
+    root = settings.comics_path.expanduser().resolve()
+    requested = FsPath(path).expanduser() if path else root
+    current = requested.resolve()
+
+    try:
+        current.relative_to(root)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Path must be within the configured comics root")
+
+    return root, current
+
+
+def _browser_path(path: FsPath) -> str:
+    return path.as_posix()
+
+
+@router.get("/", name="list")
+async def list_libraries(db: SessionDep,
+                         current_user: CurrentUser,
+                         limit: Optional[int] = Query(None, gt=0, description="Limit the number of results")):
+    """
+    List libraries accessible to the current user
+    Fetches all stats in 2 batch queries instead of N+1 loops.
+    """
 
     # Fetch the libraries based on permissions
     if current_user.is_superuser:
-        libs = db.query(Library).all()
+        query = db.query(Library).options(selectinload(Library.roots)).order_by(Library.name)
+        if limit:
+            query = query.limit(limit)
+        libs = query.all()
     else:
-        libs = current_user.accessible_libraries
+        libs = sorted(current_user.accessible_libraries, key=lambda lib: lib.name)
+        if limit:
+            libs = libs[:limit]
+
+    if not libs:
+        return []
+
+    lib_ids = [lib.id for lib in libs]
+    root_comic_counts = _root_comic_counts(
+        db,
+        [root for lib in libs for root in lib.roots],
+    )
+    pinned_ids = {
+        row.library_id
+        for row in db.query(UserLibraryPin.library_id)
+        .filter(
+            UserLibraryPin.user_id == current_user.id,
+            UserLibraryPin.library_id.in_(lib_ids),
+        )
+        .all()
+    }
+
+    # --- AGE RATING FILTER PREP ---
+    # We prepare the filter once to reuse inside the loop
+    series_age_filter = get_series_age_restriction(current_user)
+
+    # Batch Fetch Series Counts (Grouped by Library)
+    # Query: "SELECT library_id, COUNT(id) FROM series GROUP BY library_id"
+    series_q = db.query(Series.library_id, func.count(Series.id)) \
+        .filter(Series.library_id.in_(lib_ids))
+
+    if series_age_filter is not None:
+        series_q = series_q.filter(series_age_filter)
+
+    series_counts = dict(series_q.group_by(Series.library_id).all())
+
+    # Batch Fetch Issue Counts (Grouped by Library)
+    # Query: "SELECT library_id, COUNT(comic.id) FROM comic JOIN vol JOIN series ..."
+    issue_q = db.query(Series.library_id, func.count(Comic.id)) \
+        .join(Volume, Comic.volume_id == Volume.id) \
+        .join(Series, Volume.series_id == Series.id) \
+        .filter(Series.library_id.in_(lib_ids))
+
+    if series_age_filter is not None:
+        issue_q = issue_q.filter(series_age_filter)
+
+    issue_counts = dict(issue_q.group_by(Series.library_id).all())
 
     # Iterate and Count
     results = []
     for lib in libs:
 
-        # Count Series directly
-        series_count = db.query(Series).filter(Series.library_id == lib.id).count()
-
-        # Count Issues (Join Comic -> Volume -> Series)
-        issue_count = db.query(Comic).join(Volume).join(Series) \
-            .filter(Series.library_id == lib.id).count()
-
-        # Construct the response dict
-        # We manually build the dict to inject the 'stats' object
-        results.append({
-            "id": lib.id,
-            "name": lib.name,
-            "path": lib.path,
-            "watch_mode": lib.watch_mode,
-            "created_at": lib.created_at,
-            "stats": {
-                "series": series_count,
-                "issues": issue_count
-            }
-        })
+        results.append(_library_payload(
+            lib,
+            pinned=lib.id in pinned_ids,
+            root_comic_counts=root_comic_counts,
+            stats={
+                "series": series_counts.get(lib.id, 0),
+                "issues": issue_counts.get(lib.id, 0)
+            },
+            include_paths=current_user.is_superuser,
+        ))
 
     return results
 
 
-@router.get("/{library_id}")
-async def get_library(library: LibraryDep):
+@router.get("/browse/paths", tags=["admin"], name="browse")
+async def browse_library_paths(admin_user: AdminUser, path: Optional[str] = Query(None)):
+    root, current = _resolve_library_browser_path(path)
 
-    return library
+    if not root.exists() or not root.is_dir():
+        raise HTTPException(status_code=404, detail="Configured comics root was not found")
+
+    if not current.exists() or not current.is_dir():
+        raise HTTPException(status_code=404, detail="Directory was not found")
+
+    entries = []
+    try:
+        children = sorted(current.iterdir(), key=lambda child: child.name.lower())
+    except OSError:
+        raise HTTPException(status_code=403, detail="Directory cannot be read")
+
+    for child in children:
+        try:
+            resolved_child = child.resolve()
+            resolved_child.relative_to(root)
+        except (OSError, ValueError):
+            continue
+
+        if not resolved_child.is_dir():
+            continue
+
+        entries.append({
+            "name": child.name,
+            "path": _browser_path(resolved_child),
+        })
+
+    parent = None
+    if current != root:
+        parent_path = current.parent.resolve()
+        try:
+            parent_path.relative_to(root)
+            parent = _browser_path(parent_path)
+        except ValueError:
+            parent = _browser_path(root)
+
+    return {
+        "root": _browser_path(root),
+        "current": _browser_path(current),
+        "parent": parent,
+        "entries": entries,
+    }
 
 
-@router.get("/{library_id}/series", response_model=PaginatedResponse)
+@router.get("/{library_id}", name="detail")
+async def get_library(library: LibraryDep, db: SessionDep, current_user: CurrentUser):
+    pin = db.query(UserLibraryPin).filter(
+        UserLibraryPin.user_id == current_user.id,
+        UserLibraryPin.library_id == library.id,
+    ).first()
+
+    return _library_payload(
+        library,
+        pinned=pin is not None,
+        root_comic_counts=_root_comic_counts(db, library.roots),
+        include_paths=current_user.is_superuser,
+    )
+
+
+@router.post("/{library_id}/pin", name="pin")
+async def pin_library(library: LibraryDep, db: SessionDep, current_user: CurrentUser):
+    existing = db.query(UserLibraryPin).filter(
+        UserLibraryPin.user_id == current_user.id,
+        UserLibraryPin.library_id == library.id,
+    ).first()
+
+    if existing is None:
+        db.add(UserLibraryPin(
+            user_id=current_user.id,
+            library_id=library.id,
+            pinned_at=datetime.now(timezone.utc),
+        ))
+        db.commit()
+
+    return {"library_id": library.id, "pinned": True}
+
+
+@router.delete("/{library_id}/pin", name="unpin")
+async def unpin_library(library: LibraryDep, db: SessionDep, current_user: CurrentUser):
+    pin = db.query(UserLibraryPin).filter(
+        UserLibraryPin.user_id == current_user.id,
+        UserLibraryPin.library_id == library.id,
+    ).first()
+
+    if pin is not None:
+        db.delete(pin)
+        db.commit()
+
+    return {"library_id": library.id, "pinned": False}
+
+
+@router.get("/{library_id}/series", response_model=PaginatedResponse, name="series")
 async def get_library_series(
         library: LibraryDep,
         params: Annotated[PaginationParams, Depends()],
@@ -80,10 +470,18 @@ async def get_library_series(
     """
     Get all Series within a specific Library (Paginated).
     Sorts alphabetically ignoring 'The ' prefix.
+    Optimized to avoid N+1 queries by pre-fetching comic data in batch.
     """
 
     # 1. Filter by Library
     query = db.query(Series).filter(Series.library_id == library.id)
+
+    # --- AGE RATING FILTER ---
+    age_filter = get_series_age_restriction(current_user)
+    if age_filter is not None:
+        query = query.filter(age_filter)
+    # -------------------------
+
 
     # 2. Pagination
     total = query.count()
@@ -96,39 +494,126 @@ async def get_library_series(
         else_=Series.name
     )
 
-
-    #series_list = query.order_by(Series.name).offset(params.skip).limit(params.size).all()
     series_list = query.order_by(sort_key).offset(params.skip).limit(params.size).all()
+    if not series_list:
+        return {"total": total, "page": params.page, "size": params.size, "items": []}
+
+    # --- BATCH OPTIMIZATION START ---
+
+    # A. Collect Series IDs for this page
+    series_ids = [s.id for s in series_list]
+
+    # B. Fetch ALL Comics for these series in one go (Lightweight columns only)
+    # We need: id, number, year (for cover selection) and volume.series_id (for grouping)
+    # This replaces the 50 'get_smart_cover' queries + 50 'count' queries
+    raw_comics = (
+        db.query(
+            Comic.id,
+            Comic.number,
+            Comic.year,
+            Comic.format,
+            Comic.updated_at,
+            Volume.series_id,
+            Volume.volume_number
+        )
+        .join(Volume)
+        .filter(Volume.series_id.in_(series_ids))
+        .all()
+    )
+
+    # C. Fetch Progress for these comics in one go
+    # Only fetch 'completed' entries for the current user
+    comic_ids = [c.id for c in raw_comics]
+    read_comic_ids = set()
+    if comic_ids:
+        progress_rows = (
+            db.query(ReadingProgress.comic_id)
+            .filter(
+                ReadingProgress.user_id == current_user.id,
+                ReadingProgress.completed == True,
+                ReadingProgress.comic_id.in_(comic_ids)
+            )
+            .all()
+        )
+        read_comic_ids = {r.comic_id for r in progress_rows}
+
+    # D. Group Comics by Series in Python
+    from collections import defaultdict
+    series_map = defaultdict(list)
+    for row in raw_comics:
+        series_map[row.series_id].append(row)
+
+    # --- BATCH OPTIMIZATION END ---
+
+    # Helper: Check if format is "Standard" (Not Annual/Special)
+    def is_standard_format(fmt: str) -> bool:
+        if not fmt: return True
+        f = fmt.lower()
+        return f not in NON_PLAIN_FORMATS
+
+    # Helper: Safe Sort Key for issues
+    def issue_sort_key(c):
+        try:
+            return float(c.number)
+        except:
+            return 999999
 
     # 3. Serialization & Thumbnails
     items = []
     for s in series_list:
+
+        s_comics = series_map.get(s.id, [])
+
+        # Logic: Calculate Read Status
+        total_count = len(s_comics)
+        read_count = sum(1 for c in s_comics if c.id in read_comic_ids)
+        is_fully_read = (total_count > 0) and (read_count >= total_count)
+
         # Find a cover (First issue of first volume)
-        base_query = db.query(Comic).join(Volume).filter(Volume.series_id == s.id)
-        first_issue = get_smart_cover(base_query)
+        # Logic: Find Smart Cover (Python version of get_smart_cover)
+        # 1. Look for Issue "1"
+        # 2. Else look for lowest number
+        # 3. Else first found
 
-        # OPTIMIZED READ CHECK (Single Query)
-        # We count total comics AND read comics in one DB trip using conditional aggregation.
-        # This is significantly faster on low-end hardware than running two separate count() queries.
-        counts = db.query(
-            func.count(Comic.id).label('total'),
-            func.count(case((ReadingProgress.completed == True, 1))).label('read')
-        ).select_from(Comic).outerjoin(
-            ReadingProgress,
-            (ReadingProgress.comic_id == Comic.id) & (ReadingProgress.user_id == current_user.id)
-        ).join(Volume).filter(Volume.series_id == s.id).first()
+        cover_comic = None
+        if s_comics:
 
-        # Logic: It is "Read" only if you own items AND you have read all of them.
-        is_fully_read = (counts.total > 0) and (counts.read >= counts.total)
+            # GIMMICK DETECTION
+            is_reverse = s.name.lower() in REVERSE_NUMBERING_SERIES
+
+            # Filter for standards
+            standards = [c for c in s_comics if is_standard_format(c.format)]
+
+            # Decide which pool to search (Prefer standards, fallback to all)
+            pool = standards if standards else s_comics
+
+            # Try finding issue #1 exactly in the pool (Only if NOT reverse)
+            # (Because for Countdown, #1 is the END, not the cover)
+            issue_ones = []
+            if not is_reverse:
+                issue_ones = [c for c in pool if c.number == '1']
+
+            if issue_ones:
+                issue_ones.sort(key=lambda c: c.volume_number)
+                cover_comic = issue_ones[0]
+            else:
+                # Fallback: Sort by number
+                pool.sort(key=issue_sort_key)
+
+                # If Reverse Series (Zero Hour), take the LAST item (Highest Number)
+                # If Standard Series, take the FIRST item (Lowest Number)
+                if is_reverse:
+                    cover_comic = pool[-1]
+                else:
+                    cover_comic = pool[0]
 
         items.append({
             "id": s.id,
             "name": s.name,
             "library_id": s.library_id,
-            "start_year": first_issue.year,
-            # Use getattr to be safe if you haven't migrated DB for timestamps yet
+            "start_year": cover_comic.year if cover_comic else None,
             "created_at": getattr(s, 'created_at', None),
-            "thumbnail_path": f"/api/comics/{first_issue.id}/thumbnail" if first_issue else None,
+            "thumbnail_path": get_thumbnail_url(cover_comic.id, cover_comic.updated_at) if cover_comic else None,
             "read": is_fully_read,
         })
 
@@ -143,37 +628,97 @@ class LibraryCreate(BaseModel):
     name: str
     path: str
     watch_mode: bool = False
+    parse_reading_lists: bool = True
+    parse_collections: bool = True
+    parse_story_arcs: bool = True
 
-@router.post("/", tags=["admin"], name="create_library")
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        return _normalize_library_name(value)
+
+
+@router.post("/", tags=["admin"], name="create")
 async def create_library(lib_in: LibraryCreate,
                          db: SessionDep,
                          admin_user: AdminUser):
     """Create a new library"""
 
     # Check for duplicates
-    existing = db.query(Library).filter(Library.name == lib_in.name).first()
+    existing = _find_library_by_name(db, lib_in.name)
     if existing:
         raise HTTPException(status_code=400, detail="Library name already exists")
 
-    library = Library(name=lib_in.name, path=lib_in.path)
+    overlapping = _find_overlapping_library(db, lib_in.path)
+    if overlapping:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Library path overlaps with existing library '{overlapping.name}'"
+        )
 
-    db.add(library)
-    db.commit()
+    library = Library(
+        name=lib_in.name,
+        watch_mode=lib_in.watch_mode,
+        parse_reading_lists=lib_in.parse_reading_lists,
+        parse_collections=lib_in.parse_collections,
+        parse_story_arcs=lib_in.parse_story_arcs,
+    )
+
+    try:
+        db.add(library)
+        db.flush()
+
+        db.add(LibraryRoot(library_id=library.id, path=lib_in.path, is_active=True))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
     db.refresh(library)
 
     # Notify Watcher
     if library.watch_mode:
         library_watcher.refresh_watches()
 
-    return library
+    return _library_payload(library)
 
 # Schema for updates
 class LibraryUpdate(BaseModel):
     name: Optional[str] = None
     path: Optional[str] = None
     watch_mode: Optional[bool] = None
+    parse_reading_lists: Optional[bool] = None
+    parse_collections: Optional[bool] = None
+    parse_story_arcs: Optional[bool] = None
 
-@router.patch("/{library_id}", tags=["admin"], name="update_library")
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        return _normalize_library_name(value)
+
+
+class LibraryRootCreate(BaseModel):
+    path: str
+
+    @field_validator("path")
+    @classmethod
+    def validate_path(cls, value: str) -> str:
+        return _normalize_library_root_path(value)
+
+
+class LibraryRootUpdate(BaseModel):
+    is_active: Optional[bool] = None
+
+
+class LibraryRelocationRequest(BaseModel):
+    path: str
+    root_id: Optional[int] = None
+    sample_limit: int = Field(DEFAULT_SAMPLE_LIMIT, ge=0, le=100)
+
+
+@router.patch("/{library_id}", tags=["admin"], name="update")
 async def update_library(
         library_id: int,
         updates: LibraryUpdate,
@@ -185,30 +730,267 @@ async def update_library(
     if not library:
         raise HTTPException(status_code=404, detail="Library not found")
 
-    if updates.name:
+    if updates.name is not None:
         # Check for duplicate names
-        existing = db.query(Library).filter(Library.name == updates.name).filter(Library.id != library_id).first()
+        existing = _find_library_by_name(db, updates.name, exclude_library_id=library_id)
         if existing:
             raise HTTPException(status_code=400, detail="Library name already exists")
         library.name = updates.name
 
-    if updates.path:
-        library.path = updates.path
-        # Note: Changing path doesn't delete existing comics, but the next scan
-        # might mark them as 'missing' if the new path is totally different.
+    active_root = library.active_root
+    current_path = active_root.path if active_root else None
+    if updates.path and updates.path != current_path:
+        raise HTTPException(
+            status_code=400,
+            detail="Changing a library's path is temporarily disabled. Library relocation is "
+                   "being rebuilt to preserve reading progress and other data; support is "
+                   "coming in a future release.",
+        )
 
     if updates.watch_mode is not None:
         library.watch_mode = updates.watch_mode
 
+    enable_reading_lists = updates.parse_reading_lists is True and not library.parse_reading_lists
+    enable_collections = updates.parse_collections is True and not library.parse_collections
+    enable_story_arcs = updates.parse_story_arcs is True and not library.parse_story_arcs
+
+    if updates.parse_reading_lists is not None:
+        library.parse_reading_lists = updates.parse_reading_lists
+
+    if updates.parse_collections is not None:
+        library.parse_collections = updates.parse_collections
+
+    if updates.parse_story_arcs is not None:
+        library.parse_story_arcs = updates.parse_story_arcs
+
     db.commit()
     db.refresh(library)
+
+    rehydration_result = None
+    if enable_reading_lists or enable_collections or enable_story_arcs:
+        try:
+            rehydration_result = scan_manager.add_metadata_rehydrate_task(library.id)
+        except Exception as exc:
+            logger.error("Failed to queue metadata rehydrate for library %s: %s", library.id, exc)
+            rehydration_result = {"status": "failed", "message": "Failed to queue metadata rehydrate"}
 
     # Notify Watcher (Always refresh, covering both Enable and Disable cases)
     library_watcher.refresh_watches()
 
-    return library
+    response = {
+        "id": library.id,
+        "name": library.name,
+        "path": current_path,
+        "scan_on_startup": library.scan_on_startup,
+        "watch_mode": library.watch_mode,
+        "parse_reading_lists": library.parse_reading_lists,
+        "parse_collections": library.parse_collections,
+        "parse_story_arcs": library.parse_story_arcs,
+        "last_scanned": library.last_scanned,
+        "is_scanning": library.is_scanning,
+        "created_at": library.created_at,
+    }
 
-@router.delete("/{library_id}", tags=["admin"], name="delete_library")
+    if rehydration_result is not None:
+        response["rehydration"] = rehydration_result
+
+    return response
+
+
+@router.get("/{library_id}/roots", tags=["admin"], name="roots")
+async def list_library_roots(
+        library_id: int,
+        db: SessionDep,
+        admin_user: AdminUser,
+):
+    """List all roots configured for a library."""
+    library = _get_admin_library(db, library_id)
+    counts = _root_comic_counts(db, library.roots)
+
+    return [
+        _library_root_payload(root, comic_count=counts.get(root.id, 0))
+        for root in sorted(library.roots, key=lambda row: row.id)
+    ]
+
+
+@router.post("/{library_id}/roots", tags=["admin"], name="roots_create")
+async def add_library_root(
+        library_id: int,
+        root_in: LibraryRootCreate,
+        db: SessionDep,
+        admin_user: AdminUser,
+):
+    """Attach a new active filesystem root to a library without starting a scan."""
+    library = _get_admin_library(db, library_id)
+    _ensure_library_roots_mutable(db, library)
+
+    overlapping_root = _find_overlapping_root(db, root_in.path)
+    if overlapping_root is not None:
+        raise HTTPException(
+            status_code=400,
+            detail=_root_overlap_detail(overlapping_root, library),
+        )
+
+    root = LibraryRoot(library_id=library.id, path=root_in.path, is_active=True)
+    db.add(root)
+    db.commit()
+    db.refresh(root)
+
+    if library.watch_mode:
+        library_watcher.refresh_watches()
+
+    return _library_root_payload(root, comic_count=0)
+
+
+@router.patch("/{library_id}/roots/{root_id}", tags=["admin"], name="roots_update")
+async def update_library_root(
+        library_id: int,
+        root_id: int,
+        updates: LibraryRootUpdate,
+        db: SessionDep,
+        admin_user: AdminUser,
+):
+    """Enable or disable a library root without changing existing comic rows."""
+    library = _get_admin_library(db, library_id)
+    root = _get_library_root(library, root_id)
+    _ensure_library_roots_mutable(db, library)
+
+    changed = False
+    if updates.is_active is not None and updates.is_active != root.is_active:
+        if updates.is_active:
+            overlapping_root = _find_overlapping_root(db, root.path, exclude_root_id=root.id)
+            if overlapping_root is not None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=_root_overlap_detail(overlapping_root, library),
+                )
+
+        root.is_active = updates.is_active
+        changed = True
+
+    if changed:
+        db.commit()
+        db.refresh(root)
+        if library.watch_mode:
+            library_watcher.refresh_watches()
+
+    comic_count = db.query(func.count(Comic.id)).filter(Comic.library_root_id == root.id).scalar() or 0
+    return _library_root_payload(root, comic_count=comic_count)
+
+
+@router.delete("/{library_id}/roots/{root_id}", tags=["admin"], name="roots_delete")
+async def remove_library_root(
+        library_id: int,
+        root_id: int,
+        db: SessionDep,
+        admin_user: AdminUser,
+        delete_comics: Annotated[
+            bool,
+            Query(description="Delete comic records tied to this root before removing it"),
+        ] = False,
+):
+    """Remove a library root. Roots with comics require delete_comics=true."""
+    library = _get_admin_library(db, library_id)
+    root = _get_library_root(library, root_id)
+    _ensure_library_roots_mutable(db, library)
+
+    comic_count = db.query(func.count(Comic.id)).filter(Comic.library_root_id == root.id).scalar() or 0
+    if comic_count and not delete_comics:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Library root has {comic_count} comic records. "
+                "Pass delete_comics=true to remove the root and delete those records."
+            ),
+        )
+
+    delete_stats = {
+        "deleted_comics": 0,
+        "deleted_volumes": 0,
+        "deleted_series": 0,
+    }
+    if delete_comics:
+        delete_stats = _delete_comics_for_root(db, root)
+
+    db.delete(root)
+    db.commit()
+
+    if library.watch_mode:
+        library_watcher.refresh_watches()
+
+    return {
+        "library_id": library_id,
+        "root_id": root_id,
+        "removed": True,
+        **delete_stats,
+    }
+
+
+@router.post("/{library_id}/relocation/preview", tags=["admin"], name="relocation_preview")
+async def preview_library_relocation(
+        library_id: int,
+        preview_in: LibraryRelocationRequest,
+        db: SessionDep,
+        admin_user: AdminUser,
+):
+    """Preview a library root relocation without changing stored paths."""
+    library = (
+        db.query(Library)
+        .options(selectinload(Library.roots))
+        .filter(Library.id == library_id)
+        .first()
+    )
+    if not library:
+        raise HTTPException(status_code=404, detail="Library not found")
+
+    try:
+        preview = preview_library_root_relocation(
+            db,
+            library=library,
+            proposed_path=preview_in.path,
+            root_id=preview_in.root_id,
+            sample_limit=preview_in.sample_limit,
+        )
+    except LibraryRelocationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return preview.to_dict()
+
+
+@router.post("/{library_id}/relocation/confirm", tags=["admin"], name="relocation_confirm")
+async def confirm_library_relocation(
+        library_id: int,
+        relocation_in: LibraryRelocationRequest,
+        db: SessionDep,
+        admin_user: AdminUser,
+):
+    """Confirm a library root relocation without queuing a scan."""
+    library = (
+        db.query(Library)
+        .options(selectinload(Library.roots))
+        .filter(Library.id == library_id)
+        .first()
+    )
+    if not library:
+        raise HTTPException(status_code=404, detail="Library not found")
+
+    try:
+        confirmation = confirm_library_root_relocation(
+            db,
+            library=library,
+            proposed_path=relocation_in.path,
+            root_id=relocation_in.root_id,
+            sample_limit=relocation_in.sample_limit,
+        )
+    except LibraryRelocationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    library_watcher.refresh_watches()
+
+    return confirmation.to_dict()
+
+
+@router.delete("/{library_id}", tags=["admin"], name="delete")
 async def delete_library(library_id: int,
                          db: SessionDep,
                          admin_user: AdminUser):
@@ -222,7 +1004,7 @@ async def delete_library(library_id: int,
     return {"message": "Library deleted"}
 
 
-@router.post("/{library_id}/scan", tags=["admin"], name="scan_library")
+@router.post("/{library_id}/scan", tags=["admin"], name="scan")
 async def scan_library(
         library_id: int,
         db: SessionDep,
@@ -244,7 +1026,3 @@ async def scan_library(
     # Returns: {"status": "queued", "job_id": 123, "message": "..."}
     return result
 
-@router.get("/status/scanner")
-async def get_scanner_status():
-    """Check if a scan is currently running"""
-    return scan_manager.get_status()

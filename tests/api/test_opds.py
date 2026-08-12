@@ -1,6 +1,12 @@
+import logging
 import pytest
+import xml.etree.ElementTree as ET
+from PIL import Image
 from app.services.settings_service import SettingsService
 from app.models.setting import SystemSetting
+from app.models.series import Series
+from app.models.comic import Comic, Volume
+from tests.factories import create_library_with_root
 
 
 def test_opds_disabled_by_default(client, normal_user):
@@ -50,7 +56,7 @@ def test_opds_auth_flow(client, db, normal_user):
     )
     assert response.status_code == 401
     assert "WWW-Authenticate" in response.headers
-    assert response.headers["WWW-Authenticate"] == "Basic"
+    assert response.headers["WWW-Authenticate"] == 'Basic realm="Parker OPDS"'
 
     # 3. Try with CORRECT password (using the fixture's password)
     # Note: The 'normal_user' fixture sets hashed_password="fakehash".
@@ -73,3 +79,393 @@ def test_opds_auth_flow(client, db, normal_user):
         assert "application/atom+xml" in response.headers["content-type"]
         assert "<feed" in response.text
         assert "Parker Library" in response.text
+
+
+def test_opds_logs_invalid_password(client, db, normal_user, caplog):
+    _enable_opds(db)
+    caplog.set_level(logging.WARNING, logger="app.auth")
+
+    response = client.get(
+        "/opds/",
+        auth=(normal_user.username, "wrong_password")
+    )
+
+    assert response.status_code == 401
+    assert any(
+        "Authentication failed via OPDS basic auth" in record.message
+        and "reason=invalid_password" in record.message
+        and f"username='{normal_user.username}'" in record.message
+        for record in caplog.records
+    )
+
+
+def test_opds_logs_unknown_user(client, db, caplog):
+    _enable_opds(db)
+    caplog.set_level(logging.WARNING, logger="app.auth")
+
+    response = client.get(
+        "/opds/",
+        auth=("missing-user", "wrong_password")
+    )
+
+    assert response.status_code == 401
+    assert any(
+        "Authentication failed via OPDS basic auth" in record.message
+        and "reason=unknown_user" in record.message
+        and "username='missing-user'" in record.message
+        for record in caplog.records
+    )
+
+
+def test_opds_missing_credentials_returns_basic_realm(client, db):
+    _enable_opds(db)
+
+    response = client.get("/opds/")
+
+    assert response.status_code == 401
+    assert response.headers["WWW-Authenticate"] == 'Basic realm="Parker OPDS"'
+
+
+def _enable_opds(db):
+    setting = db.query(SystemSetting).filter(SystemSetting.key == "server.opds_enabled").first()
+    if not setting:
+        setting = SystemSetting(
+            key="server.opds_enabled",
+            value="true",
+            category="server",
+            data_type="bool"
+        )
+        db.add(setting)
+    else:
+        setting.value = "true"
+    db.commit()
+
+
+def test_opds_library_feed_renders_series_entries(client, db, normal_user):
+    _enable_opds(db)
+
+    library = create_library_with_root(db, "OPDS Library", "/tmp/opds-library")
+    root = library.active_root
+    series = Series(name="Alpha Flight", library=library, summary_override="Team book")
+    volume = Volume(series=series, volume_number=1)
+    comic = Comic(
+        volume=volume,
+        number="1",
+        title="First Issue",
+        filename="alpha-flight-001.cbz",
+        library_root_id=root.id,
+        relative_path="alpha-flight-001.cbz",
+        updated_at=series.updated_at,
+    )
+    db.add_all([series, volume, comic])
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    from unittest.mock import patch
+
+    with patch("app.api.opds_deps.verify_password", return_value=True):
+        response = client.get(
+            f"/opds/libraries/{library.id}",
+            auth=(normal_user.username, "any_password")
+        )
+
+    assert response.status_code == 200
+    root = ET.fromstring(response.text)
+    ns = {"atom": "http://www.w3.org/2005/Atom"}
+    entries = root.findall("atom:entry", ns)
+    assert len(entries) == 1
+    assert entries[0].findtext("atom:title", namespaces=ns) == "Alpha Flight"
+    subsection = entries[0].find("atom:link[@rel='subsection']", ns)
+    assert subsection is not None
+    assert subsection.get("href") == f"http://testserver/opds/series/{series.id}"
+    assert "Team book" in response.text
+
+
+def test_opds_library_feed_paginates_series_entries(client, db, normal_user):
+    _enable_opds(db)
+
+    library = create_library_with_root(db, "Paged Library", "/tmp/opds-paged-library")
+    root = library.active_root
+    series_names = ["Alpha", "Beta", "Gamma"]
+    for name in series_names:
+        series = Series(name=name, library=library)
+        volume = Volume(series=series, volume_number=1)
+        comic = Comic(
+            volume=volume,
+            number="1",
+            title=f"{name} One",
+            filename=f"{name.lower()}-001.cbz",
+            library_root_id=root.id,
+            relative_path=f"{name.lower()}-001.cbz",
+        )
+        db.add_all([series, volume, comic])
+
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    from unittest.mock import patch
+
+    with patch("app.api.opds_deps.verify_password", return_value=True):
+        response = client.get(
+            f"/opds/libraries/{library.id}?page=1&size=2",
+            auth=(normal_user.username, "any_password")
+        )
+
+    assert response.status_code == 200
+    root = ET.fromstring(response.text)
+    ns = {"atom": "http://www.w3.org/2005/Atom"}
+    entries = root.findall("atom:entry", ns)
+    assert [entry.findtext("atom:title", namespaces=ns) for entry in entries] == ["Alpha", "Beta"]
+
+    next_link = root.find("atom:link[@rel='next']", ns)
+    last_link = root.find("atom:link[@rel='last']", ns)
+    assert next_link is not None
+    assert next_link.get("href") == f"http://testserver/opds/libraries/{library.id}?page=2&size=2"
+    assert last_link is not None
+    assert last_link.get("href") == f"http://testserver/opds/libraries/{library.id}?page=2&size=2"
+
+
+def test_opds_series_feed_handles_missing_month_and_day(client, db, normal_user):
+    _enable_opds(db)
+
+    library = create_library_with_root(db, "Series Library", "/tmp/opds-series-library")
+    root = library.active_root
+    series = Series(name="Beta Ray", library=library)
+    volume = Volume(series=series, volume_number=1)
+    comic = Comic(
+        volume=volume,
+        number="7",
+        title="Stormbreaker",
+        filename="beta-ray-007.cbz",
+        library_root_id=root.id,
+        relative_path="beta-ray-007.cbz",
+        year=2024,
+        month=None,
+        day=None,
+        file_size=12345,
+    )
+    db.add_all([series, volume, comic])
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    from unittest.mock import patch
+
+    with patch("app.api.opds_deps.verify_password", return_value=True):
+        response = client.get(
+            f"/opds/series/{series.id}",
+            auth=(normal_user.username, "any_password")
+        )
+
+    assert response.status_code == 200
+    root = ET.fromstring(response.text)
+    ns = {"atom": "http://www.w3.org/2005/Atom", "dcterms": "http://purl.org/dc/terms/"}
+    entry = root.find("atom:entry", ns)
+    assert entry is not None
+    assert entry.findtext("dcterms:issued", namespaces=ns) == "2024-01-01"
+    acquisition = entry.find("atom:link[@rel='http://opds-spec.org/acquisition']", ns)
+    assert acquisition is not None
+    acquisitions = entry.findall("atom:link[@rel='http://opds-spec.org/acquisition']", ns)
+    assert len(acquisitions) == 1
+    assert acquisition.get("type") == "application/vnd.comicbook+zip"
+    assert acquisition.get("href", "").startswith("http://testserver/opds/download/")
+    assert acquisition.get("href", "").endswith("/Comic%20-%20Stormbreaker.cbz")
+
+
+def test_opds_series_feed_paginates_issue_entries(client, db, normal_user):
+    _enable_opds(db)
+
+    library = create_library_with_root(db, "Paged Series Library", "/tmp/opds-paged-series-library")
+    root = library.active_root
+    series = Series(name="Paged Issues", library=library)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
+    for number in ("1", "2", "3"):
+        comic = Comic(
+            volume=volume,
+            number=number,
+            title=f"Issue {number}",
+            filename=f"paged-issues-{number}.cbz",
+            library_root_id=root.id,
+            relative_path=f"paged-issues-{number}.cbz",
+            file_size=123,
+        )
+        db.add(comic)
+
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    from unittest.mock import patch
+
+    with patch("app.api.opds_deps.verify_password", return_value=True):
+        response = client.get(
+            f"/opds/series/{series.id}?page=2&size=2",
+            auth=(normal_user.username, "any_password")
+        )
+
+    assert response.status_code == 200
+    root = ET.fromstring(response.text)
+    ns = {"atom": "http://www.w3.org/2005/Atom"}
+    entries = root.findall("atom:entry", ns)
+    assert len(entries) == 1
+    assert entries[0].findtext("atom:title", namespaces=ns) == "Paged Issues #3 - Issue 3"
+
+    previous_link = root.find("atom:link[@rel='previous']", ns)
+    next_link = root.find("atom:link[@rel='next']", ns)
+    assert previous_link is not None
+    assert previous_link.get("href") == f"http://testserver/opds/series/{series.id}?page=1&size=2"
+    assert next_link is None
+
+
+def test_opds_thumbnail_links_use_jpeg_endpoint(client, db, normal_user, tmp_path):
+    _enable_opds(db)
+
+    thumbnail_path = tmp_path / "cover.webp"
+    Image.new("RGB", (24, 36), color=(120, 20, 40)).save(thumbnail_path, format="WEBP")
+
+    library = create_library_with_root(db, "Thumbnail Library", str(tmp_path))
+    root = library.active_root
+    series = Series(name="Cover Test", library=library)
+    volume = Volume(series=series, volume_number=1)
+    comic = Comic(
+        volume=volume,
+        number="1",
+        title="Cover Story",
+        filename="cover-test-001.cbz",
+        library_root_id=root.id,
+        relative_path="cover-test-001.cbz",
+        thumbnail_path=str(thumbnail_path),
+    )
+    db.add_all([series, volume, comic])
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    from unittest.mock import patch
+
+    with patch("app.api.opds_deps.verify_password", return_value=True):
+        response = client.get(
+            f"/opds/series/{series.id}",
+            auth=(normal_user.username, "any_password")
+        )
+
+    assert response.status_code == 200
+    root = ET.fromstring(response.text)
+    ns = {"atom": "http://www.w3.org/2005/Atom"}
+    image = root.find("atom:entry/atom:link[@rel='http://opds-spec.org/image']", ns)
+    assert image is not None
+    assert image.get("type") == "image/jpeg"
+    assert image.get("href", "").startswith(f"http://testserver/opds/images/{comic.id}/thumbnail.jpg?v=")
+
+    missing_auth = client.get(f"/opds/images/{comic.id}/thumbnail.jpg")
+    assert missing_auth.status_code == 401
+
+    with patch("app.api.opds_deps.verify_password", return_value=True):
+        thumbnail_response = client.get(
+            f"/opds/images/{comic.id}/thumbnail.jpg",
+            auth=(normal_user.username, "any_password")
+        )
+
+        assert thumbnail_response.status_code == 200
+        assert thumbnail_response.headers["content-type"].startswith("image/jpeg")
+        assert thumbnail_response.content.startswith(b"\xff\xd8")
+
+
+def test_opds_thumbnail_hides_inaccessible_library_comics(client, db, normal_user, tmp_path):
+    _enable_opds(db)
+
+    thumbnail_path = tmp_path / "hidden-cover.webp"
+    Image.new("RGB", (24, 36), color=(80, 100, 160)).save(thumbnail_path, format="WEBP")
+
+    library = create_library_with_root(db, "Hidden Thumbnail Library", str(tmp_path))
+    root = library.active_root
+    series = Series(name="Hidden Cover Test", library=library)
+    volume = Volume(series=series, volume_number=1)
+    comic = Comic(
+        volume=volume,
+        number="1",
+        title="Hidden Cover Story",
+        filename="hidden-cover-test-001.cbz",
+        library_root_id=root.id,
+        relative_path="hidden-cover-test-001.cbz",
+        thumbnail_path=str(thumbnail_path),
+    )
+    db.add_all([series, volume, comic])
+    db.commit()
+
+    from unittest.mock import patch
+
+    with patch("app.api.opds_deps.verify_password", return_value=True):
+        response = client.get(
+            f"/opds/images/{comic.id}/thumbnail.jpg",
+            auth=(normal_user.username, "any_password")
+        )
+
+    assert response.status_code == 404
+
+
+def test_opds_download_uses_real_archive_type_and_extension(client, db, normal_user, tmp_path):
+    _enable_opds(db)
+
+    archive_path = tmp_path / "gamma-ray-001.cbr"
+    archive_path.write_bytes(b"fake-rar")
+
+    library = create_library_with_root(db, "Download Library", str(tmp_path))
+    root = library.active_root
+    series = Series(name="Gamma Ray", library=library)
+    volume = Volume(series=series, volume_number=1)
+    comic = Comic(
+        volume=volume,
+        number="1",
+        title="First Blast",
+        filename="gamma-ray-001.cbr",
+        library_root_id=root.id,
+        relative_path=archive_path.name,
+    )
+    db.add_all([series, volume, comic])
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    from unittest.mock import patch
+
+    with patch("app.api.opds_deps.verify_password", return_value=True):
+        response = client.get(
+            f"/opds/download/{comic.id}",
+            auth=(normal_user.username, "any_password")
+        )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/vnd.comicbook-rar")
+    assert 'filename="Comic - First Blast.cbr"' in response.headers["content-disposition"]
+
+
+def test_opds_download_uses_filename_stem_when_title_missing(client, db, normal_user, tmp_path):
+    _enable_opds(db)
+
+    archive_path = tmp_path / "titleless-special.cbz"
+    archive_path.write_bytes(b"fake-zip")
+
+    library = create_library_with_root(db, "Titleless Library", str(tmp_path))
+    root = library.active_root
+    series = Series(name="Titleless Series", library=library)
+    volume = Volume(series=series, volume_number=1)
+    comic = Comic(
+        volume=volume,
+        number="2",
+        title=None,
+        filename="titleless-special.cbz",
+        library_root_id=root.id,
+        relative_path=archive_path.name,
+    )
+    db.add_all([series, volume, comic])
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    from unittest.mock import patch
+
+    with patch("app.api.opds_deps.verify_password", return_value=True):
+        response = client.get(
+            f"/opds/download/{comic.id}",
+            auth=(normal_user.username, "any_password")
+        )
+
+    assert response.status_code == 200
+    assert 'filename="Comic - titleless-special.cbz"' in response.headers["content-disposition"]

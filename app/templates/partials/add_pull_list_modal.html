@@ -16,7 +16,7 @@
          x-transition:enter-end="scale-100">
 
         <div class="flex justify-between items-center mb-4">
-            <h3 class="text-white font-bold text-lg">Add to Pull List</h3>
+            <h3 class="text-white font-bold text-lg">Add to Stack</h3>
             <button x-on:click="close()" class="text-gray-400 hover:text-white">✕</button>
         </div>
 
@@ -31,7 +31,7 @@
             </template>
 
             <div x-show="myLists.length === 0 && !loading" class="text-gray-500 text-center py-4 text-sm">
-                No lists found. Create one below!
+                No stacks found. Create one below!
             </div>
 
             <div x-show="loading" class="text-center py-4">
@@ -40,7 +40,7 @@
         </div>
 
         <div class="border-t border-gray-700 pt-4">
-            <label class="block text-xs text-gray-400 uppercase font-bold mb-2">Create New List</label>
+            <label class="block text-xs text-gray-400 uppercase font-bold mb-2">Create New Stack</label>
             <div class="flex gap-2">
                 <input
                     type="text"
@@ -112,7 +112,7 @@ function addPullListModal() {
         async fetchLists() {
             this.loading = true;
             try {
-                const res = await fetch(window.url('/api/pull-lists/'));
+                const res = await fetch(window.parker.route('pull_lists.list'));
                 if (res.ok) this.myLists = await res.json();
             } catch (e) {
                 console.error(e);
@@ -126,7 +126,7 @@ function addPullListModal() {
             // BATCH MODE
             if (this.isBatch) {
                 try {
-                    const res = await fetch(window.url(`/api/pull-lists/${listId}/items/batch`), {
+                    const res = await fetch(window.parker.route('pull_lists.batch_add_items', { list_id: listId }), {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ comic_ids: this.batchIds })
@@ -134,7 +134,7 @@ function addPullListModal() {
 
                     if (res.ok) {
                         const data = await res.json();
-                        window.comicServer.showToast(data.message, 'success');
+                        window.parker.showToast(data.message, 'success');
                         this.close();
 
                         // Clear the selection since we are done
@@ -146,25 +146,28 @@ function addPullListModal() {
                 return;
             }
 
-            // INGLE MODE (Legacy Logic)
+            // SINGLE MODE (Legacy Logic)
             if (this.targetType !== 'comic') {
-                alert("Bulk add for Volumes/Series requires a backend update! Coming soon.");
+                await window.parker.dialog.alert('Info', 'Bulk add for Volumes/Series requires a backend update! Coming soon.');
                 return;
             }
 
             try {
-                const res = await fetch(window.url(`/api/pull-lists/${listId}/items`), {
+                const res = await fetch(window.parker.route('pull_lists.add_item', { list_id: listId }), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ comic_id: this.targetId })
                 });
 
                 if (res.ok) {
-                    window.comicServer.showToast("Added to list!", 'success');
+                    window.parker.showToast("Added to stack!", 'success');
+                    window.dispatchEvent(new CustomEvent('pull-list-item-added', {
+                        detail: { comicId: this.targetId, pullListId: listId }
+                    }));
                     this.close();
                 } else {
                     const err = await res.json();
-                    window.comicServer.showToast(err.detail || "Failed to add", 'error');
+                    window.parker.showToast(err.detail || "Failed to add", 'error');
                 }
             } catch (e) { console.error(e); }
 
@@ -174,7 +177,7 @@ function addPullListModal() {
             if (!this.newListName) return;
 
             try {
-                const createRes = await fetch(window.url('/api/pull-lists/'), {
+                const createRes = await fetch(window.parker.route('pull_lists.create'), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ name: this.newListName })

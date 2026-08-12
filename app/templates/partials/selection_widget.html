@@ -17,7 +17,7 @@
     <div class="h-6 w-px bg-gray-700 mx-2"></div>
 
     <button x-on:click="$dispatch('open-add-to-pull-list', { ids: $store.batch.payload.comic_ids })" class="text-gray-300 hover:text-white flex items-center gap-1">
-        <span>🗃️ Add to Pull List</span>
+        <span>🗃️ Add to Stack</span>
     </button>
 
     <button x-on:click="$dispatch('batch-set-read', { read: !$store.batch.allRead })" class="text-gray-300 hover:text-white flex items-center gap-1">

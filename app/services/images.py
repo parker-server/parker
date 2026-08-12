@@ -9,6 +9,8 @@ from colorthief import ColorThief
 from app.services.archive import ComicArchive
 from app.config import settings
 
+logger = logging.getLogger(__name__)
+
 
 class ImageService:
     """Service for extracting and processing comic images"""
@@ -78,7 +80,7 @@ class ImageService:
             return result
 
         except Exception as e:
-            print(f"Error processing cover for {Path(comic_path).name}: {e}")
+            logger.error(f"Error processing cover for {Path(comic_path).name}: {e}")
             return result
 
 
@@ -104,7 +106,7 @@ class ImageService:
             file_path = Path(comic_path)
 
             if not file_path.exists():
-                print(f"Comic file not found: {comic_path}")
+                logger.warning(f"Comic file not found: {comic_path}")
                 return None, False, "application/octet-stream"
 
             with ComicArchive(file_path) as archive:
@@ -112,7 +114,7 @@ class ImageService:
                 pages = archive.get_pages()
 
                 if page_index < 0 or page_index >= len(pages):
-                    print(f"Page index {page_index} out of range (0-{len(pages) - 1})")
+                    logger.warning(f"Page index {page_index} out of range (0-{len(pages) - 1})")
                     return None, False, "application/octet-stream"
 
                 # Extract Raw Bytes
@@ -126,6 +128,8 @@ class ImageService:
                 if filename.endswith(".png"): mime_type = "image/png"
                 elif filename.endswith(".webp"): mime_type = "image/webp"
                 elif filename.endswith(".gif"): mime_type = "image/gif"
+                elif filename.endswith(".jxl"): mime_type = "image/jxl"
+                elif filename.endswith(".avif"): mime_type = "image/avif"
 
                 # Logic: Should we Transcode?
                 # Only if requested AND image is large (>500KB) AND not already WebP
@@ -175,14 +179,13 @@ class ImageService:
                         return output.getvalue(), True, "image/jpeg"
 
                 except Exception as e:
-                    logging.error(f"Image processing failed: {e}")
-                    print(f"Error processing image: {e}")
+                    logger.error(f"Image processing failed: {e}")
                     # CRITICAL: Return original bytes, but flag as FAILED processing
                     # so the controller knows not to cache this as the 'filtered' version.
                     return image_bytes, False, mime_type  # Fallback, just return original bytes
 
         except Exception as e:
-            print(f"Error extracting page {page_index}: {e}")
+            logger.error(f"Error extracting page {page_index}: {e}")
             return None, False, "application/octet-stream"
 
     @staticmethod
@@ -197,54 +200,7 @@ class ImageService:
         except Exception:
             return 0
 
-    def generate_thumbnail(self, comic_path: str, output_path: Path) -> bool:
-        """
-        Generate a thumbnail from the comic cover and save it to the specific output path.
 
-        Args:
-            comic_path: Source comic file
-            output_path: Destination for the .webp thumbnail
-
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            # 1. Extract Cover
-            # We pass transcode_webp=False because we are about to resize it anyway.
-            # We don't want to compress -> decompress -> resize -> compress.
-            cover_bytes, is_correct_format, _ = self.get_page_image(comic_path, 0, transcode_webp=False)
-            if not cover_bytes or not is_correct_format:
-                return False
-
-            # 2. Process Image
-            img = Image.open(BytesIO(cover_bytes))
-
-            # Handle Color Modes (CMYK, Palettes, etc.)
-            if img.mode in ('RGBA', 'LA', 'P'):
-                background = Image.new('RGB', img.size, (255, 255, 255))
-                if img.mode == 'P':
-                    img = img.convert('RGBA')
-                background.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
-                img = background
-            elif img.mode != 'RGB':
-                img = img.convert('RGB')
-
-            # 3. Resize
-            width, height = self.thumbnail_size
-            img.thumbnail((width, height), Image.Resampling.LANCZOS)
-
-            # 4. Save to Destination
-            # Ensure directory exists
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-
-            img.save(output_path, format='WEBP', quality=85, method=6)
-            return True
-
-        except Exception as e:
-            print(f"Error generating thumbnail for {comic_path}: {e}")
-            return False
-
-    # Avatar Processing Logic
     def process_avatar(self, image_data: bytes, output_path: Path) -> bool:
         """
         Process a raw avatar upload:
@@ -272,7 +228,7 @@ class ImageService:
 
             return True
         except Exception as e:
-            logging.error(f"Avatar processing error: {e}")
+            logger.error(f"Avatar processing error: {e}")
             return False
 
     def extract_palette(self, comic_path: str, num_colors=5) -> Optional[Dict[str, str]]:
@@ -281,7 +237,7 @@ class ImageService:
 
             path = Path(comic_path)
             if not path.exists():
-                print(f"Image file not found: {path}")
+                logger.warning(f"Image file not found: {path}")
                 return None
 
             # 1. Get Cover Bytes
@@ -305,7 +261,7 @@ class ImageService:
             }
 
         except Exception as e:
-            print(f"Color palette extraction failed for {comic_path}: {e}")
+            logger.error(f"Color palette extraction failed for {comic_path}: {e}")
             return None
 
 
