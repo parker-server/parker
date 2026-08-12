@@ -31,7 +31,9 @@ def _get_pull_list_snapshot(db_factory, name):
             return None
 
         items = session.scalars(
-            select(PullListItem).where(PullListItem.pull_list_id == pull_list.id)
+            select(PullListItem)
+            .where(PullListItem.pull_list_id == pull_list.id)
+            .order_by(PullListItem.sort_order)
         ).all()
         return {
             "id": pull_list.id,
@@ -46,6 +48,16 @@ def _add_comic_to_pull_list(db_factory, pull_list_id, comic_id):
     session = db_factory()
     try:
         session.add(PullListItem(pull_list_id=pull_list_id, comic_id=comic_id, sort_order=0))
+        session.commit()
+    finally:
+        session.close()
+
+
+def _add_comics_to_pull_list(db_factory, pull_list_id, comic_ids):
+    session = db_factory()
+    try:
+        for index, comic_id in enumerate(comic_ids):
+            session.add(PullListItem(pull_list_id=pull_list_id, comic_id=comic_id, sort_order=index))
         session.commit()
     finally:
         session.close()
@@ -480,6 +492,106 @@ def test_comic_detail_add_to_existing_pull_list_then_edit_and_remove_item(page, 
     cleared_list = _get_pull_list_snapshot(browser_server["db_factory"], updated_name)
     assert cleared_list is not None
     assert cleared_list["comic_ids"] == []
+
+
+@pytest.mark.browser
+def test_stack_detail_reorder_saves_sortable_update_without_on_end(page, browser_server):
+    seed = browser_server["seed"]
+    list_name = "Browser Reorder Stack"
+    pull_list_id = _create_pull_list(browser_server["db_factory"], seed["user_id"], list_name)
+    initial_order = [
+        seed["completed_comic_id"],
+        seed["active_comic_id"],
+        seed["in_progress_comic_id"],
+    ]
+    target_order = [
+        seed["in_progress_comic_id"],
+        seed["completed_comic_id"],
+        seed["active_comic_id"],
+    ]
+    _add_comics_to_pull_list(browser_server["db_factory"], pull_list_id, initial_order)
+
+    page.goto(f"{browser_server['base_url']}/stacks/{pull_list_id}", wait_until="networkidle")
+
+    page.get_by_role("heading", name=list_name).wait_for()
+    page.wait_for_function("() => document.querySelectorAll('#sortable-list > [data-id]').length === 3")
+    page.wait_for_function(
+        """
+        () => {
+            const list = document.querySelector('#sortable-list');
+            return !!list && !!Alpine.$data(list.closest('[x-data]')).sortable;
+        }
+        """
+    )
+    rendered_order = page.locator("#sortable-list > [data-id]").evaluate_all(
+        "(rows) => rows.map((row) => Number(row.dataset.id))"
+    )
+    assert rendered_order == initial_order
+    sortable_options = page.evaluate(
+        """
+        () => {
+            const list = document.querySelector('#sortable-list');
+            const component = Alpine.$data(list.closest('[x-data]'));
+            return {
+                hasOnEnd: typeof component.sortable.option('onEnd') === 'function',
+                hasOnUpdate: typeof component.sortable.option('onUpdate') === 'function',
+            };
+        }
+        """
+    )
+    assert sortable_options == {"hasOnEnd": False, "hasOnUpdate": True}
+
+    page.evaluate(
+        """
+        ({ targetOrder }) => {
+            const list = document.querySelector('#sortable-list');
+            const component = Alpine.$data(list.closest('[x-data]'));
+
+            const rowsById = new Map(
+                Array.from(list.querySelectorAll(':scope > [data-id]'))
+                    .map((row) => [Number(row.dataset.id), row])
+            );
+
+            for (const id of targetOrder) {
+                list.appendChild(rowsById.get(id));
+            }
+
+            component.sortable.option('onUpdate')();
+        }
+        """,
+        {"targetOrder": target_order},
+    )
+
+    page.wait_for_timeout(1000)
+    reorder_state = page.evaluate(
+        """
+        (targetOrder) => {
+            const list = document.querySelector('#sortable-list');
+            const component = Alpine.$data(list.closest('[x-data]'));
+            const domOrder = Array.from(list.querySelectorAll(':scope > [data-id]'))
+                .map((row) => Number(row.dataset.id));
+
+            return {
+                domOrder,
+                startHref: component.$refs.startReadingLink?.href || '',
+                targetOrder,
+            };
+        }
+        """,
+        target_order,
+    )
+    assert reorder_state == {
+        "domOrder": target_order,
+        "startHref": f"{browser_server['base_url']}/reader/{target_order[0]}?context_type=pull_list&context_id={pull_list_id}",
+        "targetOrder": target_order,
+    }
+    start_link = page.locator("a").filter(has_text="Start Reading").first.get_attribute("href")
+    assert start_link is not None
+    assert f"/reader/{target_order[0]}" in start_link
+
+    reordered_list = _get_pull_list_snapshot(browser_server["db_factory"], list_name)
+    assert reordered_list is not None
+    assert reordered_list["comic_ids"] == target_order
 
 
 @pytest.mark.browser

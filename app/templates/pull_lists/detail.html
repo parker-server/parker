@@ -5,8 +5,20 @@
 {% block extra_head %}
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
 <style>
-    .sortable-ghost { opacity: 0.4; background: #374151; }
+    .sortable-ghost {
+        opacity: 1;
+        background: rgba(37, 99, 235, 0.12);
+        border-color: #60a5fa;
+        outline: 2px dashed rgba(96, 165, 250, 0.75);
+        outline-offset: -2px;
+    }
+    .sortable-ghost > * { visibility: hidden; }
+    .sortable-chosen .drag-handle,
     .sortable-drag { cursor: grabbing; }
+    .sortable-fallback {
+        opacity: 0.95;
+        box-shadow: 0 20px 35px rgba(0, 0, 0, 0.35);
+    }
     .drag-handle { cursor: grab; }
 </style>
 {% endblock %}
@@ -32,7 +44,8 @@
 
             <div class="flex gap-3">
                 <template x-if="list?.items?.length > 0">
-                    <a :href="window.parker.readerRoute(list.items[0].id, `context_type=pull_list&context_id=${listId}`, { includeReturnTo: false })"
+                    <a x-ref="startReadingLink"
+                       :href="window.parker.readerRoute(list.items[0].id, `context_type=pull_list&context_id=${listId}`, { includeReturnTo: false })"
                        class="bg-green-600 hover:bg-green-500 text-white px-6 py-3 rounded-full font-bold transition-colors flex items-center gap-2 shadow-lg hover:shadow-green-900/20">
                         <span class="text-xl">▶</span> Start Reading
                     </a>
@@ -73,7 +86,7 @@
     </div>
 
     <div x-show="activeTab === 'items'">
-    <div x-show="!loading" class="space-y-2" id="sortable-list">
+    <div x-show="!loading" class="space-y-2" id="sortable-list" x-ref="sortableList">
         <template x-for="(item, index) in list?.items" :key="item.item_id">
 
             <div class="bg-gray-800/50 border border-gray-700 rounded p-3 flex items-center gap-4 hover:bg-gray-800 transition-colors group"
@@ -211,6 +224,10 @@
 
 <script>
 function pullListDetail() {
+    let savedOrderIds = [];
+    let sortSaveTimeout = null;
+    let reorderRequestId = 0;
+
     return {
         listId: {{ list_id }},
         list: null,
@@ -226,7 +243,7 @@ function pullListDetail() {
 
         async init() {
             await this.loadList();
-            this.initSortable();
+            this.$nextTick(() => this.initSortable());
         },
 
         async loadList() {
@@ -234,6 +251,8 @@ function pullListDetail() {
                 const res = await fetch(window.parker.route('pull_lists.detail', { list_id: this.listId }));
                 if(res.ok) {
                     this.list = await res.json();
+                    savedOrderIds = this.list.items.map((item) => item.id);
+                    this.$nextTick(() => this.updateStartReadingLink(savedOrderIds));
                     document.title = `${this.list.name} - Parker`;
                 }
             } catch(e) { console.error(e); }
@@ -241,40 +260,115 @@ function pullListDetail() {
         },
 
         initSortable() {
-            const el = document.getElementById('sortable-list');
+            const el = this.$refs.sortableList;
+            if (!el || typeof Sortable === 'undefined') return;
+
+            if (this.sortable) {
+                this.sortable.destroy();
+            }
+
             this.sortable = new Sortable(el, {
                 draggable: '[data-id]',
                 handle: '.drag-handle',
                 animation: 150,
+                direction: 'vertical',
+                forceFallback: true,
+                fallbackOnBody: true,
+                fallbackTolerance: 3,
+                swapThreshold: 0.65,
+                invertSwap: true,
+                invertedSwapThreshold: 0.75,
                 ghostClass: 'sortable-ghost',
+                chosenClass: 'sortable-chosen',
                 dragClass: 'sortable-drag',
-                onEnd: (evt) => { this.saveOrder(); }
+                fallbackClass: 'sortable-fallback',
+                onUpdate: () => { this.queueSortSave(); }
             });
         },
 
-        async saveOrder() {
+        sameOrder(a, b) {
+            return a.length === b.length && a.every((id, index) => id === b[index]);
+        },
 
-            // Get the new order of IDs from the DOM (from Sortable)
-            const newOrderIds = this.sortable.toArray(); // returns data-id values
+        restoreSavedOrder(orderIds = savedOrderIds) {
+            if (this.sortable) {
+                this.sortable.sort(orderIds.map((id) => id.toString()));
+            }
+            this.updateStartReadingLink(orderIds);
+        },
+
+        getCurrentOrderIds() {
+            const el = this.$refs.sortableList;
+            if (!el) return [];
+
+            return Array.from(el.querySelectorAll(':scope > [data-id]'))
+                .map((row) => Number(row.dataset.id))
+                .filter((id) => Number.isInteger(id));
+        },
+
+        updateStartReadingLink(orderIds) {
+            if (!orderIds.length || !this.$refs.startReadingLink) return;
+
+            this.$refs.startReadingLink.href = window.parker.readerRoute(
+                orderIds[0],
+                `context_type=pull_list&context_id=${this.listId}`,
+                { includeReturnTo: false }
+            );
+        },
+
+        afterSortableDrop() {
+            return new Promise((resolve) => {
+                requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(resolve, 0)));
+            });
+        },
+
+        queueSortSave() {
+            if (sortSaveTimeout) {
+                clearTimeout(sortSaveTimeout);
+            }
+
+            sortSaveTimeout = setTimeout(() => {
+                sortSaveTimeout = null;
+                this.handleSortEnd();
+            }, 0);
+        },
+
+        async handleSortEnd() {
+            await this.afterSortableDrop();
+
+            const newOrderIds = this.getCurrentOrderIds();
+            const previousOrderIds = [...savedOrderIds];
+
+            if (this.sameOrder(newOrderIds, previousOrderIds)) return;
+
+            if (newOrderIds.length !== previousOrderIds.length) {
+                this.restoreSavedOrder(previousOrderIds);
+                return;
+            }
+
+            const requestId = ++reorderRequestId;
+            savedOrderIds = [...newOrderIds];
+            this.updateStartReadingLink(newOrderIds);
+
             try {
 
-                await fetch(window.parker.route('pull_lists.reorder_list_items', { list_id: this.listId }), {
+                const res = await fetch(window.parker.route('pull_lists.reorder_list_items', { list_id: this.listId }), {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ comic_ids: newOrderIds })
                 });
 
-                // Synchronize Alpine's internal state
-                // Map the new ID list back to the original item objects.
-                // This updates 'this.list.items', which automatically fixes the
-                // "Start Reading" button (list.items[0]) to point to the new top item.
-
-                // Create a quick lookup map
-                const itemMap = new Map(this.list.items.map(i => [i.id.toString(), i]));
-
-                // Reconstruct the array in the new order
-                this.list.items = newOrderIds.map(id => itemMap.get(id)).filter(i => i);
-            } catch(e) { console.error('Reorder failed', e); this.loadList(); }
+                if (!res.ok) {
+                    throw new Error(`Reorder failed with status ${res.status}`);
+                }
+            } catch(e) {
+                console.error('Reorder failed', e);
+                if (requestId === reorderRequestId) {
+                    savedOrderIds = previousOrderIds;
+                    this.restoreSavedOrder(previousOrderIds);
+                }
+                if(window.parker) window.parker.showToast('Could not save new stack order', 'error');
+            }
         },
 
         // Trigger the Modal
@@ -294,6 +388,8 @@ function pullListDetail() {
 
                     if(res.ok) {
                         this.list.items = this.list.items.filter(i => i.id !== comicId);
+                        savedOrderIds = savedOrderIds.filter(id => id !== comicId);
+                        this.updateStartReadingLink(savedOrderIds);
                         window.parker.showToast('Item removed', 'success');
                     }
                 } catch(e) { console.error(e); }
