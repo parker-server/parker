@@ -8,7 +8,7 @@ import os
 from app.config import settings
 from app.core.settings_loader import get_system_setting
 from app.core.path_utils import resolve_absolute_path
-from app.models.tags import Character, Team, Location
+from app.models.tags import Character, Team, Location, Genre
 from app.models.credits import Person
 from app.models.comic import Comic, Volume
 from app.models.job import JobStatus, ScanJob
@@ -55,6 +55,11 @@ class MaintenanceService:
             "characters": 0,
             "teams": 0,
             "locations": 0,
+            "genres": 0,
+            "duplicate_characters": 0,
+            "duplicate_teams": 0,
+            "duplicate_locations": 0,
+            "duplicate_genres": 0,
             "people": 0,
             "empty_lists": 0,
             "empty_collections": 0
@@ -90,6 +95,9 @@ class MaintenanceService:
 
             self.logger.info("Performing deep global cleanup (Tags, People, Collections)...")
 
+            duplicate_stats = self.cleanup_duplicate_tags()
+            stats.update(duplicate_stats)
+
             # 3. Clean Tags (Characters)
             stats["characters"] = self.db.query(Character).filter(~Character.comics.any()).delete(synchronize_session=False)
             self.db.commit()  # Yield Lock
@@ -102,11 +110,15 @@ class MaintenanceService:
             stats["locations"] = self.db.query(Location).filter(~Location.comics.any()).delete(synchronize_session=False)
             self.db.commit()  # Yield Lock
 
-            # 6. Clean People
+            # 6. Clean Genres
+            stats["genres"] = self.db.query(Genre).filter(~Genre.comics.any()).delete(synchronize_session=False)
+            self.db.commit()  # Yield Lock
+
+            # 7. Clean People
             stats["people"] = self.db.query(Person).filter(~Person.credits.any()).delete(synchronize_session=False)
             self.db.commit()  # Yield Lock
 
-            # 7. Clean Empty Containers
+            # 8. Clean Empty Containers
             # Scoped to "comicinfo" only -- never "manual" (a user may deliberately
             # keep an empty one) and never "cbl" (CBL list lifecycle is owned by
             # CBLSourceService.rebuild()/delete(); this cleanup job never rebuilds
@@ -124,6 +136,47 @@ class MaintenanceService:
             self.logger.info(f"Skipping deep tag cleanup for scoped scan (Library {library_id})")
 
         return stats
+
+    def cleanup_duplicate_tags(self) -> dict:
+        """Merge case-insensitive duplicate tags while preserving comic links."""
+        stats = {
+            "duplicate_characters": self._merge_case_insensitive_tag_duplicates(Character, "characters"),
+            "duplicate_teams": self._merge_case_insensitive_tag_duplicates(Team, "teams"),
+            "duplicate_locations": self._merge_case_insensitive_tag_duplicates(Location, "locations"),
+            "duplicate_genres": self._merge_case_insensitive_tag_duplicates(Genre, "genres"),
+        }
+
+        if any(stats.values()):
+            self.db.commit()
+
+        return stats
+
+    def _merge_case_insensitive_tag_duplicates(self, model, comic_relation_name: str) -> int:
+        grouped_tags = {}
+        for tag in self.db.query(model).order_by(model.id).all():
+            grouped_tags.setdefault(tag.name.casefold(), []).append(tag)
+
+        merged_count = 0
+        for tags in grouped_tags.values():
+            if len(tags) < 2:
+                continue
+
+            canonical = tags[0]
+            for duplicate in tags[1:]:
+                for comic in list(duplicate.comics):
+                    comic_tags = getattr(comic, comic_relation_name)
+                    if canonical not in comic_tags:
+                        comic_tags.append(canonical)
+                    if duplicate in comic_tags:
+                        comic_tags.remove(duplicate)
+
+                self.db.delete(duplicate)
+                merged_count += 1
+
+        if merged_count:
+            self.db.flush()
+
+        return merged_count
 
     def cleanup_missing_files(self, library_id: int = None) -> list[int]:
         """

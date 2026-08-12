@@ -1,120 +1,114 @@
+from sqlalchemy import func
 from sqlalchemy.orm import Session
-from typing import List, Dict
+from typing import List, Dict, TypeVar
 from app.models import Character, Team, Location, Genre
+
+TagModel = TypeVar("TagModel", Character, Team, Location, Genre)
+
 
 class TagService:
     """Service for managing tags with Caching and Deferred Commits"""
 
     def __init__(self, db: Session):
         self.db = db
-        # Cache to store objects by name to avoid DB lookups
+        # Cache to store objects by normalized name to avoid DB lookups
         self.character_cache: Dict[str, Character] = {}
         self.team_cache: Dict[str, Team] = {}
         self.location_cache: Dict[str, Location] = {}
         self.genre_cache: Dict[str, Genre] = {}
 
-    def get_or_create_character(self, name: str) -> Character:
+    def _normalize_key(self, name: str) -> str:
+        return name.casefold()
+
+    def _parse_tag_names(self, names: str) -> List[str]:
+        if not names:
+            return []
+
+        unique_names = []
+        seen_keys = set()
+        for raw_name in names.split(','):
+            name = raw_name.strip()
+            if not name:
+                continue
+
+            key = self._normalize_key(name)
+            if key in seen_keys:
+                continue
+
+            seen_keys.add(key)
+            unique_names.append(name)
+
+        return unique_names
+
+    def _get_or_create_tag(
+        self,
+        model: type[TagModel],
+        cache: Dict[str, TagModel],
+        name: str,
+    ) -> TagModel | None:
         name = name.strip()
         if not name:
             return None
 
-        # 1. Check Cache
-        if name in self.character_cache:
-            return self.character_cache[name]
+        key = self._normalize_key(name)
+        if key in cache:
+            return cache[key]
 
-        # 2. Check DB
-        character = self.db.query(Character).filter(Character.name == name).first()
-
-        if not character:
-            # 3. Create (Flush only)
-            character = Character(name=name)
-            self.db.add(character)
+        tag = (
+            self.db.query(model)
+            .filter(func.lower(model.name) == key)
+            .order_by(model.id)
+            .first()
+        )
+        if not tag:
+            tag = model(name=name)
+            self.db.add(tag)
             self.db.flush()  # Generate ID without disk write
 
-        # 4. Update Cache
-        self.character_cache[name] = character
-        return character
+        cache[key] = tag
+        return tag
+
+    def get_or_create_character(self, name: str) -> Character | None:
+        return self._get_or_create_tag(Character, self.character_cache, name)
 
     def get_or_create_characters(self, names: str) -> List[Character]:
-        if not names:
-            return []
-        name_list = [n.strip() for n in names.split(',') if n.strip()]
-        # Deduplicate
-        unique_names = list(dict.fromkeys(name_list))
-        return [self.get_or_create_character(n) for n in unique_names if n]
+        unique_names = self._parse_tag_names(names)
+        return [
+            character
+            for n in unique_names
+            if (character := self.get_or_create_character(n)) is not None
+        ]
 
-    def get_or_create_team(self, name: str) -> Team:
-        name = name.strip()
-        if not name:
-            return None
-
-        if name in self.team_cache:
-            return self.team_cache[name]
-
-        team = self.db.query(Team).filter(Team.name == name).first()
-        if not team:
-            team = Team(name=name)
-            self.db.add(team)
-            self.db.flush()
-
-        self.team_cache[name] = team
-        return team
+    def get_or_create_team(self, name: str) -> Team | None:
+        return self._get_or_create_tag(Team, self.team_cache, name)
 
     def get_or_create_teams(self, names: str) -> List[Team]:
-        if not names:
-            return []
-        name_list = [n.strip() for n in names.split(',') if n.strip()]
-        unique_names = list(dict.fromkeys(name_list))
-        return [self.get_or_create_team(n) for n in unique_names if n]
+        unique_names = self._parse_tag_names(names)
+        return [
+            team
+            for n in unique_names
+            if (team := self.get_or_create_team(n)) is not None
+        ]
 
-    def get_or_create_location(self, name: str) -> Location:
-        name = name.strip()
-        if not name:
-            return None
-
-        if name in self.location_cache:
-            return self.location_cache[name]
-
-        location = self.db.query(Location).filter(Location.name == name).first()
-        if not location:
-            location = Location(name=name)
-            self.db.add(location)
-            self.db.flush()
-
-        self.location_cache[name] = location
-        return location
+    def get_or_create_location(self, name: str) -> Location | None:
+        return self._get_or_create_tag(Location, self.location_cache, name)
 
     def get_or_create_locations(self, names: str) -> List[Location]:
-        if not names:
-            return []
-        name_list = [n.strip() for n in names.split(',') if n.strip()]
-        unique_names = list(dict.fromkeys(name_list))
-        return [self.get_or_create_location(n) for n in unique_names if n]
+        unique_names = self._parse_tag_names(names)
+        return [
+            location
+            for n in unique_names
+            if (location := self.get_or_create_location(n)) is not None
+        ]
 
-
-    def get_or_create_genre(self, name: str) -> Genre:
-
-        name = name.strip()
-        if not name:
-            return None
-
-        if name in self.genre_cache:
-            return self.genre_cache[name]
-
-        genre = self.db.query(Genre).filter(Genre.name == name).first()
-        if not genre:
-            genre = Genre(name=name)
-            self.db.add(genre)
-            self.db.flush()
-
-        self.genre_cache[name] = genre
-        return genre
+    def get_or_create_genre(self, name: str) -> Genre | None:
+        return self._get_or_create_tag(Genre, self.genre_cache, name)
 
     def get_or_create_genres(self, names: str) -> List[Genre]:
-        if not names:
-            return []
-
-        name_list = [n.strip() for n in names.split(',') if n.strip()]
-        unique_names = list(dict.fromkeys(name_list))
-        return [self.get_or_create_genre(n) for n in unique_names if n]
+        unique_names = self._parse_tag_names(names)
+        return [
+            genre
+            for n in unique_names
+            if (genre := self.get_or_create_genre(n)) is not None
+        ]
 

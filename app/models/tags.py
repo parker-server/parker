@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Table
+from sqlalchemy import Column, Integer, String, ForeignKey, Table, Index, func
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -36,6 +36,7 @@ class Character(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False, index=True)
+    __table_args__ = (Index("ux_characters_name_lower", func.lower(name), unique=True),)
 
     # Relationship back to comics
     comics = relationship("Comic", secondary=comic_characters, back_populates="characters")
@@ -46,6 +47,7 @@ class Team(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False, index=True)
+    __table_args__ = (Index("ux_teams_name_lower", func.lower(name), unique=True),)
 
     # Relationship back to comics
     comics = relationship("Comic", secondary=comic_teams, back_populates="teams")
@@ -56,6 +58,7 @@ class Location(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False, index=True)
+    __table_args__ = (Index("ux_locations_name_lower", func.lower(name), unique=True),)
 
     # Relationship back to comics
     comics = relationship("Comic", secondary=comic_locations, back_populates="locations")
@@ -66,6 +69,7 @@ class Genre(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False)
+    __table_args__ = (Index("ux_genres_name_lower", func.lower(name), unique=True),)
 
     # Backref
     comics = relationship("Comic", secondary=comic_genres, back_populates="genres")

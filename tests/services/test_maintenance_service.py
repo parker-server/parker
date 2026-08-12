@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
 import pytest
+from sqlalchemy import text
 
 from app.models.activity_log import ActivityLog
 from app.models.collection import Collection, CollectionItem
@@ -14,7 +15,7 @@ from app.models.library import Library
 from app.models.library_root import LibraryRoot
 from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.series import Series
-from app.models.tags import Character, Location, Team
+from app.models.tags import Character, Genre, Location, Team
 from app.models.user import User
 from app.services.maintenance import MaintenanceService
 import app.services.maintenance as maintenance_module
@@ -84,6 +85,10 @@ def test_cleanup_orphans_global_removes_only_orphans(db, tmp_path):
     loc_orphan = Location(name="loc-orphan")
     keep_comic.locations.append(loc_keep)
 
+    genre_keep = Genre(name="genre-keep")
+    genre_orphan = Genre(name="genre-orphan")
+    keep_comic.genres.append(genre_keep)
+
     person_keep = Person(name="person-keep")
     person_orphan = Person(name="person-orphan")
 
@@ -109,6 +114,8 @@ def test_cleanup_orphans_global_removes_only_orphans(db, tmp_path):
         team_orphan,
         loc_keep,
         loc_orphan,
+        genre_keep,
+        genre_orphan,
         person_keep,
         person_orphan,
         rl_auto_empty,
@@ -137,6 +144,11 @@ def test_cleanup_orphans_global_removes_only_orphans(db, tmp_path):
         "characters": 1,
         "teams": 1,
         "locations": 1,
+        "genres": 1,
+        "duplicate_characters": 0,
+        "duplicate_teams": 0,
+        "duplicate_locations": 0,
+        "duplicate_genres": 0,
         "people": 1,
         "empty_lists": 1,
         "empty_collections": 1,
@@ -150,6 +162,7 @@ def test_cleanup_orphans_global_removes_only_orphans(db, tmp_path):
     assert db.query(Character).filter(Character.name == "char-orphan").count() == 0
     assert db.query(Team).filter(Team.name == "team-orphan").count() == 0
     assert db.query(Location).filter(Location.name == "loc-orphan").count() == 0
+    assert db.query(Genre).filter(Genre.name == "genre-orphan").count() == 0
     assert db.query(Person).filter(Person.name == "person-orphan").count() == 0
 
     assert db.query(ReadingList).filter(ReadingList.name == "rl-auto-empty").count() == 0
@@ -181,6 +194,7 @@ def test_cleanup_orphans_scoped_only_touches_target_library(db, tmp_path):
 
     # Global deep cleanup entities should be skipped in scoped mode
     char_orphan = Character(name="scoped-char-orphan")
+    genre_orphan = Genre(name="scoped-genre-orphan")
 
     db.add_all([
         series_a_empty,
@@ -190,6 +204,7 @@ def test_cleanup_orphans_scoped_only_touches_target_library(db, tmp_path):
         vol_b_empty,
         series_b_no_vol,
         char_orphan,
+        genre_orphan,
     ])
     db.commit()
 
@@ -203,6 +218,11 @@ def test_cleanup_orphans_scoped_only_touches_target_library(db, tmp_path):
     assert stats["characters"] == 0
     assert stats["teams"] == 0
     assert stats["locations"] == 0
+    assert stats["genres"] == 0
+    assert stats["duplicate_characters"] == 0
+    assert stats["duplicate_teams"] == 0
+    assert stats["duplicate_locations"] == 0
+    assert stats["duplicate_genres"] == 0
     assert stats["people"] == 0
     assert stats["empty_lists"] == 0
     assert stats["empty_collections"] == 0
@@ -212,8 +232,57 @@ def test_cleanup_orphans_scoped_only_touches_target_library(db, tmp_path):
     assert db.query(Series).filter(Series.name == "b-empty").count() == 1
     assert db.query(Series).filter(Series.name == "b-no-vol").count() == 1
     assert db.query(Character).filter(Character.name == "scoped-char-orphan").count() == 1
+    assert db.query(Genre).filter(Genre.name == "scoped-genre-orphan").count() == 1
 
     service.logger.info.assert_called_with(f"Skipping deep tag cleanup for scoped scan (Library {lib_a.id})")
+
+
+@pytest.mark.parametrize(
+    ("model", "comic_relation_name", "stat_key", "index_name"),
+    [
+        (Character, "characters", "duplicate_characters", "ux_characters_name_lower"),
+        (Team, "teams", "duplicate_teams", "ux_teams_name_lower"),
+        (Location, "locations", "duplicate_locations", "ux_locations_name_lower"),
+        (Genre, "genres", "duplicate_genres", "ux_genres_name_lower"),
+    ],
+)
+def test_cleanup_duplicate_tags_merges_case_insensitive_duplicates(
+    db,
+    tmp_path,
+    model,
+    comic_relation_name,
+    stat_key,
+    index_name,
+):
+    db.execute(text(f"DROP INDEX IF EXISTS {index_name}"))
+    db.commit()
+
+    lib = _create_library(db, f"maint-duplicate-{comic_relation_name}", tmp_path)
+    comic_with_both = _create_comic(db, lib, f"{comic_relation_name}-both", "both.cbz")
+    comic_with_duplicate = _create_comic(db, lib, f"{comic_relation_name}-dupe", "dupe.cbz")
+    comic_with_upper = _create_comic(db, lib, f"{comic_relation_name}-upper", "upper.cbz")
+
+    canonical = model(name="Action")
+    duplicate = model(name="action")
+    upper_duplicate = model(name="ACTION")
+    unrelated = model(name="Adventure")
+
+    getattr(comic_with_both, comic_relation_name).extend([canonical, duplicate])
+    getattr(comic_with_duplicate, comic_relation_name).append(duplicate)
+    getattr(comic_with_upper, comic_relation_name).append(upper_duplicate)
+    db.add_all([canonical, duplicate, upper_duplicate, unrelated])
+    db.commit()
+
+    stats = MaintenanceService(db).cleanup_duplicate_tags()
+    db.expire_all()
+
+    assert stats[stat_key] == 2
+    assert sum(stats.values()) == 2
+    assert [tag.name for tag in db.query(model).order_by(model.id).all()] == ["Action", "Adventure"]
+
+    for comic in [comic_with_both, comic_with_duplicate, comic_with_upper]:
+        tag_names = [tag.name for tag in getattr(comic, comic_relation_name)]
+        assert tag_names == ["Action"]
 
 
 def test_cleanup_missing_files_scoped_with_batch_commits(db, tmp_path, monkeypatch):
