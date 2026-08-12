@@ -63,6 +63,35 @@ def _assert_series_allowed_for_user(series: Series, db, current_user) -> None:
         raise HTTPException(status_code=403, detail="Content restricted by age rating")
 
 
+def _visible_container_counts(
+        db,
+        item_model,
+        container_id_column,
+        container_ids,
+        parse_flag_column,
+        current_user,
+) -> dict[int, int]:
+    if not container_ids:
+        return {}
+
+    query = (
+        db.query(container_id_column, func.count(item_model.id))
+        .select_from(item_model)
+        .join(Comic, item_model.comic_id == Comic.id)
+        .join(Volume, Comic.volume_id == Volume.id)
+        .join(SeriesModel, Volume.series_id == SeriesModel.id)
+        .join(Library, SeriesModel.library_id == Library.id)
+        .filter(container_id_column.in_(container_ids), parse_flag_column == True)
+        .group_by(container_id_column)
+    )
+
+    if not current_user.is_superuser:
+        allowed_ids = [lib.id for lib in current_user.accessible_libraries]
+        query = query.filter(SeriesModel.library_id.in_(allowed_ids))
+
+    return {container_id: int(comic_count or 0) for container_id, comic_count in query.all()}
+
+
 def bulk_serialize_series(series_list: List[Series], db, current_user) -> List[dict]:
 
     if not series_list: return []
@@ -261,6 +290,22 @@ async def get_series_detail(series: SeriesDep, db: SessionDep, current_user: Cur
     related_collections = related_collections_query.distinct().all()
     related_reading_lists = related_reading_lists_query.distinct().all()
 
+    related_collection_counts = _visible_container_counts(
+        db,
+        CollectionItem,
+        CollectionItem.collection_id,
+        [collection.id for collection in related_collections],
+        Library.parse_collections,
+        current_user,
+    )
+    related_reading_list_counts = _visible_container_counts(
+        db,
+        ReadingListItem,
+        ReadingListItem.reading_list_id,
+        [reading_list.id for reading_list in related_reading_lists],
+        Library.parse_reading_lists,
+        current_user,
+    )
 
     # 6. Series Cover & Resume
     base_query = db.query(Comic).filter(Comic.volume_id.in_(volume_ids))
@@ -389,8 +434,24 @@ async def get_series_detail(series: SeriesDep, db: SessionDep, current_user: Cur
         "first_issue_id": first_issue.id if first_issue else None,
         "first_issue_summary": series.summary_override or (first_issue.summary if first_issue else None),
         "volumes": volumes_data,
-        "collections": [{"id": c.id, "name": c.name, "description": c.description} for c in related_collections],
-        "reading_lists": [{"id": l.id, "name": l.name, "description": l.description} for l in related_reading_lists],
+        "collections": [
+            {
+                "id": c.id,
+                "name": c.name,
+                "description": c.description,
+                "comic_count": related_collection_counts.get(c.id, 0),
+            }
+            for c in related_collections
+        ],
+        "reading_lists": [
+            {
+                "id": l.id,
+                "name": l.name,
+                "description": l.description,
+                "comic_count": related_reading_list_counts.get(l.id, 0),
+            }
+            for l in related_reading_lists
+        ],
         "story_arcs": story_arcs_data,
         "resume_to": {"comic_id": resume_comic_id, "status": read_status},
         "colors": colors,

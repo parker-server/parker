@@ -345,6 +345,7 @@ def test_series_detail_returns_enriched_payload(auth_client, db, normal_user):
             "id": data["collection"].id,
             "name": "Series Detail Collection",
             "description": "Collection desc",
+            "comic_count": 1,
         }
     ]
     assert payload["reading_lists"] == [
@@ -352,6 +353,7 @@ def test_series_detail_returns_enriched_payload(auth_client, db, normal_user):
             "id": data["reading_list"].id,
             "name": "Series Detail Reading List",
             "description": "Reading list desc",
+            "comic_count": 1,
         }
     ]
 
@@ -360,6 +362,73 @@ def test_series_detail_returns_enriched_payload(auth_client, db, normal_user):
     assert by_vol[data["vol1"].id]["read"] is True
     assert by_vol[data["vol2"].id]["first_issue_id"] == data["issue_two"].id
     assert by_vol[data["vol2"].id]["read"] is False
+
+
+def test_series_detail_related_container_counts_include_full_visible_container(auth_client, db, normal_user):
+    library = create_library_with_root(db, "series-detail-related-counts-lib", "/tmp/series-detail-related-counts-lib")
+    root = library.active_root
+
+    source_series = Series(name="Related Count Source", library=library)
+    source_volume = Volume(series=source_series, volume_number=1)
+    other_series = Series(name="Related Count Other", library=library)
+    other_volume = Volume(series=other_series, volume_number=1)
+    db.add_all([source_series, source_volume, other_series, other_volume])
+    db.flush()
+
+    source_comic = create_comic(
+        db,
+        source_volume,
+        root,
+        "related-count-source-1.cbz",
+        number="1",
+        title="Related Count Source #1",
+        filename="related-count-source-1.cbz",
+    )
+    other_comic = create_comic(
+        db,
+        other_volume,
+        root,
+        "related-count-other-1.cbz",
+        number="1",
+        title="Related Count Other #1",
+        filename="related-count-other-1.cbz",
+    )
+
+    collection = Collection(name="Related Count Collection", description="Collection count desc")
+    reading_list = ReadingList(name="Related Count Reading List", description="Reading list count desc")
+    db.add_all([collection, reading_list])
+    db.flush()
+
+    db.add_all([
+        CollectionItem(collection_id=collection.id, comic_id=source_comic.id),
+        CollectionItem(collection_id=collection.id, comic_id=other_comic.id),
+        ReadingListItem(reading_list_id=reading_list.id, comic_id=source_comic.id, position=1),
+        ReadingListItem(reading_list_id=reading_list.id, comic_id=other_comic.id, position=2),
+    ])
+
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    response = auth_client.get(f"/api/series/{source_series.id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["collections"] == [
+        {
+            "id": collection.id,
+            "name": "Related Count Collection",
+            "description": "Collection count desc",
+            "comic_count": 2,
+        }
+    ]
+    assert payload["reading_lists"] == [
+        {
+            "id": reading_list.id,
+            "name": "Related Count Reading List",
+            "description": "Reading list count desc",
+            "comic_count": 2,
+        }
+    ]
 
 
 def test_series_metadata_details_are_paginated(auth_client, db, normal_user):
