@@ -347,6 +347,29 @@ def test_admin_diagnostics_page_labels_sampled_library_count(admin_client, monke
     assert "Showing 5 of 12 libraries" in response.text
 
 
+def test_shared_nav_uses_parker_brand_for_custom_server_display_name(admin_client, monkeypatch):
+    def fake_get_system_setting(key, default=None):
+        if key == "general.app_name":
+            return "Fortress Comics"
+        return default
+
+    monkeypatch.setitem(templates.env.globals, "get_system_setting", fake_get_system_setting)
+
+    response = admin_client.get("/")
+
+    assert response.status_code == 200
+    body = response.text
+    assert 'title="Fortress Comics"' in body
+    assert (
+        '<span class="truncate bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent hover:from-blue-300 hover:to-indigo-300" title="Fortress Comics">\n'
+        "                            Parker\n"
+        "                        </span>"
+    ) in body
+    assert (
+        '<span class="ml-2 rounded-full border border-gray-700 bg-gray-800 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.18em] text-gray-300">'
+    ) not in body
+
+
 def test_login_page_uses_server_display_name_but_keeps_parker_branding(client, monkeypatch):
     def fake_get_system_setting(key, default=None):
         if key == "general.app_name":

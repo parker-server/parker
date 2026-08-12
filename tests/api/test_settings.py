@@ -380,3 +380,5 @@ def test_initialize_defaults_preserves_existing_custom_server_display_name(db):
     assert setting is not None
     assert setting.value == "Fortress Comics"
     assert setting.label == "Server Display Name"
+    assert "login and About pages" in setting.description
+    assert "Top navigation always uses Parker branding" in setting.description
