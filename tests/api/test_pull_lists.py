@@ -3,6 +3,7 @@ from app.models.comic import Volume
 from app.models.pull_list import PullList, PullListItem
 from app.models.series import Series
 from app.models.user import User
+from app.schemas.pull_list import PULL_LIST_DESCRIPTION_MAX_LENGTH, PULL_LIST_NAME_MAX_LENGTH
 from tests.factories import create_comic, create_library_with_root
 
 
@@ -205,6 +206,47 @@ def test_pull_list_update_and_delete_paths(auth_client, db, normal_user):
 
     delete_missing = auth_client.delete(f"/api/pull-lists/{plist.id}")
     assert delete_missing.status_code == 404
+
+
+def test_pull_list_create_and_update_validate_name_and_description(auth_client, db, normal_user):
+    create = auth_client.post(
+        "/api/pull-lists/",
+        json={"name": "  Trimmed Stack  ", "description": "   "},
+    )
+
+    assert create.status_code == 200
+    payload = create.json()
+    assert payload["name"] == "Trimmed Stack"
+    assert payload["description"] is None
+
+    plist = db.get(PullList, payload["id"])
+
+    update = auth_client.put(
+        f"/api/pull-lists/{plist.id}",
+        json={"name": "  Updated Stack  ", "description": "  optional notes  "},
+    )
+
+    assert update.status_code == 200
+    assert update.json()["name"] == "Updated Stack"
+    assert update.json()["description"] == "optional notes"
+
+    clear_description = auth_client.put(
+        f"/api/pull-lists/{plist.id}",
+        json={"description": "   "},
+    )
+
+    assert clear_description.status_code == 200
+    assert clear_description.json()["description"] is None
+
+    invalid_payloads = [
+        {"name": "   "},
+        {"name": "x" * (PULL_LIST_NAME_MAX_LENGTH + 1)},
+        {"name": "Valid", "description": "x" * (PULL_LIST_DESCRIPTION_MAX_LENGTH + 1)},
+    ]
+
+    for payload in invalid_payloads:
+        assert auth_client.post("/api/pull-lists/", json=payload).status_code == 422
+        assert auth_client.put(f"/api/pull-lists/{plist.id}", json=payload).status_code == 422
 
 
 def test_pull_list_add_item_paths(auth_client, db, normal_user):

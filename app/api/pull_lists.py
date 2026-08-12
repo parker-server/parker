@@ -155,9 +155,11 @@ def update_list(list_id: int, update_data: PullListUpdate, db: SessionDep, curre
     if not plist:
         raise HTTPException(status_code=404, detail="Pull list not found")
 
-    if update_data.name is not None:
+    updated_fields = update_data.model_fields_set
+
+    if "name" in updated_fields and update_data.name is not None:
         plist.name = update_data.name
-    if update_data.description is not None:
+    if "description" in updated_fields:
         plist.description = update_data.description
 
     db.commit()

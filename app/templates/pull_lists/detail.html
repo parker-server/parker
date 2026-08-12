@@ -197,11 +197,11 @@
          <div class="bg-gray-800 border border-gray-700 p-6 rounded-lg shadow-2xl w-full max-w-md">
             <h3 class="text-white font-bold text-xl mb-6">Edit Stack</h3>
             <div class="space-y-4">
-                <input x-ref="editNameInput" type="text" x-model="editName" class="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" @keydown.enter="submitEdit()">
-                <input type="text" x-model="editDesc" class="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" @keydown.enter="submitEdit()">
+                <input x-ref="editNameInput" type="text" x-model.trim="editName" required maxlength="120" placeholder="Stack name" aria-label="Stack name" class="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" @keydown.enter="submitEdit()">
+                <input type="text" x-model.trim="editDesc" maxlength="500" placeholder="Description (optional)" aria-label="Stack description (optional)" class="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500" @keydown.enter="submitEdit()">
                 <div class="flex gap-3 mt-6">
                     <button @click="showEditModal = false" class="flex-1 px-4 py-3 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg">Cancel</button>
-                    <button @click="submitEdit()" :disabled="!editName" class="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-4 py-3 rounded-lg font-bold">Save</button>
+                    <button @click="submitEdit()" :disabled="!editName.trim()" class="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-4 py-3 rounded-lg font-bold">Save</button>
                 </div>
             </div>
         </div>
@@ -309,7 +309,7 @@ function pullListDetail() {
         },
 
         async submitEdit() {
-            if(!this.editName) return;
+            if(!this.editName.trim()) return;
 
             try {
                 const res = await fetch(window.parker.route('pull_lists.update', { list_id: this.listId }), {

@@ -89,7 +89,9 @@
                     <input
                         x-ref="nameInput"
                         type="text"
-                        x-model="newListName"
+                        x-model.trim="newListName"
+                        required
+                        maxlength="120"
                         placeholder="e.g. Saturday Morning Reading"
                         class="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
                         @keydown.enter="submitCreateList()"
@@ -101,8 +103,9 @@
                     <label class="block text-xs text-gray-400 uppercase font-bold mb-2">Description (Optional)</label>
                      <input
                         type="text"
-                        x-model="newListDesc"
-                        placeholder="Brief description..."
+                        x-model.trim="newListDesc"
+                        maxlength="500"
+                        placeholder="Brief description (optional)..."
                         class="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
                         @keydown.enter="submitCreateList()"
                     >
@@ -114,7 +117,7 @@
                     </button>
                     <button
                         @click="submitCreateList()"
-                        :disabled="!newListName"
+                        :disabled="!newListName.trim()"
                         class="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-3 rounded-lg font-bold transition-colors shadow-lg">
                         Create Stack
                     </button>
@@ -158,7 +161,7 @@ function pullListIndex() {
         },
 
         async submitCreateList() {
-            if(!this.newListName) return;
+            if(!this.newListName.trim()) return;
 
             try {
                 const res = await fetch(window.parker.route('pull_lists.create'), {
