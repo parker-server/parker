@@ -130,7 +130,7 @@ def test_pull_list_create_modal_focuses_name_and_delete_confirms_with_keyboard(p
     )
 
     name_input = page.locator('input[placeholder="e.g. Saturday Morning Reading"]').first
-    desc_input = page.locator('input[placeholder="Brief description..."]')
+    desc_input = page.locator('input[placeholder="Brief description (optional)..."]')
     name_input.fill("Browser Stack")
     desc_input.fill("Keyboard-created browser test list")
     desc_input.press("Enter")

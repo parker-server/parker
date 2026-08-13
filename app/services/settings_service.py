@@ -49,10 +49,10 @@ def generate_color_options():
 def generate_cover_options():
     """Generate cover options from STATIC_COVERS dictionary"""
 
-    return [
+    return sorted([
         {"label": data["name"], "value": filename}
         for filename, data in STATIC_COVERS.items()
-    ]
+    ], key=lambda option: option["label"].casefold())
 
 class SettingsService:
     def __init__(self, db: SessionDep):
