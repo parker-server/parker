@@ -377,7 +377,7 @@ class SearchService:
     def _build_empty_condition(self, field: str, is_empty: bool):
         """Build condition for checking if field is empty/null"""
 
-        field_map = {
+        text_field_map = {
             'title': Comic.title,
             'publisher': Comic.publisher,
             'imprint': Comic.imprint,
@@ -385,9 +385,12 @@ class SearchService:
             'series_group': Comic.series_group,
             'summary': Comic.summary,
             'web': Comic.web,
-            'rating': Comic.community_rating,
             'age_rating': Comic.age_rating,
             'language': Comic.language_iso,
+        }
+        nullable_field_map = {
+            'year': Comic.year,
+            'rating': Comic.community_rating,
         }
 
         if field == 'parker_rating':
@@ -427,12 +430,19 @@ class SearchService:
             return ~Comic.pull_list_items.any() if is_empty else Comic.pull_list_items.any()
 
         # For simple fields
-        column = field_map.get(field)
+        column = text_field_map.get(field)
         if column is not None:
             if is_empty:
                 return or_(column.is_(None), column == '')
             else:
                 return and_(column.isnot(None), column != '')
+
+        column = nullable_field_map.get(field)
+        if column is not None:
+            if is_empty:
+                return column.is_(None)
+            else:
+                return column.isnot(None)
 
         return None
 

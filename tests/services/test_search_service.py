@@ -213,6 +213,46 @@ def test_search_service_filters_and_sorts_by_parker_rating(db, normal_user):
     assert results["results"][0]["parker_rating_count"] == 2
 
 
+def test_search_service_filters_missing_release_year(db, normal_user):
+    library = create_library_with_root(db, "search-missing-year-lib", "/tmp/search-missing-year-lib")
+    root = library.active_root
+    series = Series(name="Missing Year Search Series", library=library)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
+    db.flush()
+
+    missing_year = create_comic(
+        db, volume, root, "missing-year.cbz",
+        number="1",
+        title="Missing Year",
+        year=None,
+        filename="missing-year.cbz",
+    )
+    create_comic(
+        db, volume, root, "with-year.cbz",
+        number="2",
+        title="With Year",
+        year=2024,
+        filename="with-year.cbz",
+    )
+    db.commit()
+
+    service = SearchService(db, normal_user)
+    request = SearchRequest(
+        match="all",
+        filters=[SearchFilter(field="year", operator="is_empty")],
+        sort_by="series",
+        sort_order="asc",
+        limit=10,
+        offset=0,
+    )
+
+    results = service.search(request)
+
+    assert results["total"] == 1
+    assert [item["id"] for item in results["results"]] == [missing_year.id]
+
+
 def test_build_condition_handles_empty_operators_and_fts_routing(normal_user):
     service = SearchService(MagicMock(), normal_user)
     service._build_empty_condition = MagicMock(return_value="empty-expr")
@@ -361,6 +401,11 @@ def test_build_empty_condition_relationship_and_simple_paths(normal_user):
     non_empty_title = _sql(service._build_empty_condition("title", False))
     assert "comics.title IS NULL" in empty_title and "comics.title = ''" in empty_title
     assert "comics.title IS NOT NULL" in non_empty_title and "comics.title != ''" in non_empty_title
+
+    empty_year = _sql(service._build_empty_condition("year", True))
+    non_empty_year = _sql(service._build_empty_condition("year", False))
+    assert empty_year == "comics.year IS NULL"
+    assert non_empty_year == "comics.year IS NOT NULL"
 
     service._parker_rating_column = Comic.community_rating
     assert "comics.community_rating IS NULL" in _sql(service._build_empty_condition("parker_rating", True))
