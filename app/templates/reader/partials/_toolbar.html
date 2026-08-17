@@ -5,6 +5,21 @@
             <span class="mr-1">&times;</span> Close
         </button>
 
+        <span
+            x-show="isIncognito"
+            x-cloak
+            data-incognito-indicator
+            class="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-amber-400/60 bg-amber-500/15 text-amber-200 shadow-[0_0_16px_rgba(251,191,36,0.2)]"
+            title="Incognito Mode: progress and bookmark changes will not be saved."
+            aria-label="Incognito Mode: progress and bookmark changes will not be saved.">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 11h16M7 11l1.5-5h7L17 11" />
+                <circle cx="9" cy="15.5" r="2.5" stroke-width="2" />
+                <circle cx="15" cy="15.5" r="2.5" stroke-width="2" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.5 15.5h1" />
+            </svg>
+        </span>
+
         <div class="flex flex-col overflow-hidden">
             <span class="font-bold text-white truncate" x-text="`${meta.series_name} #${meta.number}`"></span>
 

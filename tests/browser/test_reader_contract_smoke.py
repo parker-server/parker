@@ -71,6 +71,13 @@ def test_reader_incognito_does_not_persist_progress(page, browser_server):
     )
 
     page.locator(".reader-container").wait_for()
+    page.locator(".nav-zone.center").click()
+    incognito_indicator = page.locator("[data-incognito-indicator]")
+    incognito_indicator.wait_for(state="visible")
+    assert incognito_indicator.get_attribute("title") == (
+        "Incognito Mode: progress and bookmark changes will not be saved."
+    )
+
     page.keyboard.press("ArrowRight")
     page.wait_for_function(
         "document.querySelector('.reader-container')._x_dataStack[0].currentPage === 1"
