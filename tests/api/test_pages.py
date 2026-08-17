@@ -520,6 +520,18 @@ def test_timestamp_views_use_shared_utc_local_date_helpers(admin_client):
         assert expected in response.text
 
 
+def test_dashboard_top_character_links_to_timeline(auth_client):
+    response = auth_client.get("/user/dashboard")
+
+    assert response.status_code == 200
+    body = response.text
+    assert (
+        "window.parker.route('pages.timelines', {}, "
+        "`type=character&name=${encodeURIComponent(char.name)}`)"
+    ) in body
+    assert "field=character&value=${encodeURIComponent(char.name)}&operator=equal" not in body
+
+
 def test_shared_datetime_helpers_assume_naive_api_timestamps_are_utc():
     script = Path("static/js/app.js").read_text(encoding="utf-8")
 

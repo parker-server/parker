@@ -455,7 +455,7 @@
                             <div class="flex items-center justify-between p-2 bg-gray-900/50 rounded">
                                 <div class="flex items-center gap-2">
                                     <span class="text-xs font-bold text-gray-500" x-text="`#${index + 1}`"></span>
-                                    <a :href="window.parker.route('pages.search', {}, `field=character&value=${encodeURIComponent(char.name)}&operator=equal`)">
+                                    <a :href="window.parker.route('pages.timelines', {}, `type=character&name=${encodeURIComponent(char.name)}`)">
                                         <span class="text-sm text-gray-300" x-text="char.name"></span>
                                     </a>
                                 </div>
