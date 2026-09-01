@@ -496,10 +496,14 @@ function comicDetail() {
                 return '#';
             }
 
+            const params = new URLSearchParams();
+            params.set('start_comic_id', this.comicId);
+            params.set('return_to', window.parker.currentRelativeUrl());
+
             return window.parker.route(
                 'pages.cover_browser',
                 { context_type: 'series', context_id: this.comic.series_id },
-                `start_comic_id=${encodeURIComponent(this.comicId)}`
+                params.toString()
             );
         },
 

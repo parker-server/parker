@@ -277,12 +277,14 @@ async def cover_browser_page(
         context_id: int,
         user: CurrentUser,
         start_comic_id: int = Query(0, ge=0),
+        return_to: str | None = Query(None),
 ):
     # Pass label logic or let JS fetch it
     return templates.TemplateResponse(request=request, name="comics/cover_browser.html", context={
         "context_type": context_type,
         "context_id": context_id,
         "start_comic_id": start_comic_id,
+        "return_to": return_to,
         "context_label": context_type.title() # Simple default
     })
 

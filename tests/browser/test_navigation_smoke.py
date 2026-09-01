@@ -189,7 +189,7 @@ def test_cover_browser_switches_view_modes_and_returns_to_reading_list(page, bro
 
 
 @pytest.mark.browser
-def test_comic_detail_cover_opens_series_cover_browser_at_current_cover(page, browser_server):
+def test_comic_detail_cover_opens_series_cover_browser_at_current_cover_and_returns(page, browser_server):
     seed = browser_server["seed"]
     page.goto(
         f"{browser_server['base_url']}/comics/{seed['active_comic_id']}",
@@ -199,9 +199,8 @@ def test_comic_detail_cover_opens_series_cover_browser_at_current_cover(page, br
     page.get_by_role("heading", name=f"{seed['series_name']} #{seed['active_comic_number']}").wait_for()
     page.locator("[data-comic-cover-browser-link]").click()
 
-    page.wait_for_url(
-        f"**/browse/series/{seed['series_id']}?start_comic_id={seed['active_comic_id']}"
-    )
+    page.wait_for_url(f"**/browse/series/{seed['series_id']}*start_comic_id={seed['active_comic_id']}*")
+    assert f"return_to=%2Fcomics%2F{seed['active_comic_id']}" in page.url
     page.wait_for_function(
         """
         (comicId) => {
@@ -214,6 +213,10 @@ def test_comic_detail_cover_opens_series_cover_browser_at_current_cover(page, br
     theater_label = page.locator(".theater-view .absolute.bottom-8 span")
     theater_label.wait_for()
     assert f"{seed['series_name']} #{seed['active_comic_number']}" in theater_label.inner_text()
+
+    page.get_by_role("button", name="Close").click()
+    page.wait_for_url(f"**/comics/{seed['active_comic_id']}")
+    page.get_by_role("heading", name=f"{seed['series_name']} #{seed['active_comic_number']}").wait_for()
 
 
 @pytest.mark.browser

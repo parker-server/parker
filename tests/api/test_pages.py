@@ -608,12 +608,14 @@ def test_reader_page_uses_modular_reader_shell(auth_client):
 
 def test_cover_browser_page_exposes_start_comic_id(auth_client):
     default_response = auth_client.get("/browse/series/123")
-    response = auth_client.get("/browse/series/123?start_comic_id=456")
+    response = auth_client.get("/browse/series/123?start_comic_id=456&return_to=%2Fcomics%2F456")
 
     assert default_response.status_code == 200
     assert "startComicId: 0" in default_response.text
+    assert "returnTo: null" in default_response.text
     assert response.status_code == 200
     assert "startComicId: 456" in response.text
+    assert 'returnTo: "/comics/456"' in response.text
 
 
 def test_comic_detail_page_gates_file_location_on_file_path(auth_client, db, normal_user):
