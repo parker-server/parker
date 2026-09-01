@@ -606,6 +606,16 @@ def test_reader_page_uses_modular_reader_shell(auth_client):
     assert 'x-on:click="toggleViewMode()"' in body
 
 
+def test_cover_browser_page_exposes_start_comic_id(auth_client):
+    default_response = auth_client.get("/browse/series/123")
+    response = auth_client.get("/browse/series/123?start_comic_id=456")
+
+    assert default_response.status_code == 200
+    assert "startComicId: 0" in default_response.text
+    assert response.status_code == 200
+    assert "startComicId: 456" in response.text
+
+
 def test_comic_detail_page_gates_file_location_on_file_path(auth_client, db, normal_user):
     library = create_library_with_root(db, "Comic Detail Page Library", "/tmp/comic-detail-page-library")
     series = Series(name="Comic Detail Page Series", library=library)

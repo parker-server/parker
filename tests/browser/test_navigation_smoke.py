@@ -170,7 +170,7 @@ def test_cover_browser_switches_view_modes_and_returns_to_reading_list(page, bro
     page.get_by_role("heading", name=seed["reading_list_name"]).wait_for()
     page.locator("a[title='Cover Browser']").click()
 
-    page.wait_for_url(f"**/browse/reading_list/{seed['reading_list_id']}")
+    page.wait_for_url(f"**/browse/reading_list/{seed['reading_list_id']}?start_comic_id=0")
     page.locator(".browser-container").wait_for()
     page.locator(f"text=1 / 3").wait_for()
 
@@ -186,6 +186,34 @@ def test_cover_browser_switches_view_modes_and_returns_to_reading_list(page, bro
 
     page.wait_for_url(f"**/reading-lists/{seed['reading_list_id']}")
     page.get_by_role("heading", name=seed["reading_list_name"]).wait_for()
+
+
+@pytest.mark.browser
+def test_comic_detail_cover_opens_series_cover_browser_at_current_cover(page, browser_server):
+    seed = browser_server["seed"]
+    page.goto(
+        f"{browser_server['base_url']}/comics/{seed['active_comic_id']}",
+        wait_until="networkidle",
+    )
+
+    page.get_by_role("heading", name=f"{seed['series_name']} #{seed['active_comic_number']}").wait_for()
+    page.locator("[data-comic-cover-browser-link]").click()
+
+    page.wait_for_url(
+        f"**/browse/series/{seed['series_id']}?start_comic_id={seed['active_comic_id']}"
+    )
+    page.wait_for_function(
+        """
+        (comicId) => {
+            const state = document.querySelector('.browser-container')?._x_dataStack?.[0];
+            return state?.mode === 'theater' && state?.currentImages?.[0]?.comic_id === comicId;
+        }
+        """,
+        arg=seed["active_comic_id"],
+    )
+    theater_label = page.locator(".theater-view .absolute.bottom-8 span")
+    theater_label.wait_for()
+    assert f"{seed['series_name']} #{seed['active_comic_number']}" in theater_label.inner_text()
 
 
 @pytest.mark.browser

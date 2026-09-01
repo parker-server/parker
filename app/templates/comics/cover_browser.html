@@ -160,6 +160,7 @@ function coverBrowser() {
     return {
         contextType: '{{ context_type }}',
         contextId: {{ context_id }},
+        startComicId: {{ start_comic_id }},
         contextLabel: '{{ context_label }}',
 
         mode: 'grid',
@@ -182,6 +183,7 @@ function coverBrowser() {
 
         async init() {
             await this.loadManifestPage(true);
+            await this.applyStartComicId();
 
             // Watch for zoom mode to center the scroll
             this.$watch('zoomMode', value => {
@@ -267,6 +269,25 @@ function coverBrowser() {
 
         loadMore() {
             return this.loadManifestPage(false);
+        },
+
+        async applyStartComicId() {
+            const requestedId = Number(this.startComicId);
+            if (!Number.isInteger(requestedId) || requestedId <= 0) return;
+
+            let index = this.items.findIndex(item => item.comic_id === requestedId);
+            while (index === -1 && this.hasMore && !this.loadError) {
+                const previousLength = this.items.length;
+                await this.loadMore();
+                index = this.items.findIndex(item => item.comic_id === requestedId);
+                if (this.items.length === previousLength) break;
+            }
+
+            if (index !== -1) {
+                this.currentIndex = index;
+                this.mode = 'theater';
+                this.prefetchAhead();
+            }
         },
 
         prefetchAhead() {
