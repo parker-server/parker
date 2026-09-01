@@ -303,6 +303,41 @@ def test_volume_detail_reports_missing_zero_index_and_metadata(auth_client, db, 
     }
 
 
+def test_volume_detail_first_issue_uses_issue_number_before_release_dates(auth_client, db, normal_user):
+    library = create_library_with_root(db, "volume-detail-release-date-lib", "/tmp/volume-detail-release-date-lib")
+    root = library.active_root
+    series = Series(name="Hawk & Dove", library=library)
+    volume = Volume(series=series, volume_number=2)
+    db.add_all([series, volume])
+    db.flush()
+
+    issues = [
+        create_comic(
+            db,
+            volume,
+            root,
+            f"volume-hd-v2-{number}.cbz",
+            number=str(number),
+            title=f"Hawk & Dove #{number}",
+            year=1988,
+            month={1: 7, 2: 8, 3: 9, 4: 5, 5: 6}[number],
+            day=1,
+            filename=f"volume-hd-v2-{number}.cbz",
+        )
+        for number in range(1, 6)
+    ]
+
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    response = auth_client.get(f"/api/volumes/{volume.id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["first_issue_id"] == issues[0].id
+    assert payload["resume_to"] == {"comic_id": issues[0].id, "status": "new"}
+
+
 def test_volume_detail_reports_parent_series_volume_count(auth_client, db, normal_user):
     library = create_library_with_root(db, "vol-count-lib", "/tmp/vol-count-lib")
     root = library.active_root

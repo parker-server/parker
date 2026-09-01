@@ -791,6 +791,100 @@ def test_cover_manifest_volume_and_series_reverse_sort(auth_client, db, normal_u
     assert [item["label"] for item in by_series.json()["items"]] == ["Countdown #4", "Countdown #1"]
 
 
+def test_cover_manifest_zero_hour_uses_reverse_issue_numbers_before_dates(auth_client, db, normal_user):
+    library, series, volume = _create_graph(
+        db,
+        lib_name="comic-manifest-zero-hour",
+        series_name="Zero Hour: Crisis in Time",
+    )
+
+    issues_by_number = {
+        number: create_comic(
+            db,
+            volume,
+            library.active_root,
+            f"zh-{number}.cbz",
+            number=str(number),
+            title=f"Zero Hour #{number}",
+            year=1994,
+            month=5 + number,
+            day=1,
+            thumbnail_path=f"/tmp/zh-{number}.webp",
+            filename=f"zh-{number}.cbz",
+        )
+        for number in range(0, 5)
+    }
+
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    expected_ids = [issues_by_number[number].id for number in (4, 3, 2, 1, 0)]
+
+    by_volume = auth_client.get(f"/api/comics/covers/manifest?context_type=volume&context_id={volume.id}")
+    assert by_volume.status_code == 200
+    assert [item["comic_id"] for item in by_volume.json()["items"]] == expected_ids
+
+    by_series = auth_client.get(f"/api/comics/covers/manifest?context_type=series&context_id={series.id}")
+    assert by_series.status_code == 200
+    assert [item["comic_id"] for item in by_series.json()["items"]] == expected_ids
+
+
+def test_cover_manifest_prefers_issue_number_before_release_dates(auth_client, db, normal_user):
+    library = create_library_with_root(db, "comic-manifest-release-date", "/tmp/comic-manifest-release-date")
+    root = library.active_root
+    series = Series(name="Hawk & Dove", library=library)
+    volume_two = Volume(series=series, volume_number=2)
+    volume_three = Volume(series=series, volume_number=3)
+    db.add_all([series, volume_two, volume_three])
+    db.flush()
+
+    volume_two_issues = [
+        create_comic(
+            db,
+            volume_two,
+            root,
+            f"hawk-dove-v2-{number}.cbz",
+            number=str(number),
+            title=f"Hawk & Dove #{number}",
+            year=1988,
+            month={1: 7, 2: 8, 3: 9, 4: 5, 5: 6}[number],
+            day=1,
+            thumbnail_path=f"/tmp/hawk-dove-v2-{number}.webp",
+            filename=f"hawk-dove-v2-{number}.cbz",
+        )
+        for number in range(1, 6)
+    ]
+    volume_three_issues = [
+        create_comic(
+            db,
+            volume_three,
+            root,
+            f"hawk-dove-v3-{number}.cbz",
+            number=str(number),
+            title=f"Hawk & Dove #{number}",
+            year=1991,
+            thumbnail_path=f"/tmp/hawk-dove-v3-{number}.webp",
+            filename=f"hawk-dove-v3-{number}.cbz",
+        )
+        for number in range(1, 11)
+    ]
+
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    by_volume = auth_client.get(f"/api/comics/covers/manifest?context_type=volume&context_id={volume_two.id}")
+    assert by_volume.status_code == 200
+    assert [item["comic_id"] for item in by_volume.json()["items"]] == [
+        comic.id for comic in volume_two_issues
+    ]
+
+    by_series = auth_client.get(f"/api/comics/covers/manifest?context_type=series&context_id={series.id}")
+    assert by_series.status_code == 200
+    assert [item["comic_id"] for item in by_series.json()["items"]] == [
+        comic.id for comic in [*volume_two_issues, *volume_three_issues]
+    ]
+
+
 def test_cover_manifest_paginates_large_contexts(auth_client, db, normal_user):
     library, _, volume = _create_graph(db, lib_name="comic-manifest-paged", series_name="Paged Manifest")
 
@@ -843,6 +937,8 @@ def test_cover_manifest_reading_list_pull_list_and_collection_ordering(auth_clie
         number="2",
         year=2022,
         title="Order #2",
+        alternate_series="Manifest Reading",
+        alternate_number="2",
         thumbnail_path="/tmp/order-2.webp",
         filename="order-2.cbz",
     )
@@ -851,6 +947,8 @@ def test_cover_manifest_reading_list_pull_list_and_collection_ordering(auth_clie
         number="1",
         year=2020,
         title="Order #1",
+        alternate_series="Manifest Reading",
+        alternate_number="1",
         thumbnail_path="/tmp/order-1.webp",
         filename="order-1.cbz",
     )
@@ -859,6 +957,8 @@ def test_cover_manifest_reading_list_pull_list_and_collection_ordering(auth_clie
         number="3",
         year=2021,
         title="Order #3",
+        alternate_series="Manifest Reading",
+        alternate_number="3",
         thumbnail_path="/tmp/order-3.webp",
         filename="order-3.cbz",
     )
