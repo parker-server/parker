@@ -308,8 +308,8 @@ async def get_series_detail(series: SeriesDep, db: SessionDep, current_user: Cur
     )
 
     # 6. Series Cover & Resume
-    base_query = db.query(Comic).filter(Comic.volume_id.in_(volume_ids))
-    first_issue = get_smart_cover(base_query, series_name=series.name)
+    base_query = db.query(Comic).join(Volume).filter(Volume.series_id == series.id)
+    first_issue = get_smart_cover(base_query, series_name=series.name, prefer_volume_order=True)
     colors = first_issue.color_palette or {} if first_issue else {}
 
     resume_comic_id, read_status = get_resume_target(

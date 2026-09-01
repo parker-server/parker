@@ -272,16 +272,17 @@ def get_format_filters():
     return is_plain, is_annual, is_special
 
 
-def get_smart_cover(base_query, series_name: str = None):
+def get_smart_cover(base_query, series_name: str = None, prefer_volume_order: bool = False):
     """
     Given a base query (filtered by series or volume), find the best cover.
     Priority:
     1. Plain Issue (not Annual/Special) AND Not Issue #0
-    2. Fallback: First issue by Year/Number
+    2. Fallback: First issue by Number/Date
 
     Args:
         base_query: The SQLAlchemy query object
         series_name: Optional name to trigger "Gimmick Detection" for reverse numbering.
+        prefer_volume_order: Sort by volume number first for full-series cover selection.
     """
     is_plain, _, _ = get_format_filters()
 
@@ -289,38 +290,34 @@ def get_smart_cover(base_query, series_name: str = None):
     sort_year = case((or_(Comic.year == None, Comic.year == -1), 9999), else_=Comic.year)
     sort_month = case((or_(Comic.month == None, Comic.month == -1), 99), else_=Comic.month)
     sort_day = case((or_(Comic.day == None, Comic.day == -1), 99), else_=Comic.day)
-    sort_number = cast(Comic.number, Float)
 
     # GIMMICK DETECTION
     # If this is a known reverse-numbering series, we want the HIGHEST number
     # (e.g., #51 or #4) to be the cover, not the lowest (#1 or #0).
-    number_direction = sort_number.asc()
-    if series_name and series_name.lower() in REVERSE_NUMBERING_SERIES:
-        number_direction = sort_number.desc()
+    is_reverse_series = bool(series_name and series_name.lower() in REVERSE_NUMBERING_SERIES)
+    number_order = get_issue_number_sort_keys(is_reverse_series)
+    sort_order = (
+        *number_order,
+        sort_year.asc(),
+        sort_month.asc(),
+        sort_day.asc(),
+    )
+    if prefer_volume_order:
+        sort_order = (Volume.volume_number.asc(), *sort_order)
 
     # PHASE 1: Strict "Best Cover" Search
     query = base_query.filter(is_plain) \
         .filter(Comic.number != '0') \
         .filter(not_(Comic.number.like('-%'))) \
         .filter(not_(Comic.number.like('%.5'))) \
-        .order_by(
-        sort_year.asc(),
-        sort_month.asc(),
-        sort_day.asc(),
-        number_direction  # Dynamic Sort Direction
-    )
+        .order_by(*sort_order)
 
     cover = query.first()
     if cover:
         return cover
 
     # PHASE 2: Fallback
-    return base_query.order_by(
-        sort_year.asc(),
-        sort_month.asc(),
-        sort_day.asc(),
-        number_direction
-    ).first()
+    return base_query.order_by(*sort_order).first()
 
 
 def get_reading_time(total_pages):
@@ -396,19 +393,17 @@ def get_resume_target(
         )
     }
 
-    number_direction = cast(Comic.number, Float).desc() if series_name and series_name.lower() in REVERSE_NUMBERING_SERIES else cast(Comic.number, Float).asc()
-    string_direction = Comic.number.desc() if series_name and series_name.lower() in REVERSE_NUMBERING_SERIES else Comic.number.asc()
+    is_reverse_series = bool(series_name and series_name.lower() in REVERSE_NUMBERING_SERIES)
+    number_order = get_issue_number_sort_keys(is_reverse_series)
 
     if series_id is not None:
         ordered_comics = comics_query.order_by(
             Volume.volume_number.asc(),
-            number_direction,
-            string_direction,
+            *number_order,
         ).all()
     else:
         ordered_comics = comics_query.order_by(
-            number_direction,
-            string_direction,
+            *number_order,
         ).all()
 
     ordered_ids = [comic.id for comic in ordered_comics]
@@ -440,6 +435,29 @@ def get_format_sort_index():
         (func.lower(Comic.format).in_(NON_PLAIN_FORMATS), 3),
         else_=1
     )
+
+
+def get_issue_number_sort_keys(reverse_numbering: bool = False):
+    """
+    Return SQLAlchemy ordering expressions for issue-number-first comic runs.
+    """
+    sort_number = cast(Comic.number, Float)
+    non_numeric_rank = case(
+        (
+            or_(
+                Comic.number == None,
+                Comic.number == "",
+                (sort_number == 0) & not_(Comic.number.in_(("0", "0.0", "0.00"))),
+            ),
+            1,
+        ),
+        else_=0,
+    )
+
+    if reverse_numbering:
+        return non_numeric_rank.asc(), sort_number.desc(), Comic.number.desc()
+
+    return non_numeric_rank.asc(), sort_number.asc(), Comic.number.asc()
 
 
 # Helper for Python Sorting

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response, FileResponse
-from sqlalchemy import Float, func, case, cast, or_
+from sqlalchemy import Float, func, case, or_
 from sqlalchemy.orm import joinedload, selectinload
 from typing import List, Annotated, Literal
 from pathlib import Path
@@ -8,7 +8,8 @@ import re
 import random
 from pydantic import BaseModel, Field
 
-from app.core.comic_helpers import (get_reading_time, get_format_sort_index, REVERSE_NUMBERING_SERIES,
+from app.core.comic_helpers import (get_reading_time, get_format_sort_index, get_issue_number_sort_keys,
+                                    REVERSE_NUMBERING_SERIES,
                                     assert_user_can_view_comic, get_comic_age_restriction,
                                     get_series_age_restriction, get_thumbnail_url, get_thumbnail_hash)
 from app.api.deps import SessionDep, CurrentUser, ComicDep
@@ -439,7 +440,7 @@ async def get_cover_manifest(
 ):
     """
     Returns a page of Comic IDs and Titles to power the Cover Browser.
-    Handles Reverse Numbering (Countdown) and Date Sorting (Zero Hour).
+    Handles known reverse-numbering runs like Countdown and Zero Hour.
     """
 
     # 1. Base Query
@@ -473,9 +474,6 @@ async def get_cover_manifest(
     sort_year = case((or_(Comic.year == None, Comic.year == -1), 9999), else_=Comic.year)
     sort_month = case((or_(Comic.month == None, Comic.month == -1), 99), else_=Comic.month)
     sort_day = case((or_(Comic.day == None, Comic.day == -1), 99), else_=Comic.day)
-    sort_number = cast(Comic.number, Float)
-
-
     # 3. Context Filtering & Sorting
     if context_type == "volume":
 
@@ -483,27 +481,30 @@ async def get_cover_manifest(
         # (Optimization: We could join, but explicit check is safer for logic branching)
         series_name = db.query(Series.name).join(Volume).filter(Volume.id == context_id).scalar()
 
-        number_direction = sort_number.asc()
-        if series_name and series_name.lower() in REVERSE_NUMBERING_SERIES:
-            number_direction = sort_number.desc()
+        is_reverse_series = bool(series_name and series_name.lower() in REVERSE_NUMBERING_SERIES)
+        format_weight = get_format_sort_index()
 
         query = query.filter(Comic.volume_id == context_id) \
-            .order_by(sort_year.asc(), sort_month.asc(), sort_day.asc(),
-            number_direction)
+            .order_by(
+                format_weight,
+                *get_issue_number_sort_keys(is_reverse_series),
+                sort_year.asc(),
+                sort_month.asc(),
+                sort_day.asc(),
+            )
 
     elif context_type == "series":
 
         # Check Name
         series_name = db.query(Series.name).filter(Series.id == context_id).scalar()
 
-        number_direction = sort_number.asc()
-        if series_name and series_name.lower() in REVERSE_NUMBERING_SERIES:
-            number_direction = sort_number.desc()
+        is_reverse_series = bool(series_name and series_name.lower() in REVERSE_NUMBERING_SERIES)
 
         format_weight = get_format_sort_index()
         query = query.filter(Volume.series_id == context_id) \
             .order_by(Volume.volume_number, format_weight,
-                      sort_year.asc(), sort_month.asc(), sort_day.asc(), number_direction)
+                      *get_issue_number_sort_keys(is_reverse_series),
+                      sort_year.asc(), sort_month.asc(), sort_day.asc())
 
     elif context_type == "reading_list":
         # Explicit Join: Join ReadingListItem to Comic

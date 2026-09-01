@@ -1,13 +1,18 @@
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
-from sqlalchemy import func, Float, case, or_, cast
+from sqlalchemy import func, Float, case, or_
 from sqlalchemy.orm import joinedload
 from typing import Annotated, Optional, Literal
 import re
 import logging
 
 from app.core.comic_helpers import assert_user_can_view_comic, get_comic_age_restriction
-from app.core.comic_helpers import get_format_sort_index, get_format_weight, REVERSE_NUMBERING_SERIES
+from app.core.comic_helpers import (
+    get_format_sort_index,
+    get_format_weight,
+    get_issue_number_sort_keys,
+    REVERSE_NUMBERING_SERIES,
+)
 from app.core.path_utils import resolve_absolute_path
 from app.api.deps import SessionDep, CurrentUser
 from app.models.comic import Comic, Volume
@@ -57,7 +62,7 @@ async def get_comic_reader_init(comic_id: int,
     """
     Get initialization data for the reader.
     OPTIMIZED: Uses tuple queries for sibling sorting instead of full object fetches.
-    Now handles Reverse Numbering (Countdown) and Date Sorting (Zero Hour).
+    Now handles reverse numbering and issue-number-first ordering with date tie-breakers.
     SECURED: Prevents reading restricted comics and navigation to restricted neighbors.
     """
     # 1. Fetch Comic with Series/Volume loaded (Avoids N+1 later)
@@ -77,12 +82,10 @@ async def get_comic_reader_init(comic_id: int,
     ids = []
     context_label = ""
 
-    # Define robust SQL Sort Keys (Date Priority)
+    # Define robust SQL sort keys for date tie-breakers.
     sort_year = case((or_(Comic.year == None, Comic.year == -1), 9999), else_=Comic.year)
     sort_month = case((or_(Comic.month == None, Comic.month == -1), 99), else_=Comic.month)
     sort_day = case((or_(Comic.day == None, Comic.day == -1), 99), else_=Comic.day)
-    sort_number = cast(Comic.number, Float)
-
     # --- PREPARE NEIGHBOR FILTER ---
     # FIX: Use Whitelist (get_comic_age_restriction) instead of Negated Blacklist.
     # This ensures Unrated (NULL) comics are included correctly.
@@ -156,10 +159,7 @@ async def get_comic_reader_init(comic_id: int,
 
         context_label = db.query(Series.name).filter(Series.id == context_id).scalar()
 
-        # Gimmick Detection
-        number_direction = sort_number.asc()
-        if context_label and context_label.lower() in REVERSE_NUMBERING_SERIES:
-            number_direction = sort_number.desc()
+        is_reverse_series = bool(context_label and context_label.lower() in REVERSE_NUMBERING_SERIES)
 
         # Use centralized helper
         format_weight = get_format_sort_index()
@@ -176,10 +176,10 @@ async def get_comic_reader_init(comic_id: int,
         items = query.order_by(
             Volume.volume_number,
             format_weight,  # Plain(1) -> Annual(2) -> Special(3)
+            *get_issue_number_sort_keys(is_reverse_series),
             sort_year.asc(),
             sort_month.asc(),
             sort_day.asc(),
-            number_direction
         ).all()
 
         ids = [i[0] for i in items]
@@ -193,9 +193,7 @@ async def get_comic_reader_init(comic_id: int,
         context_label = arc_name
 
         format_weight = get_format_sort_index()
-        number_direction = sort_number.asc()
-        if comic.volume.series.name.lower() in REVERSE_NUMBERING_SERIES:
-            number_direction = sort_number.desc()
+        is_reverse_series = comic.volume.series.name.lower() in REVERSE_NUMBERING_SERIES
 
         query = (
             db.query(Comic.id)
@@ -224,10 +222,10 @@ async def get_comic_reader_init(comic_id: int,
         items = query.order_by(
             Volume.volume_number,
             format_weight,
+            *get_issue_number_sort_keys(is_reverse_series),
             sort_year.asc(),
             sort_month.asc(),
             sort_day.asc(),
-            number_direction,
         ).all()
 
         ids = [i[0] for i in items]
@@ -259,49 +257,34 @@ async def get_comic_reader_init(comic_id: int,
         siblings = query.all()
 
         # Robust Python Sort Logic
-        # Priority: Format -> Date -> Number
+        # Priority: Format -> Number -> Date
         def smart_sort_key(x):
             # x[3]=year, x[4]=month, x[5]=day
             y = x[3] if x[3] is not None and x[3] != -1 else 9999
             m = x[4] if x[4] is not None and x[4] != -1 else 99
             d = x[5] if x[5] is not None and x[5] != -1 else 99
+            try:
+                issue_number = float(x[1])
+            except (TypeError, ValueError):
+                issue_number = None
 
-            # Number: Natural Sort
-            # If reverse, we rely on the caller to flip OR we handle it here.
-            # Since standard tuple sort is always ASC, handling reverse number
-            # within a multi-key tuple is tricky.
-            # Strategy: We Sort by Date/Format FIRST.
-            # If dates are identical (common in reverse series), we rely on number.
+            issue_rank = 0 if issue_number is not None else 1
+            ordered_issue_number = 999999 if issue_number is None else issue_number
+            if is_reverse and issue_number is not None:
+                ordered_issue_number = -issue_number
 
-            # To handle reverse number sort in a tuple, we negate the float value if possible,
-            # but natural_sort_key returns a list of strings/ints.
-            # Simplification: We will just sort standardly, then post-process?
-            # No, post-process is inefficient.
-
-            # Better: We trust that Gimmick Series usually have correct Dates (Countdown does).
-            # If Dates are present, Date Sort handles the ordering correctly (May comes before Dec).
-            # If Dates are missing, we fall back to Number.
-
-            return (get_format_weight(x[2]), y, m, d, natural_sort_key(x[1]))
+            return (
+                get_format_weight(x[2]),
+                issue_rank,
+                ordered_issue_number,
+                natural_sort_key(x[1]),
+                y,
+                m,
+                d,
+            )
 
         # Apply Sort
         siblings.sort(key=smart_sort_key)
-
-        # Gimmick Fallback:
-        # If dates were missing/identical, we might have 1, 2, 3...
-        # If it's a reverse series, we want 3, 2, 1.
-        # Since we can't easily inject DESC into the tuple sort above for just one field,
-        # we check if we should reverse the whole list?
-        # NO. We only want to reverse if the series is reverse AND dates didn't do the job.
-        # Actually, for Countdown, Dates DO the job.
-        # For a series WITHOUT dates that is reverse?
-        if is_reverse:
-            # Check if dates were effectively useless (all same or missing)
-            # If so, reverse the list to get 50, 49, 48...
-            # This is a heuristic, but covers the edge case.
-            unique_dates = {(x[3], x[4], x[5]) for x in siblings}
-            if len(unique_dates) <= 1:
-                siblings.reverse()
 
         ids = [x[0] for x in siblings]
 

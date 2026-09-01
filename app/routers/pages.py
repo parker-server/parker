@@ -271,11 +271,18 @@ async def year_in_review_page(request: Request, user: CurrentUser):
 
 
 @router.get("/browse/{context_type}/{context_id}", response_class=HTMLResponse, name="cover_browser")
-async def cover_browser_page(request: Request, context_type: str, context_id: int, user: CurrentUser):
+async def cover_browser_page(
+        request: Request,
+        context_type: str,
+        context_id: int,
+        user: CurrentUser,
+        start_comic_id: int = Query(0, ge=0),
+):
     # Pass label logic or let JS fetch it
     return templates.TemplateResponse(request=request, name="comics/cover_browser.html", context={
         "context_type": context_type,
         "context_id": context_id,
+        "start_comic_id": start_comic_id,
         "context_label": context_type.title() # Simple default
     })
 

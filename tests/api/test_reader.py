@@ -121,6 +121,89 @@ def test_reader_init_default_volume_reverse_and_page_count_fallback(auth_client,
     assert payload["context_label"] == "Countdown (vol 1)"
 
 
+def test_reader_init_zero_hour_uses_reverse_issue_numbers_before_dates(auth_client, db, normal_user):
+    library, series, volume = _create_graph(
+        db,
+        lib_name="reader-zero-hour-lib",
+        series_name="Zero Hour: Crisis in Time",
+    )
+
+    issues_by_number = {
+        number: _add_comic(
+            db,
+            volume,
+            number=str(number),
+            title=f"Zero Hour #{number}",
+            year=1994,
+            month=5 + number,
+            day=1,
+            page_count=12,
+        )
+        for number in range(0, 5)
+    }
+
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    default_response = auth_client.get(f"/api/reader/{issues_by_number[2].id}/read-init")
+    assert default_response.status_code == 200
+    default_payload = default_response.json()
+    assert default_payload["prev_comic_id"] == issues_by_number[3].id
+    assert default_payload["next_comic_id"] == issues_by_number[1].id
+    assert default_payload["context_position"] == 3
+
+    series_response = auth_client.get(
+        f"/api/reader/{issues_by_number[2].id}/read-init?context_type=series&context_id={series.id}"
+    )
+    assert series_response.status_code == 200
+    series_payload = series_response.json()
+    assert series_payload["prev_comic_id"] == issues_by_number[3].id
+    assert series_payload["next_comic_id"] == issues_by_number[1].id
+    assert series_payload["context_position"] == 3
+
+
+def test_reader_init_prefers_issue_number_before_release_dates(auth_client, db, normal_user):
+    library, series, volume = _create_graph(
+        db,
+        lib_name="reader-release-date-lib",
+        series_name="Hawk & Dove",
+        volume_number=2,
+    )
+
+    issues = [
+        _add_comic(
+            db,
+            volume,
+            number=str(number),
+            title=f"Hawk & Dove #{number}",
+            year=1988,
+            month={1: 7, 2: 8, 3: 9, 4: 5, 5: 6}[number],
+            day=1,
+            page_count=12,
+        )
+        for number in range(1, 6)
+    ]
+
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    default_response = auth_client.get(f"/api/reader/{issues[0].id}/read-init")
+    assert default_response.status_code == 200
+    default_payload = default_response.json()
+    assert default_payload["prev_comic_id"] is None
+    assert default_payload["next_comic_id"] == issues[1].id
+    assert default_payload["context_position"] == 1
+
+    series_response = auth_client.get(
+        f"/api/reader/{issues[0].id}/read-init?context_type=series&context_id={series.id}"
+    )
+    assert series_response.status_code == 200
+    series_payload = series_response.json()
+    assert series_payload["prev_comic_id"] is None
+    assert series_payload["next_comic_id"] == issues[1].id
+    assert series_payload["context_position"] == 1
+
+
 def test_reader_init_access_and_age_restriction_guards(auth_client, db, normal_user):
     library, _, volume = _create_graph(
         db,

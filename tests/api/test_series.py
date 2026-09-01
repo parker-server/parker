@@ -843,6 +843,103 @@ def test_series_detail_non_reverse_cover_logic_and_resume_default(auth_client, d
     assert payload["resume_to"]["comic_id"] == payload["first_issue_id"]
 
 
+def test_series_detail_zero_hour_uses_reverse_issue_numbers_before_dates(auth_client, db, normal_user):
+    library = create_library_with_root(db, "series-detail-zero-hour-lib", "/tmp/series-detail-zero-hour-lib")
+    root = library.active_root
+    series = Series(name="Zero Hour: Crisis in Time", library=library)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
+    db.flush()
+
+    issue_zero = create_comic(
+        db,
+        volume,
+        root,
+        "series-zh-0.cbz",
+        number="0",
+        title="Zero Hour #0",
+        year=1994,
+        month=5,
+        day=1,
+        filename="series-zh-0.cbz",
+    )
+    issue_four = create_comic(
+        db,
+        volume,
+        root,
+        "series-zh-4.cbz",
+        number="4",
+        title="Zero Hour #4",
+        year=1994,
+        month=9,
+        day=1,
+        filename="series-zh-4.cbz",
+    )
+
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    response = auth_client.get(f"/api/series/{series.id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    by_vol = {row["volume_id"]: row for row in payload["volumes"]}
+    assert payload["is_reverse_numbering"] is True
+    assert payload["first_issue_id"] == issue_four.id
+    assert by_vol[volume.id]["first_issue_id"] == issue_four.id
+    assert payload["resume_to"] == {"comic_id": issue_four.id, "status": "new"}
+    assert issue_zero.id != payload["first_issue_id"]
+
+
+def test_series_detail_first_issue_uses_issue_number_before_release_dates(auth_client, db, normal_user):
+    library = create_library_with_root(db, "series-detail-release-date-lib", "/tmp/series-detail-release-date-lib")
+    root = library.active_root
+    series = Series(name="Hawk & Dove", library=library)
+    volume_two = Volume(series=series, volume_number=2)
+    volume_three = Volume(series=series, volume_number=3)
+    db.add_all([series, volume_two, volume_three])
+    db.flush()
+
+    volume_two_issues = [
+        create_comic(
+            db,
+            volume_two,
+            root,
+            f"series-hd-v2-{number}.cbz",
+            number=str(number),
+            title=f"Hawk & Dove #{number}",
+            year=1988,
+            month={1: 7, 2: 8, 3: 9, 4: 5, 5: 6}[number],
+            day=1,
+            filename=f"series-hd-v2-{number}.cbz",
+        )
+        for number in range(1, 6)
+    ]
+    volume_three_issue_one = create_comic(
+        db,
+        volume_three,
+        root,
+        "series-hd-v3-1.cbz",
+        number="1",
+        title="Hawk & Dove #1",
+        year=1989,
+        filename="series-hd-v3-1.cbz",
+    )
+
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    response = auth_client.get(f"/api/series/{series.id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    by_vol = {row["volume_id"]: row for row in payload["volumes"]}
+    assert payload["first_issue_id"] == volume_two_issues[0].id
+    assert by_vol[volume_two.id]["first_issue_id"] == volume_two_issues[0].id
+    assert by_vol[volume_three.id]["first_issue_id"] == volume_three_issue_one.id
+    assert payload["resume_to"] == {"comic_id": volume_two_issues[0].id, "status": "new"}
+
+
 def test_series_detail_advances_to_next_issue_when_latest_progress_is_completed(auth_client, db, normal_user):
     library = create_library_with_root(db, "series-detail-next-lib", "/tmp/series-detail-next-lib")
     root = library.active_root
