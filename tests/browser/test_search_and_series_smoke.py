@@ -21,8 +21,12 @@ LONG_SUMMARY = (
     "A sprawling space-horror synopsis follows a salvage crew through a station full of sealed "
     "doors, bad choices, and worse biological surprises. The story tracks every desperate turn as "
     "the survivors realize the outbreak has already moved through the vents, the command deck, and "
-    "the only shuttle bay still attached to the station."
+    "the only shuttle bay still attached to the station. Every log entry adds another impossible "
+    "choice, another sealed corridor, and another reason the crew cannot trust the map, the captain, "
+    "or the emergency broadcast promising rescue from just beyond the quarantine line."
 )
+
+WIDE_FITTING_SUMMARY = " ".join(["ill"] * 95)
 
 
 def _set_series_summary(browser_server, summary):
@@ -248,6 +252,28 @@ def test_series_detail_read_more_appears_for_long_summary(page, browser_server):
     page.goto(f"{browser_server['base_url']}/series/{seed['series_id']}", wait_until="networkidle")
 
     page.get_by_role("button", name="Read More").wait_for()
+
+
+@pytest.mark.browser
+def test_series_detail_read_more_stays_hidden_when_long_summary_fits(page, browser_server):
+    assert len(WIDE_FITTING_SUMMARY) > 280
+    seed = browser_server["seed"]
+    _set_series_summary(browser_server, WIDE_FITTING_SUMMARY)
+
+    page.set_viewport_size({"width": 1600, "height": 900})
+    page.goto(f"{browser_server['base_url']}/series/{seed['series_id']}", wait_until="networkidle")
+
+    synopsis = page.locator("[data-series-synopsis]")
+    synopsis.wait_for()
+    page.wait_for_function(
+        """
+        () => {
+            const el = document.querySelector('[data-series-synopsis]');
+            return el && el.textContent.length > 280;
+        }
+        """
+    )
+    assert not page.get_by_role("button", name="Read More").is_visible()
 
 
 @pytest.mark.browser
