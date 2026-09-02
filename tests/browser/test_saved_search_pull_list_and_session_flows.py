@@ -617,6 +617,31 @@ def test_comic_detail_shows_existing_stack_membership(page, browser_server):
 
 
 @pytest.mark.browser
+def test_comic_detail_file_info_moves_to_bottom_on_mobile(page, browser_server):
+    seed = browser_server["seed"]
+    page.set_viewport_size({"width": 375, "height": 900})
+
+    page.goto(f"{browser_server['base_url']}/comics/{seed['active_comic_id']}", wait_until="networkidle")
+
+    title = page.get_by_role("heading", name=f"{seed['series_name']} #{seed['active_comic_number']}")
+    tags_heading = page.get_by_role("heading", name="Tags")
+    file_info_heading = page.get_by_role("heading", name="File Info")
+    title.wait_for()
+    tags_heading.wait_for()
+    file_info_heading.wait_for()
+
+    title_box = title.bounding_box()
+    tags_box = tags_heading.bounding_box()
+    file_info_box = file_info_heading.bounding_box()
+
+    assert title_box is not None
+    assert tags_box is not None
+    assert file_info_box is not None
+    assert file_info_box["y"] > title_box["y"]
+    assert file_info_box["y"] > tags_box["y"]
+
+
+@pytest.mark.browser
 def test_comic_detail_completed_issue_shows_read_again(page, browser_server):
     seed = browser_server["seed"]
 

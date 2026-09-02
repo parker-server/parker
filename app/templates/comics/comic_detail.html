@@ -44,7 +44,7 @@
 
         <div x-show="!loading && !error && comic" style="display: none;" class="grid grid-cols-1 md:grid-cols-3 gap-8">
 
-            <div class="md:col-span-1 space-y-6">
+            <div class="contents md:block md:col-span-1 md:space-y-6">
                 <a
                     :href="coverBrowserHref()"
                     data-comic-cover-browser-link
@@ -135,7 +135,7 @@
                     </div>
                 </template>
 
-                <div class="bg-gray-800 rounded-lg p-4 space-y-4 border border-gray-700">
+                <div class="order-last bg-gray-800 rounded-lg p-4 space-y-4 border border-gray-700">
                     <h3 class="font-bold text-gray-300 border-b border-gray-700 pb-2">File Info</h3>
 
                     <div x-show="comic?.file_path">
