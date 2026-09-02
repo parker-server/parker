@@ -151,10 +151,13 @@ class SearchService:
             # For safety, let's assume we might need to join Library if not already.
             # Ideally, ensure query joins Library if filtering by it.
             # Simplification: We filter on Library Name
-            return self._build_simple_field_condition(Library.name, operator, value, needs_join=Library)
+            library_condition = self._build_simple_field_condition(Library.name, operator, value)
+            if library_condition is None:
+                return None
+            return Series.library.has(library_condition)
 
         elif field in ['title', 'number', 'publisher', 'imprint', 'format',
-                       'year', 'series_group', 'web',
+                       'series_group', 'web',
                        'age_rating', 'language']:
             # Map string field name to Column object
             col_map = {
@@ -163,7 +166,6 @@ class SearchService:
                 'publisher': Comic.publisher,
                 'imprint': Comic.imprint,
                 'format': Comic.format,
-                'year': Comic.year,
                 'series_group': Comic.series_group,
                 'summary': Comic.summary,
                 'web': Comic.web,
@@ -171,6 +173,8 @@ class SearchService:
                 'language': Comic.language_iso,
             }
             return self._build_simple_field_condition(col_map[field], operator, value)
+        elif field == 'year':
+            return self._build_numeric_field_condition(Comic.year, operator, value)
         elif field == 'rating':
             return self._build_numeric_field_condition(Comic.community_rating, operator, value)
         elif field == 'parker_rating':
@@ -238,24 +242,27 @@ class SearchService:
         # if the relationship path is clear.
 
         # Ensure value is list for list-based operators
-        values = value if isinstance(value, list) else [value]
+        values = [v for v in (value if isinstance(value, list) else [value]) if v is not None]
+        if not values:
+            return None
         single_val = values[0] if values else None
 
         if operator == 'equal':
+            if len(values) > 1:
+                return column.in_(values)
             return column == single_val
         elif operator == 'not_equal':
+            if len(values) > 1:
+                return ~column.in_(values)
             return column != single_val
 
         elif operator == 'contains':
             # Case-insensitive partial match
-            return column.ilike(f"%{single_val}%")
+            return or_(*[column.ilike(f"%{v}%") for v in values])
         elif operator == 'does_not_contain':
-            return ~column.ilike(f"%{single_val}%")
-
-        # Logic for multiple values in simple fields (e.g. Publisher IN [DC, Marvel])
-        # Your 'must_contain' logic for simple fields is interesting (AND), but usually simple fields
-        # can only be one thing (Publisher can't be DC AND Marvel).
-        # We'll treat 'must_contain' as 'IN' for simple fields if logical.
+            return ~or_(*[column.ilike(f"%{v}%") for v in values])
+        elif operator == 'must_contain':
+            return and_(*[column.ilike(f"%{v}%") for v in values])
 
         return None
 
@@ -270,6 +277,11 @@ class SearchService:
 
         if operator == 'equal':  # Exact match on name
             return Comic.credits.any(and_(ComicCredit.role == role, ComicCredit.person.has(Person.name == values[0])))
+
+        elif operator == 'not_equal':  # Exact exclusion on name
+            return ~Comic.credits.any(
+                and_(ComicCredit.role == role, ComicCredit.person.has(Person.name.in_(values)))
+            )
 
         elif operator == 'contains': # OR Logic: Has "Moore" OR "Morrison"
             checks = [person_check(v) for v in values]
@@ -315,30 +327,39 @@ class SearchService:
     @staticmethod
     def _build_collection_condition(operator: str, value):
         """Build condition for collections"""
+        values = SearchService._coerce_filter_values(value)
+        if operator != 'is_empty' and operator != 'is_not_empty' and not values:
+            return None
+
         is_collection_metadata_enabled = Comic.volume.has(
             Volume.series.has(Series.library.has(Library.parse_collections == True))
         )
+        name_condition = SearchService._build_name_match_condition(Collection.name, operator, values)
 
-        if operator == 'equal':
+        if operator in ['equal', 'contains']:
             return and_(
                 is_collection_metadata_enabled,
                 Comic.collection_items.any(
-                    CollectionItem.collection.has(Collection.name == value)
+                    CollectionItem.collection.has(name_condition)
                 ),
             )
-        elif operator == 'contains':
-            if isinstance(value, list):
-                return and_(
-                    is_collection_metadata_enabled,
-                    Comic.collection_items.any(
-                        CollectionItem.collection.has(Collection.name.in_(value))
-                    ),
+        elif operator in ['not_equal', 'does_not_contain']:
+            return or_(
+                ~is_collection_metadata_enabled,
+                ~Comic.collection_items.any(
+                    CollectionItem.collection.has(name_condition)
+                ),
+            )
+        elif operator == 'must_contain':
+            conditions = [
+                Comic.collection_items.any(
+                    CollectionItem.collection.has(Collection.name == v)
                 )
+                for v in values
+            ]
             return and_(
                 is_collection_metadata_enabled,
-                Comic.collection_items.any(
-                    CollectionItem.collection.has(Collection.name.ilike(f"%{value}%"))
-                ),
+                *conditions,
             )
 
         return None
@@ -346,30 +367,39 @@ class SearchService:
     @staticmethod
     def _build_reading_list_condition(operator: str, value):
         """Build condition for reading lists"""
+        values = SearchService._coerce_filter_values(value)
+        if operator != 'is_empty' and operator != 'is_not_empty' and not values:
+            return None
+
         is_reading_list_metadata_enabled = Comic.volume.has(
             Volume.series.has(Series.library.has(Library.parse_reading_lists == True))
         )
+        name_condition = SearchService._build_name_match_condition(ReadingList.name, operator, values)
 
-        if operator == 'equal':
+        if operator in ['equal', 'contains']:
             return and_(
                 is_reading_list_metadata_enabled,
                 Comic.reading_list_items.any(
-                    ReadingListItem.reading_list.has(ReadingList.name == value)
+                    ReadingListItem.reading_list.has(name_condition)
                 ),
             )
-        elif operator == 'contains':
-            if isinstance(value, list):
-                return and_(
-                    is_reading_list_metadata_enabled,
-                    Comic.reading_list_items.any(
-                        ReadingListItem.reading_list.has(ReadingList.name.in_(value))
-                    ),
+        elif operator in ['not_equal', 'does_not_contain']:
+            return or_(
+                ~is_reading_list_metadata_enabled,
+                ~Comic.reading_list_items.any(
+                    ReadingListItem.reading_list.has(name_condition)
+                ),
+            )
+        elif operator == 'must_contain':
+            conditions = [
+                Comic.reading_list_items.any(
+                    ReadingListItem.reading_list.has(ReadingList.name == v)
                 )
+                for v in values
+            ]
             return and_(
                 is_reading_list_metadata_enabled,
-                Comic.reading_list_items.any(
-                    ReadingListItem.reading_list.has(ReadingList.name.ilike(f"%{value}%"))
-                ),
+                *conditions,
             )
 
         return None
@@ -407,6 +437,8 @@ class SearchService:
             return ~Comic.teams.any() if is_empty else Comic.teams.any()
         elif field == 'location':
             return ~Comic.locations.any() if is_empty else Comic.locations.any()
+        elif field == 'genre':
+            return ~Comic.genres.any() if is_empty else Comic.genres.any()
         elif field == 'collection':
             is_collection_metadata_enabled = Comic.volume.has(
                 Volume.series.has(Series.library.has(Library.parse_collections == True))
@@ -449,25 +481,54 @@ class SearchService:
 
     def _build_pull_list_condition(self, operator: str, value):
         """Build condition for pull lists"""
+        values = self._coerce_filter_values(value)
+        if operator != 'is_empty' and operator != 'is_not_empty' and not values:
+            return None
 
         # Helper for common logic: Name match AND User match
         def scope_check(name_condition):
             return and_(PullList.user_id == self.user.id, name_condition)
 
-        if operator == 'equal':
+        name_condition = self._build_name_match_condition(PullList.name, operator, values)
+
+        if operator in ['equal', 'contains']:
             return Comic.pull_list_items.any(
-                PullListItem.pull_list.has(scope_check(PullList.name == value))
+                PullListItem.pull_list.has(scope_check(name_condition))
             )
-        elif operator == 'contains':
-            if isinstance(value, list):
-                # OR logic for list of names
-                return Comic.pull_list_items.any(
-                    PullListItem.pull_list.has(scope_check(PullList.name.in_(value)))
+        elif operator in ['not_equal', 'does_not_contain']:
+            return ~Comic.pull_list_items.any(
+                PullListItem.pull_list.has(scope_check(name_condition))
+            )
+        elif operator == 'must_contain':
+            conditions = [
+                Comic.pull_list_items.any(
+                    PullListItem.pull_list.has(scope_check(PullList.name == v))
                 )
-            # Partial match
-            return Comic.pull_list_items.any(
-                PullListItem.pull_list.has(scope_check(PullList.name.ilike(f"%{value}%")))
-            )
+                for v in values
+            ]
+            return and_(*conditions)
+
+        return None
+
+    @staticmethod
+    def _coerce_filter_values(value) -> list:
+        return [v for v in (value if isinstance(value, list) else [value]) if v is not None]
+
+    @staticmethod
+    def _build_name_match_condition(column, operator: str, values: list):
+        if not values:
+            return None
+
+        if operator == 'equal':
+            return column == values[0]
+        elif operator == 'not_equal':
+            return column.in_(values)
+        elif operator == 'contains':
+            if len(values) > 1:
+                return column.in_(values)
+            return column.ilike(f"%{values[0]}%")
+        elif operator == 'does_not_contain':
+            return or_(*[column.ilike(f"%{v}%") for v in values])
 
         return None
 

@@ -1,3 +1,5 @@
+import re
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -5,6 +7,7 @@ import pytest
 from sqlalchemy import literal_column
 
 from app.models.comic import Comic, Volume
+from app.models.credits import ComicCredit, Person
 from app.models.interactions import UserComicRating
 from app.models.series import Series
 from app.models.user import User
@@ -57,6 +60,112 @@ def _sql(expr):
     return str(expr.compile(compile_kwargs={"literal_binds": True}))
 
 
+ADVANCED_SEARCH_TEXT_OPERATORS = [
+    "equal",
+    "not_equal",
+    "contains",
+    "does_not_contain",
+    "must_contain",
+    "is_empty",
+    "is_not_empty",
+]
+ADVANCED_SEARCH_NUMERIC_OPERATORS = [
+    "equal",
+    "not_equal",
+    "at_least",
+    "at_most",
+    "is_empty",
+    "is_not_empty",
+]
+ADVANCED_SEARCH_NAME_OPERATORS = [
+    "equal",
+    "not_equal",
+    "contains",
+    "does_not_contain",
+]
+ADVANCED_SEARCH_FILTER_OPERATORS = [
+    "equal",
+    "not_equal",
+    "contains",
+    "does_not_contain",
+    "is_empty",
+    "is_not_empty",
+]
+ADVANCED_SEARCH_RELATIONSHIP_OPERATORS = [
+    "equal",
+    "not_equal",
+    "contains",
+    "does_not_contain",
+    "must_contain",
+    "is_empty",
+    "is_not_empty",
+]
+ADVANCED_SEARCH_FIELD_OPERATORS = {
+    "series": ADVANCED_SEARCH_NAME_OPERATORS,
+    "title": ADVANCED_SEARCH_TEXT_OPERATORS,
+    "publisher": ADVANCED_SEARCH_FILTER_OPERATORS,
+    "year": ADVANCED_SEARCH_NUMERIC_OPERATORS,
+    "format": ADVANCED_SEARCH_FILTER_OPERATORS,
+    "imprint": ADVANCED_SEARCH_FILTER_OPERATORS,
+    "summary": ADVANCED_SEARCH_TEXT_OPERATORS,
+    "web": ADVANCED_SEARCH_TEXT_OPERATORS,
+    "rating": ADVANCED_SEARCH_NUMERIC_OPERATORS,
+    "parker_rating": ADVANCED_SEARCH_NUMERIC_OPERATORS,
+    "age_rating": ADVANCED_SEARCH_FILTER_OPERATORS,
+    "language": ADVANCED_SEARCH_FILTER_OPERATORS,
+    "writer": ADVANCED_SEARCH_RELATIONSHIP_OPERATORS,
+    "penciller": ADVANCED_SEARCH_RELATIONSHIP_OPERATORS,
+    "inker": ADVANCED_SEARCH_RELATIONSHIP_OPERATORS,
+    "colorist": ADVANCED_SEARCH_RELATIONSHIP_OPERATORS,
+    "letterer": ADVANCED_SEARCH_RELATIONSHIP_OPERATORS,
+    "cover_artist": ADVANCED_SEARCH_RELATIONSHIP_OPERATORS,
+    "editor": ADVANCED_SEARCH_RELATIONSHIP_OPERATORS,
+    "character": ADVANCED_SEARCH_RELATIONSHIP_OPERATORS,
+    "team": ADVANCED_SEARCH_RELATIONSHIP_OPERATORS,
+    "location": ADVANCED_SEARCH_RELATIONSHIP_OPERATORS,
+    "genre": ADVANCED_SEARCH_RELATIONSHIP_OPERATORS,
+    "library": ADVANCED_SEARCH_NAME_OPERATORS,
+    "collection": ADVANCED_SEARCH_RELATIONSHIP_OPERATORS,
+    "reading_list": ADVANCED_SEARCH_RELATIONSHIP_OPERATORS,
+    "pull_list": ADVANCED_SEARCH_RELATIONSHIP_OPERATORS,
+}
+ADVANCED_SEARCH_UI_FIELDS = list(ADVANCED_SEARCH_FIELD_OPERATORS)
+TAG_INPUT_FIELDS = {
+    "writer",
+    "penciller",
+    "inker",
+    "colorist",
+    "letterer",
+    "cover_artist",
+    "editor",
+    "character",
+    "team",
+    "location",
+    "genre",
+    "library",
+    "collection",
+    "reading_list",
+    "pull_list",
+}
+
+
+def _matrix_filter_value(field: str, operator: str):
+    if operator in ["is_empty", "is_not_empty"]:
+        return None
+    if field in ["year", "rating", "parker_rating"]:
+        return 4
+    if field in TAG_INPUT_FIELDS or operator == "must_contain":
+        return ["Alpha", "Beta"] if operator == "must_contain" else ["Alpha"]
+    return "Alpha"
+
+
+ADVANCED_SEARCH_UI_FIELD_OPERATOR_CASES = [
+    (field, operator)
+    for field, operators in ADVANCED_SEARCH_FIELD_OPERATORS.items()
+    for operator in operators
+]
+
+
 def test_search_service_filters_by_context_and_title(db, normal_user):
     data = _seed_search_graph(db)
     service = SearchService(db, normal_user)
@@ -77,6 +186,52 @@ def test_search_service_filters_by_context_and_title(db, normal_user):
     assert len(results["results"]) == 1
     assert results["results"][0]["id"] == data["alpha"].id
     assert results["results"][0]["series"] == data["series"].name
+
+
+def test_search_service_filters_by_library_name_without_cross_join(db, normal_user):
+    target_library = create_library_with_root(db, "Target Search Library", "/tmp/search-target-lib")
+    other_library = create_library_with_root(db, "Other Search Library", "/tmp/search-other-lib")
+    target_series = Series(name="Target Series", library=target_library)
+    other_series = Series(name="Other Series", library=other_library)
+    target_volume = Volume(series=target_series, volume_number=1)
+    other_volume = Volume(series=other_series, volume_number=1)
+    db.add_all([target_series, other_series, target_volume, other_volume])
+    db.flush()
+
+    target_comic = create_comic(
+        db,
+        target_volume,
+        target_library.active_root,
+        "target.cbz",
+        number="1",
+        title="Target Comic",
+        filename="target.cbz",
+    )
+    create_comic(
+        db,
+        other_volume,
+        other_library.active_root,
+        "other.cbz",
+        number="1",
+        title="Other Comic",
+        filename="other.cbz",
+    )
+    db.commit()
+
+    service = SearchService(db, normal_user)
+    request = SearchRequest(
+        match="all",
+        filters=[SearchFilter(field="library", operator="equal", value="Target Search Library")],
+        sort_by="series",
+        sort_order="asc",
+        limit=10,
+        offset=0,
+    )
+
+    results = service.search(request)
+
+    assert results["total"] == 1
+    assert [item["id"] for item in results["results"]] == [target_comic.id]
 
 
 def test_search_service_match_any_combines_conditions_with_or(db, normal_user):
@@ -253,6 +408,117 @@ def test_search_service_filters_missing_release_year(db, normal_user):
     assert [item["id"] for item in results["results"]] == [missing_year.id]
 
 
+def test_search_service_applies_creator_not_equal_with_other_filters(db, normal_user):
+    library = create_library_with_root(db, "search-credit-not-equal-lib", "/tmp/search-credit-not-equal-lib")
+    root = library.active_root
+    series = Series(name="Uncle Sam", library=library)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
+    db.flush()
+
+    alex_ross = Person(name="Alex Ross")
+    other_artist = Person(name="Other Artist")
+    db.add_all([alex_ross, other_artist])
+    db.flush()
+
+    uncle_sam_one = create_comic(
+        db,
+        volume,
+        root,
+        "uncle-sam-1.cbz",
+        number="1",
+        title="Uncle Sam #1",
+        language_iso="en",
+        filename="uncle-sam-1.cbz",
+    )
+    uncle_sam_two = create_comic(
+        db,
+        volume,
+        root,
+        "uncle-sam-2.cbz",
+        number="2",
+        title="Uncle Sam #2",
+        language_iso="en",
+        filename="uncle-sam-2.cbz",
+    )
+    non_ross_comic = create_comic(
+        db,
+        volume,
+        root,
+        "non-ross.cbz",
+        number="3",
+        title="Not Ross",
+        language_iso="en",
+        filename="non-ross.cbz",
+    )
+    french_comic = create_comic(
+        db,
+        volume,
+        root,
+        "french.cbz",
+        number="4",
+        title="French Comic",
+        language_iso="fr",
+        filename="french.cbz",
+    )
+    db.add_all([
+        ComicCredit(comic_id=uncle_sam_one.id, person_id=alex_ross.id, role="penciller"),
+        ComicCredit(comic_id=uncle_sam_two.id, person_id=alex_ross.id, role="penciller"),
+        ComicCredit(comic_id=non_ross_comic.id, person_id=other_artist.id, role="penciller"),
+        ComicCredit(comic_id=french_comic.id, person_id=other_artist.id, role="penciller"),
+    ])
+    db.commit()
+
+    service = SearchService(db, normal_user)
+    request = SearchRequest(
+        match="all",
+        filters=[
+            SearchFilter(field="language", operator="equal", value="en"),
+            SearchFilter(field="penciller", operator="not_equal", value="Alex Ross"),
+        ],
+        sort_by="series",
+        sort_order="asc",
+        limit=10,
+        offset=0,
+    )
+
+    results = service.search(request)
+
+    assert results["total"] == 1
+    assert [item["id"] for item in results["results"]] == [non_ross_comic.id]
+
+
+def test_advanced_search_operator_matrix_covers_template_fields():
+    template = Path("app/templates/search.html").read_text()
+    field_select_start = template.index('<select x-model="rule.field"')
+    field_select_end = template.index("</select>", field_select_start)
+    field_select = template[field_select_start:field_select_end]
+    template_fields = set(re.findall(r'<option value="([^"]+)">', field_select))
+
+    assert template_fields == set(ADVANCED_SEARCH_UI_FIELDS)
+
+
+@pytest.mark.parametrize("field,operator", ADVANCED_SEARCH_UI_FIELD_OPERATOR_CASES)
+def test_advanced_search_ui_operator_matrix_builds_backend_condition(normal_user, field, operator):
+    scalar_result = MagicMock()
+    scalar_result.scalars.return_value.all.return_value = [1]
+    mocked_db = MagicMock()
+    mocked_db.execute.return_value = scalar_result
+
+    service = SearchService(mocked_db, normal_user)
+    service._parker_rating_column = Comic.community_rating
+
+    expression = service._build_condition(
+        SearchFilter(
+            field=field,
+            operator=operator,
+            value=_matrix_filter_value(field, operator),
+        )
+    )
+
+    assert expression is not None
+
+
 def test_build_condition_handles_empty_operators_and_fts_routing(normal_user):
     service = SearchService(MagicMock(), normal_user)
     service._build_empty_condition = MagicMock(return_value="empty-expr")
@@ -309,13 +575,15 @@ def test_build_simple_field_condition_operators():
     not_equal_expr = SearchService._build_simple_field_condition(Comic.publisher, "not_equal", "DC")
     contains_expr = SearchService._build_simple_field_condition(Comic.publisher, "contains", "vel")
     not_contains_expr = SearchService._build_simple_field_condition(Comic.publisher, "does_not_contain", "Image")
+    must_expr = SearchService._build_simple_field_condition(Comic.publisher, "must_contain", ["Mar", "vel"])
 
     assert "comics.publisher = 'Marvel'" in _sql(equal_expr)
     assert "comics.publisher != 'DC'" in _sql(not_equal_expr)
     assert "lower(comics.publisher) LIKE lower('%vel%')" in _sql(contains_expr)
     not_contains_sql = _sql(not_contains_expr)
     assert "Image" in not_contains_sql and "NOT" in not_contains_sql
-    assert SearchService._build_simple_field_condition(Comic.publisher, "must_contain", "Marvel") is None
+    assert _sql(must_expr).count("LIKE") == 2
+    assert SearchService._build_simple_field_condition(Comic.publisher, "unknown", "Marvel") is None
 
 
 def test_build_numeric_field_condition_operators():
@@ -334,17 +602,21 @@ def test_build_numeric_field_condition_operators():
 
 def test_build_credit_condition_operators():
     equal_expr = SearchService._build_credit_condition("writer", "equal", "Alan Moore")
+    not_equal_expr = SearchService._build_credit_condition("writer", "not_equal", ["Alan Moore", "Grant Morrison"])
     contains_expr = SearchService._build_credit_condition("writer", "contains", ["Alan", "Grant"])
     not_contains_expr = SearchService._build_credit_condition("writer", "does_not_contain", ["Alan"])
     must_expr = SearchService._build_credit_condition("writer", "must_contain", ["Alan", "Dave"])
 
     equal_sql = _sql(equal_expr)
+    not_equal_sql = _sql(not_equal_expr)
     contains_sql = _sql(contains_expr)
     not_contains_sql = _sql(not_contains_expr)
     must_sql = _sql(must_expr)
 
     assert "comic_credits.role = 'writer'" in equal_sql
     assert "people.name = 'Alan Moore'" in equal_sql
+    assert "NOT (EXISTS" in not_equal_sql
+    assert "people.name IN ('Alan Moore', 'Grant Morrison')" in not_equal_sql
     assert " OR " in contains_sql
     assert "NOT (EXISTS" in not_contains_sql
     assert must_sql.count("EXISTS") >= 2
@@ -367,19 +639,33 @@ def test_build_tag_condition_operators():
 
 
 def test_collection_and_reading_list_condition_operators():
-    collection_equal = SearchService._build_collection_condition("equal", "Favorites")
+    collection_equal = SearchService._build_collection_condition("equal", ["Favorites"])
     collection_contains_list = SearchService._build_collection_condition("contains", ["A", "B"])
     collection_contains_value = SearchService._build_collection_condition("contains", "Fav")
-    reading_equal = SearchService._build_reading_list_condition("equal", "Roadmap")
+    collection_not_equal = SearchService._build_collection_condition("not_equal", ["Favorites"])
+    collection_not_contains = SearchService._build_collection_condition("does_not_contain", "Fav")
+    collection_must = SearchService._build_collection_condition("must_contain", ["A", "B"])
+    reading_equal = SearchService._build_reading_list_condition("equal", ["Roadmap"])
     reading_contains_list = SearchService._build_reading_list_condition("contains", ["A", "B"])
     reading_contains_value = SearchService._build_reading_list_condition("contains", "Road")
+    reading_not_equal = SearchService._build_reading_list_condition("not_equal", ["Roadmap"])
+    reading_not_contains = SearchService._build_reading_list_condition("does_not_contain", "Road")
+    reading_must = SearchService._build_reading_list_condition("must_contain", ["A", "B"])
 
     assert "collections.name = 'Favorites'" in _sql(collection_equal)
     assert "collections.name IN ('A', 'B')" in _sql(collection_contains_list)
     assert "lower(collections.name) LIKE lower('%Fav%')" in _sql(collection_contains_value)
+    assert "NOT (EXISTS" in _sql(collection_not_equal)
+    assert "collections.name IN ('Favorites')" in _sql(collection_not_equal)
+    assert "NOT (EXISTS" in _sql(collection_not_contains)
+    assert _sql(collection_must).count("EXISTS") >= 2
     assert "reading_lists.name = 'Roadmap'" in _sql(reading_equal)
     assert "reading_lists.name IN ('A', 'B')" in _sql(reading_contains_list)
     assert "lower(reading_lists.name) LIKE lower('%Road%')" in _sql(reading_contains_value)
+    assert "NOT (EXISTS" in _sql(reading_not_equal)
+    assert "reading_lists.name IN ('Roadmap')" in _sql(reading_not_equal)
+    assert "NOT (EXISTS" in _sql(reading_not_contains)
+    assert _sql(reading_must).count("EXISTS") >= 2
     assert SearchService._build_collection_condition("unknown", "x") is None
     assert SearchService._build_reading_list_condition("unknown", "x") is None
 
@@ -417,14 +703,21 @@ def test_build_empty_condition_relationship_and_simple_paths(normal_user):
 def test_build_pull_list_condition_scopes_to_current_user(normal_user):
     service = SearchService(MagicMock(), normal_user)
 
-    equal_expr = service._build_pull_list_condition("equal", "Weekly")
+    equal_expr = service._build_pull_list_condition("equal", ["Weekly"])
     contains_list_expr = service._build_pull_list_condition("contains", ["A", "B"])
     contains_value_expr = service._build_pull_list_condition("contains", "Week")
+    not_equal_expr = service._build_pull_list_condition("not_equal", ["Weekly"])
+    not_contains_expr = service._build_pull_list_condition("does_not_contain", "Week")
+    must_expr = service._build_pull_list_condition("must_contain", ["A", "B"])
 
     assert f"pull_lists.user_id = {normal_user.id}" in _sql(equal_expr)
     assert "pull_lists.name = 'Weekly'" in _sql(equal_expr)
     assert "pull_lists.name IN ('A', 'B')" in _sql(contains_list_expr)
     assert "lower(pull_lists.name) LIKE lower('%Week%')" in _sql(contains_value_expr)
+    assert "NOT (EXISTS" in _sql(not_equal_expr)
+    assert "pull_lists.name IN ('Weekly')" in _sql(not_equal_expr)
+    assert "NOT (EXISTS" in _sql(not_contains_expr)
+    assert _sql(must_expr).count(f"pull_lists.user_id = {normal_user.id}") == 2
     assert service._build_pull_list_condition("unknown", "x") is None
 
 

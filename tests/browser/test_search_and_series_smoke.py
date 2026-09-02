@@ -132,6 +132,49 @@ def test_search_page_finds_matching_comic_by_title(page, browser_server):
 
 
 @pytest.mark.browser
+def test_search_operator_options_match_selected_field(page, browser_server):
+    page.goto(f"{browser_server['base_url']}/search", wait_until="networkidle")
+
+    page.get_by_role("heading", name="Advanced Search").wait_for()
+
+    first_rule = page.locator(".space-y-4 > div").first
+    field_select = first_rule.locator("select").nth(0)
+    operator_select = first_rule.locator("select").nth(1)
+
+    def operator_values():
+        return operator_select.locator("option").evaluate_all(
+            "(options) => options.map((option) => option.value)"
+        )
+
+    field_select.select_option("year")
+    assert operator_values() == ["equal", "not_equal", "at_least", "at_most", "is_empty", "is_not_empty"]
+    assert operator_select.input_value() == "equal"
+    year_input = first_rule.locator("input[x-model='rule.value'][type='number']")
+    assert year_input.get_attribute("step") == "1"
+    assert year_input.get_attribute("max") in (None, "")
+
+    field_select.select_option("series")
+    assert operator_values() == ["equal", "not_equal", "contains", "does_not_contain"]
+
+    field_select.select_option("library")
+    assert operator_values() == ["equal", "not_equal", "contains", "does_not_contain"]
+
+    field_select.select_option("language")
+    assert operator_values() == ["equal", "not_equal", "contains", "does_not_contain", "is_empty", "is_not_empty"]
+
+    field_select.select_option("writer")
+    assert operator_values() == [
+        "equal",
+        "not_equal",
+        "contains",
+        "does_not_contain",
+        "must_contain",
+        "is_empty",
+        "is_not_empty",
+    ]
+
+
+@pytest.mark.browser
 def test_search_sort_field_selects_natural_default_order(page, browser_server):
     page.goto(f"{browser_server['base_url']}/search", wait_until="networkidle")
 

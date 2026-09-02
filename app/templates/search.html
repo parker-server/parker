@@ -158,9 +158,9 @@
                         <div x-show="usesNumericInput(rule.field)">
                             <input
                                 type="number"
-                                step="0.1"
-                                min="0"
-                                max="5"
+                                :step="numericInputStep(rule.field)"
+                                :min="numericInputMin(rule.field)"
+                                :max="numericInputMax(rule.field)"
                                 x-on:keydown.enter="performSearch()"
                                 x-model="rule.value"
                                 :class="ruleHasValidationError(rule) ? 'border-amber-500 focus:border-amber-400' : 'border-gray-600 focus:border-blue-500'"
@@ -472,7 +472,7 @@ document.addEventListener('alpine:init', () => {
             this.rules = filters.map((filter, index) => ({
                 id: Date.now() + index + Math.random(),
                 field: filter.field,
-                operator: filter.operator || 'contains',
+                operator: this.normalizeRuleOperator(filter.field, filter.operator),
                 value: this.normalizeRuleValue(filter.field, filter.value)
             }));
 
@@ -580,7 +580,7 @@ document.addEventListener('alpine:init', () => {
                 this.rules = [{
                     id: Date.now(),
                     field: field,
-                    operator: operator,
+                    operator: this.normalizeRuleOperator(field, operator),
                     value: this.normalizeRuleValue(field, value)
 
                 }];
@@ -616,7 +616,19 @@ document.addEventListener('alpine:init', () => {
         },
 
         usesNumericInput(field) {
-            return ['rating', 'parker_rating'].includes(field);
+            return ['year', 'rating', 'parker_rating'].includes(field);
+        },
+
+        numericInputStep(field) {
+            return field === 'year' ? 1 : 0.1;
+        },
+
+        numericInputMin(field) {
+            return 0;
+        },
+
+        numericInputMax(field) {
+            return field === 'year' ? undefined : 5;
         },
 
         normalizeRuleValue(field, value) {
@@ -642,6 +654,49 @@ document.addEventListener('alpine:init', () => {
                 ];
             }
 
+            if (field === 'year') {
+                return [
+                    { value: 'equal', label: 'Equals' },
+                    { value: 'not_equal', label: 'Not Equals' },
+                    { value: 'at_least', label: 'At Least' },
+                    { value: 'at_most', label: 'At Most' },
+                    { value: 'is_empty', label: 'Is Empty' },
+                    { value: 'is_not_empty', label: 'Is Not Empty' },
+                ];
+            }
+
+            if (['series', 'library'].includes(field)) {
+                return [
+                    { value: 'equal', label: 'Equals' },
+                    { value: 'not_equal', label: 'Not Equals' },
+                    { value: 'contains', label: 'Contains' },
+                    { value: 'does_not_contain', label: 'Does Not Contain' },
+                ];
+            }
+
+            if (['publisher', 'imprint', 'format', 'age_rating', 'language'].includes(field)) {
+                return [
+                    { value: 'equal', label: 'Equals' },
+                    { value: 'not_equal', label: 'Not Equals' },
+                    { value: 'contains', label: 'Contains' },
+                    { value: 'does_not_contain', label: 'Does Not Contain' },
+                    { value: 'is_empty', label: 'Is Empty' },
+                    { value: 'is_not_empty', label: 'Is Not Empty' },
+                ];
+            }
+
+            if (['title', 'summary', 'web'].includes(field)) {
+                return [
+                    { value: 'equal', label: 'Equals' },
+                    { value: 'not_equal', label: 'Not Equals' },
+                    { value: 'contains', label: 'Contains' },
+                    { value: 'does_not_contain', label: 'Does Not Contain' },
+                    { value: 'must_contain', label: 'Must Contain (All)' },
+                    { value: 'is_empty', label: 'Is Empty' },
+                    { value: 'is_not_empty', label: 'Is Not Empty' },
+                ];
+            }
+
             return [
                 { value: 'equal', label: 'Equals' },
                 { value: 'not_equal', label: 'Not Equals' },
@@ -651,6 +706,20 @@ document.addEventListener('alpine:init', () => {
                 { value: 'is_empty', label: 'Is Empty' },
                 { value: 'is_not_empty', label: 'Is Not Empty' },
             ];
+        },
+
+        defaultOperatorForField(field) {
+            const options = this.operatorOptions(field);
+            const containsOption = options.find(option => option.value === 'contains');
+            return containsOption?.value || options[0].value;
+        },
+
+        normalizeRuleOperator(field, operator) {
+            const options = this.operatorOptions(field);
+            if (options.some(option => option.value === operator)) {
+                return operator;
+            }
+            return this.defaultOperatorForField(field);
         },
 
         removeRule(index) {
@@ -664,10 +733,7 @@ document.addEventListener('alpine:init', () => {
 
         resetRule(rule) {
             rule.value = []; // Clear values when field changes
-            const options = this.operatorOptions(rule.field);
-            if (!options.some(option => option.value === rule.operator)) {
-                rule.operator = options[0].value;
-            }
+            rule.operator = this.normalizeRuleOperator(rule.field, rule.operator);
         },
 
         ruleRequiresValue(rule) {
@@ -863,7 +929,7 @@ document.addEventListener('alpine:init', () => {
                 this.rules = q.filters.map((f, i) => ({
                     id: Date.now() + i + Math.random(),
                     field: f.field,
-                    operator: f.operator,
+                    operator: this.normalizeRuleOperator(f.field, f.operator),
                     value: this.normalizeRuleValue(f.field, f.value)
                 }));
             } else {
