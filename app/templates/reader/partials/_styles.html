@@ -45,10 +45,107 @@
         overflow: hidden; position: relative;
     }
 
+    .reader-content-fit-width {
+        align-items: flex-start;
+        justify-content: flex-start;
+        overflow-x: hidden;
+        overflow-y: auto;
+        overscroll-behavior-y: contain;
+    }
+
+    .reader-page-stage-fit-width {
+        align-items: flex-start !important;
+        height: auto !important;
+        min-height: 100%;
+        padding-bottom: 9rem;
+    }
+
+    .reader-content-fit-width .reader-page,
+    .reader-content-fit-width .reader-page-shell,
+    .reader-content-fit-width .reader-page-shell-image {
+        max-height: none;
+    }
+
     .reader-page {
         max-width: 100%; max-height: 100%;
         object-fit: contain;
         user-select: none;
+    }
+
+    .reader-page-shell,
+    .reader-scroll-page-shell {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+        overflow: hidden;
+    }
+
+    .reader-page-shell-image {
+        display: block;
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+        user-select: none;
+    }
+
+    .reader-scroll-page-shell {
+        width: 100%;
+        max-width: 100%;
+    }
+
+    .reader-overlay-layer {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 10;
+        pointer-events: none;
+        overflow: visible;
+    }
+
+    .reader-overlay-layer.is-interactive,
+    .reader-overlay-layer[data-overlay-interactive="true"] {
+        pointer-events: auto;
+        touch-action: none;
+    }
+
+    .reader-overlay-debug-border {
+        stroke: rgba(251, 191, 36, 0.95);
+        stroke-width: 2;
+        stroke-dasharray: 8 5;
+    }
+
+    .reader-overlay-debug-crosshair {
+        stroke: rgba(96, 165, 250, 0.85);
+        stroke-width: 1.5;
+        stroke-dasharray: 5 5;
+    }
+
+    .reader-overlay-debug-label {
+        fill: rgba(254, 243, 199, 0.95);
+        font-size: 0.035px;
+        font-weight: 700;
+        paint-order: stroke;
+        stroke: rgba(0, 0, 0, 0.8);
+        stroke-width: 0.008px;
+    }
+
+    .reader-overlay-debug-hud {
+        position: fixed;
+        left: 1rem;
+        bottom: 1rem;
+        z-index: 70;
+        border: 1px solid rgba(251, 191, 36, 0.45);
+        border-radius: 0.5rem;
+        background: rgba(0, 0, 0, 0.78);
+        color: rgba(254, 243, 199, 0.96);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 0.75rem;
+        font-weight: 700;
+        padding: 0.5rem 0.75rem;
+        pointer-events: none;
     }
 
     .reader-scroll-content {
@@ -86,6 +183,10 @@
     .nav-zone {
         position: absolute; top: 0; bottom: 0; width: 20%; z-index: 20;
         cursor: pointer;
+    }
+
+    .reader-nav-zone-paused {
+        pointer-events: none;
     }
 
     .nav-zone.left { left: 0; }
