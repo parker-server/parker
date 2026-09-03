@@ -1,0 +1,14 @@
+<svg
+    class="reader-overlay-layer"
+    viewBox="0 0 1 1"
+    preserveAspectRatio="none"
+    data-reader-overlay-layer
+    :data-overlay-page-index="page.index"
+    :data-overlay-interactive="overlays.interactive ? 'true' : 'false'"
+    :class="{ 'is-interactive': overlays.interactive }"
+    x-on:pointermove="overlays.handlePointerMove($event, page.index)"
+    x-on:pointerleave="overlays.handlePointerLeave()"
+    x-on:pointerdown="overlays.handlePointerDown($event, page.index)"
+    x-on:pointerup="overlays.handlePointerUp($event)"
+    x-html="overlays.renderPage(page.index)">
+</svg>

@@ -17,16 +17,19 @@
 {% endblock %}
 
 {% block content %}
-<div class="reader-container" x-data="window.createReader({ comicId: {{ comic_id }} })" tabindex="0"
+<div class="reader-container" x-data="window.parker.applyReaderOverlayEnhancements(window.createReader({ comicId: {{ comic_id }} }))" tabindex="0"
      :class="{ 'scroll-mode': isScrollMode }"
      x-on:keydown.window="handleKey($event)"
      x-on:scroll.passive="handleScroll()"
+     x-on:pointermove="overlays.handleViewportPointerMove($event)"
+     x-on:pointerleave="overlays.handlePointerLeave()"
      x-on:touchstart="handleTouchStart($event)"
      x-on:touchend="handleTouchEnd($event)">
 
     {% include "reader/partials/_toolbar.html" %}
     {% include "reader/partials/_bookmark_detour_banner.html" %}
     {% include "reader/partials/_settings_panel.html" %}
+    {% include "reader/partials/_overlay_debug_hud.html" %}
 
     <div class="hover-zone"
          x-show="readingMode === 'paged'"
@@ -43,5 +46,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
+<script src="{{ url('/static/js/reader-overlays.js') }}?v={{ asset_version('static/js/reader-overlays.js') }}"></script>
 <script src="{{ url('/static/js/reader.js') }}?v={{ asset_version('static/js/reader.js') }}"></script>
+<script src="{{ url('/static/js/reader-annotations.js') }}?v={{ asset_version('static/js/reader-annotations.js') }}"></script>
 {% endblock %}
