@@ -6,9 +6,16 @@
     :data-overlay-page-index="page.index"
     :data-overlay-interactive="overlays.interactive ? 'true' : 'false'"
     :class="{ 'is-interactive': overlays.interactive }"
-    x-on:pointermove="overlays.handlePointerMove($event, page.index)"
+    x-on:pointermove="overlays.handlePointerMove($event, page.index, $data)"
     x-on:pointerleave="overlays.handlePointerLeave()"
-    x-on:pointerdown="overlays.handlePointerDown($event, page.index)"
-    x-on:pointerup="overlays.handlePointerUp($event)"
-    x-html="overlays.renderPage(page.index)">
+    x-on:pointerdown="overlays.handlePointerDown($event, page.index, $data)"
+    x-on:pointerup="overlays.handlePointerUp($event, page.index, $data)">
+    <rect
+        x="0"
+        y="0"
+        width="1"
+        height="1"
+        fill="transparent"
+        class="reader-overlay-interaction-capture" />
+    <g data-reader-overlay-items x-html="overlays.renderPage(page.index)"></g>
 </svg>

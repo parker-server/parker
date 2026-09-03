@@ -17,6 +17,7 @@ from app.api.deps import get_current_user, get_db
 from app.core.security import get_password_hash
 from app.database import Base
 from app.main import app
+from app.models.annotation import Annotation
 from app.models.bookmark import Bookmark
 from app.models.comic import Comic, Volume
 from app.models.credits import ComicCredit, Person
@@ -190,6 +191,7 @@ def reset_browser_state(browser_db_factory, browser_seed_data):
         session.query(PullListItem).delete()
         session.query(PullList).delete()
         session.query(SavedSearch).delete()
+        session.query(Annotation).delete()
         session.query(Bookmark).delete()
         session.query(ReadingProgress).delete()
         user = session.scalar(select(User).where(User.id == browser_seed_data["user_id"]))

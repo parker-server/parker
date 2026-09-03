@@ -103,6 +103,7 @@ class Comic(Base):
     collection_items = relationship("CollectionItem", back_populates="comic", cascade="all, delete-orphan")
     reading_progress = relationship("ReadingProgress", back_populates="comic", cascade="all, delete-orphan")
     bookmarks = relationship("Bookmark", back_populates="comic", cascade="all, delete-orphan")
+    annotations = relationship("Annotation", back_populates="comic", cascade="all, delete-orphan")
     pull_list_items = relationship("PullListItem", back_populates="comic", cascade="all, delete-orphan")
     user_ratings = relationship("UserComicRating", back_populates="comic", cascade="all, delete-orphan")
     activity_logs = relationship("ActivityLog", back_populates="comic", cascade="all, delete-orphan")

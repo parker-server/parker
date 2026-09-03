@@ -1,6 +1,7 @@
 import pytest
 from sqlalchemy import select
 
+from app.models.annotation import Annotation
 from app.models.bookmark import Bookmark
 from app.models.reading_progress import ReadingProgress
 
@@ -219,6 +220,175 @@ def test_reader_bookmarks_save_jump_and_delete(page, browser_server):
     page.locator("[data-delete-bookmark]").click()
     page.wait_for_timeout(300)
     assert page.locator("[data-bookmark-item]").count() == 0
+
+
+@pytest.mark.browser
+def test_reader_annotations_create_reload_edit_and_delete(page, browser_server):
+    seed = browser_server["seed"]
+    page.goto(f"{browser_server['base_url']}/reader/{seed['active_comic_id']}", wait_until="networkidle")
+
+    page.wait_for_selector(".reader-container")
+    page.locator(".nav-zone.center").click()
+    page.locator("[data-annotations-toggle]").click()
+    page.wait_for_selector("[data-annotation-panel]")
+
+    title_input = page.locator("[data-annotation-title-input]")
+    title_input.fill("Key")
+    title_input.press("Space")
+    title_input.type("panel")
+
+    body_input = page.locator("[data-annotation-body-input]")
+    body_input.fill("Watch")
+    body_input.press("Space")
+    body_input.type("the staging here.")
+
+    assert title_input.input_value() == "Key panel"
+    assert body_input.input_value() == "Watch the staging here."
+    assert page.evaluate("() => document.querySelector('.reader-container')._x_dataStack[0].currentPage") == 0
+
+    overlay = page.locator("[data-reader-overlay-layer]").first
+    overlay_box = overlay.bounding_box()
+    assert overlay_box is not None
+    overlay.click(position={"x": overlay_box["width"] * 0.5, "y": overlay_box["height"] * 0.5})
+
+    page.wait_for_selector("[data-reader-annotation-id]")
+    page.wait_for_selector(".reader-annotation-pin-marker")
+    page.wait_for_selector("[data-annotation-item]")
+    assert page.locator("[data-annotation-item]").first.text_content().find("Key panel") >= 0
+
+    session = browser_server["db_factory"]()
+    try:
+        annotation = session.scalar(
+            select(Annotation).where(
+                Annotation.user_id == seed["user_id"],
+                Annotation.comic_id == seed["active_comic_id"],
+            )
+        )
+    finally:
+        session.close()
+
+    assert annotation is not None
+    assert annotation.kind == "pin"
+    assert annotation.page_index == 0
+    assert annotation.title == "Key panel"
+
+    page.reload(wait_until="networkidle")
+    page.wait_for_selector("[data-reader-annotation-id]")
+    page.locator(".nav-zone.center").click()
+    page.locator("[data-annotations-toggle]").click()
+    page.wait_for_selector("[data-annotation-panel]")
+    assert page.locator("[data-annotation-item]").first.text_content().find("Key panel") >= 0
+
+    page.locator("[data-annotation-item]").first.click()
+    page.locator("[data-annotation-edit-title-input]").fill("Updated panel")
+    page.locator("[data-save-annotation-edit]").click()
+    page.wait_for_timeout(300)
+    assert page.locator("[data-annotation-item]").first.text_content().find("Updated panel") >= 0
+    page.wait_for_function(
+        """
+        () => {
+            const reader = document.querySelector('.reader-container');
+            return reader?._x_dataStack?.[0]?.annotations?.isBusy === false;
+        }
+        """
+    )
+
+    pin_target = page.locator(f"[data-reader-annotation-id='{annotation.id}'] .reader-annotation-hit-target")
+    pin_target_box = pin_target.bounding_box()
+    assert pin_target_box is not None
+    page.mouse.move(pin_target_box["x"] + pin_target_box["width"] / 2, pin_target_box["y"] + pin_target_box["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(pin_target_box["x"] + pin_target_box["width"] / 2 + 140, pin_target_box["y"] + pin_target_box["height"] / 2 + 120)
+    page.mouse.up()
+    page.wait_for_function(
+        """
+        () => {
+            const reader = document.querySelector('.reader-container');
+            return reader?._x_dataStack?.[0]?.annotations?.isBusy === false;
+        }
+        """
+    )
+
+    session = browser_server["db_factory"]()
+    try:
+        moved_pin = session.get(Annotation, annotation.id)
+        assert moved_pin is not None
+        moved_pin_anchor = moved_pin.anchor_json
+    finally:
+        session.close()
+
+    assert moved_pin_anchor["x"] > 0.55
+    assert moved_pin_anchor["y"] > 0.55
+
+    page.locator("[data-annotation-tool-rectangle]").click()
+    page.locator("[data-annotation-title-input]").fill("Region panel")
+    overlay_box = overlay.bounding_box()
+    assert overlay_box is not None
+    page.mouse.move(overlay_box["x"] + overlay_box["width"] * 0.18, overlay_box["y"] + overlay_box["height"] * 0.18)
+    page.mouse.down()
+    page.mouse.move(overlay_box["x"] + overlay_box["width"] * 0.34, overlay_box["y"] + overlay_box["height"] * 0.34)
+    page.mouse.up()
+    page.wait_for_function("() => document.querySelectorAll('[data-reader-annotation-id]').length === 2")
+    assert page.locator("[data-annotation-item]").filter(has_text="Region panel").count() == 1
+
+    session = browser_server["db_factory"]()
+    try:
+        annotations = session.scalars(
+            select(Annotation).where(
+                Annotation.user_id == seed["user_id"],
+                Annotation.comic_id == seed["active_comic_id"],
+            )
+        ).all()
+    finally:
+        session.close()
+
+    assert len(annotations) == 2
+    assert {annotation.kind for annotation in annotations} == {"pin", "rectangle"}
+    assert any(annotation.title == "Updated panel" for annotation in annotations)
+    assert any(annotation.title == "Region panel" for annotation in annotations)
+
+    rectangle = next(annotation for annotation in annotations if annotation.kind == "rectangle")
+    original_rectangle_anchor = rectangle.anchor_json
+    rectangle_target = page.locator(f"[data-reader-annotation-id='{rectangle.id}'] .reader-annotation-hit-target")
+    rectangle_target_box = rectangle_target.bounding_box()
+    assert rectangle_target_box is not None
+    overlay_box = overlay.bounding_box()
+    assert overlay_box is not None
+    page.mouse.move(
+        rectangle_target_box["x"] + rectangle_target_box["width"] / 2,
+        rectangle_target_box["y"] + rectangle_target_box["height"] / 2,
+    )
+    page.mouse.down()
+    page.mouse.move(overlay_box["x"] + overlay_box["width"] * 0.55, overlay_box["y"] + overlay_box["height"] * 0.42)
+    page.mouse.up()
+    page.wait_for_function(
+        """
+        () => {
+            const reader = document.querySelector('.reader-container');
+            return reader?._x_dataStack?.[0]?.annotations?.isBusy === false;
+        }
+        """
+    )
+
+    session = browser_server["db_factory"]()
+    try:
+        moved_rectangle = session.get(Annotation, rectangle.id)
+        assert moved_rectangle is not None
+        moved_rectangle_anchor = moved_rectangle.anchor_json
+    finally:
+        session.close()
+
+    assert moved_rectangle_anchor["x"] > original_rectangle_anchor["x"]
+    assert moved_rectangle_anchor["y"] > original_rectangle_anchor["y"]
+    assert moved_rectangle_anchor["width"] == original_rectangle_anchor["width"]
+    assert moved_rectangle_anchor["height"] == original_rectangle_anchor["height"]
+
+    page.locator("[data-delete-annotation]").click()
+    page.wait_for_function("() => document.querySelectorAll('[data-reader-annotation-id]').length === 1")
+    page.locator("[data-annotation-item]").first.click()
+    page.locator("[data-delete-annotation]").click()
+    page.wait_for_function("() => document.querySelectorAll('[data-reader-annotation-id]').length === 0")
+    assert page.locator("[data-annotation-item]").count() == 0
 
 
 @pytest.mark.browser

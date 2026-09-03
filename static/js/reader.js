@@ -257,6 +257,8 @@
                         || this.showSettings
                         || this.showBookmarks
                         || this.showGoto
+                        || this.annotations?.isPanelOpen
+                        || this.annotations?.enabled
                         || this.isScrubbing
                         || this.isHoveringScrubber
                         || this.isHoveringBar;
@@ -397,7 +399,7 @@
                 }
 
                 if (this.isIncognito) {
-                    window.parker.showToast('Incognito Mode: Progress and bookmark changes will not be saved.');
+                    window.parker.showToast('Incognito Mode: Progress, bookmark, and annotation changes will not be saved.');
                 }
 
                 this.loadInitData();

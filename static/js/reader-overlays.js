@@ -1,7 +1,9 @@
 (() => {
     const DEFAULT_OPTIONS = Object.freeze({
         debug: false,
-        itemsByPage: null
+        itemsByPage: null,
+        renderers: null,
+        pointerHandlers: null
     });
 
     function clampNormalizedValue(value) {
@@ -130,6 +132,24 @@
             pointerPageIndex: null,
             pointerPoint: null,
             itemsByPage: config.itemsByPage || {},
+            renderers: config.renderers || {},
+            pointerHandlers: config.pointerHandlers || {},
+
+            setItemsByPage(itemsByPage) {
+                this.itemsByPage = itemsByPage || {};
+            },
+
+            registerRenderer(type, renderer) {
+                if (!type || typeof renderer !== 'function') {
+                    return;
+                }
+
+                this.renderers = { ...this.renderers, [type]: renderer };
+            },
+
+            setPointerHandlers(handlers) {
+                this.pointerHandlers = handlers || {};
+            },
 
             setDebug(value) {
                 this.debug = !!value;
@@ -179,6 +199,11 @@
                     return renderDebugOverlay(item);
                 }
 
+                const renderer = this.renderers[item.type];
+                if (typeof renderer === 'function') {
+                    return renderer(item);
+                }
+
                 return '';
             },
 
@@ -226,13 +251,30 @@
                 this.updatePointer(event, pageShell);
             },
 
-            handlePointerMove(event, pageIndex) {
+            handlePointerMove(event, pageIndex, dataContext = null) {
                 if (!this.debug && !this.isInteractive()) {
                     return;
                 }
 
                 const pageShell = event.currentTarget.closest('[data-reader-page-shell]');
-                this.updatePointer(event, pageShell, pageIndex);
+                const point = this.updatePointer(event, pageShell, pageIndex);
+
+                if (!this.isInteractive() || !point) {
+                    return;
+                }
+
+                event.preventDefault();
+                event.stopPropagation();
+
+                if (typeof this.pointerHandlers.move === 'function') {
+                    this.pointerHandlers.move({
+                        event,
+                        pageIndex: normalizePageIndex(pageIndex),
+                        pageShell,
+                        point,
+                        dataContext
+                    });
+                }
             },
 
             handlePointerLeave() {
@@ -240,7 +282,7 @@
                 this.pointerPoint = null;
             },
 
-            handlePointerDown(event, pageIndex) {
+            handlePointerDown(event, pageIndex, dataContext = null) {
                 if (!this.isInteractive()) {
                     return;
                 }
@@ -253,15 +295,41 @@
 
                 event.preventDefault();
                 event.stopPropagation();
+                if (typeof event.currentTarget.setPointerCapture === 'function') {
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                }
+
+                if (typeof this.pointerHandlers.down === 'function') {
+                    this.pointerHandlers.down({
+                        event,
+                        pageIndex: normalizePageIndex(pageIndex),
+                        pageShell,
+                        point,
+                        dataContext
+                    });
+                }
             },
 
-            handlePointerUp(event) {
+            handlePointerUp(event, pageIndex, dataContext = null) {
                 if (!this.isInteractive()) {
                     return;
                 }
 
                 event.preventDefault();
                 event.stopPropagation();
+                if (typeof event.currentTarget.releasePointerCapture === 'function'
+                    && event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+                    event.currentTarget.releasePointerCapture(event.pointerId);
+                }
+
+                if (typeof this.pointerHandlers.up === 'function') {
+                    this.pointerHandlers.up({
+                        event,
+                        pageIndex: normalizePageIndex(pageIndex),
+                        point: this.pointerPoint,
+                        dataContext
+                    });
+                }
             },
 
             getPointerLabel() {

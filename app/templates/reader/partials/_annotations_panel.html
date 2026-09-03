@@ -1,0 +1,172 @@
+<div x-show="annotations.isPanelOpen"
+     x-cloak
+     data-annotation-panel
+     class="reader-annotation-panel"
+     x-on:click.stop>
+    <div class="flex items-start justify-between gap-3 border-b border-white/10 px-4 py-3">
+        <div>
+            <h3 class="text-base font-bold text-white">Annotations</h3>
+            <p class="text-xs text-gray-400"><span x-text="annotations.items.length"></span> saved</p>
+        </div>
+        <button x-on:click="closeAnnotations()"
+                class="rounded p-2 text-gray-400 transition-colors hover:bg-white/10 hover:text-white"
+                title="Close Annotations">
+            <span class="sr-only">Close annotations</span>
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+        </button>
+    </div>
+
+    <div class="space-y-4 px-4 py-4">
+        <div class="grid grid-cols-2 gap-2">
+            <button x-on:click="setAnnotationTool('pin')"
+                    data-annotation-tool-pin
+                    class="reader-annotation-tool-button"
+                    :class="annotations.activeTool === 'pin' ? 'is-active' : ''">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 21s6-5.2 6-11a6 6 0 10-12 0c0 5.8 6 11 6 11z" />
+                    <circle cx="12" cy="10" r="2" stroke-width="2" />
+                </svg>
+                <span>Pin</span>
+            </button>
+            <button x-on:click="setAnnotationTool('rectangle')"
+                    data-annotation-tool-rectangle
+                    class="reader-annotation-tool-button"
+                    :class="annotations.activeTool === 'rectangle' ? 'is-active' : ''">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5h14v14H5z" />
+                </svg>
+                <span>Rectangle</span>
+            </button>
+        </div>
+
+        <div class="space-y-3">
+            <div>
+                <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-400">Title</label>
+                <input type="text"
+                       x-ref="annotationTitleInput"
+                       x-model="annotations.form.title"
+                       data-annotation-title-input
+                       maxlength="120"
+                       :disabled="isIncognito || annotations.isBusy"
+                       class="w-full rounded border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-white placeholder:text-gray-500 focus:border-blue-500 focus:outline-none"
+                       placeholder="Panel beat">
+            </div>
+            <div>
+                <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-400">Note</label>
+                <textarea x-model="annotations.form.body"
+                          data-annotation-body-input
+                          maxlength="4000"
+                          rows="3"
+                          :disabled="isIncognito || annotations.isBusy"
+                          class="w-full resize-none rounded border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-white placeholder:text-gray-500 focus:border-blue-500 focus:outline-none"
+                          placeholder="Optional note"></textarea>
+            </div>
+            <div class="flex items-center gap-2">
+                <template x-for="color in annotations.colorChoices" :key="color">
+                    <button type="button"
+                            x-on:click="annotations.form.color = color"
+                            class="reader-annotation-color-button"
+                            :class="annotations.form.color === color ? 'is-active' : ''"
+                            :style="`background-color: ${color}`"
+                            :title="color"
+                            :disabled="isIncognito || annotations.isBusy"></button>
+                </template>
+            </div>
+        </div>
+
+        <template x-if="annotations.selectedAnnotation">
+            <div class="space-y-3 border-t border-white/10 pt-4" data-annotation-editor>
+                <div class="flex items-center justify-between gap-3">
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-wide text-gray-400" x-text="getAnnotationPageLabel(annotations.selectedAnnotation)"></p>
+                        <p class="text-sm font-semibold text-white" x-text="getAnnotationKindLabel(annotations.selectedAnnotation)"></p>
+                    </div>
+                    <button x-on:click="clearAnnotationSelection()"
+                            class="rounded px-2 py-1 text-xs font-semibold text-gray-400 transition-colors hover:bg-white/10 hover:text-white">
+                        Clear
+                    </button>
+                </div>
+                <div>
+                    <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-400">Title</label>
+                    <input type="text"
+                           x-ref="annotationEditTitleInput"
+                           x-model="annotations.editForm.title"
+                           data-annotation-edit-title-input
+                           maxlength="120"
+                           :disabled="isIncognito || annotations.isBusy"
+                           class="w-full rounded border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-white placeholder:text-gray-500 focus:border-blue-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-400">Note</label>
+                    <textarea x-model="annotations.editForm.body"
+                              data-annotation-edit-body-input
+                              maxlength="4000"
+                              rows="3"
+                              :disabled="isIncognito || annotations.isBusy"
+                              class="w-full resize-none rounded border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-white placeholder:text-gray-500 focus:border-blue-500 focus:outline-none"></textarea>
+                </div>
+                <div class="flex items-center justify-between gap-3">
+                    <div class="flex items-center gap-2">
+                        <template x-for="color in annotations.colorChoices" :key="`edit-${color}`">
+                            <button type="button"
+                                    x-on:click="annotations.editForm.color = color"
+                                    class="reader-annotation-color-button"
+                                    :class="annotations.editForm.color === color ? 'is-active' : ''"
+                                    :style="`background-color: ${color}`"
+                                    :title="color"
+                                    :disabled="isIncognito || annotations.isBusy"></button>
+                        </template>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button x-on:click="saveAnnotationEdit()"
+                                data-save-annotation-edit
+                                class="rounded bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+                                :disabled="isIncognito || annotations.isBusy">
+                            Save
+                        </button>
+                        <button x-on:click="deleteAnnotation()"
+                                data-delete-annotation
+                                class="rounded border border-red-500/60 px-3 py-2 text-sm font-semibold text-red-200 transition-colors hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-50"
+                                :disabled="isIncognito || annotations.isBusy">
+                            Delete
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </template>
+
+        <div class="space-y-2 border-t border-white/10 pt-4">
+            <div class="flex items-center justify-between gap-3">
+                <h4 class="text-xs font-semibold uppercase tracking-wide text-gray-400">Saved</h4>
+                <span class="text-xs text-gray-500" x-text="annotations.loaded ? '' : 'Loading'"></span>
+            </div>
+            <template x-if="annotations.items.length === 0">
+                <p class="rounded border border-dashed border-gray-700 px-3 py-3 text-sm text-gray-400">No annotations yet.</p>
+            </template>
+            <div class="max-h-64 space-y-2 overflow-y-auto pr-1" x-show="annotations.items.length > 0">
+                <template x-for="annotation in annotations.items" :key="annotation.id">
+                    <button x-on:click="selectAnnotation(annotation)"
+                            data-annotation-item
+                            class="reader-annotation-list-item"
+                            :class="isAnnotationSelected(annotation) ? 'is-selected' : ''">
+                        <span class="flex min-w-0 flex-col text-left">
+                            <span class="truncate text-sm font-semibold text-white" x-text="getAnnotationDisplayTitle(annotation)"></span>
+                            <span class="text-xs text-gray-400">
+                                <span x-text="getAnnotationPageLabel(annotation)"></span>
+                                <span aria-hidden="true"> / </span>
+                                <span x-text="getAnnotationKindLabel(annotation)"></span>
+                            </span>
+                        </span>
+                        <span class="h-3 w-3 flex-shrink-0 rounded-full" :style="`background-color: ${annotation.color}`"></span>
+                    </button>
+                </template>
+            </div>
+        </div>
+
+        <p x-show="isIncognito" class="rounded border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+            Incognito mode is read-only for annotations.
+        </p>
+    </div>
+</div>

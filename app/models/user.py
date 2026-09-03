@@ -42,6 +42,7 @@ class User(Base):
     # When a user is deleted, delete their reading history too
     reading_progress = relationship("ReadingProgress", back_populates="user", cascade="all, delete-orphan")
     bookmarks = relationship("Bookmark", back_populates="user", cascade="all, delete-orphan")
+    annotations = relationship("Annotation", back_populates="user", cascade="all, delete-orphan")
 
     # Many-to-Many Relationship
     # We use a string "Library" to avoid circular imports if Library imports User

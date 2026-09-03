@@ -10,6 +10,7 @@ from app.models.cbl_source import CBLSource
 from app.models.collection import Collection, CollectionItem
 from app.models.reading_progress import ReadingProgress
 from app.models.bookmark import Bookmark
+from app.models.annotation import Annotation
 from app.models.job import ScanJob
 from app.models.user import User
 from app.models.interactions import UserSeries, UserVolumeFollow, UserLibraryPin, UserComicRating
@@ -27,7 +28,7 @@ __all__ = [
     'ReadingList', 'ReadingListItem',
     'CBLSource',
     'Collection', 'CollectionItem',
-    'ReadingProgress', 'ActivityLog', 'Bookmark',
+    'ReadingProgress', 'ActivityLog', 'Bookmark', 'Annotation',
     'ScanJob',
     'User',
     'UserSeries', 'UserVolumeFollow', 'UserLibraryPin', 'UserComicRating',

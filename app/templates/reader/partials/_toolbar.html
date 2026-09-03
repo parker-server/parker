@@ -49,7 +49,7 @@
             </svg>
         </button>
 
-        <button x-on:click.stop="showSettings = !showSettings" class="p-2 text-gray-300 hover:text-white rounded hover:bg-white/10"
+        <button x-on:click.stop="showSettings = !showSettings; if (showSettings && annotations?.isPanelOpen) closeAnnotations()" class="p-2 text-gray-300 hover:text-white rounded hover:bg-white/10"
                 :class="{'text-blue-400': showSettings}" title="Settings">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
@@ -60,6 +60,16 @@
                 :class="{'text-blue-400': showBookmarks || currentBookmark}" title="Bookmarks (b)">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-4-7 4V5z" />
+            </svg>
+        </button>
+
+        <button x-on:click="toggleAnnotationMode()"
+                data-annotations-toggle
+                class="p-2 text-gray-300 hover:text-white rounded hover:bg-white/10"
+                :class="{'text-blue-400': annotations?.isPanelOpen || annotations?.enabled}"
+                title="Annotations (a)">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h6m-7 8l-2 2v-5a8 8 0 118 5H6z" />
             </svg>
         </button>
 
