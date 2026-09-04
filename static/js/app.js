@@ -484,7 +484,7 @@ document.addEventListener('error', function(e) {
 (() => {
 
     // Toast notifications
-    const showToast = (message, type = 'info') => {
+    const showToast = (message, type = 'info', timeout = 3000) => {
 
         const container = document.getElementById('toast-container');
         if (!container) return; // Guard against missing container on login page
@@ -494,7 +494,7 @@ document.addEventListener('error', function(e) {
         const colors = {
             info: 'bg-gray-800',
             success: 'bg-green-600',
-            error: 'bg-red-600',
+        error: 'bg-red-600',
             warning: 'bg-yellow-600'
         };
 
@@ -505,7 +505,7 @@ document.addEventListener('error', function(e) {
         setTimeout(() => {
             toast.style.opacity = '0';
             setTimeout(() => toast.remove(), 300);
-        }, 3000);
+        }, timeout);
     }
 
     // Debounce utility

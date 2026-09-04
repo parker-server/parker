@@ -82,6 +82,10 @@
     }
 
     function getAnnotationTitle(annotation) {
+        if (!annotation) {
+            return '';
+        }
+
         if (annotation.title) {
             return annotation.title;
         }
@@ -353,6 +357,7 @@
             enabled: false,
             isPanelOpen: false,
             isLayerVisible: true,
+            isRepositioning: false,
             isBusy: false,
             loaded: false,
             items: [],
@@ -410,6 +415,11 @@
         }
 
         event.preventDefault();
+        if (reader.annotations.isRepositioning) {
+            reader.finishAnnotationReposition();
+            return true;
+        }
+
         if (reader.annotations.selectedId) {
             reader.clearAnnotationSelection();
             return true;
@@ -572,6 +582,10 @@
             return;
         }
 
+        if (reader.annotations.isRepositioning) {
+            return;
+        }
+
         if (reader.isIncognito) {
             window.parker.showToast('Incognito Mode: Annotation changes are disabled.');
             return;
@@ -720,6 +734,7 @@
 
             this.annotations.isPanelOpen = true;
             this.annotations.enabled = true;
+            this.annotations.isRepositioning = false;
             this.setAnnotationTool(this.annotations.activeTool || 'pin');
 
             if (!this.annotations.loaded) {
@@ -736,6 +751,7 @@
         reader.closeAnnotations = function closeAnnotations() {
             this.annotations.isPanelOpen = false;
             this.annotations.enabled = false;
+            this.annotations.isRepositioning = false;
             this.annotations.selectedId = null;
             this.annotations.drag = null;
             clearAnnotationDraft(this);
@@ -756,7 +772,39 @@
             const nextTool = toolName === 'rectangle' ? 'rectangle' : 'pin';
             this.annotations.activeTool = nextTool;
             this.annotations.enabled = true;
+            this.annotations.isRepositioning = false;
             this.overlays.setActiveTool(nextTool);
+            syncAnnotationOverlays(this);
+        };
+
+        reader.startAnnotationReposition = function startAnnotationReposition(annotationId = this.annotations.selectedId) {
+            if (!annotationId || this.isIncognito || this.annotations.isBusy) {
+                return;
+            }
+
+            const annotation = getAnnotationById(this, annotationId);
+            if (!annotation) {
+                return;
+            }
+
+            this.selectAnnotation(annotation);
+            this.annotations.isPanelOpen = false;
+            this.annotations.enabled = true;
+            this.annotations.isRepositioning = true;
+            this.annotations.drag = null;
+            clearAnnotationDraft(this);
+            this.overlays.setActiveTool('annotation-move');
+            syncAnnotationOverlays(this);
+            this.resetControlFocus();
+        };
+
+        reader.finishAnnotationReposition = function finishAnnotationReposition() {
+            this.annotations.isRepositioning = false;
+            this.annotations.drag = null;
+            this.annotations.isPanelOpen = true;
+            this.annotations.enabled = true;
+            clearAnnotationDraft(this);
+            this.overlays.setActiveTool(this.annotations.activeTool || 'pin');
             syncAnnotationOverlays(this);
         };
 
@@ -845,6 +893,7 @@
 
         reader.clearAnnotationSelection = function clearAnnotationSelection() {
             this.annotations.selectedId = null;
+            this.annotations.isRepositioning = false;
             this.annotations.editForm = {
                 title: '',
                 body: '',
@@ -901,7 +950,7 @@
 
                 this.applyAnnotationUpdate(payload);
                 this.selectAnnotation(payload.id);
-                window.parker.showToast('Annotation moved');
+                window.parker.showToast('Annotation moved', undefined, 1000);
             } catch (error) {
                 if (originalAnchor) {
                     updateAnnotationAnchor(this, annotationId, originalAnchor);
@@ -928,6 +977,7 @@
 
                 this.annotations.items = this.annotations.items.filter((annotation) => annotation.id !== annotationId);
                 if (this.annotations.selectedId === annotationId) {
+                    this.annotations.isRepositioning = false;
                     this.clearAnnotationSelection();
                 }
                 syncAnnotationOverlays(this);
@@ -941,10 +991,18 @@
         };
 
         reader.getAnnotationKindLabel = function getAnnotationKindLabel(annotation) {
+            if (!annotation) {
+                return '';
+            }
+
             return annotation?.kind === 'rectangle' ? 'Rectangle' : 'Pin';
         };
 
         reader.getAnnotationPageLabel = function getAnnotationPageLabel(annotation) {
+            if (!annotation || !Number.isInteger(annotation.page_index)) {
+                return '';
+            }
+
             return `Page ${annotation.page_index + 1}`;
         };
 
@@ -953,7 +1011,7 @@
         };
 
         reader.isAnnotationSelected = function isAnnotationSelected(annotation) {
-            return annotation.id === this.annotations.selectedId;
+            return !!annotation && annotation.id === this.annotations.selectedId;
         };
 
         reader.handleFitWidthPointerMove = function handleFitWidthPointerMove(event) {

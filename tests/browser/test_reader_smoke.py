@@ -401,6 +401,96 @@ def test_reader_annotations_create_reload_edit_and_delete(page, browser_server):
 
 
 @pytest.mark.browser
+def test_reader_annotation_reposition_mode_frees_mobile_overlay(mobile_page, browser_server):
+    seed = browser_server["seed"]
+    page_errors = []
+    mobile_page.on("pageerror", lambda exc: page_errors.append(str(exc)))
+
+    session = browser_server["db_factory"]()
+    try:
+        annotation = Annotation(
+            user_id=seed["user_id"],
+            comic_id=seed["active_comic_id"],
+            page_index=0,
+            kind="pin",
+            title="Covered pin",
+            color="#facc15",
+            anchor_json={"x": 0.5, "y": 0.5},
+        )
+        session.add(annotation)
+        session.commit()
+        annotation_id = annotation.id
+    finally:
+        session.close()
+
+    mobile_page.goto(f"{browser_server['base_url']}/reader/{seed['active_comic_id']}", wait_until="networkidle")
+    mobile_page.wait_for_selector(".reader-container")
+    assert not any("Cannot read properties of null (reading 'title')" in error for error in page_errors)
+
+    target = mobile_page.locator(f"[data-reader-annotation-id='{annotation_id}'] .reader-annotation-hit-target")
+    mobile_page.wait_for_selector(f"[data-reader-annotation-id='{annotation_id}']")
+
+    mobile_page.locator(".nav-zone.center").click()
+    mobile_page.locator("[data-annotations-toggle]").click()
+    mobile_page.wait_for_selector("[data-annotation-panel]")
+
+    panel_box = mobile_page.locator("[data-annotation-panel]").bounding_box()
+    covered_target_box = target.bounding_box()
+    assert panel_box is not None
+    assert covered_target_box is not None
+    target_center_x = covered_target_box["x"] + covered_target_box["width"] / 2
+    target_center_y = covered_target_box["y"] + covered_target_box["height"] / 2
+    assert panel_box["x"] <= target_center_x <= panel_box["x"] + panel_box["width"]
+    assert panel_box["y"] <= target_center_y <= panel_box["y"] + panel_box["height"]
+
+    mobile_page.locator("[data-annotation-item]").first.click()
+    mobile_page.locator("[data-move-annotation]").click()
+    mobile_page.wait_for_selector("[data-annotation-panel]", state="hidden")
+    mobile_page.wait_for_selector("[data-annotation-reposition-toolbar]")
+    mobile_page.wait_for_function(
+        """
+        () => {
+            const reader = document.querySelector('.reader-container');
+            const state = reader?._x_dataStack?.[0];
+            return state?.annotations?.isRepositioning === true
+                && state?.overlays?.isInteractive?.() === true;
+        }
+        """
+    )
+
+    target_box = target.bounding_box()
+    assert target_box is not None
+    mobile_page.mouse.move(target_box["x"] + target_box["width"] / 2, target_box["y"] + target_box["height"] / 2)
+    mobile_page.mouse.down()
+    mobile_page.mouse.move(target_box["x"] + target_box["width"] / 2 + 60, target_box["y"] + target_box["height"] / 2 + 70)
+    mobile_page.mouse.up()
+    mobile_page.wait_for_function(
+        """
+        () => {
+            const reader = document.querySelector('.reader-container');
+            const state = reader?._x_dataStack?.[0];
+            return state?.annotations?.isBusy === false && !state?.annotations?.drag;
+        }
+        """
+    )
+
+    session = browser_server["db_factory"]()
+    try:
+        moved_annotation = session.get(Annotation, annotation_id)
+        assert moved_annotation is not None
+        moved_anchor = moved_annotation.anchor_json
+    finally:
+        session.close()
+
+    assert moved_anchor["x"] > 0.55
+    assert moved_anchor["y"] > 0.55
+
+    mobile_page.locator("[data-annotation-reposition-done]").click()
+    mobile_page.wait_for_selector("[data-annotation-panel]")
+    mobile_page.wait_for_selector("[data-annotation-reposition-toolbar]", state="hidden")
+
+
+@pytest.mark.browser
 def test_reader_double_page_mode_advances_as_spreads(page, browser_server):
     seed = browser_server["seed"]
     page.goto(f"{browser_server['base_url']}/reader/{seed['active_comic_id']}", wait_until="networkidle")

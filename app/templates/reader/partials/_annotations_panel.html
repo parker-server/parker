@@ -120,6 +120,12 @@
                         </template>
                     </div>
                     <div class="flex items-center gap-2">
+                        <button x-on:click="startAnnotationReposition()"
+                                data-move-annotation
+                                class="rounded border border-gray-500/70 px-3 py-2 text-sm font-semibold text-gray-100 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                                :disabled="isIncognito || annotations.isBusy">
+                            Move
+                        </button>
                         <button x-on:click="saveAnnotationEdit()"
                                 data-save-annotation-edit
                                 class="rounded bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
@@ -169,4 +175,20 @@
             Incognito mode is read-only for annotations.
         </p>
     </div>
+</div>
+
+<div x-show="annotations.isRepositioning"
+     x-cloak
+     data-annotation-reposition-toolbar
+     class="reader-annotation-reposition-toolbar"
+     x-on:click.stop>
+    <div class="min-w-0">
+        <p class="text-xs font-semibold uppercase tracking-wide text-gray-400">Moving</p>
+        <p class="truncate text-sm font-semibold text-white" x-text="getAnnotationDisplayTitle(annotations.selectedAnnotation)"></p>
+    </div>
+    <button x-on:click="finishAnnotationReposition()"
+            data-annotation-reposition-done
+            class="rounded bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-500">
+        Done
+    </button>
 </div>
