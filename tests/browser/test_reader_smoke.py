@@ -275,8 +275,17 @@ def test_reader_annotations_create_reload_edit_and_delete(page, browser_server):
     page.reload(wait_until="networkidle")
     page.wait_for_selector("[data-reader-annotation-id]")
     page.locator(".nav-zone.center").click()
+    page.locator("[data-annotation-layer-toggle]").click()
+    page.wait_for_function("() => document.querySelectorAll('[data-reader-annotation-id]').length === 0")
+    assert page.evaluate("() => window.parker.storage.get('reader_annotationLayerVisible', true)") is False
+
+    page.reload(wait_until="networkidle")
+    page.wait_for_selector(".reader-container")
+    page.wait_for_function("() => document.querySelectorAll('[data-reader-annotation-id]').length === 0")
+    page.locator(".nav-zone.center").click()
     page.locator("[data-annotations-toggle]").click()
     page.wait_for_selector("[data-annotation-panel]")
+    page.wait_for_selector("[data-reader-annotation-id]")
     assert page.locator("[data-annotation-item]").first.text_content().find("Key panel") >= 0
 
     page.locator("[data-annotation-item]").first.click()

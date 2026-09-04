@@ -73,7 +73,22 @@
             </svg>
         </button>
 
-        {% include "reader/partials/_overlay_debug_controls.html" %}
+        <button x-on:click.stop="toggleAnnotationLayerVisibility()"
+                data-annotation-layer-toggle
+                class="p-2 rounded hover:bg-white/10 hover:text-white transition-colors"
+                :class="annotations?.isLayerVisible ? 'text-gray-300' : 'text-amber-300'"
+                :title="getAnnotationLayerVisibilityLabel()"
+                :aria-label="getAnnotationLayerVisibilityLabel()">
+            <span class="sr-only" x-text="getAnnotationLayerVisibilityLabel()"></span>
+            <svg x-show="annotations?.isLayerVisible" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16.862 4.487l1.651-1.651a1.875 1.875 0 112.652 2.652L10.582 16.071a4 4 0 01-1.685 1.005L6 18l.924-2.897a4 4 0 011.005-1.685l8.933-8.931z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 6.35l2.65 2.65M5 21h14" />
+            </svg>
+            <svg x-show="!annotations?.isLayerVisible" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16.862 4.487l1.651-1.651a1.875 1.875 0 112.652 2.652L10.582 16.071a4 4 0 01-1.685 1.005L6 18l.924-2.897a4 4 0 011.005-1.685l8.933-8.931z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 6.35l2.65 2.65M5 21h14M3 3l18 18" />
+            </svg>
+        </button>
 
         <button x-on:click="toggleFullscreen()" class="p-2 text-gray-300 hover:text-white rounded hover:bg-white/10" title="Toggle Fullscreen (f)">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">

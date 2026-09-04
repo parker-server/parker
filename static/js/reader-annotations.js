@@ -1,5 +1,6 @@
 (() => {
     const DEFAULT_ANNOTATION_COLOR = '#facc15';
+    const ANNOTATION_LAYER_VISIBILITY_KEY = 'reader_annotationLayerVisible';
     const ANNOTATION_COLORS = Object.freeze(['#facc15', '#38bdf8', '#fb7185', '#34d399']);
     const RECTANGLE_MIN_SIZE = 0.01;
     const ANNOTATION_DRAG_THRESHOLD = 0.004;
@@ -35,6 +36,14 @@
     function safeColor(value) {
         const color = String(value || DEFAULT_ANNOTATION_COLOR).trim();
         return /^#[0-9a-f]{6}$/i.test(color) ? color.toLowerCase() : DEFAULT_ANNOTATION_COLOR;
+    }
+
+    function loadAnnotationLayerVisibilityPreference() {
+        return window.parker.storage.get(ANNOTATION_LAYER_VISIBILITY_KEY, true) !== false;
+    }
+
+    function persistAnnotationLayerVisibilityPreference(isVisible) {
+        window.parker.storage.set(ANNOTATION_LAYER_VISIBILITY_KEY, !!isVisible);
     }
 
     function normalizeAnchorPoint(point) {
@@ -343,6 +352,7 @@
         return {
             enabled: false,
             isPanelOpen: false,
+            isLayerVisible: true,
             isBusy: false,
             loaded: false,
             items: [],
@@ -427,12 +437,22 @@
         return 'center';
     }
 
+    function shouldRenderAnnotationLayer(reader) {
+        return !!(
+            reader.annotations.isLayerVisible
+            || reader.annotations.enabled
+            || reader.annotations.isPanelOpen
+        );
+    }
+
     function syncAnnotationOverlays(reader) {
+        const layerIsVisible = shouldRenderAnnotationLayer(reader);
+
         reader.annotations.itemsByPage = buildOverlayItemsByPage(
-            reader.annotations.items,
-            reader.annotations.selectedId,
-            reader.annotations.draft,
-            reader.annotations.drag?.annotationId || null
+            layerIsVisible ? reader.annotations.items : [],
+            layerIsVisible ? reader.annotations.selectedId : null,
+            layerIsVisible ? reader.annotations.draft : null,
+            layerIsVisible ? reader.annotations.drag?.annotationId || null : null
         );
 
         reader.overlays.setItemsByPage(reader.annotations.getOverlayItemsByPage());
@@ -639,9 +659,42 @@
             up: (context) => handleAnnotationPointerUp(context.dataContext || reader)
         });
 
-        reader.toggleOverlayDebug = function toggleOverlayDebug() {
-            this.overlays.toggleDebug();
-            window.parker.showToast(this.overlays.debug ? 'Overlay debug on' : 'Overlay debug off');
+        reader.initializeAnnotationLayerVisibility = function initializeAnnotationLayerVisibility() {
+            this.annotations.isLayerVisible = this.isIncognito
+                ? true
+                : loadAnnotationLayerVisibilityPreference();
+            syncAnnotationOverlays(this);
+        };
+
+        reader.setAnnotationLayerVisibility = function setAnnotationLayerVisibility(isVisible, options = {}) {
+            const shouldPersist = options.persist !== false;
+            const shouldNotify = options.notify !== false;
+
+            this.annotations.isLayerVisible = !!isVisible;
+
+            if (shouldPersist && !this.isIncognito) {
+                persistAnnotationLayerVisibilityPreference(this.annotations.isLayerVisible);
+            }
+
+            syncAnnotationOverlays(this);
+
+            if (shouldNotify) {
+                window.parker.showToast(
+                    this.annotations.isLayerVisible
+                        ? 'Annotations shown while reading'
+                        : 'Annotations hidden while reading'
+                );
+            }
+        };
+
+        reader.toggleAnnotationLayerVisibility = function toggleAnnotationLayerVisibility() {
+            this.setAnnotationLayerVisibility(!this.annotations.isLayerVisible);
+        };
+
+        reader.getAnnotationLayerVisibilityLabel = function getAnnotationLayerVisibilityLabel() {
+            return this.annotations.isLayerVisible
+                ? 'Hide annotations while reading'
+                : 'Show annotations while reading';
         };
 
         reader.loadAnnotations = async function loadAnnotations() {
@@ -704,6 +757,7 @@
             this.annotations.activeTool = nextTool;
             this.annotations.enabled = true;
             this.overlays.setActiveTool(nextTool);
+            syncAnnotationOverlays(this);
         };
 
         reader.resetAnnotationForm = function resetAnnotationForm() {
@@ -939,6 +993,7 @@
         };
 
         wrapReaderMethod(reader, 'loadInitData', (originalMethod) => async function loadInitDataWithAnnotations(...args) {
+            this.initializeAnnotationLayerVisibility();
             await originalMethod.apply(this, args);
             await this.loadAnnotations();
         });
