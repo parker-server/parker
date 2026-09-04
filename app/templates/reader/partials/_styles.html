@@ -193,6 +193,41 @@
         backdrop-filter: blur(14px);
     }
 
+    .reader-annotation-peek {
+        position: fixed;
+        z-index: 64;
+        width: min(18rem, calc(100vw - 1.5rem));
+        min-height: 3rem;
+        border: 1px solid rgba(148, 163, 184, 0.26);
+        border-radius: 0.5rem;
+        background: rgba(12, 16, 24, 0.96);
+        color: white;
+        padding: 0.65rem 0.75rem;
+        box-shadow: 0 16px 48px rgba(0, 0, 0, 0.48);
+        backdrop-filter: blur(14px);
+        pointer-events: auto;
+    }
+
+    .reader-annotation-peek.is-touch {
+        left: 1rem;
+        right: 1rem;
+        bottom: calc(5.75rem + env(safe-area-inset-bottom));
+        display: flex;
+        width: auto;
+        max-width: none;
+        min-height: 4rem;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+    }
+
+    .reader-annotation-peek-body {
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        overflow: hidden;
+    }
+
     .reader-annotation-tool-button {
         display: inline-flex;
         align-items: center;
@@ -250,8 +285,13 @@
     }
 
     .reader-annotation-overlay-item {
-        cursor: grab;
+        cursor: pointer;
         pointer-events: auto;
+    }
+
+    .reader-overlay-layer.is-interactive .reader-annotation-overlay-item,
+    .reader-overlay-layer[data-overlay-interactive="true"] .reader-annotation-overlay-item {
+        cursor: grab;
     }
 
     .reader-annotation-overlay-item.is-dragging {

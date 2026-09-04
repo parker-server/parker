@@ -6,6 +6,9 @@
     const ANNOTATION_DRAG_THRESHOLD = 0.004;
     const PIN_HALF_WIDTH = 0.032;
     const PIN_HEIGHT = 0.094;
+    const ANNOTATION_PEEK_MAX_BODY_LENGTH = 160;
+    const ANNOTATION_PEEK_WIDTH = 288;
+    const ANNOTATION_PEEK_HEIGHT = 112;
 
     function clampNormalizedValue(value) {
         if (!Number.isFinite(value)) {
@@ -97,6 +100,19 @@
         return annotation.kind === 'rectangle' ? 'Rectangle annotation' : 'Page pin';
     }
 
+    function getAnnotationBodyPreview(annotation) {
+        const body = String(annotation?.body || '').trim();
+        if (!body || body === getAnnotationTitle(annotation)) {
+            return '';
+        }
+
+        if (body.length <= ANNOTATION_PEEK_MAX_BODY_LENGTH) {
+            return body;
+        }
+
+        return `${body.slice(0, ANNOTATION_PEEK_MAX_BODY_LENGTH - 3)}...`;
+    }
+
     function createOverlayItem(annotation, selectedId, draggingId) {
         return {
             id: `annotation-${annotation.id}`,
@@ -161,6 +177,18 @@
 
     function getAnnotationById(reader, annotationId) {
         return reader.annotations.items.find((annotation) => annotation.id === annotationId) || null;
+    }
+
+    function getAnnotationFromEvent(reader, event) {
+        const annotationId = getAnnotationIdFromEvent(event);
+        return annotationId ? getAnnotationById(reader, annotationId) : null;
+    }
+
+    function getAnnotationIdFromElement(element) {
+        const annotationElement = element?.closest?.('[data-reader-annotation-id]');
+        const rawId = annotationElement?.dataset?.readerAnnotationId;
+        const annotationId = Number.parseInt(rawId, 10);
+        return Number.isNaN(annotationId) ? null : annotationId;
     }
 
     function getAnnotationAnchorOrigin(annotation) {
@@ -362,6 +390,12 @@
             loaded: false,
             items: [],
             itemsByPage: {},
+            peek: {
+                annotationId: null,
+                mode: null,
+                x: 0,
+                y: 0
+            },
             selectedId: null,
             activeTool: 'pin',
             draft: null,
@@ -383,6 +417,10 @@
                 return this.items.find((annotation) => annotation.id === this.selectedId) || null;
             },
 
+            get peekAnnotation() {
+                return this.items.find((annotation) => annotation.id === this.peek.annotationId) || null;
+            },
+
             getOverlayItemsByPage() {
                 return this.itemsByPage;
             }
@@ -399,9 +437,10 @@
     }
 
     function clickStartedOnReaderControl(event) {
-        return !!event.target.closest(
+        return !!event.target.closest?.(
             '.reader-toolbar, .reader-controls, .scrubber-wrapper, .settings-panel, ' +
-            '.reader-annotation-panel, .bookmark-modal, .goto-modal, button, input, select, textarea, a, [role="button"]'
+            '.reader-annotation-panel, .reader-annotation-peek, .bookmark-modal, .goto-modal, ' +
+            'button, input, select, textarea, a, [role="button"]'
         );
     }
 
@@ -410,11 +449,20 @@
     }
 
     function handleAnnotationEscape(reader, event) {
-        if ((!reader.annotations.isPanelOpen && !reader.annotations.enabled) || event.key !== 'Escape') {
+        if (event.key !== 'Escape') {
+            return false;
+        }
+
+        if (!reader.annotations.isPanelOpen && !reader.annotations.enabled && !reader.annotations.peek.annotationId) {
             return false;
         }
 
         event.preventDefault();
+        if (reader.annotations.peek.annotationId && !reader.annotations.isPanelOpen && !reader.annotations.enabled) {
+            reader.hideAnnotationPeek();
+            return true;
+        }
+
         if (reader.annotations.isRepositioning) {
             reader.finishAnnotationReposition();
             return true;
@@ -453,6 +501,103 @@
             || reader.annotations.enabled
             || reader.annotations.isPanelOpen
         );
+    }
+
+    function canShowAnnotationPeek(reader) {
+        return !!(
+            shouldRenderAnnotationLayer(reader)
+            && !reader.annotations.enabled
+            && !reader.annotations.isPanelOpen
+            && !reader.annotations.isRepositioning
+        );
+    }
+
+    function pointerUsesHover(event) {
+        return !event.pointerType || event.pointerType === 'mouse';
+    }
+
+    function pointerUsesTouchPeek(event) {
+        return event.pointerType === 'touch'
+            || event.pointerType === 'pen'
+            || window.matchMedia?.('(hover: none)')?.matches;
+    }
+
+    function getPeekPosition(event) {
+        return {
+            x: Number.isFinite(event.clientX) ? event.clientX : window.innerWidth / 2,
+            y: Number.isFinite(event.clientY) ? event.clientY : window.innerHeight / 2
+        };
+    }
+
+    function getPageShellFromViewportPoint(event) {
+        if (
+            typeof document.elementsFromPoint !== 'function'
+            || !Number.isFinite(event.clientX)
+            || !Number.isFinite(event.clientY)
+        ) {
+            return null;
+        }
+
+        return document.elementsFromPoint(event.clientX, event.clientY)
+            .find((element) => element.matches?.('[data-reader-page-shell]')) || null;
+    }
+
+    function getPagePointFromViewportEvent(event, pageShell) {
+        const image = pageShell?.querySelector('[data-reader-page-image]');
+        if (!image) {
+            return null;
+        }
+
+        const rect = image.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) {
+            return null;
+        }
+
+        return {
+            x: clampNormalizedValue((event.clientX - rect.left) / rect.width),
+            y: clampNormalizedValue((event.clientY - rect.top) / rect.height)
+        };
+    }
+
+    function getPageIndexFromShell(pageShell) {
+        const pageIndex = Number.parseInt(pageShell?.dataset?.pageIndex, 10);
+        return Number.isNaN(pageIndex) ? null : pageIndex;
+    }
+
+    function annotationContainsPoint(annotation, point) {
+        if (!annotation || !point) {
+            return false;
+        }
+
+        if (annotation.kind === 'rectangle') {
+            const anchor = clampRectangleAnchor(annotation.anchor || {});
+            return point.x >= anchor.x
+                && point.x <= anchor.x + anchor.width
+                && point.y >= anchor.y
+                && point.y <= anchor.y + anchor.height;
+        }
+
+        const anchor = normalizeAnchorPoint(annotation.anchor);
+        const targetY = clampNormalizedValue(anchor.y - PIN_HEIGHT * 0.48);
+        return Math.hypot(point.x - anchor.x, point.y - targetY) <= 0.045;
+    }
+
+    function getAnnotationAtViewportPoint(reader, event) {
+        if (!canShowAnnotationPeek(reader)) {
+            return null;
+        }
+
+        const pageShell = getPageShellFromViewportPoint(event);
+        const pageIndex = getPageIndexFromShell(pageShell);
+        const point = getPagePointFromViewportEvent(event, pageShell);
+        if (pageIndex === null || !point) {
+            return null;
+        }
+
+        return reader.annotations.items
+            .filter((annotation) => annotation.page_index === pageIndex)
+            .reverse()
+            .find((annotation) => annotationContainsPoint(annotation, point)) || null;
     }
 
     function syncAnnotationOverlays(reader) {
@@ -665,6 +810,8 @@
         reader.annotations = annotations;
         reader.overlays = overlays;
         reader.fitWidthPointerZone = null;
+        reader.annotationPeekHideTimer = null;
+        reader.annotationPeekSuppressNextClick = false;
 
         overlays.registerRenderer('annotation', renderAnnotationOverlayItem);
         overlays.setPointerHandlers({
@@ -672,6 +819,222 @@
             move: (context) => handleAnnotationPointerMove(context.dataContext || reader, context),
             up: (context) => handleAnnotationPointerUp(context.dataContext || reader)
         });
+
+        reader.cancelAnnotationPeekHide = function cancelAnnotationPeekHide() {
+            if (this.annotationPeekHideTimer) {
+                window.clearTimeout(this.annotationPeekHideTimer);
+                this.annotationPeekHideTimer = null;
+            }
+        };
+
+        reader.hideAnnotationPeek = function hideAnnotationPeek() {
+            this.cancelAnnotationPeekHide();
+            this.annotations.peek = {
+                annotationId: null,
+                mode: null,
+                x: 0,
+                y: 0
+            };
+        };
+
+        reader.queueAnnotationPeekHide = function queueAnnotationPeekHide() {
+            if (this.annotations.peek.mode !== 'hover') {
+                return;
+            }
+
+            this.hideAnnotationPeek();
+        };
+
+        reader.showAnnotationPeek = function showAnnotationPeek(annotationOrId, event, mode = 'hover') {
+            if (!canShowAnnotationPeek(this)) {
+                return;
+            }
+
+            const annotation = typeof annotationOrId === 'object'
+                ? annotationOrId
+                : getAnnotationById(this, annotationOrId);
+            if (!annotation) {
+                return;
+            }
+
+            const position = getPeekPosition(event);
+            this.cancelAnnotationPeekHide();
+            this.annotations.peek = {
+                annotationId: annotation.id,
+                mode,
+                x: position.x,
+                y: position.y
+            };
+        };
+
+        reader.handleAnnotationPeekPointerOver = function handleAnnotationPeekPointerOver(event) {
+            if (!canShowAnnotationPeek(this) || !pointerUsesHover(event)) {
+                return;
+            }
+
+            const annotation = getAnnotationFromEvent(this, event);
+            if (annotation) {
+                this.showAnnotationPeek(annotation, event, 'hover');
+            }
+        };
+
+        reader.handleAnnotationPeekPointerMove = function handleAnnotationPeekPointerMove(event) {
+            if (!canShowAnnotationPeek(this) || !pointerUsesHover(event)) {
+                return;
+            }
+
+            const annotation = getAnnotationFromEvent(this, event);
+            if (annotation) {
+                this.showAnnotationPeek(annotation, event, 'hover');
+            }
+        };
+
+        reader.handleAnnotationPeekPointerOut = function handleAnnotationPeekPointerOut(event) {
+            const annotationId = getAnnotationIdFromEvent(event);
+            if (!annotationId || this.annotations.peek.annotationId !== annotationId) {
+                return;
+            }
+
+            if (getAnnotationIdFromElement(event.relatedTarget) === annotationId) {
+                return;
+            }
+
+            this.queueAnnotationPeekHide();
+        };
+
+        reader.handleAnnotationPeekPointerDown = function handleAnnotationPeekPointerDown(event) {
+            if (!canShowAnnotationPeek(this) || !pointerUsesTouchPeek(event)) {
+                return;
+            }
+
+            const annotation = getAnnotationFromEvent(this, event);
+            if (!annotation) {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+            this.annotationPeekSuppressNextClick = true;
+            this.showAnnotationPeek(annotation, event, 'touch');
+        };
+
+        reader.handleAnnotationPeekClick = function handleAnnotationPeekClick(event) {
+            if (!getAnnotationIdFromEvent(event)) {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+        };
+
+        reader.handleAnnotationOutsidePointerDown = function handleAnnotationOutsidePointerDown(event) {
+            const startedOnReaderControl = clickStartedOnReaderControl(event);
+
+            if (!startedOnReaderControl && canShowAnnotationPeek(this) && pointerUsesTouchPeek(event)) {
+                const annotation = getAnnotationAtViewportPoint(this, event);
+                if (annotation) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    this.annotationPeekSuppressNextClick = true;
+                    this.showAnnotationPeek(annotation, event, 'touch');
+                    return;
+                }
+            }
+
+            if (!this.annotations.peek.annotationId) {
+                return;
+            }
+
+            if (startedOnReaderControl || event.target.closest?.('[data-reader-annotation-id]')) {
+                return;
+            }
+
+            this.hideAnnotationPeek();
+        };
+
+        reader.handleAnnotationPeekViewportPointerMove = function handleAnnotationPeekViewportPointerMove(event) {
+            if (clickStartedOnReaderControl(event)) {
+                return;
+            }
+
+            if (!canShowAnnotationPeek(this) || !pointerUsesHover(event)) {
+                return;
+            }
+
+            const annotation = getAnnotationAtViewportPoint(this, event);
+            if (annotation) {
+                this.showAnnotationPeek(annotation, event, 'hover');
+                return;
+            }
+
+            if (this.annotations.peek.mode === 'hover') {
+                this.queueAnnotationPeekHide();
+            }
+        };
+
+        reader.handleAnnotationPeekViewportClick = function handleAnnotationPeekViewportClick(event) {
+            if (this.annotationPeekSuppressNextClick) {
+                this.annotationPeekSuppressNextClick = false;
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
+
+            if (clickStartedOnReaderControl(event)) {
+                return;
+            }
+
+            const annotation = getAnnotationAtViewportPoint(this, event);
+            if (!annotation) {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+            this.showAnnotationPeek(annotation, event, pointerUsesTouchPeek(event) ? 'touch' : 'hover');
+        };
+
+        reader.getAnnotationPeekStyle = function getAnnotationPeekStyle() {
+            const peek = this.annotations.peek;
+            if (!peek.annotationId || peek.mode === 'touch') {
+                return '';
+            }
+
+            const margin = 12;
+            const gap = 14;
+            const width = Math.max(180, Math.min(ANNOTATION_PEEK_WIDTH, window.innerWidth - margin * 2));
+            const height = ANNOTATION_PEEK_HEIGHT;
+            let left = peek.x + gap;
+            let top = peek.y + gap;
+
+            if (left + width > window.innerWidth - margin) {
+                left = peek.x - width - gap;
+            }
+
+            if (top + height > window.innerHeight - margin) {
+                top = peek.y - height - gap;
+            }
+
+            left = Math.max(margin, Math.min(left, window.innerWidth - width - margin));
+            top = Math.max(margin, Math.min(top, window.innerHeight - height - margin));
+
+            return `left: ${left}px; top: ${top}px; width: ${width}px;`;
+        };
+
+        reader.getAnnotationPeekBody = function getAnnotationPeekBody(annotation) {
+            return getAnnotationBodyPreview(annotation);
+        };
+
+        reader.openAnnotationFromPeek = async function openAnnotationFromPeek() {
+            const annotationId = this.annotations.peek.annotationId;
+            if (!annotationId) {
+                return;
+            }
+
+            this.hideAnnotationPeek();
+            await this.openAnnotations();
+            this.selectAnnotation(annotationId);
+        };
 
         reader.initializeAnnotationLayerVisibility = function initializeAnnotationLayerVisibility() {
             this.annotations.isLayerVisible = this.isIncognito
@@ -691,6 +1054,10 @@
             }
 
             syncAnnotationOverlays(this);
+
+            if (!this.annotations.isLayerVisible) {
+                this.hideAnnotationPeek();
+            }
 
             if (shouldNotify) {
                 window.parker.showToast(
@@ -725,6 +1092,7 @@
         };
 
         reader.openAnnotations = async function openAnnotations() {
+            this.hideAnnotationPeek();
             this.showGoto = false;
             this.showSettings = false;
             this.showBookmarks = false;
@@ -787,6 +1155,7 @@
                 return;
             }
 
+            this.hideAnnotationPeek();
             this.selectAnnotation(annotation);
             this.annotations.isPanelOpen = false;
             this.annotations.enabled = true;
@@ -976,6 +1345,9 @@
                 await readJsonResponse(response, 'Failed to delete annotation');
 
                 this.annotations.items = this.annotations.items.filter((annotation) => annotation.id !== annotationId);
+                if (this.annotations.peek.annotationId === annotationId) {
+                    this.hideAnnotationPeek();
+                }
                 if (this.annotations.selectedId === annotationId) {
                     this.annotations.isRepositioning = false;
                     this.clearAnnotationSelection();
@@ -1079,6 +1451,10 @@
 
             if (keyStartedInAnnotationPanel(event)) {
                 return;
+            }
+
+            if (this.annotations.peek.annotationId) {
+                this.hideAnnotationPeek();
             }
 
             if (!event.ctrlKey && !event.metaKey && !event.altKey && (event.key === 'a' || event.key === 'A')) {

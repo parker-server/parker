@@ -401,6 +401,95 @@ def test_reader_annotations_create_reload_edit_and_delete(page, browser_server):
 
 
 @pytest.mark.browser
+def test_reader_annotation_hover_peek_shows_title_without_blocking_navigation(page, browser_server):
+    seed = browser_server["seed"]
+    session = browser_server["db_factory"]()
+    try:
+        annotation = Annotation(
+            user_id=seed["user_id"],
+            comic_id=seed["active_comic_id"],
+            page_index=0,
+            kind="pin",
+            title="Hover clue",
+            body="This note should stay tucked away on desktop hover.",
+            color="#facc15",
+            anchor_json={"x": 0.5, "y": 0.5},
+        )
+        session.add(annotation)
+        session.commit()
+        annotation_id = annotation.id
+    finally:
+        session.close()
+
+    page.goto(f"{browser_server['base_url']}/reader/{seed['active_comic_id']}", wait_until="networkidle")
+    page.wait_for_selector(f"[data-reader-annotation-id='{annotation_id}']")
+
+    target = page.locator(f"[data-reader-annotation-id='{annotation_id}'] .reader-annotation-hit-target")
+    target_box = target.bounding_box()
+    assert target_box is not None
+    page.mouse.move(target_box["x"] + target_box["width"] / 2, target_box["y"] + target_box["height"] / 2)
+
+    page.wait_for_selector("[data-annotation-peek]")
+    assert page.locator("[data-annotation-peek-title]").text_content() == "Hover clue"
+    assert page.locator("[data-annotation-peek-body]").is_hidden()
+
+    page.mouse.move(10, 200)
+    page.wait_for_selector("[data-annotation-peek]", state="hidden")
+
+    page.locator(".nav-zone.right").click(position={"x": 10, "y": 200})
+    page.wait_for_function(
+        """
+        () => document.querySelector('.reader-container')?._x_dataStack?.[0]?.currentPage === 1
+        """
+    )
+
+
+@pytest.mark.browser
+def test_reader_annotation_touch_peek_opens_editor(mobile_page, browser_server):
+    seed = browser_server["seed"]
+    session = browser_server["db_factory"]()
+    try:
+        annotation = Annotation(
+            user_id=seed["user_id"],
+            comic_id=seed["active_comic_id"],
+            page_index=0,
+            kind="pin",
+            title="Tap clue",
+            body="A short touch preview before opening the annotation editor.",
+            color="#facc15",
+            anchor_json={"x": 0.5, "y": 0.5},
+        )
+        session.add(annotation)
+        session.commit()
+        annotation_id = annotation.id
+    finally:
+        session.close()
+
+    mobile_page.goto(f"{browser_server['base_url']}/reader/{seed['active_comic_id']}", wait_until="networkidle")
+    mobile_page.wait_for_selector(f"[data-reader-annotation-id='{annotation_id}']")
+
+    target = mobile_page.locator(f"[data-reader-annotation-id='{annotation_id}'] .reader-annotation-hit-target")
+    target_box = target.bounding_box()
+    assert target_box is not None
+    mobile_page.touchscreen.tap(
+        target_box["x"] + target_box["width"] / 2,
+        target_box["y"] + target_box["height"] / 2,
+    )
+
+    mobile_page.wait_for_selector("[data-annotation-peek]")
+    assert mobile_page.locator("[data-annotation-peek-title]").text_content() == "Tap clue"
+    assert mobile_page.locator("[data-annotation-peek-body]").text_content() == (
+        "A short touch preview before opening the annotation editor."
+    )
+    assert mobile_page.evaluate("() => document.querySelector('.reader-container')._x_dataStack[0].currentPage") == 0
+
+    mobile_page.locator("[data-annotation-peek-edit]").tap()
+    mobile_page.wait_for_selector("[data-annotation-panel]")
+    mobile_page.wait_for_selector("[data-annotation-editor]")
+    assert mobile_page.locator("[data-annotation-edit-title-input]").input_value() == "Tap clue"
+
+
+@pytest.mark.browser
 def test_reader_annotation_reposition_mode_frees_mobile_overlay(mobile_page, browser_server):
     seed = browser_server["seed"]
     page_errors = []

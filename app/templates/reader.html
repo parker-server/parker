@@ -20,8 +20,10 @@
 <div class="reader-container" x-data="window.parker.applyReaderOverlayEnhancements(window.createReader({ comicId: {{ comic_id }} }))" tabindex="0"
      :class="{ 'scroll-mode': isScrollMode }"
      x-on:keydown.window="handleKey($event)"
+     x-on:pointerdown.capture="handleAnnotationOutsidePointerDown($event)"
+     x-on:click.capture="handleAnnotationPeekViewportClick($event)"
      x-on:scroll.passive="handleScroll()"
-     x-on:pointermove="overlays.handleViewportPointerMove($event)"
+     x-on:pointermove="handleAnnotationPeekViewportPointerMove($event); overlays.handleViewportPointerMove($event)"
      x-on:pointerleave="overlays.handlePointerLeave()"
      x-on:touchstart="handleTouchStart($event)"
      x-on:touchend="handleTouchEnd($event)">
