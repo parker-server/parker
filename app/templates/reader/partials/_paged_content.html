@@ -1,5 +1,5 @@
 <template x-if="readingMode === 'paged'">
-    <div class="reader-content">
+    <div class="reader-content" :class="{'magnifier-active': magnifierEnabled}">
 
         <div class="nav-zone left" x-on:click="handleZoneClick('left')"></div>
         <div class="nav-zone center" x-on:click="handleZoneClick('center')"></div>
@@ -28,6 +28,9 @@
                         )
                     }"
                     :style="imageStyles"
+                    x-on:pointerenter="updateMagnifier($event, page.index)"
+                    x-on:pointermove="updateMagnifier($event, page.index)"
+                    x-on:pointerleave="hideMagnifier()"
                     alt="Page"
                 >
             </template>

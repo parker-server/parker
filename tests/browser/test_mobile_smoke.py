@@ -53,3 +53,24 @@ def test_mobile_reader_tap_navigation_advances_page(mobile_page, browser_server)
     )
     mobile_page.locator(".nav-zone.center").click()
     mobile_page.get_by_role("button", name="Close").wait_for()
+    assert mobile_page.locator("[data-ui-lock-toggle]").is_hidden()
+    assert mobile_page.locator("[data-fullscreen-toggle]").is_hidden()
+    assert mobile_page.locator("[data-magnifier-toggle]").is_hidden()
+    assert mobile_page.locator("[data-settings-toggle]").is_hidden()
+    assert mobile_page.locator("[data-bookmarks-toggle]").is_hidden()
+
+    toolbar_menu_toggle = mobile_page.locator("[data-reader-toolbar-menu-toggle]")
+    toolbar_menu_toggle.wait_for(state="visible")
+    toolbar_menu_toggle.click()
+
+    mobile_page.locator("[data-reader-toolbar-menu]").wait_for(state="visible")
+    assert mobile_page.locator("[data-reader-toolbar-lock]").is_visible()
+    assert mobile_page.locator("[data-reader-toolbar-settings]").is_visible()
+    assert mobile_page.locator("[data-reader-toolbar-bookmarks]").is_visible()
+    assert mobile_page.locator("[data-reader-toolbar-magnifier]").is_hidden()
+
+    mobile_page.locator("[data-reader-toolbar-lock]").click()
+    mobile_page.wait_for_function(
+        "document.querySelector('.reader-container')._x_dataStack[0].uiLocked === true"
+    )
+    mobile_page.locator("[data-reader-toolbar-menu]").wait_for(state="hidden")

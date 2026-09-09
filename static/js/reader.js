@@ -140,6 +140,7 @@
             startTime: 0,
             readingMode: 'paged',
             showSettings: false,
+            showToolbarMenu: false,
             fitMode: 'contain',
             viewMode: 'single',
             readDirection: 'ltr',
@@ -162,6 +163,18 @@
             scrubberValue: 0,
             isScrubbing: false,
             isHoveringScrubber: false,
+            magnifierEnabled: false,
+            magnifierVisible: false,
+            magnifierPageIndex: null,
+            magnifierLensX: 16,
+            magnifierLensY: 16,
+            magnifierSourceX: 0,
+            magnifierSourceY: 0,
+            magnifierSourceWidth: 0,
+            magnifierSourceHeight: 0,
+            magnifierWidth: 340,
+            magnifierHeight: 220,
+            magnifierZoom: 2,
             tapVisible: false,
             uiLocked: false,
             isHoveringZone: false,
@@ -200,12 +213,14 @@
                 reader.scrubberValue = value;
             }
 
+            reader.hideMagnifier();
             reader.preloadContext();
         });
 
         reader.$watch('filters', (value) => persistJsonPreference(STORAGE_KEYS.filters, value));
         reader.$watch('readingMode', (value) => {
             persistComicOverridePreference(reader, 'readingMode', value);
+            reader.hideMagnifier();
 
             reader.$nextTick(() => {
                 if (value === 'scroll') {
@@ -254,12 +269,14 @@
                     return this.uiLocked
                         || this.tapVisible
                         || this.isHoveringZone
+                        || this.showToolbarMenu
                         || this.showSettings
                         || this.showBookmarks
                         || this.showGoto
                         || this.isScrubbing
                         || this.isHoveringScrubber
-                        || this.isHoveringBar;
+                        || this.isHoveringBar
+                        || this.magnifierEnabled;
                 }
             },
             imageClasses: {
@@ -307,6 +324,31 @@
                     }
 
                     return styles;
+                }
+            },
+            magnifierStyles: {
+                enumerable: true,
+                get() {
+                    if (!this.magnifierVisible || !Number.isInteger(this.magnifierPageIndex)) {
+                        return {};
+                    }
+
+                    const size = this.getMagnifierSize();
+                    const backgroundWidth = this.magnifierSourceWidth * this.magnifierZoom;
+                    const backgroundHeight = this.magnifierSourceHeight * this.magnifierZoom;
+                    const backgroundX = (size.width / 2) - (this.magnifierSourceX * this.magnifierZoom);
+                    const backgroundY = (size.height / 2) - (this.magnifierSourceY * this.magnifierZoom);
+
+                    return {
+                        left: `${this.magnifierLensX}px`,
+                        top: `${this.magnifierLensY}px`,
+                        width: `${size.width}px`,
+                        height: `${size.height}px`,
+                        backgroundImage: `url("${this.getPageUrl(this.magnifierPageIndex)}")`,
+                        backgroundSize: `${backgroundWidth}px ${backgroundHeight}px`,
+                        backgroundPosition: `${backgroundX}px ${backgroundY}px`,
+                        filter: `brightness(${this.filters.brightness}%) contrast(${this.filters.contrast}%)`
+                    };
                 }
             },
             pagesToDisplay: {
@@ -526,6 +568,106 @@
                 }
 
                 this.focusReader();
+            },
+
+            clamp(value, min, max) {
+                return Math.min(Math.max(value, min), max);
+            },
+
+            getMagnifierSize() {
+                const margin = 16;
+                const availableWidth = Math.max(180, window.innerWidth - (margin * 2));
+                const availableHeight = Math.max(140, window.innerHeight - (margin * 2));
+
+                return {
+                    width: Math.min(this.magnifierWidth, availableWidth),
+                    height: Math.min(this.magnifierHeight, availableHeight)
+                };
+            },
+
+            positionMagnifier(event) {
+                const margin = 16;
+                const size = this.getMagnifierSize();
+                const maxLeft = Math.max(margin, window.innerWidth - size.width - margin);
+                const maxTop = Math.max(margin, window.innerHeight - size.height - margin);
+                const left = event.clientX - (size.width / 2);
+                const top = event.clientY - (size.height / 2);
+
+                this.magnifierLensX = this.clamp(left, margin, maxLeft);
+                this.magnifierLensY = this.clamp(top, margin, maxTop);
+            },
+
+            updateMagnifier(event, pageIndex) {
+                if (!this.magnifierEnabled || event.pointerType === 'touch') {
+                    return;
+                }
+
+                const image = event.currentTarget;
+                if (!(image instanceof HTMLImageElement)) {
+                    return;
+                }
+
+                const rect = image.getBoundingClientRect();
+                if (rect.width <= 0 || rect.height <= 0) {
+                    this.hideMagnifier();
+                    return;
+                }
+
+                const sourceX = event.clientX - rect.left;
+                const sourceY = event.clientY - rect.top;
+                if (sourceX < 0 || sourceX > rect.width || sourceY < 0 || sourceY > rect.height) {
+                    this.hideMagnifier();
+                    return;
+                }
+
+                this.magnifierPageIndex = pageIndex;
+                this.magnifierSourceX = this.clamp(sourceX, 0, rect.width);
+                this.magnifierSourceY = this.clamp(sourceY, 0, rect.height);
+                this.magnifierSourceWidth = rect.width;
+                this.magnifierSourceHeight = rect.height;
+                this.positionMagnifier(event);
+                this.magnifierVisible = true;
+            },
+
+            hideMagnifier() {
+                this.magnifierVisible = false;
+                this.magnifierPageIndex = null;
+            },
+
+            setMagnifierEnabled(enabled) {
+                this.magnifierEnabled = enabled;
+
+                if (!enabled) {
+                    this.hideMagnifier();
+                    window.parker.showToast('Magnifier off');
+                    this.resetControlFocus();
+                    return;
+                }
+
+                this.showSettings = false;
+                this.showGoto = false;
+                this.showBookmarks = false;
+                this.showToolbarMenu = false;
+                this.cancelBookmarkEdit();
+                window.parker.showToast('Magnifier on');
+                this.$nextTick(() => this.focusReader());
+            },
+
+            toggleMagnifier() {
+                this.setMagnifierEnabled(!this.magnifierEnabled);
+            },
+
+            toggleToolbarMenu() {
+                this.showToolbarMenu = !this.showToolbarMenu;
+
+                if (!this.showToolbarMenu) {
+                    return;
+                }
+
+                this.showSettings = false;
+                this.showGoto = false;
+                this.showBookmarks = false;
+                this.cancelBookmarkEdit();
             },
 
             setReadingMode(mode) {
@@ -872,6 +1014,7 @@
             async openBookmarks() {
                 this.showGoto = false;
                 this.showSettings = false;
+                this.showToolbarMenu = false;
                 this.showBookmarks = true;
                 this.bookmarkSearchQuery = '';
                 this.cancelBookmarkEdit();
@@ -1146,6 +1289,11 @@
                     return;
                 }
 
+                if (this.showToolbarMenu && event.key === 'Escape') {
+                    this.showToolbarMenu = false;
+                    return;
+                }
+
                 if (['INPUT', 'TEXTAREA'].includes(event.target.tagName) && event.target.type === 'text') {
                     return;
                 }
@@ -1166,6 +1314,11 @@
                     case 'f':
                     case 'F':
                         this.toggleFullscreen();
+                        break;
+                    case 'z':
+                    case 'Z':
+                        event.preventDefault();
+                        this.toggleMagnifier();
                         break;
                     case ']':
                         this.goToBook(this.meta.next_comic_id);
@@ -1206,6 +1359,11 @@
                             break;
                         }
 
+                        if (this.magnifierEnabled) {
+                            this.setMagnifierEnabled(false);
+                            break;
+                        }
+
                         this.exitReader();
                         break;
                 }
@@ -1213,6 +1371,7 @@
 
             openGoto() {
                 this.showBookmarks = false;
+                this.showToolbarMenu = false;
                 this.showGoto = true;
                 this.gotoInputValue = this.currentPage + 1;
 

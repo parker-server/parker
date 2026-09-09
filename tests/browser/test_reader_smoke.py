@@ -102,6 +102,80 @@ def test_reader_paged_navigation_arrows_change_pages(page, browser_server):
 
 
 @pytest.mark.browser
+def test_reader_magnifier_tool_inspects_pages_without_turning_them(page, browser_server):
+    seed = browser_server["seed"]
+    page.goto(f"{browser_server['base_url']}/reader/{seed['active_comic_id']}", wait_until="networkidle")
+
+    page.wait_for_selector(".reader-container")
+    page.locator(".nav-zone.center").click()
+    page.locator("[data-magnifier-toggle]").click()
+
+    page.wait_for_function(
+        """
+        () => document.querySelector('.reader-container')?._x_dataStack?.[0]?.magnifierEnabled === true
+        """
+    )
+
+    reader_page = page.locator("img.reader-page").first
+    page_box = reader_page.bounding_box()
+    assert page_box is not None
+
+    pointer_x = page_box["x"] + (page_box["width"] / 2)
+    pointer_y = page_box["y"] + (page_box["height"] / 2)
+    page.mouse.move(pointer_x, pointer_y)
+    page.wait_for_selector("[data-reader-magnifier]", state="visible")
+
+    magnifier_debug = page.evaluate(
+        """
+        (pointer) => {
+            const reader = document.querySelector('.reader-container');
+            const state = reader?._x_dataStack?.[0];
+            const lens = document.querySelector('[data-reader-magnifier]');
+            const pageImage = document.querySelector('img.reader-page');
+            const zone = document.querySelector('.nav-zone.right');
+            const lensRect = lens?.getBoundingClientRect();
+            const lensStyle = lens ? getComputedStyle(lens) : null;
+            return {
+                enabled: state?.magnifierEnabled,
+                visible: state?.magnifierVisible,
+                pageIndex: state?.magnifierPageIndex,
+                width: lensRect?.width,
+                height: lensRect?.height,
+                centerDeltaX: lensRect ? Math.abs((lensRect.left + (lensRect.width / 2)) - pointer.x) : null,
+                centerDeltaY: lensRect ? Math.abs((lensRect.top + (lensRect.height / 2)) - pointer.y) : null,
+                backgroundImage: lensStyle?.backgroundImage,
+                pageCursor: pageImage ? getComputedStyle(pageImage).cursor : null,
+                navPointerEvents: zone ? getComputedStyle(zone).pointerEvents : null,
+            };
+        }
+        """,
+        {"x": pointer_x, "y": pointer_y},
+    )
+
+    assert magnifier_debug["enabled"] is True
+    assert magnifier_debug["visible"] is True
+    assert magnifier_debug["pageIndex"] == 0
+    assert magnifier_debug["width"] > magnifier_debug["height"]
+    assert magnifier_debug["centerDeltaX"] < 1
+    assert magnifier_debug["centerDeltaY"] < 1
+    assert "/api/reader/" in magnifier_debug["backgroundImage"]
+    assert magnifier_debug["pageCursor"] == "none"
+    assert magnifier_debug["navPointerEvents"] == "none"
+
+    page.locator("[data-magnifier-toggle]").click()
+    page.wait_for_function(
+        """
+        () => document.querySelector('.reader-container')?._x_dataStack?.[0]?.magnifierEnabled === false
+        """
+    )
+
+    page.locator(".nav-zone.right").click()
+    page.wait_for_timeout(300)
+    current_page_text = page.locator(".reader-controls .text-white.font-bold").first.text_content()
+    assert current_page_text == "2"
+
+
+@pytest.mark.browser
 def test_reader_paged_scrubber_moves_to_selected_page_and_updates_progress(page, browser_server):
     seed = browser_server["seed"]
     page.goto(f"{browser_server['base_url']}/reader/{seed['active_comic_id']}", wait_until="networkidle")

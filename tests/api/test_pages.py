@@ -604,6 +604,12 @@ def test_reader_page_uses_modular_reader_shell(auth_client):
     assert "window.createReader({ comicId: 123 })" in body
     assert "/static/js/reader.js" in body
     assert 'x-on:click="toggleViewMode()"' in body
+    assert 'data-magnifier-toggle' in body
+    assert 'data-reader-magnifier' in body
+    assert 'data-fullscreen-toggle' in body
+    assert 'data-ui-lock-toggle' in body
+    assert 'data-settings-toggle' in body
+    assert 'data-reader-toolbar-menu-toggle' in body
 
 
 def test_cover_browser_page_exposes_start_comic_id(auth_client):
