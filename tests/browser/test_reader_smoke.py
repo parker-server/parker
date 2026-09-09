@@ -51,6 +51,46 @@ def test_reader_page_loads_and_exposes_reader_controls(page, browser_server):
 
 
 @pytest.mark.browser
+def test_reader_keyboard_shortcuts_panel_lists_current_bindings(page, browser_server):
+    seed = browser_server["seed"]
+    page.goto(f"{browser_server['base_url']}/reader/{seed['active_comic_id']}", wait_until="networkidle")
+
+    page.wait_for_selector(".reader-container")
+    page.locator(".nav-zone.center").click()
+
+    shortcuts_button = page.locator("[data-keyboard-shortcuts-toggle]")
+    assert shortcuts_button.is_visible()
+    shortcuts_button.click()
+
+    shortcuts_modal = page.locator("[data-keyboard-shortcuts-modal]")
+    shortcuts_modal.wait_for(state="visible")
+    for selector in [
+        "[data-shortcut-next-page]",
+        "[data-shortcut-previous-page]",
+        "[data-shortcut-next-issue]",
+        "[data-shortcut-previous-issue]",
+        "[data-shortcut-goto]",
+        "[data-shortcut-bookmarks]",
+        "[data-shortcut-ui-lock]",
+        "[data-shortcut-manga]",
+        "[data-shortcut-double-page]",
+        "[data-shortcut-fullscreen]",
+        "[data-shortcut-magnifier]",
+        "[data-shortcut-help]",
+        "[data-shortcut-escape]",
+    ]:
+        assert page.locator(selector).is_visible()
+
+    page.locator("[data-close-shortcuts]").click()
+    shortcuts_modal.wait_for(state="hidden")
+
+    page.keyboard.press("Shift+/")
+    shortcuts_modal.wait_for(state="visible")
+    page.keyboard.press("Escape")
+    shortcuts_modal.wait_for(state="hidden")
+
+
+@pytest.mark.browser
 def test_reader_keyboard_navigation_persists_progress(page, browser_server):
     seed = browser_server["seed"]
     page.goto(f"{browser_server['base_url']}/reader/{seed['active_comic_id']}", wait_until="networkidle")

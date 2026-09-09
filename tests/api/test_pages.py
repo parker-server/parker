@@ -607,6 +607,8 @@ def test_reader_page_uses_modular_reader_shell(auth_client):
     assert 'data-magnifier-toggle' in body
     assert 'data-reader-magnifier' in body
     assert 'data-fullscreen-toggle' in body
+    assert 'data-keyboard-shortcuts-toggle' in body
+    assert 'data-keyboard-shortcuts-modal' in body
     assert 'data-ui-lock-toggle' in body
     assert 'data-settings-toggle' in body
     assert 'data-double-page-setting' in body

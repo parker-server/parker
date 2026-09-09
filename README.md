@@ -34,6 +34,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
   - Zero‑latency engine with preloading and swipe navigation
   - Separate per-comic bookmarks with detour-safe resume handling
   - Smart close behavior that returns readers to the page they launched from
+  - Desktop keyboard shortcut reference
   - Image inspection tools, including a rectangular magnifier
 
 - **Discovery**

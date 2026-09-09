@@ -1,0 +1,107 @@
+<div x-show="showShortcuts" x-cloak
+     data-keyboard-shortcuts-modal
+     class="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 px-4 backdrop-blur-sm"
+     x-transition:enter="transition ease-out duration-200"
+     x-transition:enter-start="opacity-0"
+     x-transition:enter-end="opacity-100"
+     x-transition:leave="transition ease-in duration-100"
+     x-transition:leave-start="opacity-100"
+     x-transition:leave-end="opacity-0"
+     x-on:click.self="closeShortcuts()">
+
+    <div class="w-full max-w-lg rounded-xl border border-gray-700 bg-gray-950/95 shadow-2xl"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="scale-95 opacity-0"
+         x-transition:enter-end="scale-100 opacity-100">
+
+        <div class="flex items-start justify-between gap-4 border-b border-gray-800 px-6 py-5">
+            <div>
+                <h3 class="text-lg font-bold text-white">Keyboard Shortcuts</h3>
+            </div>
+            <button x-on:click="closeShortcuts()" data-close-shortcuts class="rounded p-2 text-gray-400 transition-colors hover:bg-white/10 hover:text-white" title="Close Keyboard Shortcuts">
+                <span class="sr-only">Close keyboard shortcuts</span>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+        </div>
+
+        <div class="grid gap-5 px-6 py-5 sm:grid-cols-2">
+            <div class="space-y-2">
+                <h4 class="text-xs font-bold uppercase tracking-wide text-gray-500">Navigation</h4>
+
+                <div data-shortcut-next-page class="flex items-center justify-between gap-4 text-sm">
+                    <span class="text-gray-300">Next page</span>
+                    <span class="flex gap-1">
+                        <kbd class="rounded border border-gray-700 bg-gray-900 px-2 py-1 font-mono text-xs text-gray-200">Right</kbd>
+                        <kbd class="rounded border border-gray-700 bg-gray-900 px-2 py-1 font-mono text-xs text-gray-200">Space</kbd>
+                    </span>
+                </div>
+
+                <div data-shortcut-previous-page class="flex items-center justify-between gap-4 text-sm">
+                    <span class="text-gray-300">Previous page</span>
+                    <kbd class="rounded border border-gray-700 bg-gray-900 px-2 py-1 font-mono text-xs text-gray-200">Left</kbd>
+                </div>
+
+                <div data-shortcut-next-issue class="flex items-center justify-between gap-4 text-sm">
+                    <span class="text-gray-300">Next issue</span>
+                    <kbd class="rounded border border-gray-700 bg-gray-900 px-2 py-1 font-mono text-xs text-gray-200">]</kbd>
+                </div>
+
+                <div data-shortcut-previous-issue class="flex items-center justify-between gap-4 text-sm">
+                    <span class="text-gray-300">Previous issue</span>
+                    <kbd class="rounded border border-gray-700 bg-gray-900 px-2 py-1 font-mono text-xs text-gray-200">[</kbd>
+                </div>
+            </div>
+
+            <div class="space-y-2">
+                <h4 class="text-xs font-bold uppercase tracking-wide text-gray-500">Reader</h4>
+
+                <div data-shortcut-goto class="flex items-center justify-between gap-4 text-sm">
+                    <span class="text-gray-300">Page jump</span>
+                    <kbd class="rounded border border-gray-700 bg-gray-900 px-2 py-1 font-mono text-xs text-gray-200">G</kbd>
+                </div>
+
+                <div data-shortcut-bookmarks class="flex items-center justify-between gap-4 text-sm">
+                    <span class="text-gray-300">Bookmarks</span>
+                    <kbd class="rounded border border-gray-700 bg-gray-900 px-2 py-1 font-mono text-xs text-gray-200">B</kbd>
+                </div>
+
+                <div data-shortcut-ui-lock class="flex items-center justify-between gap-4 text-sm">
+                    <span class="text-gray-300">Pin UI</span>
+                    <kbd class="rounded border border-gray-700 bg-gray-900 px-2 py-1 font-mono text-xs text-gray-200">H</kbd>
+                </div>
+
+                <div data-shortcut-manga class="flex items-center justify-between gap-4 text-sm">
+                    <span class="text-gray-300">Manga mode</span>
+                    <kbd class="rounded border border-gray-700 bg-gray-900 px-2 py-1 font-mono text-xs text-gray-200">M</kbd>
+                </div>
+
+                <div data-shortcut-double-page class="flex items-center justify-between gap-4 text-sm">
+                    <span class="text-gray-300">Double page</span>
+                    <kbd class="rounded border border-gray-700 bg-gray-900 px-2 py-1 font-mono text-xs text-gray-200">D</kbd>
+                </div>
+
+                <div data-shortcut-fullscreen class="flex items-center justify-between gap-4 text-sm">
+                    <span class="text-gray-300">Fullscreen</span>
+                    <kbd class="rounded border border-gray-700 bg-gray-900 px-2 py-1 font-mono text-xs text-gray-200">F</kbd>
+                </div>
+
+                <div data-shortcut-magnifier class="flex items-center justify-between gap-4 text-sm">
+                    <span class="text-gray-300">Magnifier</span>
+                    <kbd class="rounded border border-gray-700 bg-gray-900 px-2 py-1 font-mono text-xs text-gray-200">Z</kbd>
+                </div>
+
+                <div data-shortcut-help class="flex items-center justify-between gap-4 text-sm">
+                    <span class="text-gray-300">Shortcuts</span>
+                    <kbd class="rounded border border-gray-700 bg-gray-900 px-2 py-1 font-mono text-xs text-gray-200">?</kbd>
+                </div>
+
+                <div data-shortcut-escape class="flex items-center justify-between gap-4 text-sm">
+                    <span class="text-gray-300">Close / exit</span>
+                    <kbd class="rounded border border-gray-700 bg-gray-900 px-2 py-1 font-mono text-xs text-gray-200">Esc</kbd>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

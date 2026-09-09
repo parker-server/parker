@@ -146,6 +146,7 @@
             startTime: 0,
             readingMode: 'paged',
             showSettings: false,
+            showShortcuts: false,
             showToolbarMenu: false,
             fitMode: 'contain',
             viewMode: 'single',
@@ -278,6 +279,7 @@
                         || this.isHoveringZone
                         || this.showToolbarMenu
                         || this.showSettings
+                        || this.showShortcuts
                         || this.showBookmarks
                         || this.showGoto
                         || this.isScrubbing
@@ -701,6 +703,7 @@
                 }
 
                 this.showSettings = false;
+                this.showShortcuts = false;
                 this.showGoto = false;
                 this.showBookmarks = false;
                 this.showToolbarMenu = false;
@@ -721,9 +724,44 @@
                 }
 
                 this.showSettings = false;
+                this.showShortcuts = false;
                 this.showGoto = false;
                 this.showBookmarks = false;
                 this.cancelBookmarkEdit();
+            },
+
+            toggleSettings() {
+                const shouldOpen = !this.showSettings;
+
+                this.showShortcuts = false;
+                this.showGoto = false;
+                this.showBookmarks = false;
+                this.showToolbarMenu = false;
+                this.cancelBookmarkEdit();
+                this.showSettings = shouldOpen;
+            },
+
+            openShortcuts() {
+                this.showSettings = false;
+                this.showGoto = false;
+                this.showBookmarks = false;
+                this.showToolbarMenu = false;
+                this.cancelBookmarkEdit();
+                this.showShortcuts = true;
+            },
+
+            closeShortcuts() {
+                this.showShortcuts = false;
+                this.resetControlFocus();
+            },
+
+            toggleShortcuts() {
+                if (this.showShortcuts) {
+                    this.closeShortcuts();
+                    return;
+                }
+
+                this.openShortcuts();
             },
 
             setReadingMode(mode) {
@@ -732,6 +770,7 @@
                 }
 
                 this.showSettings = false;
+                this.showShortcuts = false;
                 this.readingMode = mode;
                 window.parker.showToast(mode === 'scroll' ? 'Long View enabled' : 'Paged View enabled');
             },
@@ -1070,6 +1109,7 @@
             async openBookmarks() {
                 this.showGoto = false;
                 this.showSettings = false;
+                this.showShortcuts = false;
                 this.showToolbarMenu = false;
                 this.showBookmarks = true;
                 this.bookmarkSearchQuery = '';
@@ -1350,11 +1390,27 @@
                     return;
                 }
 
+                const isShortcutsKey = event.key === '?' || (event.key === '/' && event.shiftKey);
+
+                if (this.showShortcuts) {
+                    if (event.key === 'Escape' || isShortcutsKey) {
+                        event.preventDefault();
+                        this.closeShortcuts();
+                    }
+                    return;
+                }
+
                 if (['INPUT', 'TEXTAREA'].includes(event.target.tagName) && event.target.type === 'text') {
                     return;
                 }
 
                 if (event.ctrlKey || event.metaKey || event.altKey) {
+                    return;
+                }
+
+                if (isShortcutsKey) {
+                    event.preventDefault();
+                    this.toggleShortcuts();
                     return;
                 }
 
@@ -1427,6 +1483,7 @@
 
             openGoto() {
                 this.showBookmarks = false;
+                this.showShortcuts = false;
                 this.showToolbarMenu = false;
                 this.showGoto = true;
                 this.gotoInputValue = this.currentPage + 1;
