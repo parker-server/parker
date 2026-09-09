@@ -18,11 +18,11 @@
                     :class="imageClasses"
                     class="reader-page"
                     :class="{
-                        'object-right': viewMode === 'double' && pagesToDisplay.length > 1 && (
+                        'object-right': isDoublePageActive && pagesToDisplay.length > 1 && (
                             (readDirection === 'ltr' && idx === 0) ||
                             (readDirection === 'rtl' && idx === 1)
                         ),
-                        'object-left': viewMode === 'double' && pagesToDisplay.length > 1 && (
+                        'object-left': isDoublePageActive && pagesToDisplay.length > 1 && (
                             (readDirection === 'ltr' && idx === 1) ||
                             (readDirection === 'rtl' && idx === 0)
                         )
@@ -36,7 +36,7 @@
             </template>
 
             <div class="absolute inset-y-0 left-1/2 w-24 -translate-x-1/2 pointer-events-none z-20"
-                 x-show="viewMode === 'double' && pagesToDisplay.length === 2 && showSpineShadow"
+                 x-show="isDoublePageActive && pagesToDisplay.length === 2 && showSpineShadow"
                  x-transition:enter="transition-opacity duration-200"
                  x-transition:enter-start="opacity-0"
                  x-transition:enter-end="opacity-100"

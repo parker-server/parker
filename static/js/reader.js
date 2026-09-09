@@ -9,6 +9,12 @@
         contrast: 100
     });
 
+    const COMPACT_READER_LAYOUT_QUERY = [
+        '(max-width: 899px)',
+        '(orientation: portrait) and (max-width: 1024px)',
+        '(max-height: 520px)'
+    ].join(', ');
+
     const STORAGE_KEYS = Object.freeze({
         filters: 'readerFilters',
         readingMode: 'reader_readingMode',
@@ -143,6 +149,7 @@
             showToolbarMenu: false,
             fitMode: 'contain',
             viewMode: 'single',
+            isCompactReaderLayout: false,
             readDirection: 'ltr',
             doublePageOffset: true,
             showSpineShadow: false,
@@ -279,11 +286,29 @@
                         || this.magnifierEnabled;
                 }
             },
+            isDoublePageAvailable: {
+                enumerable: true,
+                get() {
+                    return !this.isCompactReaderLayout;
+                }
+            },
+            activeViewMode: {
+                enumerable: true,
+                get() {
+                    return this.isDoublePageAvailable ? this.viewMode : 'single';
+                }
+            },
+            isDoublePageActive: {
+                enumerable: true,
+                get() {
+                    return this.activeViewMode === 'double';
+                }
+            },
             imageClasses: {
                 enumerable: true,
                 get() {
-                    const isSmartSpread = this.viewMode === 'double' && this.pagesToDisplay.length === 1;
-                    return this.viewMode === 'double' && !isSmartSpread
+                    const isSmartSpread = this.isDoublePageActive && this.pagesToDisplay.length === 1;
+                    return this.isDoublePageActive && !isSmartSpread
                         ? 'w-1/2 h-screen object-contain'
                         : 'w-full h-screen object-contain';
                 }
@@ -297,7 +322,7 @@
                         styles.height = '100vh';
                         styles.width = 'auto';
                     } else if (this.fitMode === 'width') {
-                        styles.width = this.viewMode === 'double' ? '50vw' : '100vw';
+                        styles.width = this.isDoublePageActive ? '50vw' : '100vw';
                         styles.height = 'auto';
                     } else if (this.fitMode === 'height') {
                         styles.height = '100vh';
@@ -354,7 +379,7 @@
             pagesToDisplay: {
                 enumerable: true,
                 get() {
-                    if (this.viewMode === 'single') {
+                    if (!this.isDoublePageActive) {
                         return [{ index: this.currentPage }];
                     }
 
@@ -414,6 +439,7 @@
                 setInterval(() => { this.updateClock(); }, 1000);
 
                 applyStoredReaderSettings(this);
+                this.setupCompactReaderLayout();
 
                 const params = new URLSearchParams(window.location.search);
                 this.isIncognito = params.get('incognito') === 'true';
@@ -493,7 +519,7 @@
             },
 
             preloadContext() {
-                const bufferSize = this.viewMode === 'double' ? 4 : 2;
+                const bufferSize = this.isDoublePageActive ? 4 : 2;
 
                 for (let index = 1; index <= bufferSize; index += 1) {
                     const nextPage = this.currentPage + index;
@@ -568,6 +594,36 @@
                 }
 
                 this.focusReader();
+            },
+
+            setupCompactReaderLayout() {
+                if (!window.matchMedia) {
+                    return;
+                }
+
+                const mediaQuery = window.matchMedia(COMPACT_READER_LAYOUT_QUERY);
+                const syncLayout = (event) => {
+                    this.syncCompactReaderLayout(event.matches);
+                };
+
+                this.syncCompactReaderLayout(mediaQuery.matches);
+
+                if (mediaQuery.addEventListener) {
+                    mediaQuery.addEventListener('change', syncLayout);
+                } else {
+                    mediaQuery.addListener(syncLayout);
+                }
+            },
+
+            syncCompactReaderLayout(isCompact) {
+                const nextCompactState = Boolean(isCompact);
+                if (this.isCompactReaderLayout === nextCompactState) {
+                    return;
+                }
+
+                this.isCompactReaderLayout = nextCompactState;
+                this.hideMagnifier();
+                this.preloadContext();
             },
 
             clamp(value, min, max) {
@@ -850,7 +906,7 @@
             },
 
             toggleViewMode() {
-                if (this.isScrollMode) {
+                if (this.isScrollMode || !this.isDoublePageAvailable) {
                     return;
                 }
 
@@ -888,7 +944,7 @@
                     return;
                 }
 
-                if (this.viewMode === 'single') {
+                if (this.activeViewMode === 'single') {
                     if (this.currentPage > 0) {
                         this.currentPage -= 1;
                         this.updateProgress();

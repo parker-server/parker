@@ -74,3 +74,46 @@ def test_mobile_reader_tap_navigation_advances_page(mobile_page, browser_server)
         "document.querySelector('.reader-container')._x_dataStack[0].uiLocked === true"
     )
     mobile_page.locator("[data-reader-toolbar-menu]").wait_for(state="hidden")
+
+
+@pytest.mark.browser
+def test_mobile_reader_uses_single_page_when_double_page_is_saved(mobile_page, browser_server):
+    seed = browser_server["seed"]
+    mobile_page.goto(f"{browser_server['base_url']}/", wait_until="networkidle")
+    mobile_page.evaluate("() => window.parker.storage.setString('reader_viewMode', 'double')")
+
+    mobile_page.goto(f"{browser_server['base_url']}/reader/{seed['active_comic_id']}", wait_until="networkidle")
+    mobile_page.locator(".reader-container").wait_for()
+    mobile_page.wait_for_function(
+        """
+        () => {
+            const state = document.querySelector('.reader-container')?._x_dataStack?.[0];
+            return state?.viewMode === 'double'
+                && state?.isCompactReaderLayout === true
+                && state?.isDoublePageAvailable === false
+                && state?.activeViewMode === 'single'
+                && state?.pagesToDisplay?.length === 1
+                && document.querySelectorAll('img.reader-page').length === 1;
+        }
+        """
+    )
+
+    mobile_page.locator(".nav-zone.center").click()
+    mobile_page.locator("[data-reader-toolbar-menu-toggle]").click()
+    mobile_page.locator("[data-reader-toolbar-settings]").click()
+
+    mobile_page.locator(".settings-panel").wait_for(state="visible")
+    assert mobile_page.locator("[data-double-page-setting]").is_hidden()
+
+    mobile_page.keyboard.press("d")
+    mobile_page.wait_for_function(
+        """
+        () => {
+            const state = document.querySelector('.reader-container')?._x_dataStack?.[0];
+            return state?.viewMode === 'double'
+                && state?.activeViewMode === 'single'
+                && state?.pagesToDisplay?.length === 1
+                && document.querySelectorAll('img.reader-page').length === 1;
+        }
+        """
+    )
