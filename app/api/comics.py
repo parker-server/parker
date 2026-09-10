@@ -437,6 +437,7 @@ async def get_cover_manifest(
         context_id: int,
         offset: Annotated[int, Query(ge=0)] = 0,
         limit: Annotated[int, Query(ge=1, le=120)] = COVER_MANIFEST_PAGE_SIZE,
+        anchor_comic_id: Annotated[int | None, Query(ge=1)] = None,
 ):
     """
     Returns a page of Comic IDs and Titles to power the Cover Browser.
@@ -527,12 +528,24 @@ async def get_cover_manifest(
             .order_by(Comic.year.asc(), Series.name.asc(), func.cast(Comic.number, Float))
 
     total = query.order_by(None).count()
+
+    if anchor_comic_id is not None and total:
+        ordered_ids = [row[0] for row in query.with_entities(Comic.id).all()]
+        try:
+            anchor_index = ordered_ids.index(anchor_comic_id)
+        except ValueError:
+            pass
+        else:
+            max_offset = max(total - limit, 0)
+            offset = min(max(anchor_index - (limit // 2), 0), max_offset)
+
     items = query.offset(offset).limit(limit).all()
 
     return {
         "total": total,
         "offset": offset,
         "limit": limit,
+        "has_previous": offset > 0,
         "has_more": offset + len(items) < total,
         "items": [
             {

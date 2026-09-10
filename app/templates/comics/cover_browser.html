@@ -86,6 +86,9 @@
     </div>
 
     <div x-show="mode === 'grid'" class="grid-view scrollbar-thin" x-on:scroll="handleGridScroll($event)">
+        <div x-show="loadingPrevious" class="col-span-full flex justify-center py-4 text-sm text-gray-400">
+            Loading previous covers...
+        </div>
         <template x-for="(item, index) in items" :key="item.comic_id">
             <div x-on:click="goToIndex(index)" class="cursor-pointer group flex flex-col items-center">
                 <div class="aspect-[2/3] w-full relative rounded-lg overflow-hidden border border-gray-700 group-hover:border-blue-500 transition-all shadow-lg group-hover:scale-105">
@@ -167,13 +170,16 @@ function coverBrowser() {
         mode: 'grid',
         zoomMode: false,
         items: [],
+        baseOffset: 0,
         total: 0,
         hasMore: false,
+        hasPrevious: false,
         manifestLimit: 60,
         currentIndex: 0,
         doublePage: false,
         loading: true,
         loadingMore: false,
+        loadingPrevious: false,
         pendingManifestLoad: null,
         loadError: null,
 
@@ -209,12 +215,13 @@ function coverBrowser() {
             const total = this.total || this.items.length;
             if (total === 0) return '0 / 0';
 
-            return `${Math.min(this.currentIndex + 1, total)} / ${total}`;
+            return `${Math.min(this.baseOffset + this.currentIndex + 1, total)} / ${total}`;
         },
 
         get currentImages() {
             if (this.items.length === 0) return [];
             const current = this.items[this.currentIndex];
+            if (!current) return [];
 
             if (!this.doublePage) return [current];
             if (this.currentIndex >= this.items.length - 1) return [current];
@@ -223,24 +230,46 @@ function coverBrowser() {
             return [current, next];
         },
 
-        async loadManifestPage(reset = false) {
-            if (!reset && this.loadingMore) return this.pendingManifestLoad;
-            if (!reset && !this.hasMore) return;
+        async loadManifestPage(reset = false, direction = 'next') {
+            if (this.pendingManifestLoad) return this.pendingManifestLoad;
 
-            const offset = reset ? 0 : this.items.length;
+            const loadingPreviousPage = direction === 'previous';
+            if (!reset && loadingPreviousPage && !this.hasPrevious) return;
+            if (!reset && !loadingPreviousPage && !this.hasMore) return;
+            if (!reset && loadingPreviousPage && this.loadingPrevious) return this.pendingManifestLoad;
+            if (!reset && !loadingPreviousPage && this.loadingMore) return this.pendingManifestLoad;
+
+            const offset = reset
+                ? 0
+                : loadingPreviousPage
+                    ? Math.max(0, this.baseOffset - this.manifestLimit)
+                    : this.baseOffset + this.items.length;
+            const pageLimit = loadingPreviousPage
+                ? Math.min(this.manifestLimit, this.baseOffset - offset)
+                : this.manifestLimit;
             const query = new URLSearchParams({
                 context_type: this.contextType,
                 context_id: String(this.contextId),
                 offset: String(offset),
-                limit: String(this.manifestLimit),
+                limit: String(pageLimit),
             });
+
+            const requestedId = Number(this.startComicId);
+            if (reset && Number.isInteger(requestedId) && requestedId > 0) {
+                query.set('anchor_comic_id', String(requestedId));
+            }
+
             const url = window.parker.route('comics.cover_manifest', {}, query.toString());
 
             if (reset) {
                 this.loading = true;
                 this.items = [];
+                this.baseOffset = 0;
                 this.total = 0;
                 this.hasMore = false;
+                this.hasPrevious = false;
+            } else if (loadingPreviousPage) {
+                this.loadingPrevious = true;
             } else {
                 this.loadingMore = true;
             }
@@ -253,14 +282,28 @@ function coverBrowser() {
 
                     const data = await res.json();
                     const newItems = data.items || [];
-                    this.items = reset ? newItems : [...this.items, ...newItems];
-                    this.total = data.total ?? this.items.length;
-                    this.hasMore = Boolean(data.has_more);
+                    const responseOffset = Number.isInteger(data.offset) ? data.offset : offset;
+
+                    if (reset) {
+                        this.items = newItems;
+                        this.baseOffset = responseOffset;
+                    } else if (loadingPreviousPage) {
+                        this.items = [...newItems, ...this.items];
+                        this.baseOffset = responseOffset;
+                        this.currentIndex += newItems.length;
+                    } else {
+                        this.items = [...this.items, ...newItems];
+                    }
+
+                    this.total = data.total ?? (this.baseOffset + this.items.length);
+                    this.hasPrevious = this.baseOffset > 0;
+                    this.hasMore = this.baseOffset + this.items.length < this.total;
                 } catch (error) {
                     this.loadError = 'Could not load covers.';
                 } finally {
                     this.loading = false;
                     this.loadingMore = false;
+                    this.loadingPrevious = false;
                     this.pendingManifestLoad = null;
                 }
             })();
@@ -269,7 +312,11 @@ function coverBrowser() {
         },
 
         loadMore() {
-            return this.loadManifestPage(false);
+            return this.loadManifestPage(false, 'next');
+        },
+
+        loadPrevious() {
+            return this.loadManifestPage(false, 'previous');
         },
 
         async applyStartComicId() {
@@ -277,65 +324,75 @@ function coverBrowser() {
             if (!Number.isInteger(requestedId) || requestedId <= 0) return;
 
             let index = this.items.findIndex(item => item.comic_id === requestedId);
-            while (index === -1 && this.hasMore && !this.loadError) {
-                const previousLength = this.items.length;
-                await this.loadMore();
-                index = this.items.findIndex(item => item.comic_id === requestedId);
-                if (this.items.length === previousLength) break;
-            }
-
             if (index !== -1) {
                 this.currentIndex = index;
                 this.mode = 'theater';
-                this.prefetchAhead();
+                this.prefetchAround();
             }
         },
 
-        prefetchAhead() {
+        prefetchAround() {
+            if (this.hasPrevious && !this.loadingPrevious && this.currentIndex < 10) {
+                this.loadPrevious();
+            }
             if (this.hasMore && !this.loadingMore && this.items.length - this.currentIndex <= 10) {
                 this.loadMore();
             }
         },
 
-        handleGridScroll(e) {
+        async handleGridScroll(e) {
             const el = e.currentTarget;
+            if (el.scrollTop <= 800) {
+                const previousHeight = el.scrollHeight;
+                await this.loadPrevious();
+                if (el.scrollHeight > previousHeight) {
+                    el.scrollTop += el.scrollHeight - previousHeight;
+                }
+            }
+
             if (el.scrollTop + el.clientHeight >= el.scrollHeight - 800) {
-                this.loadMore();
+                await this.loadMore();
             }
         },
 
         async next() {
             const step = this.doublePage ? 2 : 1;
-            const targetIndex = this.currentIndex + step;
+            const targetGlobalIndex = this.baseOffset + this.currentIndex + step;
 
-            if (targetIndex >= this.items.length && this.hasMore) {
+            if (targetGlobalIndex >= this.baseOffset + this.items.length && this.hasMore) {
                 await this.loadMore();
             }
 
-            if (targetIndex < this.items.length) {
-                this.currentIndex = targetIndex;
-                this.prefetchAhead();
+            if (targetGlobalIndex < this.baseOffset + this.items.length) {
+                this.currentIndex = targetGlobalIndex - this.baseOffset;
+                this.prefetchAround();
             }
         },
 
-        prev() {
+        async prev() {
             const step = this.doublePage ? 2 : 1;
-            if (this.currentIndex - step >= 0) {
-                this.currentIndex -= step;
-            } else {
-                this.currentIndex = 0;
+            const targetGlobalIndex = Math.max(this.baseOffset + this.currentIndex - step, 0);
+
+            if (targetGlobalIndex < this.baseOffset && this.hasPrevious) {
+                await this.loadPrevious();
             }
+
+            this.currentIndex = Math.max(
+                0,
+                Math.min(targetGlobalIndex - this.baseOffset, this.items.length - 1)
+            );
+            this.prefetchAround();
         },
 
         goToIndex(index) {
             this.currentIndex = index;
             this.mode = 'theater';
-            this.prefetchAhead();
+            this.prefetchAround();
         },
 
         async handleZoneClick(e) {
             const width = window.innerWidth;
-            if (e.clientX < width / 3) this.prev();
+            if (e.clientX < width / 3) await this.prev();
             else if (e.clientX > width * 0.66) await this.next();
         },
 
@@ -350,7 +407,7 @@ function coverBrowser() {
                 else this.exit();
             }
             if(e.key === 'ArrowRight' || e.key === ' ') await this.next();
-            if(e.key === 'ArrowLeft') this.prev();
+            if(e.key === 'ArrowLeft') await this.prev();
             if(e.key === 'g') this.mode = 'grid';
             if(e.key === 't') this.mode = 'theater';
             if(e.key === 'z') {

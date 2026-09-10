@@ -220,6 +220,63 @@ def test_comic_detail_cover_opens_series_cover_browser_at_current_cover_and_retu
 
 
 @pytest.mark.browser
+def test_cover_browser_deep_link_anchors_without_walking_prior_manifest_pages(page, browser_server):
+    seed = browser_server["seed"]
+    comic_ids = _add_large_cover_browser_fixture(browser_server)
+    target_comic_id = comic_ids[-1]
+    request_urls = []
+    page.on("request", lambda request: request_urls.append(request.url))
+
+    try:
+        page.goto(
+            f"{browser_server['base_url']}/browse/volume/{seed['volume_id']}?start_comic_id={target_comic_id}",
+            wait_until="networkidle",
+        )
+
+        page.wait_for_function(
+            """
+            (comicId) => {
+                const state = document.querySelector('.browser-container')?._x_dataStack?.[0];
+                return state?.mode === 'theater'
+                    && state?.currentImages?.[0]?.comic_id === comicId
+                    && state?.baseOffset > 0
+                    && state?.items?.length < state?.total;
+            }
+            """,
+            arg=target_comic_id,
+        )
+
+        manifest_urls = [url for url in request_urls if "/api/comics/covers/manifest" in url]
+        assert len(manifest_urls) == 1
+        assert f"anchor_comic_id={target_comic_id}" in manifest_urls[0]
+        assert not any("offset=60" in url for url in manifest_urls)
+
+        with page.expect_response(
+            lambda response: "/api/comics/covers/manifest" in response.url
+            and "offset=0" in response.url
+            and "limit=4" in response.url
+        ):
+            page.keyboard.press("g")
+            page.locator(".grid-view").evaluate(
+                "(el) => { el.scrollTop = 0; el.dispatchEvent(new Event('scroll')); }"
+            )
+
+        page.wait_for_function(
+            """
+            () => {
+                const state = document.querySelector('.browser-container')?._x_dataStack?.[0];
+                const ids = state?.items?.map((item) => item.comic_id) || [];
+                return state?.baseOffset === 0
+                    && ids.length === state?.total
+                    && new Set(ids).size === ids.length;
+            }
+            """
+        )
+    finally:
+        _remove_large_cover_browser_fixture(browser_server, comic_ids)
+
+
+@pytest.mark.browser
 def test_cover_browser_lazy_loads_large_manifest_pages(page, browser_server):
     seed = browser_server["seed"]
     comic_ids = _add_large_cover_browser_fixture(browser_server)

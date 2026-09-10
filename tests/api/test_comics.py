@@ -929,6 +929,41 @@ def test_cover_manifest_paginates_large_contexts(auth_client, db, normal_user):
     assert [item["comic_id"] for item in final_payload["items"]] == [comics[4].id]
 
 
+def test_cover_manifest_anchor_comic_id_starts_near_requested_item(auth_client, db, normal_user):
+    library, _, volume = _create_graph(db, lib_name="comic-manifest-anchor", series_name="Anchored Manifest")
+
+    comics = [
+        create_comic(
+            db,
+            volume,
+            library.active_root,
+            f"anchored-{number}.cbz",
+            number=str(number),
+            year=2025,
+            title=f"Anchored #{number}",
+            thumbnail_path=f"/tmp/anchored-{number}.webp",
+            filename=f"anchored-{number}.cbz",
+        )
+        for number in range(1, 7)
+    ]
+
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    response = auth_client.get(
+        "/api/comics/covers/manifest"
+        f"?context_type=volume&context_id={volume.id}&limit=2&anchor_comic_id={comics[-1].id}"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 6
+    assert payload["offset"] == 4
+    assert payload["has_previous"] is True
+    assert payload["has_more"] is False
+    assert [item["comic_id"] for item in payload["items"]] == [comics[4].id, comics[5].id]
+
+
 def test_cover_manifest_reading_list_pull_list_and_collection_ordering(auth_client, db, normal_user):
     library, series, volume = _create_graph(db, lib_name="comic-manifest-order", series_name="Manifest Order")
 
