@@ -31,6 +31,75 @@
 
     .reader-toolbar.hidden { transform: translateY(-100%); }
 
+    .reader-toolbar-direct-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .reader-toolbar-overflow {
+        display: none;
+    }
+
+    .reader-toolbar-menu {
+        position: absolute;
+        top: calc(100% + 0.5rem);
+        right: 0;
+        min-width: 12rem;
+        z-index: 70;
+        padding: 0.35rem;
+        color: #e5e7eb;
+        background: rgba(17, 24, 39, 0.98);
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        border-radius: 0.5rem;
+        box-shadow: 0 20px 45px rgba(0, 0, 0, 0.45);
+    }
+
+    .reader-toolbar-menu-item {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        gap: 0.65rem;
+        padding: 0.65rem 0.75rem;
+        border-radius: 0.375rem;
+        font-size: 0.875rem;
+        font-weight: 600;
+        text-align: left;
+        transition: background-color 0.15s, color 0.15s;
+    }
+
+    .reader-toolbar-menu-item:hover {
+        color: #fff;
+        background: rgba(255, 255, 255, 0.1);
+    }
+
+    @media (hover: none), (pointer: coarse) {
+        .reader-fullscreen-toggle,
+        .reader-keyboard-shortcuts-toggle,
+        .reader-pointer-action {
+            display: none;
+        }
+    }
+
+    @media (max-width: 639px) {
+        .reader-toolbar {
+            gap: 0.75rem;
+            padding: 0.625rem 0.75rem;
+        }
+
+        .reader-toolbar-title-group {
+            max-width: calc(100% - 3.25rem);
+        }
+
+        .reader-toolbar .reader-toolbar-direct-actions {
+            display: none !important;
+        }
+
+        .reader-toolbar-overflow {
+            display: block;
+        }
+    }
+
     .bookmark-detour-banner {
         position: sticky;
         top: 4.25rem;
@@ -92,6 +161,37 @@
     .nav-zone.right { right: 0; }
     .nav-zone:hover { background: linear-gradient(to right, rgba(255,255,255,0.05), transparent); }
     .nav-zone.right:hover { background: linear-gradient(to left, rgba(255,255,255,0.05), transparent); }
+
+    .reader-content.magnifier-active .nav-zone {
+        pointer-events: none;
+    }
+
+    .reader-content.magnifier-active .reader-page {
+        cursor: none;
+    }
+
+    .reader-magnifier {
+        position: fixed;
+        z-index: 48;
+        pointer-events: none;
+        background-color: #050505;
+        background-repeat: no-repeat;
+        border: 1px solid rgba(255, 255, 255, 0.55);
+        border-radius: 0.375rem;
+        box-shadow:
+            0 20px 50px rgba(0, 0, 0, 0.55),
+            inset 0 0 0 1px rgba(0, 0, 0, 0.65);
+    }
+
+    .reader-magnifier::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        box-shadow:
+            inset 0 0 24px rgba(0, 0, 0, 0.35),
+            inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+    }
 
     .nav-zone.center {
         left: 20%;

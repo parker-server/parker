@@ -9,6 +9,12 @@
         contrast: 100
     });
 
+    const COMPACT_READER_LAYOUT_QUERY = [
+        '(max-width: 899px)',
+        '(orientation: portrait) and (max-width: 1024px)',
+        '(max-height: 520px)'
+    ].join(', ');
+
     const STORAGE_KEYS = Object.freeze({
         filters: 'readerFilters',
         readingMode: 'reader_readingMode',
@@ -140,8 +146,11 @@
             startTime: 0,
             readingMode: 'paged',
             showSettings: false,
+            showShortcuts: false,
+            showToolbarMenu: false,
             fitMode: 'contain',
             viewMode: 'single',
+            isCompactReaderLayout: false,
             readDirection: 'ltr',
             doublePageOffset: true,
             showSpineShadow: false,
@@ -162,6 +171,18 @@
             scrubberValue: 0,
             isScrubbing: false,
             isHoveringScrubber: false,
+            magnifierEnabled: false,
+            magnifierVisible: false,
+            magnifierPageIndex: null,
+            magnifierLensX: 16,
+            magnifierLensY: 16,
+            magnifierSourceX: 0,
+            magnifierSourceY: 0,
+            magnifierSourceWidth: 0,
+            magnifierSourceHeight: 0,
+            magnifierWidth: 340,
+            magnifierHeight: 220,
+            magnifierZoom: 2,
             tapVisible: false,
             uiLocked: false,
             isHoveringZone: false,
@@ -200,12 +221,14 @@
                 reader.scrubberValue = value;
             }
 
+            reader.hideMagnifier();
             reader.preloadContext();
         });
 
         reader.$watch('filters', (value) => persistJsonPreference(STORAGE_KEYS.filters, value));
         reader.$watch('readingMode', (value) => {
             persistComicOverridePreference(reader, 'readingMode', value);
+            reader.hideMagnifier();
 
             reader.$nextTick(() => {
                 if (value === 'scroll') {
@@ -254,19 +277,40 @@
                     return this.uiLocked
                         || this.tapVisible
                         || this.isHoveringZone
+                        || this.showToolbarMenu
                         || this.showSettings
+                        || this.showShortcuts
                         || this.showBookmarks
                         || this.showGoto
                         || this.isScrubbing
                         || this.isHoveringScrubber
-                        || this.isHoveringBar;
+                        || this.isHoveringBar
+                        || this.magnifierEnabled;
+                }
+            },
+            isDoublePageAvailable: {
+                enumerable: true,
+                get() {
+                    return !this.isCompactReaderLayout;
+                }
+            },
+            activeViewMode: {
+                enumerable: true,
+                get() {
+                    return this.isDoublePageAvailable ? this.viewMode : 'single';
+                }
+            },
+            isDoublePageActive: {
+                enumerable: true,
+                get() {
+                    return this.activeViewMode === 'double';
                 }
             },
             imageClasses: {
                 enumerable: true,
                 get() {
-                    const isSmartSpread = this.viewMode === 'double' && this.pagesToDisplay.length === 1;
-                    return this.viewMode === 'double' && !isSmartSpread
+                    const isSmartSpread = this.isDoublePageActive && this.pagesToDisplay.length === 1;
+                    return this.isDoublePageActive && !isSmartSpread
                         ? 'w-1/2 h-screen object-contain'
                         : 'w-full h-screen object-contain';
                 }
@@ -280,7 +324,7 @@
                         styles.height = '100vh';
                         styles.width = 'auto';
                     } else if (this.fitMode === 'width') {
-                        styles.width = this.viewMode === 'double' ? '50vw' : '100vw';
+                        styles.width = this.isDoublePageActive ? '50vw' : '100vw';
                         styles.height = 'auto';
                     } else if (this.fitMode === 'height') {
                         styles.height = '100vh';
@@ -309,10 +353,35 @@
                     return styles;
                 }
             },
+            magnifierStyles: {
+                enumerable: true,
+                get() {
+                    if (!this.magnifierVisible || !Number.isInteger(this.magnifierPageIndex)) {
+                        return {};
+                    }
+
+                    const size = this.getMagnifierSize();
+                    const backgroundWidth = this.magnifierSourceWidth * this.magnifierZoom;
+                    const backgroundHeight = this.magnifierSourceHeight * this.magnifierZoom;
+                    const backgroundX = (size.width / 2) - (this.magnifierSourceX * this.magnifierZoom);
+                    const backgroundY = (size.height / 2) - (this.magnifierSourceY * this.magnifierZoom);
+
+                    return {
+                        left: `${this.magnifierLensX}px`,
+                        top: `${this.magnifierLensY}px`,
+                        width: `${size.width}px`,
+                        height: `${size.height}px`,
+                        backgroundImage: `url("${this.getPageUrl(this.magnifierPageIndex)}")`,
+                        backgroundSize: `${backgroundWidth}px ${backgroundHeight}px`,
+                        backgroundPosition: `${backgroundX}px ${backgroundY}px`,
+                        filter: `brightness(${this.filters.brightness}%) contrast(${this.filters.contrast}%)`
+                    };
+                }
+            },
             pagesToDisplay: {
                 enumerable: true,
                 get() {
-                    if (this.viewMode === 'single') {
+                    if (!this.isDoublePageActive) {
                         return [{ index: this.currentPage }];
                     }
 
@@ -372,6 +441,7 @@
                 setInterval(() => { this.updateClock(); }, 1000);
 
                 applyStoredReaderSettings(this);
+                this.setupCompactReaderLayout();
 
                 const params = new URLSearchParams(window.location.search);
                 this.isIncognito = params.get('incognito') === 'true';
@@ -451,7 +521,7 @@
             },
 
             preloadContext() {
-                const bufferSize = this.viewMode === 'double' ? 4 : 2;
+                const bufferSize = this.isDoublePageActive ? 4 : 2;
 
                 for (let index = 1; index <= bufferSize; index += 1) {
                     const nextPage = this.currentPage + index;
@@ -528,12 +598,179 @@
                 this.focusReader();
             },
 
+            setupCompactReaderLayout() {
+                if (!window.matchMedia) {
+                    return;
+                }
+
+                const mediaQuery = window.matchMedia(COMPACT_READER_LAYOUT_QUERY);
+                const syncLayout = (event) => {
+                    this.syncCompactReaderLayout(event.matches);
+                };
+
+                this.syncCompactReaderLayout(mediaQuery.matches);
+
+                if (mediaQuery.addEventListener) {
+                    mediaQuery.addEventListener('change', syncLayout);
+                } else {
+                    mediaQuery.addListener(syncLayout);
+                }
+            },
+
+            syncCompactReaderLayout(isCompact) {
+                const nextCompactState = Boolean(isCompact);
+                if (this.isCompactReaderLayout === nextCompactState) {
+                    return;
+                }
+
+                this.isCompactReaderLayout = nextCompactState;
+                this.hideMagnifier();
+                this.preloadContext();
+            },
+
+            clamp(value, min, max) {
+                return Math.min(Math.max(value, min), max);
+            },
+
+            getMagnifierSize() {
+                const margin = 16;
+                const availableWidth = Math.max(180, window.innerWidth - (margin * 2));
+                const availableHeight = Math.max(140, window.innerHeight - (margin * 2));
+
+                return {
+                    width: Math.min(this.magnifierWidth, availableWidth),
+                    height: Math.min(this.magnifierHeight, availableHeight)
+                };
+            },
+
+            positionMagnifier(event) {
+                const margin = 16;
+                const size = this.getMagnifierSize();
+                const maxLeft = Math.max(margin, window.innerWidth - size.width - margin);
+                const maxTop = Math.max(margin, window.innerHeight - size.height - margin);
+                const left = event.clientX - (size.width / 2);
+                const top = event.clientY - (size.height / 2);
+
+                this.magnifierLensX = this.clamp(left, margin, maxLeft);
+                this.magnifierLensY = this.clamp(top, margin, maxTop);
+            },
+
+            updateMagnifier(event, pageIndex) {
+                if (!this.magnifierEnabled || event.pointerType === 'touch') {
+                    return;
+                }
+
+                const image = event.currentTarget;
+                if (!(image instanceof HTMLImageElement)) {
+                    return;
+                }
+
+                const rect = image.getBoundingClientRect();
+                if (rect.width <= 0 || rect.height <= 0) {
+                    this.hideMagnifier();
+                    return;
+                }
+
+                const sourceX = event.clientX - rect.left;
+                const sourceY = event.clientY - rect.top;
+                if (sourceX < 0 || sourceX > rect.width || sourceY < 0 || sourceY > rect.height) {
+                    this.hideMagnifier();
+                    return;
+                }
+
+                this.magnifierPageIndex = pageIndex;
+                this.magnifierSourceX = this.clamp(sourceX, 0, rect.width);
+                this.magnifierSourceY = this.clamp(sourceY, 0, rect.height);
+                this.magnifierSourceWidth = rect.width;
+                this.magnifierSourceHeight = rect.height;
+                this.positionMagnifier(event);
+                this.magnifierVisible = true;
+            },
+
+            hideMagnifier() {
+                this.magnifierVisible = false;
+                this.magnifierPageIndex = null;
+            },
+
+            setMagnifierEnabled(enabled) {
+                this.magnifierEnabled = enabled;
+
+                if (!enabled) {
+                    this.hideMagnifier();
+                    window.parker.showToast('Magnifier off');
+                    this.resetControlFocus();
+                    return;
+                }
+
+                this.showSettings = false;
+                this.showShortcuts = false;
+                this.showGoto = false;
+                this.showBookmarks = false;
+                this.showToolbarMenu = false;
+                this.cancelBookmarkEdit();
+                window.parker.showToast('Magnifier on');
+                this.$nextTick(() => this.focusReader());
+            },
+
+            toggleMagnifier() {
+                this.setMagnifierEnabled(!this.magnifierEnabled);
+            },
+
+            toggleToolbarMenu() {
+                this.showToolbarMenu = !this.showToolbarMenu;
+
+                if (!this.showToolbarMenu) {
+                    return;
+                }
+
+                this.showSettings = false;
+                this.showShortcuts = false;
+                this.showGoto = false;
+                this.showBookmarks = false;
+                this.cancelBookmarkEdit();
+            },
+
+            toggleSettings() {
+                const shouldOpen = !this.showSettings;
+
+                this.showShortcuts = false;
+                this.showGoto = false;
+                this.showBookmarks = false;
+                this.showToolbarMenu = false;
+                this.cancelBookmarkEdit();
+                this.showSettings = shouldOpen;
+            },
+
+            openShortcuts() {
+                this.showSettings = false;
+                this.showGoto = false;
+                this.showBookmarks = false;
+                this.showToolbarMenu = false;
+                this.cancelBookmarkEdit();
+                this.showShortcuts = true;
+            },
+
+            closeShortcuts() {
+                this.showShortcuts = false;
+                this.resetControlFocus();
+            },
+
+            toggleShortcuts() {
+                if (this.showShortcuts) {
+                    this.closeShortcuts();
+                    return;
+                }
+
+                this.openShortcuts();
+            },
+
             setReadingMode(mode) {
                 if (!['paged', 'scroll'].includes(mode) || mode === this.readingMode) {
                     return;
                 }
 
                 this.showSettings = false;
+                this.showShortcuts = false;
                 this.readingMode = mode;
                 window.parker.showToast(mode === 'scroll' ? 'Long View enabled' : 'Paged View enabled');
             },
@@ -708,7 +945,7 @@
             },
 
             toggleViewMode() {
-                if (this.isScrollMode) {
+                if (this.isScrollMode || !this.isDoublePageAvailable) {
                     return;
                 }
 
@@ -746,7 +983,7 @@
                     return;
                 }
 
-                if (this.viewMode === 'single') {
+                if (this.activeViewMode === 'single') {
                     if (this.currentPage > 0) {
                         this.currentPage -= 1;
                         this.updateProgress();
@@ -872,6 +1109,8 @@
             async openBookmarks() {
                 this.showGoto = false;
                 this.showSettings = false;
+                this.showShortcuts = false;
+                this.showToolbarMenu = false;
                 this.showBookmarks = true;
                 this.bookmarkSearchQuery = '';
                 this.cancelBookmarkEdit();
@@ -1146,11 +1385,32 @@
                     return;
                 }
 
+                if (this.showToolbarMenu && event.key === 'Escape') {
+                    this.showToolbarMenu = false;
+                    return;
+                }
+
+                const isShortcutsKey = event.key === '?' || (event.key === '/' && event.shiftKey);
+
+                if (this.showShortcuts) {
+                    if (event.key === 'Escape' || isShortcutsKey) {
+                        event.preventDefault();
+                        this.closeShortcuts();
+                    }
+                    return;
+                }
+
                 if (['INPUT', 'TEXTAREA'].includes(event.target.tagName) && event.target.type === 'text') {
                     return;
                 }
 
                 if (event.ctrlKey || event.metaKey || event.altKey) {
+                    return;
+                }
+
+                if (isShortcutsKey) {
+                    event.preventDefault();
+                    this.toggleShortcuts();
                     return;
                 }
 
@@ -1166,6 +1426,11 @@
                     case 'f':
                     case 'F':
                         this.toggleFullscreen();
+                        break;
+                    case 'z':
+                    case 'Z':
+                        event.preventDefault();
+                        this.toggleMagnifier();
                         break;
                     case ']':
                         this.goToBook(this.meta.next_comic_id);
@@ -1206,6 +1471,11 @@
                             break;
                         }
 
+                        if (this.magnifierEnabled) {
+                            this.setMagnifierEnabled(false);
+                            break;
+                        }
+
                         this.exitReader();
                         break;
                 }
@@ -1213,6 +1483,8 @@
 
             openGoto() {
                 this.showBookmarks = false;
+                this.showShortcuts = false;
+                this.showToolbarMenu = false;
                 this.showGoto = true;
                 this.gotoInputValue = this.currentPage + 1;
 

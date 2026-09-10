@@ -28,13 +28,14 @@ https://github.com/parker-server/parker/wiki/Getting-Started
 
 - **Reader**
   - Context‑aware navigation (series, volume, lists, story arcs)
-  - Manga mode (RTL), double‑page spreads, `Long View`
+  - Manga mode (RTL), responsive double‑page spreads, `Long View`
   - Per-book reader overrides for view mode, double-page, and reading direction
   - Incognito reading sessions that avoid persisting per-book overrides
   - Zero‑latency engine with preloading and swipe navigation
   - Separate per-comic bookmarks with detour-safe resume handling
   - Smart close behavior that returns readers to the page they launched from
-  - Image inspection tools
+  - Desktop keyboard shortcut reference
+  - Image inspection tools, including a rectangular magnifier
 
 - **Discovery**
   - Netflix‑style home page with content rails

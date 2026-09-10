@@ -1,5 +1,5 @@
 <template x-if="readingMode === 'scroll'">
-    <div class="reader-content reader-scroll-content">
+    <div class="reader-content reader-scroll-content" :class="{'magnifier-active': magnifierEnabled}">
         <div class="reader-scroll-stack">
             <template x-for="page in Array.from({ length: meta.page_count }, (_, index) => ({ index }))" :key="`scroll-${page.index}`">
                 <div class="reader-scroll-page" :data-scroll-page-index="page.index">
@@ -7,6 +7,9 @@
                         :src="getPageUrl(page.index)"
                         class="reader-page reader-scroll-image"
                         :style="scrollImageStyles"
+                        x-on:pointerenter="updateMagnifier($event, page.index)"
+                        x-on:pointermove="updateMagnifier($event, page.index)"
+                        x-on:pointerleave="hideMagnifier()"
                         alt="Page"
                     >
                 </div>

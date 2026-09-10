@@ -27,6 +27,7 @@
     {% include "reader/partials/_toolbar.html" %}
     {% include "reader/partials/_bookmark_detour_banner.html" %}
     {% include "reader/partials/_settings_panel.html" %}
+    {% include "reader/partials/_shortcuts_modal.html" %}
 
     <div class="hover-zone"
          x-show="readingMode === 'paged'"
@@ -37,6 +38,13 @@
     {# Keep the current paged experience isolated so future scroll mode can slot in beside it. #}
     {% include "reader/partials/_paged_content.html" %}
     {% include "reader/partials/_scroll_content.html" %}
+    <div x-show="magnifierVisible"
+         x-cloak
+         data-reader-magnifier
+         class="reader-magnifier"
+         :style="magnifierStyles"
+         aria-hidden="true">
+    </div>
     {% include "reader/partials/_goto_modal.html" %}
     {% include "reader/partials/_bookmarks_modal.html" %}
 </div>
