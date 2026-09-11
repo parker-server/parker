@@ -34,6 +34,21 @@ logger = logging.getLogger(__name__)
 LIBRARY_NAME_REQUIRED_MESSAGE = "Library name is required"
 LIBRARY_ROOT_PATH_REQUIRED_MESSAGE = "Library root path is required"
 LIBRARY_ROOT_SCAN_ACTIVE_MESSAGE = "Library roots cannot be changed while a scan is queued or running"
+LIBRARY_SERIES_LETTERS = ["#", *list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")]
+
+
+class LibrarySeriesLetterAnchor(BaseModel):
+    letter: str
+    available: bool
+    page: Optional[int] = None
+    index: Optional[int] = None
+    count: int = 0
+
+
+class LibrarySeriesLetterResponse(BaseModel):
+    total: int
+    size: int
+    anchors: List[LibrarySeriesLetterAnchor]
 
 
 def _normalize_library_name(value: str) -> str:
@@ -48,6 +63,39 @@ def _normalize_library_root_path(value: str) -> str:
     if not normalized:
         raise ValueError(LIBRARY_ROOT_PATH_REQUIRED_MESSAGE)
     return normalized
+
+
+def _library_series_sort_key():
+    return case(
+        (Series.name.ilike("The %"), func.substr(Series.name, 5)),
+        else_=Series.name,
+    )
+
+
+def _visible_library_series_query(db, library: Library, current_user: CurrentUser):
+    query = db.query(Series).filter(Series.library_id == library.id)
+    age_filter = get_series_age_restriction(current_user)
+    if age_filter is not None:
+        query = query.filter(age_filter)
+    return query
+
+
+def _series_sort_name(name: str) -> str:
+    normalized = (name or "").strip()
+    if normalized.lower().startswith("the "):
+        return normalized[4:].lstrip()
+    return normalized
+
+
+def _series_sort_letter(name: str) -> str:
+    sort_name = _series_sort_name(name)
+    if not sort_name:
+        return "#"
+
+    first = sort_name[0].upper()
+    if "A" <= first <= "Z":
+        return first
+    return "#"
 
 
 def _find_library_by_name(
@@ -460,6 +508,45 @@ async def unpin_library(library: LibraryDep, db: SessionDep, current_user: Curre
     return {"library_id": library.id, "pinned": False}
 
 
+@router.get("/{library_id}/series/letters", response_model=LibrarySeriesLetterResponse, name="series_letters")
+async def get_library_series_letters(
+        library: LibraryDep,
+        db: SessionDep,
+        current_user: CurrentUser,
+        size: Annotated[int, Query(ge=1, le=100, description="Items per page")] = 50,
+):
+    """
+    Returns page targets for jumping to the first visible series under each
+    letter, using the same library sorting and visibility rules as series pages.
+    """
+    rows = (
+        _visible_library_series_query(db, library, current_user)
+        .with_entities(Series.name)
+        .order_by(_library_series_sort_key())
+        .all()
+    )
+
+    anchors = {
+        letter: {"letter": letter, "available": False, "page": None, "index": None, "count": 0}
+        for letter in LIBRARY_SERIES_LETTERS
+    }
+
+    for position, row in enumerate(rows):
+        letter = _series_sort_letter(row[0])
+        anchor = anchors[letter]
+        anchor["count"] += 1
+        if not anchor["available"]:
+            anchor["available"] = True
+            anchor["page"] = (position // size) + 1
+            anchor["index"] = position % size
+
+    return {
+        "total": len(rows),
+        "size": size,
+        "anchors": [anchors[letter] for letter in LIBRARY_SERIES_LETTERS],
+    }
+
+
 @router.get("/{library_id}/series", response_model=PaginatedResponse, name="series")
 async def get_library_series(
         library: LibraryDep,
@@ -474,13 +561,7 @@ async def get_library_series(
     """
 
     # 1. Filter by Library
-    query = db.query(Series).filter(Series.library_id == library.id)
-
-    # --- AGE RATING FILTER ---
-    age_filter = get_series_age_restriction(current_user)
-    if age_filter is not None:
-        query = query.filter(age_filter)
-    # -------------------------
+    query = _visible_library_series_query(db, library, current_user)
 
 
     # 2. Pagination
@@ -489,12 +570,7 @@ async def get_library_series(
     # SMART SORTING: Ignore "The " prefix
     # Logic: If name starts with "The ", use substring starting at char 5. Else use name.
     # We use .ilike for case-insensitive matching
-    sort_key = case(
-        (Series.name.ilike("The %"), func.substr(Series.name, 5)),
-        else_=Series.name
-    )
-
-    series_list = query.order_by(sort_key).offset(params.skip).limit(params.size).all()
+    series_list = query.order_by(_library_series_sort_key()).offset(params.skip).limit(params.size).all()
     if not series_list:
         return {"total": total, "page": params.page, "size": params.size, "items": []}
 

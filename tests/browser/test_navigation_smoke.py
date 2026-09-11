@@ -2,6 +2,7 @@ import pytest
 
 from app.models.collection import Collection, CollectionItem
 from app.models.comic import Comic, Volume
+from app.models.series import Series
 from app.models.tags import Character
 from tests.factories import create_comic
 
@@ -111,6 +112,36 @@ def _remove_large_cover_browser_fixture(browser_server, comic_ids):
     try:
         if comic_ids:
             session.query(Comic).filter(Comic.id.in_(comic_ids)).delete(synchronize_session=False)
+            session.commit()
+    finally:
+        session.close()
+
+
+def _add_library_letter_jump_fixture(browser_server):
+    session = browser_server["db_factory"]()
+    try:
+        volume = session.get(Volume, browser_server["seed"]["volume_id"])
+        library = volume.series.library
+        series_rows = [
+            *[Series(name=f"Alpha Jump {index:02d}", library=library) for index in range(60)],
+            *[Series(name=f"X Jump Target {index:02d}", library=library) for index in range(3)],
+            *[Series(name=f"Z Jump Tail {index:02d}", library=library) for index in range(55)],
+        ]
+        session.add_all(series_rows)
+        session.flush()
+        library_id = library.id
+        series_ids = [series.id for series in series_rows]
+        session.commit()
+        return library_id, series_ids
+    finally:
+        session.close()
+
+
+def _remove_library_letter_jump_fixture(browser_server, series_ids):
+    session = browser_server["db_factory"]()
+    try:
+        if series_ids:
+            session.query(Series).filter(Series.id.in_(series_ids)).delete(synchronize_session=False)
             session.commit()
     finally:
         session.close()
@@ -274,6 +305,46 @@ def test_cover_browser_deep_link_anchors_without_walking_prior_manifest_pages(pa
         )
     finally:
         _remove_large_cover_browser_fixture(browser_server, comic_ids)
+
+
+@pytest.mark.browser
+def test_library_letter_jump_replaces_infinite_window_and_continues_forward(page, browser_server):
+    library_id, series_ids = _add_library_letter_jump_fixture(browser_server)
+
+    try:
+        page.goto(f"{browser_server['base_url']}/libraries/{library_id}", wait_until="networkidle")
+        page.get_by_role("heading", name="Browser Test Library").wait_for()
+
+        page.get_by_role("button", name="Jump to X").click()
+        page.wait_for_function(
+            """
+            () => {
+                const state = document.querySelector('[x-data="libraryView()"]')?._x_dataStack?.[0];
+                const names = state?.items?.map((item) => item.name) || [];
+                return state?.mode === 'infinite'
+                    && state?.page === 2
+                    && names.includes('X Jump Target 00')
+                    && !names.includes('Alpha Jump 00');
+            }
+            """
+        )
+
+        target = page.get_by_text("X Jump Target 00")
+        target.wait_for()
+        assert target.is_visible()
+
+        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        page.wait_for_function(
+            """
+            () => {
+                const state = document.querySelector('[x-data="libraryView()"]')?._x_dataStack?.[0];
+                const names = state?.items?.map((item) => item.name) || [];
+                return state?.page === 3 && names.includes('Z Jump Tail 54');
+            }
+            """
+        )
+    finally:
+        _remove_library_letter_jump_fixture(browser_server, series_ids)
 
 
 @pytest.mark.browser

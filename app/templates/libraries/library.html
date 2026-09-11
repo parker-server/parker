@@ -9,12 +9,12 @@
         <div class="flex items-center space-x-4" x-show="!error" x-cloak>
             <a :href="window.parker.route('pages.libraries')" class="text-blue-400 hover:text-blue-300">← Back</a>
 
-            <div x-show="loading.meta" class="h-8 w-48 bg-gray-700 rounded animate-pulse"></div>
+            <div x-show="metaLoading" class="h-8 w-48 bg-gray-700 rounded animate-pulse"></div>
 
-            <h1 x-show="!loading.meta" class="text-3xl font-bold text-white" x-text="library?.name"></h1>
+            <h1 x-show="!metaLoading" class="text-3xl font-bold text-white" x-text="library?.name"></h1>
         </div>
 
-        <div x-show="!loading.meta && library">
+        <div x-show="!metaLoading && library">
             <button
                 type="button"
                 x-on:click="toggleLibraryPin()"
@@ -42,6 +42,32 @@
         </div>
     </div>
 
+    <div
+        x-show="showLetterNavigation()"
+        x-cloak
+        class="border-y border-gray-800 py-3"
+        role="navigation"
+        aria-label="Series letter navigation"
+    >
+        <div class="flex items-center gap-3 overflow-x-auto">
+            <span class="flex-shrink-0 text-xs font-semibold uppercase text-gray-500">Jump</span>
+            <div class="flex min-w-max items-center gap-1">
+                <template x-for="anchor in letterAnchors" :key="anchor.letter">
+                    <button
+                        type="button"
+                        x-on:click="jumpToLetter(anchor)"
+                        :disabled="!anchor.available || loading"
+                        :aria-label="anchor.available ? `Jump to ${anchor.letter}` : `${anchor.letter} unavailable`"
+                        :aria-current="activeLetter === anchor.letter ? 'true' : null"
+                        class="h-8 w-8 flex-shrink-0 rounded border text-xs font-bold transition-colors"
+                        :class="letterButtonClass(anchor)"
+                        x-text="anchor.letter"
+                    ></button>
+                </template>
+            </div>
+        </div>
+    </div>
+
 
     <div class="min-h-[500px]">
         <div x-show="loading && items.length === 0" class="flex justify-center py-20">
@@ -50,7 +76,7 @@
 
         <div x-show="items.length > 0">
 
-            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
+            <div x-ref="seriesGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
                 <template x-for="series in items" :key="series.id">
                     {% include "partials/series_card.html" %}
                 </template>
@@ -109,20 +135,33 @@ function libraryView() {
         libraryId: {{ library_id }},
         library: null,
         error: null,
+        metaLoading: true,
+        letterAnchors: [],
+        letterTotal: 0,
+        lettersLoading: true,
+        activeLetter: null,
+        pendingLetterIndex: null,
 
-        loading: {
-            meta: true
-        },
         ...window.parker.paginationMixin(
             'libraries.series',
             function() { return { library_id: this.libraryId }; },
             {
                 pageSize: 50,
-                mode: '{{ get_system_setting("ui.pagination_mode", "infinite") }}'
+                mode: '{{ get_system_setting("ui.pagination_mode", "infinite") }}',
+                onLoaded: function(data, append) {
+                    if (!append && this.pendingLetterIndex === null) {
+                        this.activeLetter = null;
+                    }
+
+                    if (!append) {
+                        this.scrollToPendingLetter();
+                    }
+                }
             }
         ),
         init() {
             this.loadLibraryMeta();
+            this.loadLetterAnchors();
             this.loadItems();
         },
 
@@ -145,8 +184,74 @@ function libraryView() {
             } catch (e) {
                 console.error(e);
             } finally {
-                this.loading.meta = false;
+                this.metaLoading = false;
             }
+        },
+
+        async loadLetterAnchors() {
+            this.lettersLoading = true;
+
+            try {
+                const query = new URLSearchParams({ size: String(this.size) });
+                const res = await fetch(
+                    window.parker.route('libraries.series_letters', { library_id: this.libraryId }, query.toString())
+                );
+
+                if (!res.ok) {
+                    throw new Error('Failed to load letter navigation');
+                }
+
+                const data = await res.json();
+                this.letterAnchors = data.anchors || [];
+                this.letterTotal = data.total || 0;
+            } catch (e) {
+                console.error(e);
+                this.letterAnchors = [];
+                this.letterTotal = 0;
+            } finally {
+                this.lettersLoading = false;
+            }
+        },
+
+        showLetterNavigation() {
+            return !this.lettersLoading
+                && this.letterTotal > this.size
+                && this.letterAnchors.some(anchor => anchor.available);
+        },
+
+        letterButtonClass(anchor) {
+            if (!anchor.available) {
+                return 'border-gray-800 bg-gray-900 text-gray-700 cursor-not-allowed';
+            }
+
+            if (this.activeLetter === anchor.letter) {
+                return 'border-blue-400 bg-blue-600 text-white';
+            }
+
+            return 'border-gray-700 bg-gray-800 text-gray-300 hover:border-blue-400 hover:text-white';
+        },
+
+        async jumpToLetter(anchor) {
+            if (!anchor.available || !anchor.page || this.loading) return;
+
+            this.activeLetter = anchor.letter;
+            this.pendingLetterIndex = Number.isInteger(anchor.index) ? anchor.index : 0;
+            this.page = anchor.page;
+            await this.loadItems(false);
+        },
+
+        scrollToPendingLetter() {
+            if (this.pendingLetterIndex === null) return;
+
+            const targetIndex = this.pendingLetterIndex;
+            this.pendingLetterIndex = null;
+
+            this.$nextTick(() => {
+                const target = this.$refs.seriesGrid?.children?.[targetIndex];
+                if (target) {
+                    target.scrollIntoView({ block: 'start', behavior: 'smooth' });
+                }
+            });
         },
 
         async toggleLibraryPin() {
