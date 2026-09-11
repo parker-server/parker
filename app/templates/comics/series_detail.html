@@ -943,7 +943,7 @@ function seriesDetail() {
             const confirmed = await window.parker.dialog.confirm(
                 "Regenerate Thumbnails?",
                 "Regenerate all thumbnails for this series? This may take a moment.",
-                { isDestructive: true, confirmText: 'Remove' }
+                { isDestructive: true, confirmText: 'Regenerate' }
             );
 
             if(!confirmed) return;
