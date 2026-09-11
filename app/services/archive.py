@@ -9,6 +9,70 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff', '.jxl', '.avif'}
+IGNORE_FILENAMES = {'thumbs.db', '.ds_store', 'comicinfo.xml', '__macosx'}
+IGNORE_EXTENSIONS = {'.nfo', '.sfv', '.txt', '.xml', '.db', '.ini'}
+EXPLICIT_END_PAGE_RE = re.compile(r'^z+[\W_]')
+EXPLICIT_COVER_RE = re.compile(r'(?:^|[\W_])(fc|cover|front|scan)(?:$|[\W_])')
+TRAILING_PAGE_NUMBER_RE = re.compile(r'^(.*?)(?:[\s._-]+)?(\d+)\s*$')
+
+
+def _split_archive_path(filename: str) -> tuple[str, str]:
+    parts = re.split(r'([\\/])', filename)
+    if len(parts) == 1:
+        return "", filename
+
+    return "".join(parts[:-1]), parts[-1]
+
+
+def _normalize_page_sort_text(text: str) -> str:
+    return text.lower().replace('-', '~').replace('_', '~')
+
+
+def _natural_sort_parts(text: str) -> list:
+    return [int(part) if part.isdigit() else part for part in re.split(r'(\d+)', text)]
+
+
+def _priority_bucket(filename: str) -> int:
+    text = filename.lower()
+    if EXPLICIT_END_PAGE_RE.match(text):
+        return 2
+    if EXPLICIT_COVER_RE.search(text):
+        return 0
+    return 1
+
+
+def _split_trailing_page_number(stem: str) -> tuple[str, int | None]:
+    match = TRAILING_PAGE_NUMBER_RE.match(stem.strip())
+    if not match:
+        return stem.strip(), None
+
+    return match.group(1).strip(), int(match.group(2))
+
+
+def _page_sort_key(filename: str) -> tuple:
+    """
+    Sort comic archive pages while keeping likely base cover files before
+    same-stem numbered interior pages.
+    """
+    directory, basename = _split_archive_path(filename)
+    stem = Path(basename).stem
+    base_stem, trailing_number = _split_trailing_page_number(stem)
+
+    base_name = f"{directory}{base_stem}"
+    normalized_base = _normalize_page_sort_text(base_name)
+    normalized_full = _normalize_page_sort_text(filename)
+
+    has_trailing_number = trailing_number is not None
+    return (
+        _priority_bucket(filename),
+        _natural_sort_parts(normalized_base),
+        1 if has_trailing_number else 0,
+        trailing_number if trailing_number is not None else -1,
+        _natural_sort_parts(normalized_full),
+    )
+
+
 # Import the rarfile configuration
 import rarfile
 try:
@@ -70,13 +134,6 @@ class ComicArchive:
 
     def get_pages(self) -> List[str]:
         """Get sorted list of image files (pages) - filter out non-images"""
-        # Valid image extensions
-        image_extensions = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff', '.jxl', '.avif'}
-
-        # Files to explicitly ignore (common in comic archives)
-        ignore_patterns = {'thumbs.db', '.ds_store', 'comicinfo.xml', '__macosx'}
-        ignore_extensions = {'.nfo', '.sfv', '.txt', '.xml', '.db', '.ini'}
-
         files = self.get_file_list()
 
         # Filter to valid images only
@@ -86,59 +143,18 @@ class ComicArchive:
             filename_lower = file_path.name.lower()
 
             # Skip ignored files
-            if filename_lower in ignore_patterns:
+            if filename_lower in IGNORE_FILENAMES:
                 continue
 
             # Skip ignored extensions
-            if file_path.suffix.lower() in ignore_extensions:
+            if file_path.suffix.lower() in IGNORE_EXTENSIONS:
                 continue
 
             # Only include valid image files
-            if file_path.suffix.lower() in image_extensions:
+            if file_path.suffix.lower() in IMAGE_EXTENSIONS:
                 pages.append(f)
 
-        # --- IMPROVED SORTING LOGIC ---
-        def sort_key(filename):
-            """
-            Multi-stage sort key:
-            1. Priority: Explicit covers ('fc', 'cover') come first (0), end-pages ('z-') come last (2).
-            2. Natural: Numbers sorted numerically (1, 2, 10).
-            3. Symbols: Separators de-prioritized so 'c01a' < 'c01-'.
-            """
-            # 1. Normalize case
-            text = filename.lower()
-
-            # 2. PRIORITY BUCKETING
-            # Check for explicit end-of-archive naming conventions like 'z.', 'z-', 'zz_'
-            if re.match(r'^z+[\W_]', text):
-                priority = 2
-            # Check for explicit cover naming conventions using regex word boundaries.
-            # Regex updated to handle:
-            # - Underscore prefixes (e.g. "_cover") which \b misses because _ is a word char
-            # - "scan" keyword (e.g. "scan.jpg" vs "scan01.jpg")
-            # This ensures "scan01" doesn't trigger it (0 is a word char), but "scan.jpg" does.
-            # Pattern: (Start/NonWord/_) + Keyword + (End/NonWord/_)
-            # matches " fc ", "fc.", "-fc", etc.
-            # 0 = Cover (Highest), 1 = Standard, 2 = End Page (Lowest)
-            elif re.search(r'(?:^|[\W_])(fc|cover|front|scan)(?:$|[\W_])', text):
-                priority = 0
-            else:
-                priority = 1
-
-            # 3. SEPARATOR HACK (From previous fix)
-            # Replace separators with high-ASCII char '~' to ensure letters sort before symbols.
-            # 'c01a' (a=97) < 'c01-' (~=126)
-            text = text.replace('-', '~').replace('_', '~')
-
-            # 4. NATURAL SORT SPLIT
-            # Split into [text, number, text, number...]
-            natural_parts = [int(c) if c.isdigit() else c for c in re.split(r'(\d+)', text)]
-
-            # Return tuple: (Priority, Natural_Sort_Parts)
-            return (priority, natural_parts)
-
-        # ------------------------------
-        pages.sort(key=sort_key)
+        pages.sort(key=_page_sort_key)
 
         return pages
 
