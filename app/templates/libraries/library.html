@@ -141,6 +141,8 @@ function libraryView() {
         lettersLoading: true,
         activeLetter: null,
         pendingLetterIndex: null,
+        loadedStartPage: null,
+        loadedEndPage: null,
 
         ...window.parker.paginationMixin(
             'libraries.series',
@@ -149,6 +151,15 @@ function libraryView() {
                 pageSize: 50,
                 mode: '{{ get_system_setting("ui.pagination_mode", "infinite") }}',
                 onLoaded: function(data, append) {
+                    const loadedPage = Number.isInteger(data.page) ? data.page : this.page;
+                    if (append) {
+                        this.loadedStartPage = this.loadedStartPage || loadedPage;
+                        this.loadedEndPage = Math.max(this.loadedEndPage || loadedPage, loadedPage);
+                    } else {
+                        this.loadedStartPage = loadedPage;
+                        this.loadedEndPage = loadedPage;
+                    }
+
                     if (!append && this.pendingLetterIndex === null) {
                         this.activeLetter = null;
                     }
@@ -235,9 +246,38 @@ function libraryView() {
             if (!anchor.available || !anchor.page || this.loading) return;
 
             this.activeLetter = anchor.letter;
+            const targetIndex = Number.isInteger(anchor.index) ? anchor.index : 0;
+
+            if (this.isLetterPageLoaded(anchor.page)) {
+                this.scrollToSeriesIndex(this.localLetterIndex(anchor.page, targetIndex));
+                return;
+            }
+
             this.pendingLetterIndex = Number.isInteger(anchor.index) ? anchor.index : 0;
             this.page = anchor.page;
             await this.loadItems(false);
+        },
+
+        isLetterPageLoaded(page) {
+            return this.mode === 'infinite'
+                && Number.isInteger(page)
+                && Number.isInteger(this.loadedStartPage)
+                && Number.isInteger(this.loadedEndPage)
+                && page >= this.loadedStartPage
+                && page <= this.loadedEndPage;
+        },
+
+        localLetterIndex(page, index) {
+            return ((page - this.loadedStartPage) * this.size) + index;
+        },
+
+        scrollToSeriesIndex(index) {
+            this.$nextTick(() => {
+                const target = this.$refs.seriesGrid?.children?.[index];
+                if (target) {
+                    target.scrollIntoView({ block: 'start', behavior: 'smooth' });
+                }
+            });
         },
 
         scrollToPendingLetter() {
@@ -246,12 +286,7 @@ function libraryView() {
             const targetIndex = this.pendingLetterIndex;
             this.pendingLetterIndex = null;
 
-            this.$nextTick(() => {
-                const target = this.$refs.seriesGrid?.children?.[targetIndex];
-                if (target) {
-                    target.scrollIntoView({ block: 'start', behavior: 'smooth' });
-                }
-            });
+            this.scrollToSeriesIndex(targetIndex);
         },
 
         async toggleLibraryPin() {

@@ -147,6 +147,26 @@ def _remove_library_letter_jump_fixture(browser_server, series_ids):
         session.close()
 
 
+def _add_loaded_letter_jump_fixture(browser_server):
+    session = browser_server["db_factory"]()
+    try:
+        volume = session.get(Volume, browser_server["seed"]["volume_id"])
+        library = volume.series.library
+        series_rows = [
+            *[Series(name=f"Alpha Loaded {index:02d}", library=library) for index in range(49)],
+            Series(name="S Jump Target", library=library),
+            Series(name="Z Loaded Tail", library=library),
+        ]
+        session.add_all(series_rows)
+        session.flush()
+        library_id = library.id
+        series_ids = [series.id for series in series_rows]
+        session.commit()
+        return library_id, series_ids
+    finally:
+        session.close()
+
+
 @pytest.mark.browser
 def test_continue_reading_page_shows_in_progress_items_and_opens_reader(page, browser_server):
     seed = browser_server["seed"]
@@ -343,6 +363,40 @@ def test_library_letter_jump_replaces_infinite_window_and_continues_forward(page
             }
             """
         )
+    finally:
+        _remove_library_letter_jump_fixture(browser_server, series_ids)
+
+
+@pytest.mark.browser
+def test_library_letter_jump_scrolls_without_reload_when_page_is_loaded(page, browser_server):
+    library_id, series_ids = _add_loaded_letter_jump_fixture(browser_server)
+    request_urls = []
+
+    try:
+        page.goto(f"{browser_server['base_url']}/libraries/{library_id}", wait_until="networkidle")
+        page.get_by_role("button", name="Jump to S").wait_for()
+        page.on("request", lambda request: request_urls.append(request.url))
+
+        page.get_by_role("button", name="Jump to S").click()
+
+        page.get_by_text("S Jump Target").wait_for()
+        page.wait_for_function(
+            """
+            () => {
+                const state = document.querySelector('[x-data="libraryView()"]')?._x_dataStack?.[0];
+                return state?.activeLetter === 'S'
+                    && state?.loadedStartPage === 1
+                    && window.scrollY > 0;
+            }
+            """
+        )
+        page.wait_for_timeout(300)
+
+        series_requests = [
+            url for url in request_urls
+            if f"/api/libraries/{library_id}/series?" in url
+        ]
+        assert not any("page=1" in url for url in series_requests)
     finally:
         _remove_library_letter_jump_fixture(browser_server, series_ids)
 
