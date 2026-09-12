@@ -411,6 +411,35 @@ def test_get_library_series_empty_page_returns_empty_items(auth_client, db, norm
     assert response.json() == {"total": 0, "page": 1, "size": 5, "items": []}
 
 
+def test_get_library_series_letter_anchors_use_library_sort_pages(auth_client, db, normal_user):
+    library = create_library_with_root(db, "Letter Anchor Library", "/tmp/letter-anchor-library")
+    db.add_all([
+        Series(name="123 Go", library=library),
+        Series(name="The Alpha", library=library),
+        Series(name="Beta", library=library),
+        Series(name="X-Force", library=library),
+        Series(name="X-Men", library=library),
+        Series(name="Zatanna", library=library),
+    ])
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    response = auth_client.get(f"/api/libraries/{library.id}/series/letters?size=2")
+
+    assert response.status_code == 200
+    payload = response.json()
+    anchors = {anchor["letter"]: anchor for anchor in payload["anchors"]}
+
+    assert payload["total"] == 6
+    assert payload["size"] == 2
+    assert anchors["#"] == {"letter": "#", "available": True, "page": 1, "index": 0, "count": 1}
+    assert anchors["A"] == {"letter": "A", "available": True, "page": 1, "index": 1, "count": 1}
+    assert anchors["B"] == {"letter": "B", "available": True, "page": 2, "index": 0, "count": 1}
+    assert anchors["X"] == {"letter": "X", "available": True, "page": 2, "index": 1, "count": 2}
+    assert anchors["Z"] == {"letter": "Z", "available": True, "page": 3, "index": 1, "count": 1}
+    assert anchors["C"] == {"letter": "C", "available": False, "page": None, "index": None, "count": 0}
+
+
 def test_update_library_applies_fields_and_refreshes_watches(admin_client, db):
     library = create_library_with_root(
         db,
@@ -1411,6 +1440,16 @@ def test_get_library_series_filters_by_age_restriction(auth_client, db, normal_u
     assert payload["total"] == 1
     assert len(payload["items"]) == 1
     assert payload["items"][0]["id"] == safe_series.id
+
+    letters_response = auth_client.get(f"/api/libraries/{library.id}/series/letters?size=10")
+
+    assert letters_response.status_code == 200
+    letters_payload = letters_response.json()
+    anchors = {anchor["letter"]: anchor for anchor in letters_payload["anchors"]}
+    assert letters_payload["total"] == 1
+    assert anchors["S"]["available"] is True
+    assert anchors["S"]["count"] == 1
+    assert anchors["B"]["available"] is False
 
 
 def test_get_library_series_cover_fallback_handles_non_numeric_numbers(auth_client, db, normal_user):

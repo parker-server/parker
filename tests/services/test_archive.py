@@ -108,3 +108,43 @@ def test_comic_archive_sort_pages_complex_names():
         ]
         
         assert pages == expected
+
+
+def test_comic_archive_sort_pages_prefers_issue_base_image_before_numbered_page():
+    with patch("app.services.archive.zipfile.is_zipfile", return_value=True), \
+         patch("app.services.archive.zipfile.ZipFile"):
+        archive = ComicArchive(Path("dummy.cbz"))
+
+        archive.get_file_list = MagicMock(return_value=[
+            " Lord of the Ultra-Realms 01 0001.jpg",
+            " Lord of the Ultra-Realms 01 0002.jpg",
+            " Lord of the Ultra-Realms 01 .jpg",
+        ])
+
+        pages = archive.get_pages()
+
+        assert pages == [
+            " Lord of the Ultra-Realms 01 .jpg",
+            " Lord of the Ultra-Realms 01 0001.jpg",
+            " Lord of the Ultra-Realms 01 0002.jpg",
+        ]
+
+
+def test_comic_archive_sort_pages_prefers_same_stem_cover_before_appended_page_number():
+    with patch("app.services.archive.zipfile.is_zipfile", return_value=True), \
+         patch("app.services.archive.zipfile.ZipFile"):
+        archive = ComicArchive(Path("dummy.cbz"))
+
+        archive.get_file_list = MagicMock(return_value=[
+            "dc_gods02.jpg",
+            "dc_gods01.jpg",
+            "dc_gods.jpg",
+        ])
+
+        pages = archive.get_pages()
+
+        assert pages == [
+            "dc_gods.jpg",
+            "dc_gods01.jpg",
+            "dc_gods02.jpg",
+        ]

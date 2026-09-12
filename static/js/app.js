@@ -660,6 +660,9 @@ document.addEventListener('error', function(e) {
                         }
                     }
                     this.total = data.total;
+                    if (config.onLoaded) {
+                        config.onLoaded.call(this, data, append);
+                    }
 
                 } catch (e) {
                     console.error("Pagination Error:", e);

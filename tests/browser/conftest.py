@@ -250,6 +250,8 @@ def browser_server(browser_db_factory, browser_seed_data, monkeypatch_session):
         # browser server isolated from whatever the local app database contains.
         if key == "ui.auto_redirect_single_volume_series":
             return False
+        if key == "ui.pagination_mode":
+            return "infinite"
         return original_get_cached_setting(key, default)
 
     monkeypatch_session.setattr(pages_router, "get_cached_setting", browser_get_cached_setting)
