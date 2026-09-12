@@ -148,3 +148,23 @@ def test_comic_archive_sort_pages_prefers_same_stem_cover_before_appended_page_n
             "dc_gods01.jpg",
             "dc_gods02.jpg",
         ]
+
+
+def test_comic_archive_sort_pages_treats_zero_fc_token_as_cover():
+    with patch("app.services.archive.zipfile.is_zipfile", return_value=True), \
+         patch("app.services.archive.zipfile.ZipFile"):
+        archive = ComicArchive(Path("dummy.cbz"))
+
+        archive.get_file_list = MagicMock(return_value=[
+            "hawk_&_dove.v02_a01.imbie.01.jpg",
+            "hawk_&_dove.v02_a01.imbie.02.jpg",
+            "hawk_&_dove.v02_a01.imbie.00fc.jpg",
+        ])
+
+        pages = archive.get_pages()
+
+        assert pages == [
+            "hawk_&_dove.v02_a01.imbie.00fc.jpg",
+            "hawk_&_dove.v02_a01.imbie.01.jpg",
+            "hawk_&_dove.v02_a01.imbie.02.jpg",
+        ]

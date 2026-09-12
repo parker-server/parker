@@ -11,6 +11,7 @@ from app.models.comic import Volume
 from app.models.pull_list import PullList, PullListItem
 from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.series import Series
+from app.services.archive import ARCHIVE_PAGE_ORDER_VERSION
 from tests.factories import create_comic, create_library_with_root
 
 
@@ -115,6 +116,7 @@ def test_reader_init_default_volume_reverse_and_page_count_fallback(auth_client,
     assert payload["prev_comic_id"] == c3.id
     assert payload["next_comic_id"] == c1.id
     assert payload["page_count"] == 77
+    assert payload["page_cache_key"] == f"{int(c2.updated_at.timestamp())}-{ARCHIVE_PAGE_ORDER_VERSION}"
     assert payload["context_type"] == "volume"
     assert payload["context_total"] == 3
     assert payload["context_position"] == 2
@@ -506,6 +508,36 @@ def test_reader_page_endpoint_headers_and_errors(auth_client, db, normal_user):
 
     assert no_page.status_code == 404
     assert no_page.json() == {"detail": "Page not found"}
+
+
+def test_reader_page_endpoint_serves_zero_fc_cover_as_first_page(auth_client, db, normal_user, tmp_path):
+    library, _, volume = _create_graph(db, lib_name="reader-zero-fc-lib", series_name="Reader Zero FC")
+    archive_path = tmp_path / "hawk-and-dove.cbz"
+    cover_bytes = b"cover-page-bytes"
+    first_story_bytes = b"first-story-page-bytes"
+
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("hawk_&_dove.v02_a01.imbie.01.jpg", first_story_bytes)
+        archive.writestr("hawk_&_dove.v02_a01.imbie.00fc.jpg", cover_bytes)
+
+    comic = _add_comic(
+        db,
+        volume,
+        number="1",
+        title="Zero FC Archive Comic",
+        file_path=str(archive_path),
+    )
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    cover_response = auth_client.get(f"/api/reader/{comic.id}/page/0")
+    story_response = auth_client.get(f"/api/reader/{comic.id}/page/1")
+
+    assert cover_response.status_code == 200
+    assert cover_response.content == cover_bytes
+    assert cover_response.headers["content-type"].startswith("image/jpeg")
+    assert story_response.status_code == 200
+    assert story_response.content == first_story_bytes
 
 
 def test_reader_page_endpoint_serves_real_jxl_archive_page(auth_client, db, normal_user, tmp_path):

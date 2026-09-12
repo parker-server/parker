@@ -567,7 +567,8 @@
                 if (this.filters.sharpen) params.append('sharpen', 'true');
                 if (this.filters.grayscale) params.append('grayscale', 'true');
 
-                const filterKey = `${this.filters.transcode}-${this.filters.sharpen}-${this.filters.grayscale}-${this.filters.brightness}-${this.filters.contrast}`;
+                const pageCacheKey = this.meta.page_cache_key || '0';
+                const filterKey = `${pageCacheKey}-${this.filters.transcode}-${this.filters.sharpen}-${this.filters.grayscale}-${this.filters.brightness}-${this.filters.contrast}`;
                 params.append('v', filterKey);
 
                 return `${url}?${params.toString()}`;

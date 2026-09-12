@@ -19,6 +19,7 @@ from app.models.comic import Comic, Volume
 from app.models.series import Series
 from app.models.library import Library
 
+from app.services.archive import ARCHIVE_PAGE_ORDER_VERSION
 from app.services.images import ImageService
 from app.models.reading_progress import ReadingProgress
 from app.models.pull_list import PullList, PullListItem
@@ -324,6 +325,7 @@ async def get_comic_reader_init(comic_id: int,
         "volume_number": comic.volume.volume_number,
         "number": comic.number,
         "page_count": page_count,
+        "page_cache_key": f"{int(comic.updated_at.timestamp()) if comic.updated_at else 0}-{ARCHIVE_PAGE_ORDER_VERSION}",
         "next_comic_id": next_id,
         "prev_comic_id": prev_id,
 

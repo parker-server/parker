@@ -9,11 +9,12 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+ARCHIVE_PAGE_ORDER_VERSION = 2
 IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff', '.jxl', '.avif'}
 IGNORE_FILENAMES = {'thumbs.db', '.ds_store', 'comicinfo.xml', '__macosx'}
 IGNORE_EXTENSIONS = {'.nfo', '.sfv', '.txt', '.xml', '.db', '.ini'}
 EXPLICIT_END_PAGE_RE = re.compile(r'^z+[\W_]')
-EXPLICIT_COVER_RE = re.compile(r'(?:^|[\W_])(fc|cover|front|scan)(?:$|[\W_])')
+EXPLICIT_COVER_RE = re.compile(r'(?:^|[\W_])(?:0+fc|fc|cover|front|scan)(?:$|[\W_])')
 TRAILING_PAGE_NUMBER_RE = re.compile(r'^(.*?)(?:[\s._-]+)?(\d+)\s*$')
 
 
