@@ -1,9 +1,11 @@
+{% from "partials/lucide_icon.html" import lucide_icon %}
+
 <a :href="window.parker.route('pages.reading_list_detail', {reading_list_id: list.id })" class="block group h-full">
     <div class="bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-gray-600 rounded-lg p-5 transition-all duration-200 h-full flex flex-col shadow-sm hover:shadow-md border-l-4 border-l-green-500">
 
         <div class="flex items-start justify-between mb-2">
             <h3 class="font-bold text-lg text-gray-100 group-hover:text-green-400 transition-colors line-clamp-1" x-text="list.name"></h3>
-            <span class="text-2xl opacity-50 group-hover:opacity-100 transition-opacity">📖</span>
+            {{ lucide_icon("book-open", "h-6 w-6 flex-shrink-0 text-green-300 opacity-50 group-hover:opacity-100 transition-opacity") }}
         </div>
 
         <p class="text-sm text-gray-400 line-clamp-2 flex-grow" x-show="list.description" x-text="list.description"></p>
@@ -14,7 +16,7 @@
 
         <div class="mt-4 flex items-center text-xs text-gray-500 font-medium uppercase tracking-wider">
             <span>Start Reading</span>
-            <span class="ml-2 transform group-hover:translate-x-1 transition-transform">→</span>
+            {{ lucide_icon("arrow-right", "ml-2 h-3.5 w-3.5 flex-shrink-0 transform group-hover:translate-x-1 transition-transform") }}
         </div>
     </div>
 </a>

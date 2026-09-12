@@ -5,6 +5,7 @@
 {% block content %}
 
 {% from "partials/page_context.html" import page_context with context %}
+{% from "partials/lucide_icon.html" import lucide_icon %}
 {{ page_context(cover.id, cover.color_palette) }}
 
 {% include "partials/dynamic_background.html" %}
@@ -363,7 +364,9 @@
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
                             <template x-if="series?.collections?.length > 0">
                                 <div>
-                                    <h3 class="text-xl font-bold mb-4 flex items-center text-white"><span class="mr-2">📚</span> Collections</h3>
+                                    <h3 class="text-xl font-bold mb-4 flex items-center text-white">
+                                        {{ lucide_icon("library", "mr-2 h-5 w-5 flex-shrink-0 text-blue-300") }} Collections
+                                    </h3>
                                     <div class="grid grid-cols-1 gap-4">
                                         <template x-for="col in series.collections" :key="col.id">
                                             {% include "partials/collection_card.html" %}
@@ -373,7 +376,9 @@
                             </template>
                             <template x-if="series?.reading_lists?.length > 0">
                                 <div>
-                                    <h3 class="text-xl font-bold mb-4 flex items-center text-white"><span class="mr-2">📖</span> Reading Lists</h3>
+                                    <h3 class="text-xl font-bold mb-4 flex items-center text-white">
+                                        {{ lucide_icon("book-open", "mr-2 h-5 w-5 flex-shrink-0 text-green-300") }} Reading Lists
+                                    </h3>
                                     <div class="grid grid-cols-1 gap-4">
                                         <template x-for="list in series.reading_lists" :key="list.id">
                                             {% include "partials/reading_list_card.html" %}

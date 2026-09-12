@@ -571,15 +571,51 @@ def test_dashboard_top_character_links_to_timeline(auth_client):
     assert "field=character&value=${encodeURIComponent(char.name)}&operator=equal" not in body
 
 
-def test_dashboard_smart_filter_default_icons_use_lucide(auth_client):
+def test_dashboard_uses_lucide_icons_for_static_markers(auth_client):
     response = auth_client.get("/user/dashboard")
 
     assert response.status_code == 200
     body = response.text
+    for icon_name in [
+        "archive",
+        "book-open",
+        "building-2",
+        "calendar-days",
+        "flame",
+        "folder-open",
+        "palette",
+        "party-popper",
+        "pen-line",
+        "plus-circle",
+        "rss",
+        "shield",
+        "theater",
+        "zap",
+    ]:
+        assert f'data-lucide-icon="{icon_name}"' in body
+
     assert "Smart Filters" in body
-    assert 'data-lucide-icon="zap"' in body
     assert 'x-show="!list.icon"' in body
     assert "list.icon || '\\u26A1'" not in body
+
+    template = Path("app/templates/user/dashboard.html").read_text(encoding="utf-8")
+    for glyph in [
+        "\U0001f389",
+        "\U0001f525",
+        "\U0001f4da",
+        "\U0001f5c2",
+        "\u26A1",
+        "\U0001f4c5",
+        "\u270D",
+        "\U0001f3a8",
+        "\U0001f3e2",
+        "\U0001f3ad",
+        "\U0001f9b8",
+        "\U0001f4d6",
+        "\U0001f5c3",
+        "\U0001f4e1",
+    ]:
+        assert glyph not in template
 
 
 def test_shared_datetime_helpers_assume_naive_api_timestamps_are_utc():
@@ -670,6 +706,35 @@ def test_collection_reading_list_and_stack_pages_expose_comic_count_labels(auth_
     assert "list.comic_count || 0" in stacks_response.text
 
 
+def test_collection_and_reading_list_surfaces_use_lucide_icons(auth_client):
+    collections_response = auth_client.get("/collections")
+    reading_lists_response = auth_client.get("/reading-lists")
+    collection_detail_response = auth_client.get("/collections/1")
+    reading_list_detail_response = auth_client.get("/reading-lists/1")
+
+    assert collections_response.status_code == 200
+    assert reading_lists_response.status_code == 200
+    assert collection_detail_response.status_code == 200
+    assert reading_list_detail_response.status_code == 200
+    assert 'data-lucide-icon="library"' in collections_response.text
+    assert 'data-lucide-icon="book-open"' in reading_lists_response.text
+    assert 'data-lucide-icon="arrow-right"' in collections_response.text
+    assert 'data-lucide-icon="arrow-right"' in reading_lists_response.text
+    assert 'data-lucide-icon="book-open"' in collection_detail_response.text
+    assert 'data-lucide-icon="book-open"' in reading_list_detail_response.text
+
+    collection_card = Path("app/templates/partials/collection_card.html").read_text(encoding="utf-8")
+    reading_list_card = Path("app/templates/partials/reading_list_card.html").read_text(encoding="utf-8")
+    collection_detail = Path("app/templates/collections/collection_detail.html").read_text(encoding="utf-8")
+    reading_list_detail = Path("app/templates/reading_lists/reading_list_detail.html").read_text(encoding="utf-8")
+    assert "\U0001f4da" not in collection_card
+    assert "\U0001f4d6" not in reading_list_card
+    assert "\U0001f4d6" not in collection_detail
+    assert "\U0001f4d6" not in reading_list_detail
+    assert "\u2192" not in collection_card
+    assert "\u2192" not in reading_list_card
+
+
 def test_continue_reading_page_exposes_pagination_controls(auth_client):
     response = auth_client.get("/continue-reading")
 
@@ -713,7 +778,7 @@ def test_cover_browser_page_exposes_start_comic_id(auth_client):
     assert 'returnTo: "/comics/456"' in response.text
 
 
-def test_comic_detail_page_gates_file_location_on_file_path(auth_client, db, normal_user):
+def test_comic_detail_page_gates_file_location_and_uses_lucide_read_icons(auth_client, db, normal_user):
     library = create_library_with_root(db, "Comic Detail Page Library", "/tmp/comic-detail-page-library")
     series = Series(name="Comic Detail Page Series", library=library)
     volume = Volume(series=series, volume_number=1)
@@ -738,6 +803,16 @@ def test_comic_detail_page_gates_file_location_on_file_path(auth_client, db, nor
     body = response.text
     assert 'x-show="comic?.file_path"' in body
     assert 'x-text="comic?.file_path"' in body
+    assert 'data-lucide-icon="circle-play"' in body
+    assert 'data-lucide-icon="book-open"' in body
+    assert 'data-lucide-icon="eye-off"' in body
+
+    read_comic_button = Path("app/templates/partials/read_comic_button.html").read_text(encoding="utf-8")
+    assert 'lucide_icon("circle-play", "h-7 w-7 flex-shrink-0")' in read_comic_button
+    assert 'lucide_icon("book-open", "h-7 w-7 flex-shrink-0")' in read_comic_button
+    assert "\U0001f4d6" not in read_comic_button
+    assert "\u25b6" not in read_comic_button
+    assert "\U0001f453" not in read_comic_button
 
 
 def test_libraries_page_gates_library_path_on_api_payload(auth_client):
@@ -810,6 +885,31 @@ def test_volume_page_series_breadcrumb_uses_series_escape_hatch(admin_client, db
     assert "series.recommendations" in body
     assert "volumes.details" in body
     assert "volume?.details" not in body
+
+
+def test_series_and_volume_read_controls_use_lucide_icons(admin_client, db, monkeypatch):
+    series, volumes = _seed_series_page_data(db)
+    monkeypatch.setattr("app.routers.pages.get_cached_setting", lambda key, default=None: False)
+
+    series_response = admin_client.get(f"/series/{series.id}", follow_redirects=False)
+    volume_response = admin_client.get(f"/volumes/{volumes[0].id}")
+
+    assert series_response.status_code == 200
+    assert volume_response.status_code == 200
+    for body in [series_response.text, volume_response.text]:
+        assert 'data-lucide-icon="circle-play"' in body
+        assert 'data-lucide-icon="book-open"' in body
+        assert "Start Reading" in body
+        assert "Continue" in body
+
+    series_template = Path("app/templates/comics/series_detail.html").read_text(encoding="utf-8")
+    read_series_button = Path("app/templates/partials/read_series_button.html").read_text(encoding="utf-8")
+    read_volume_button = Path("app/templates/partials/read_volume_button.html").read_text(encoding="utf-8")
+    for template in [series_template, read_series_button, read_volume_button]:
+        assert "\U0001f4d6" not in template
+        assert "\u25b6" not in template
+
+    assert "\U0001f4da" not in series_template
 
 
 def test_user_settings_page_renders_for_authenticated_user(auth_client):
