@@ -78,6 +78,31 @@ def test_home_page_keeps_normal_onboarding_when_startup_state_is_healthy(admin_c
     assert '{"startupNotice": null}' in body
 
 
+def test_home_page_uses_lucide_rail_heading_icons(auth_client):
+    response = auth_client.get("/")
+
+    assert response.status_code == 200
+    body = response.text
+    for icon_name in [
+        "book-open",
+        "plus-circle",
+        "circle-play",
+        "library",
+        "star",
+        "award",
+        "zap",
+        "flame",
+        "dice-5",
+        "sparkles",
+        "refresh-cw",
+    ]:
+        assert f'data-lucide-icon="{icon_name}"' in body
+
+    assert "Random Gems" in body
+    assert "<span aria-hidden=\"true\">?</span> Random Gems" not in body
+    assert "&#9889;</span> Trending" not in body
+
+
 def test_home_page_shows_legacy_default_password_warning_for_admin(admin_client, monkeypatch):
     monkeypatch.setattr(
         "app.routers.pages.collect_startup_diagnostics",

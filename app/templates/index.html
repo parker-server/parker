@@ -2,6 +2,8 @@
 
 {% block title %}Home - Parker{% endblock %}
 
+{% from "partials/lucide_icon.html" import lucide_icon %}
+
 {% block content %}
 <div class="space-y-12" x-data='homePage({{ {"startupNotice": startup_notice}|tojson }})'>
 
@@ -25,7 +27,7 @@
                         <section>
                             <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
                                 <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                                    <span aria-hidden="true">&#9658;</span> Jump Back In
+                                    {{ lucide_icon("book-open", "h-5 w-5 flex-shrink-0 text-blue-300") }} Jump Back In
                                 </h2>
                             </div>
 
@@ -43,7 +45,7 @@
                         <section>
                             <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
                                 <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                                    <span aria-hidden="true">+</span> New from Following
+                                    {{ lucide_icon("plus-circle", "h-5 w-5 flex-shrink-0 text-emerald-300") }} New from Following
                                 </h2>
                                 <a :href="window.parker.route('pages.user_following')" class="text-xs text-blue-400 hover:text-white transition-colors">
                                     Manage Following
@@ -64,7 +66,7 @@
                         <section>
                             <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
                                 <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                                    <span aria-hidden="true">&#9654;</span> Up Next
+                                    {{ lucide_icon("circle-play", "h-5 w-5 flex-shrink-0 text-sky-300") }} Up Next
                                 </h2>
                             </div>
                             <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
@@ -80,7 +82,9 @@
                     <template x-if="rail.key === 'pinned_libraries'">
                         <section class="space-y-12">
                             <div class="flex items-center justify-between border-b border-gray-700 pb-2">
-                                <h2 class="text-xl font-bold text-white">Pinned Libraries</h2>
+                                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                                    {{ lucide_icon("library", "h-5 w-5 flex-shrink-0 text-indigo-300") }} Pinned Libraries
+                                </h2>
                                 <a :href="window.parker.route('pages.libraries')" class="text-xs text-blue-400 hover:text-white transition-colors">Manage Pins</a>
                             </div>
 
@@ -132,7 +136,7 @@
                         <section>
                             <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
                                 <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                                    <span class="text-yellow-400" aria-hidden="true">&#9733;</span> Want to Read
+                                    {{ lucide_icon("star", "h-5 w-5 flex-shrink-0 text-yellow-400") }} Want to Read
                                 </h2>
                             </div>
 
@@ -148,7 +152,7 @@
                         <section>
                             <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
                                 <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                                    <span class="text-yellow-400" aria-hidden="true">&#9733;</span> Critically Acclaimed
+                                    {{ lucide_icon("award", "h-5 w-5 flex-shrink-0 text-yellow-400") }} Critically Acclaimed
                                 </h2>
                             </div>
 
@@ -166,7 +170,7 @@
                         <section>
                             <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
                                 <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                                    <span class="text-blue-400" aria-hidden="true">&#9733;</span> Top Rated on Parker
+                                    {{ lucide_icon("star", "h-5 w-5 flex-shrink-0 text-blue-400") }} Top Rated on Parker
                                 </h2>
                             </div>
 
@@ -184,7 +188,7 @@
                         <section>
                             <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
                                 <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                                    <span aria-hidden="true">&#9889;</span> Trending
+                                    {{ lucide_icon("zap", "h-5 w-5 flex-shrink-0 text-amber-300") }} Trending
                                 </h2>
                             </div>
 
@@ -200,7 +204,7 @@
                         <section>
                             <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
                                 <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                                    <span aria-hidden="true">&#8593;</span> Popular with Others
+                                    {{ lucide_icon("flame", "h-5 w-5 flex-shrink-0 text-orange-300") }} Popular with Others
                                 </h2>
                             </div>
 
@@ -216,7 +220,7 @@
                         <section>
                             <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
                                 <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                                    <span aria-hidden="true">?</span> Random Gems
+                                    {{ lucide_icon("dice-5", "h-5 w-5 flex-shrink-0 text-violet-300") }} Random Gems
                                 </h2>
                                 <button x-on:click="fetchRandom(false)" class="text-xs text-blue-400 hover:text-white">Spin Again</button>
                             </div>
@@ -232,8 +236,8 @@
                     <template x-if="rail.key === 'recently_added_series'">
                         <section>
                             <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-                                <h2 class="text-xl font-bold text-white">
-                                    <span aria-hidden="true">+</span> Recently Added Series
+                                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                                    {{ lucide_icon("sparkles", "h-5 w-5 flex-shrink-0 text-cyan-300") }} Recently Added Series
                                 </h2>
                                 <a :href="window.parker.route('pages.search', {}, 'sort_by=created&sort_order=desc')" class="text-sm text-blue-400 hover:text-white transition-colors">View All</a>
                             </div>
@@ -249,8 +253,8 @@
                     <template x-if="rail.key === 'recently_updated_series'">
                         <section>
                             <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-                                <h2 class="text-xl font-bold text-white">
-                                    <span aria-hidden="true">&#8635;</span> Recently Updated Series
+                                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                                    {{ lucide_icon("refresh-cw", "h-5 w-5 flex-shrink-0 text-teal-300") }} Recently Updated Series
                                 </h2>
                                 <a :href="window.parker.route('pages.search', {}, 'sort_by=updated&sort_order=desc')" class="text-sm text-blue-400 hover:text-white transition-colors">View All</a>
                             </div>
