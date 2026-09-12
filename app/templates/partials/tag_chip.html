@@ -5,7 +5,7 @@
     - item: string (The name of the AlpineJS loop variable, e.g. 'name' or 'char')
 #}
 
-{% if type in ['writer', 'penciller', 'inker', 'colorist', 'editor'] %}
+{% if type in ['writer', 'penciller', 'inker', 'colorist', 'letterer', 'cover_artist', 'editor'] %}
     {# Creators: Gray, slightly rounded #}
     {% set classes = "bg-gray-700 hover:bg-blue-600 hover:text-white text-gray-200 border border-transparent rounded" %}
 {% elif type == 'character' %}
@@ -26,7 +26,7 @@
     {% if type in ['character', 'team'] %}
     :href="window.parker.route('pages.timelines', {}, `type={{ type }}&name=${encodeURIComponent({{ item }})}`)"
     {% else %}
-    :href="window.parker.route('pages.search', {}, `field={{ type }}&value=${encodeURIComponent({{ item }})}&operator=contains`)"
+    :href="window.parker.route('pages.search', {}, `field={{ type }}&value=${encodeURIComponent({{ item }})}&operator={{ 'equal' if type in ['writer', 'penciller', 'inker', 'colorist', 'letterer', 'cover_artist', 'editor'] else 'contains' }}`)"
     {% endif %}
     class="{{ classes }} px-3 py-1.5 text-sm transition-colors cursor-pointer select-none flex-shrink-0"
     x-text="{{ item }}"

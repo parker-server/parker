@@ -1,0 +1,259 @@
+{% extends "base.html" %}
+
+{% block title %}Person - Parker{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto" x-data="personDetail()" x-cloak>
+    <div x-show="loading" class="flex justify-center py-20">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+    </div>
+
+    <div x-show="notFound" style="display: none;" class="max-w-lg mx-auto mt-20 text-center">
+        <div class="bg-gray-800 rounded-lg p-8 border border-gray-700 shadow-2xl">
+            <div class="text-5xl mb-4">?</div>
+            <h2 class="text-2xl font-bold text-white mb-2">Person Not Found</h2>
+            <p class="text-gray-400 mb-6">This person is not available in your visible library.</p>
+            <div class="flex gap-4 justify-center">
+                <button x-on:click="window.history.back()" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors">
+                    Go Back
+                </button>
+                <a :href="window.parker.route('pages.home')" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors">
+                    Home
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div x-show="error" style="display: none;" class="text-center py-12">
+        <div class="bg-red-900/20 text-red-400 p-4 rounded-lg inline-block border border-red-800">
+            <p x-text="error"></p>
+        </div>
+        <div class="mt-4">
+            <button x-on:click="loadPerson()" class="text-blue-400 hover:underline">Try Again</button>
+        </div>
+    </div>
+
+    <template x-if="person && !loading && !error && !notFound">
+        <div class="space-y-10">
+            <div class="flex items-center space-x-2 text-gray-400 text-sm md:text-base">
+                <a :href="window.parker.route('pages.home')" class="py-1 hover:text-white">Home</a>
+                <span>/</span>
+                <span class="text-white" x-text="person.name"></span>
+            </div>
+
+            <section class="rounded-lg border border-gray-700 bg-gray-800 p-6 shadow-lg">
+                <div class="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+                    <div class="min-w-0">
+                        <div class="text-xs font-bold uppercase tracking-[0.2em] text-blue-300/80">Person</div>
+                        <h1 class="mt-2 text-3xl md:text-5xl font-bold text-white leading-tight" x-text="person.name"></h1>
+
+                        <div class="mt-4 flex flex-wrap gap-2 text-sm">
+                            <span class="rounded-full border border-blue-800 bg-blue-900/40 px-3 py-1 text-blue-100" x-text="issueLabel(person.total_issues)"></span>
+                            <span class="rounded-full border border-gray-600 bg-gray-900/60 px-3 py-1 text-gray-200" x-text="seriesLabel(person.total_series)"></span>
+                            <template x-if="yearRange(person)">
+                                <span class="rounded-full border border-gray-600 bg-gray-900/60 px-3 py-1 text-gray-200" x-text="yearRange(person)"></span>
+                            </template>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-3">
+                        <template x-if="person.top_publishers?.length">
+                            <div class="flex max-w-full flex-wrap gap-2">
+                                <template x-for="publisher in person.top_publishers" :key="publisher.name">
+                                    <span class="rounded border border-gray-700 bg-gray-900 px-2.5 py-1 text-xs text-gray-300">
+                                        <span x-text="publisher.name"></span>
+                                        <span class="text-gray-500" x-text="` ${publisher.issue_count}`"></span>
+                                    </span>
+                                </template>
+                            </div>
+                        </template>
+
+                        <a :href="allRolesSearchHref()"
+                           class="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-lg transition-colors hover:bg-blue-500">
+                            View All Credits
+                        </a>
+                    </div>
+                </div>
+            </section>
+
+            <template x-for="role in person.roles" :key="role.role">
+                <section class="space-y-4">
+                    <div class="flex flex-col gap-3 border-b border-gray-700 pb-3 sm:flex-row sm:items-end sm:justify-between">
+                        <div>
+                            <h2 class="text-2xl font-bold text-white" x-text="`As ${role.label}`"></h2>
+                            <div class="mt-1 flex flex-wrap gap-2 text-sm text-gray-400">
+                                <span x-text="issueLabel(role.issue_count)"></span>
+                                <span class="text-gray-600">/</span>
+                                <span x-text="seriesLabel(role.series_count)"></span>
+                                <template x-if="yearRange(role)">
+                                    <span class="text-gray-500" x-text="yearRange(role)"></span>
+                                </template>
+                            </div>
+                        </div>
+
+                        <a x-show="isSearchableRole(role.role)"
+                           :href="roleSearchHref(role.role)"
+                           class="text-sm font-bold text-blue-400 transition-colors hover:text-blue-300">
+                            View All As <span x-text="role.label"></span>
+                        </a>
+                    </div>
+
+                    <div x-show="role.series?.length" class="flex gap-5 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                        <template x-for="series in role.series" :key="`${role.role}-${series.id}`">
+                            <a :href="window.parker.route('pages.series_detail', { series_id: series.id })"
+                               class="group block w-40 flex-shrink-0">
+                                <div class="relative aspect-[2/3] overflow-hidden rounded-lg border border-gray-700 bg-gray-800 shadow-md transition-all duration-200 group-hover:scale-[1.02] group-hover:border-blue-500">
+                                    <template x-if="series.thumbnail_path">
+                                        <img
+                                            :src="series.thumbnail_path"
+                                            :alt="series.name"
+                                            class="h-full w-full object-cover transition-opacity duration-300"
+                                            loading="lazy"
+                                        >
+                                    </template>
+
+                                    <template x-if="!series.thumbnail_path">
+                                        <div class="flex h-full w-full items-center justify-center bg-gray-800 text-gray-600">
+                                            <span class="text-4xl">?</span>
+                                        </div>
+                                    </template>
+
+                                    <template x-if="series.read">
+                                        <div class="absolute right-2 top-2 z-10 rounded-full border border-green-400 bg-green-500 p-0.5 text-white shadow-md">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                                            </svg>
+                                        </div>
+                                    </template>
+
+                                    <div class="absolute inset-0 flex items-center justify-center bg-black bg-opacity-0 opacity-0 transition-all group-hover:bg-opacity-60 group-hover:opacity-100">
+                                        <span class="rounded-full bg-blue-600 px-3 py-1 text-sm font-bold text-white shadow-lg">View</span>
+                                    </div>
+                                </div>
+
+                                <div class="mt-2 min-w-0">
+                                    <p class="truncate text-sm font-bold text-gray-200 transition-colors group-hover:text-blue-300" x-text="series.name"></p>
+                                    <p class="truncate text-xs text-gray-500" x-text="seriesMeta(series)"></p>
+                                </div>
+                            </a>
+                        </template>
+                    </div>
+                </section>
+            </template>
+        </div>
+    </template>
+</div>
+
+<script>
+function personDetail() {
+    return {
+        personId: {{ person_id }},
+        person: null,
+        loading: true,
+        notFound: false,
+        error: null,
+        searchableRoles: ['writer', 'penciller', 'inker', 'colorist', 'letterer', 'cover_artist', 'editor'],
+
+        init() {
+            this.loadPerson();
+        },
+
+        async loadPerson() {
+            this.loading = true;
+            this.error = null;
+            this.notFound = false;
+
+            try {
+                const res = await fetch(window.parker.route('people.detail', { person_id: this.personId }));
+
+                if (res.status === 404) {
+                    this.notFound = true;
+                    return;
+                }
+
+                if (!res.ok) {
+                    throw new Error('Failed to load person');
+                }
+
+                this.person = await res.json();
+                document.title = `${this.person.name} - Parker`;
+            } catch (e) {
+                console.error(e);
+                this.error = 'Could not load person details.';
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        isSearchableRole(role) {
+            return this.searchableRoles.includes(role);
+        },
+
+        roleSearchHref(role) {
+            if (!this.person?.name) {
+                return window.parker.route('pages.search');
+            }
+
+            return window.parker.searchHandoff.buildUrl({
+                match: 'all',
+                sortBy: 'series',
+                sortOrder: 'asc',
+                limit: 100,
+                filters: [{
+                    field: role,
+                    operator: 'equal',
+                    value: [this.person.name],
+                }],
+            });
+        },
+
+        allRolesSearchHref() {
+            if (!this.person?.name) {
+                return window.parker.route('pages.search');
+            }
+
+            return window.parker.searchHandoff.buildUrl({
+                match: 'any',
+                sortBy: 'series',
+                sortOrder: 'asc',
+                limit: 100,
+                filters: this.searchableRoles.map((field) => ({
+                    field,
+                    operator: 'equal',
+                    value: [this.person.name],
+                })),
+            });
+        },
+
+        issueLabel(count) {
+            const total = Number(count || 0);
+            return `${total.toLocaleString()} issue${total === 1 ? '' : 's'}`;
+        },
+
+        seriesLabel(count) {
+            const total = Number(count || 0);
+            return `${total.toLocaleString()} series`;
+        },
+
+        yearRange(item) {
+            if (!item?.start_year && !item?.end_year) {
+                return '';
+            }
+
+            if (item.start_year && item.end_year && item.start_year !== item.end_year) {
+                return `${item.start_year}-${item.end_year}`;
+            }
+
+            return item.start_year || item.end_year || '';
+        },
+
+        seriesMeta(series) {
+            const pieces = [this.issueLabel(series.issue_count)];
+            const years = this.yearRange(series);
+            if (years) pieces.push(years);
+            return pieces.join(' / ');
+        },
+    };
+}
+</script>
+{% endblock %}

@@ -448,6 +448,21 @@ def test_quick_search_navigates_to_reading_list(page, browser_server):
 
 
 @pytest.mark.browser
+def test_creator_role_chip_still_opens_role_search(page, browser_server):
+    seed = browser_server["seed"]
+    page.goto(
+        f"{browser_server['base_url']}/comics/{seed['in_progress_comic_id']}",
+        wait_until="networkidle",
+    )
+
+    page.get_by_role("heading", name=f"{seed['series_name']} #{seed['in_progress_comic_number']}").wait_for()
+    page.get_by_role("link", name="Casey Smoke").click()
+
+    page.wait_for_url("**/search?field=writer&value=Casey%20Smoke&operator=equal")
+    page.get_by_role("heading", name="Advanced Search").wait_for()
+
+
+@pytest.mark.browser
 def test_library_timeline_deep_link_shows_character_history_and_search_handoff(page, browser_server):
     seed = browser_server["seed"]
     page.goto(

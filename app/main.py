@@ -41,6 +41,7 @@ from app.api import batch
 from app.api import home
 from app.api import insights
 from app.api import timelines
+from app.api import people
 
 # Frontend Routes (HTML)
 from app.routers import pages, admin
@@ -238,6 +239,7 @@ app.include_router(libraries.router, prefix="/api/libraries", tags=["libraries"]
 app.include_router(series.router, prefix="/api/series", tags=["series"])
 app.include_router(volumes.router, prefix="/api/volumes", tags=["volumes"])
 app.include_router(comics.router, prefix="/api/comics", tags=["comics"])
+app.include_router(people.router, prefix="/api/people", tags=["people"])
 app.include_router(reader.router, prefix="/api/reader", tags=["reader"])
 app.include_router(bookmarks.router, prefix="/api/bookmarks", tags=["bookmarks"])
 app.include_router(reading_lists.router, prefix="/api/reading-lists", tags=["reading-lists"])
