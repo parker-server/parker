@@ -308,7 +308,8 @@ document.addEventListener('alpine:init', () => {
         loading: true,
         listId: list.id,
         title: list.name,
-        icon: list.icon || '⚡', // Default icon if missing
+        icon: list.icon || '',
+        usesDefaultIcon: !list.icon || list.icon === '\u26A1',
 
         async init() {
             // Intersection Observer (Optional Performance Boost):

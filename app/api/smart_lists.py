@@ -9,6 +9,30 @@ from app.schemas.smart_list import SmartListResponse, SmartListCreate, SmartList
 
 router = APIRouter()
 
+LEGACY_SMART_LIST_DEFAULT_ICON = "\u26A1"
+
+
+def _normalize_smart_list_icon(icon: str | None) -> str | None:
+    if icon is None:
+        return None
+
+    stripped_icon = icon.strip()
+    if not stripped_icon or stripped_icon == LEGACY_SMART_LIST_DEFAULT_ICON:
+        return None
+
+    return stripped_icon
+
+
+def _serialize_smart_list(smart_list: SmartList) -> dict:
+    return {
+        "id": smart_list.id,
+        "name": smart_list.name,
+        "icon": _normalize_smart_list_icon(smart_list.icon),
+        "show_on_dashboard": smart_list.show_on_dashboard,
+        "query": smart_list.query_config,
+        "created_at": smart_list.created_at,
+    }
+
 
 @router.post("/", name="create")
 def create_smart_list(
@@ -20,6 +44,7 @@ def create_smart_list(
     smart_list = SmartList(
         user_id=current_user.id,
         name=data.name,
+        icon=None,
         query_config=data.query.model_dump()  # Save the JSON
     )
     db.add(smart_list)
@@ -60,7 +85,7 @@ def execute_smart_list(
     return {
         "id": smart_list.id,
         "name": smart_list.name,
-        "icon": smart_list.icon,
+        "icon": _normalize_smart_list_icon(smart_list.icon),
         "items": results['results']  # The comic_card compatible list
     }
 
@@ -70,17 +95,7 @@ def get_my_smart_lists(db: SessionDep, current_user: CurrentUser):
     """List all smart lists for the current user."""
     smart_lists = db.query(SmartList).filter(SmartList.user_id == current_user.id).order_by(SmartList.name).all()
 
-    return [
-        {
-            "id": s.id,
-            "name": s.name,
-            "icon": s.icon,
-            "show_on_dashboard": s.show_on_dashboard,
-            "query": s.query_config,
-            "created_at": s.created_at
-        }
-        for s in smart_lists
-    ]
+    return [_serialize_smart_list(s) for s in smart_lists]
 
 
 
@@ -110,8 +125,8 @@ def update_smart_list(
 
     if updates.name is not None:
         slist.name = updates.name
-    if updates.icon is not None:
-        slist.icon = updates.icon
+    if "icon" in updates.model_fields_set:
+        slist.icon = _normalize_smart_list_icon(updates.icon)
     if updates.show_on_dashboard is not None:
         slist.show_on_dashboard = updates.show_on_dashboard
     if updates.show_in_library is not None:

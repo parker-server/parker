@@ -103,6 +103,20 @@ def test_home_page_uses_lucide_rail_heading_icons(auth_client):
     assert "&#9889;</span> Trending" not in body
 
 
+def test_home_smart_list_default_icon_uses_lucide_fallback(auth_client):
+    response = auth_client.get("/")
+
+    assert response.status_code == 200
+    body = response.text
+    script = Path("static/js/app.js").read_text(encoding="utf-8")
+
+    assert 'x-if="usesDefaultIcon"' in body
+    assert 'x-show="!usesDefaultIcon"' in body
+    assert 'data-lucide-icon="zap"' in body
+    assert "usesDefaultIcon: !list.icon || list.icon === '\\u26A1'" in script
+    assert "icon: list.icon || ''" in script
+
+
 def test_home_page_shows_legacy_default_password_warning_for_admin(admin_client, monkeypatch):
     monkeypatch.setattr(
         "app.routers.pages.collect_startup_diagnostics",
@@ -557,6 +571,17 @@ def test_dashboard_top_character_links_to_timeline(auth_client):
     assert "field=character&value=${encodeURIComponent(char.name)}&operator=equal" not in body
 
 
+def test_dashboard_smart_filter_default_icons_use_lucide(auth_client):
+    response = auth_client.get("/user/dashboard")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "Smart Filters" in body
+    assert 'data-lucide-icon="zap"' in body
+    assert 'x-show="!list.icon"' in body
+    assert "list.icon || '\\u26A1'" not in body
+
+
 def test_shared_datetime_helpers_assume_naive_api_timestamps_are_utc():
     script = Path("static/js/app.js").read_text(encoding="utf-8")
 
@@ -612,6 +637,22 @@ def test_advanced_search_page_exposes_full_creator_filter_set(auth_client):
     body = response.text
     assert '<option value="letterer">Letterer</option>' in body
     assert '<option value="cover_artist">Cover Artist</option>' in body
+
+
+def test_advanced_search_page_uses_lucide_saved_search_icons(auth_client):
+    response = auth_client.get("/search")
+
+    assert response.status_code == 200
+    body = response.text
+    for icon_name in ["folder-open", "chevron-down", "save", "zap"]:
+        assert f'data-lucide-icon="{icon_name}"' in body
+
+    assert "Load" in body
+    assert "Save" in body
+    assert "Save to Search Menu" in body
+    assert "\U0001f4c2" not in body
+    assert "\U0001f4be" not in body
+    assert "\u26A1" not in body
 
 
 def test_collection_reading_list_and_stack_pages_expose_comic_count_labels(auth_client):

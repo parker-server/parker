@@ -114,7 +114,10 @@
                                 <div x-data="smartRail(list)" x-show="!loading && items.length > 0">
                                     <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
                                         <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                                            <span x-text="icon"></span>
+                                            <template x-if="usesDefaultIcon">
+                                                {{ lucide_icon("zap", "h-5 w-5 flex-shrink-0 text-indigo-400") }}
+                                            </template>
+                                            <span x-show="!usesDefaultIcon" x-text="icon"></span>
                                             <span x-text="title"></span>
                                         </h2>
                                         <a :href="window.parker.route('pages.search', {}, `smart_list_id=${listId}`)" class="text-xs text-blue-400 hover:text-white transition-colors">View All</a>

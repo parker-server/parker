@@ -16,7 +16,7 @@ class SmartList(Base):
 
     name = Column(String, nullable=False)  # e.g., "Alan Moore's Swamp Thing"
     description = Column(String, nullable=True)
-    icon = Column(String, default="⚡")  # Emoji or Icon class
+    icon = Column(String, nullable=True)  # Optional custom icon text; null uses the UI default.
 
     # Stores the exact JSON payload used by SearchService
     # { "match": "all", "filters": [...], "sort_by": "year" }

@@ -17,7 +17,7 @@ class SmartListUpdate(BaseModel):
 class SmartListResponse(BaseModel):
     id: int
     name: str
-    icon: str
+    icon: Optional[str] = None
     show_on_dashboard: bool
     query: SearchRequest
 

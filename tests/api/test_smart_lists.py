@@ -27,11 +27,13 @@ def test_create_smart_list_persists_query_for_current_user(auth_client, db, norm
     payload = response.json()
     assert payload["name"] == "Recent Additions"
     assert payload["user_id"] == normal_user.id
+    assert payload["icon"] is None
     assert payload["query_config"]["limit"] == 15
 
     saved = db.query(SmartList).filter(SmartList.id == payload["id"]).first()
     assert saved is not None
     assert saved.user_id == normal_user.id
+    assert saved.icon is None
     assert saved.query_config["limit"] == 15
 
 
@@ -46,8 +48,8 @@ def test_list_smart_lists_orders_by_name_and_filters_to_owner(auth_client, db, n
     db.add(other_user)
     db.commit()
 
-    mine_z = SmartList(user_id=normal_user.id, name="Zeta", query_config=_query_payload())
-    mine_a = SmartList(user_id=normal_user.id, name="Alpha", query_config=_query_payload(match="any"))
+    mine_z = SmartList(user_id=normal_user.id, name="Zeta", icon="\u26A1", query_config=_query_payload())
+    mine_a = SmartList(user_id=normal_user.id, name="Alpha", icon="star", query_config=_query_payload(match="any"))
     not_mine = SmartList(user_id=other_user.id, name="Hidden", query_config=_query_payload())
     db.add_all([mine_z, mine_a, not_mine])
     db.commit()
@@ -58,12 +60,14 @@ def test_list_smart_lists_orders_by_name_and_filters_to_owner(auth_client, db, n
     items = response.json()
     assert [item["name"] for item in items] == ["Alpha", "Zeta"]
     assert all(item["query"]["sort_by"] == "created" for item in items)
+    assert {item["name"]: item["icon"] for item in items} == {"Alpha": "star", "Zeta": None}
 
 
 def test_execute_smart_list_runs_search_with_limit_override(auth_client, db, normal_user, monkeypatch):
     smart_list = SmartList(
         user_id=normal_user.id,
         name="Dashboard Rail",
+        icon="\u26A1",
         query_config=_query_payload(limit=999, offset=123),
     )
     db.add(smart_list)
@@ -90,6 +94,7 @@ def test_execute_smart_list_runs_search_with_limit_override(auth_client, db, nor
     payload = response.json()
     assert payload["id"] == smart_list.id
     assert payload["name"] == "Dashboard Rail"
+    assert payload["icon"] is None
     assert payload["items"] == [{"id": 7, "title": "Result"}]
 
     assert captured["limit"] == 7
@@ -136,6 +141,28 @@ def test_update_smart_list_updates_fields_and_query(auth_client, db, normal_user
     assert smart_list.show_in_library is False
     assert smart_list.query_config["match"] == "any"
     assert smart_list.query_config["limit"] == 25
+
+
+def test_update_smart_list_clears_legacy_default_icon(auth_client, db, normal_user):
+    smart_list = SmartList(
+        user_id=normal_user.id,
+        name="Default Icon",
+        icon="old",
+        query_config=_query_payload(limit=5),
+    )
+    db.add(smart_list)
+    db.commit()
+
+    response = auth_client.patch(
+        f"/api/smart-lists/{smart_list.id}",
+        json={"icon": "\u26A1"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["icon"] is None
+
+    db.refresh(smart_list)
+    assert smart_list.icon is None
 
 
 def test_update_smart_list_404_when_missing(auth_client):

@@ -2,6 +2,8 @@
 
 {% block title %}Advanced Search - Parker{% endblock %}
 
+{% from "partials/lucide_icon.html" import lucide_icon %}
+
 {% block content %}
 <div class="max-w-6xl mx-auto" x-data="searchBuilder()">
 
@@ -10,7 +12,7 @@
 
         <div x-show="contextLibraryId" class="mb-6 flex items-center gap-2" x-cloak>
             <div class="bg-blue-900/50 text-blue-200 px-3 py-1 rounded-full border border-blue-800 flex items-center text-sm">
-                <span class="mr-2">📂</span>
+                {{ lucide_icon("folder-open", "mr-2 h-4 w-4 flex-shrink-0") }}
                 <span>Searching in: <b x-text="contextLibraryName || 'Library #' + contextLibraryId"></b></span>
 
                 <button x-on:click="contextLibraryId = null; contextLibraryName = null; performSearch()" class="ml-2 hover:text-white" title="Search Everything">
@@ -25,8 +27,9 @@
                     x-on:click.away="showLoadMenu = false"
                     class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-200 rounded-lg flex items-center gap-2 transition-colors"
                 >
-                    <span>📂 Load</span>
-                    <span class="text-xs">▼</span>
+                    {{ lucide_icon("folder-open", "h-4 w-4 flex-shrink-0") }}
+                    <span>Load</span>
+                    {{ lucide_icon("chevron-down", "h-3 w-3 flex-shrink-0") }}
                 </button>
 
                 <div
@@ -45,7 +48,7 @@
                             <template x-for="search in savedSearches" :key="'saved-' + search.id">
                                 <div class="flex items-center justify-between p-2 hover:bg-gray-700 border-b border-gray-700/50 group cursor-pointer" x-on:click="applySearch(search); showLoadMenu = false">
                                     <div class="flex items-center gap-2 flex-1 min-w-0">
-                                        <span class="text-gray-400">📂</span>
+                                        {{ lucide_icon("folder-open", "h-4 w-4 flex-shrink-0 text-gray-400") }}
                                         <span class="text-sm text-blue-300 hover:text-white truncate" x-text="search.name"></span>
                                     </div>
                                     <button x-on:click.stop="deleteSearch(search.id)" class="text-gray-600 hover:text-red-400 px-2 opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
@@ -60,7 +63,7 @@
                             <template x-for="list in smartLists" :key="'smart-' + list.id">
                                 <div class="flex items-center justify-between p-2 hover:bg-gray-700 border-b border-gray-700/50 group cursor-pointer" x-on:click="applySearch(list); showLoadMenu = false">
                                     <div class="flex items-center gap-2 flex-1 min-w-0">
-                                        <span class="text-indigo-400">⚡</span>
+                                        {{ lucide_icon("zap", "h-4 w-4 flex-shrink-0 text-indigo-400") }}
                                         <span class="text-sm text-indigo-200 hover:text-white truncate" x-text="list.name"></span>
                                     </div>
                                     </div>
@@ -75,7 +78,8 @@
                 x-on:click="openSaveModal()"
                 class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg flex items-center gap-2 transition-colors"
             >
-                <span>💾 Save</span>
+                {{ lucide_icon("save", "h-4 w-4 flex-shrink-0") }}
+                <span>Save</span>
             </button>
         </div>
     </div>
@@ -317,7 +321,7 @@
         <div class="grid grid-cols-1 gap-3">
             <button x-on:click="saveSearch()"
                     class="w-full bg-gray-700 hover:bg-gray-600 text-gray-200 font-medium py-3 rounded-lg flex items-center justify-center gap-3 transition-colors group">
-                <span class="text-xl group-hover:scale-110 transition-transform">📂</span>
+                {{ lucide_icon("folder-open", "h-5 w-5 flex-shrink-0 text-gray-300 group-hover:scale-110 transition-transform") }}
                 <div class="text-left">
                     <div class="text-sm font-bold">Save to Search Menu</div>
                     <div class="text-[10px] text-gray-400">Quick access from this page</div>
@@ -326,7 +330,7 @@
 
             <button x-on:click="saveAsSmartList()"
                     class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-3 rounded-lg flex items-center justify-center gap-3 transition-colors group shadow-lg shadow-indigo-900/20">
-                <span class="text-xl group-hover:scale-110 transition-transform">⚡</span>
+                {{ lucide_icon("zap", "h-5 w-5 flex-shrink-0 text-white group-hover:scale-110 transition-transform") }}
                 <div class="text-left">
                     <div class="text-sm font-bold"><span x-text="loadedListId === null ? 'Create' : 'Update'"></span> Smart List</div>
                     <div class="text-[10px] text-indigo-200">Auto-updating list on Dashboard</div>
