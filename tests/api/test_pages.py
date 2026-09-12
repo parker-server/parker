@@ -551,13 +551,33 @@ def test_timeline_year_labels_remain_sticky_in_year_and_decade_modes(auth_client
     assert "sticky top-24 text-2xl font-black text-white" in body
 
 
-def test_search_widget_people_results_use_generic_creator_handoff(auth_client):
+def test_search_widget_people_results_use_person_detail_handoff(auth_client):
     response = auth_client.get("/")
 
     assert response.status_code == 200
     body = response.text
     assert 'personSearchHref(item)' in body
     assert 'field=writer&value=${encodeURIComponent(item.name)}&operator=contains' not in body
+
+    widget = Path("app/templates/partials/search_widget.html").read_text(encoding="utf-8")
+    assert "People" in widget
+
+
+def test_search_widget_people_results_target_person_pages():
+    script = Path("static/js/app.js").read_text(encoding="utf-8")
+
+    assert "window.parker.route('pages.person_detail', { person_id: item.id })" in script
+    assert "creatorRoleFields" not in script
+
+
+def test_person_page_renders_for_authenticated_user(auth_client):
+    response = auth_client.get("/people/123")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "personDetail()" in body
+    assert "people.detail" in body
+    assert "View All Credits" in body
 
 
 def test_advanced_search_page_exposes_full_creator_filter_set(auth_client):

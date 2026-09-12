@@ -69,6 +69,15 @@ async def search(request: Request, user: CurrentUser):
     """Search page"""
     return templates.TemplateResponse(request=request, name="search.html")
 
+
+@router.get("/people/{person_id}", response_class=HTMLResponse, name="person_detail")
+async def person_detail(request: Request, person_id: int, user: CurrentUser):
+    """Person detail page"""
+    return templates.TemplateResponse(request=request, name="people/detail.html", context={
+        "person_id": person_id
+    })
+
+
 @router.get("/insights", response_class=HTMLResponse, name="insights")
 async def insights(request: Request, user: CurrentUser):
     """Insights landing page"""

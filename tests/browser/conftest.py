@@ -175,6 +175,7 @@ def browser_seed_data(browser_db_factory):
         "in_progress_comic_id": in_progress_comic.id,
         "in_progress_comic_title": in_progress_comic.title,
         "in_progress_comic_number": in_progress_comic.number,
+        "writer_id": writer.id,
     }
 
     session.close()

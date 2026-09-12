@@ -88,27 +88,24 @@ def test_reader_incognito_does_not_persist_progress(page, browser_server):
 
 
 @pytest.mark.browser
-def test_quick_search_person_result_opens_filtered_search(page, browser_server):
+def test_quick_search_person_result_opens_person_page(page, browser_server):
     seed = browser_server["seed"]
     page.goto(f"{browser_server['base_url']}/", wait_until="networkidle")
 
     search_input = page.locator("nav input[type='search']").first
     search_input.fill("Casey")
 
-    page.locator("text=People").first.wait_for()
-    page.get_by_role("link", name="Casey Smoke").first.click()
+    person_link = page.get_by_role("link", name="Casey Smoke").first
+    person_link.wait_for()
+    person_link.click()
 
-    page.wait_for_url("**/search?*")
-    assert "filters=" in page.url
+    page.wait_for_url(f"**/people/{seed['writer_id']}")
+    page.get_by_role("heading", name="Casey Smoke").wait_for()
+    page.get_by_role("heading", name="As Writer").wait_for()
 
-    results_section = page.locator("div[x-show='hasSearched']")
-    results_section.wait_for()
-    page.wait_for_selector("text=Results")
-    result_title = results_section.locator("p.text-sm.text-gray-400").filter(
-        has_text=seed["in_progress_comic_title"]
-    ).first
-    result_title.wait_for()
-    assert result_title.is_visible()
+    page.get_by_role("link", name="View All As Writer").click()
+    page.wait_for_url("**/search*")
+    page.get_by_role("heading", name="Advanced Search").wait_for()
 
 
 @pytest.mark.browser

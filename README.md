@@ -45,6 +45,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
   - Pinned library rails for recently updated series from favorite libraries
   - Per-user Home rail customization for reordering or hiding discovery rails
   - Library Timeline for character and team histories generated from embedded metadata
+  - Dedicated person pages for creators with role-specific series rails and search handoffs
   - Recommendations by creator or metadata
   - Random gems, recently added/updated series with recency-aware volume covers
 
