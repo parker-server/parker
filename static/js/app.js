@@ -13,6 +13,8 @@
     const REFRESH_SKEW_SECONDS = 90;
     const IDLE_TIMEOUT_SECONDS = 2 * 60 * 60;
     const LAST_ACTIVITY_KEY = 'lastActivityAt';
+    const REFRESH_REQUEST_TIMEOUT_MS = 15 * 1000;
+    const NAVIGATION_REFRESH_TIMEOUT_MS = 2 * 1000;
 
     const processQueue = (error, token = null) => {
         failedQueue.forEach(prom => {
@@ -68,6 +70,48 @@
 
     const setAccessCookie = (token, lifetimeInSeconds) => {
         document.cookie = `access_token=${token}; path=/; max-age=${lifetimeInSeconds}; SameSite=Lax`;
+    };
+
+    const configuredTimeout = (key, fallback) => {
+        const value = Number(window.parker?.auth?.[key]);
+        return Number.isFinite(value) && value > 0 ? value : fallback;
+    };
+
+    const withTimeout = (promise, timeoutMs, message) => {
+        let timeoutId = null;
+
+        const timeoutPromise = new Promise((_, reject) => {
+            timeoutId = window.setTimeout(() => {
+                reject(new Error(message));
+            }, timeoutMs);
+        });
+
+        return Promise.race([promise, timeoutPromise]).finally(() => {
+            if (timeoutId) {
+                window.clearTimeout(timeoutId);
+            }
+        });
+    };
+
+    const refreshFetch = async (refreshToken) => {
+        const timeoutMs = configuredTimeout('refreshRequestTimeoutMs', REFRESH_REQUEST_TIMEOUT_MS);
+        const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const timeoutId = controller
+            ? window.setTimeout(() => controller.abort(), timeoutMs)
+            : null;
+
+        try {
+            return await originalFetch(appUrl('/api/auth/refresh'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refresh_token: refreshToken }),
+                ...(controller ? { signal: controller.signal } : {})
+            });
+        } finally {
+            if (timeoutId) {
+                window.clearTimeout(timeoutId);
+            }
+        }
     };
 
     const clearSession = () => {
@@ -130,11 +174,7 @@
         }
 
         refreshPromise = (async () => {
-            const refreshRes = await originalFetch(appUrl('/api/auth/refresh'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ refresh_token: refreshToken })
-            });
+            const refreshRes = await refreshFetch(refreshToken);
 
             if (!refreshRes.ok) {
                 clearSession();
@@ -184,11 +224,16 @@
         event.preventDefault();
 
         try {
-            await refreshSession({ force: true });
-            window.location.href = anchor.href;
+            await withTimeout(
+                refreshSession({ force: true }),
+                configuredTimeout('navigationRefreshTimeoutMs', NAVIGATION_REFRESH_TIMEOUT_MS),
+                'Navigation refresh timed out'
+            );
         } catch (error) {
-            window.location.href = appUrl('/login');
+            // Preserve the click even if proactive refresh is slow or fails.
+            // The target page will redirect to login if the cookie is no longer valid.
         }
+        window.location.href = anchor.href;
     };
 
     window.parker = {
@@ -200,7 +245,9 @@
             setAccessCookie,
             markActivity,
             isIdleExpired,
-            idleTimeoutSeconds: IDLE_TIMEOUT_SECONDS
+            idleTimeoutSeconds: IDLE_TIMEOUT_SECONDS,
+            refreshRequestTimeoutMs: REFRESH_REQUEST_TIMEOUT_MS,
+            navigationRefreshTimeoutMs: NAVIGATION_REFRESH_TIMEOUT_MS
         }
     };
 

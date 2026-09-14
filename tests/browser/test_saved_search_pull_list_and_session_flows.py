@@ -338,6 +338,41 @@ def test_session_refresh_resyncs_access_cookie_before_navigation(page, browser_s
 
 
 @pytest.mark.browser
+def test_navigation_click_continues_when_preflight_refresh_hangs(page, browser_server):
+    expired_access_token = create_access_token(
+        subject="browser-user",
+        expires_delta=timedelta(seconds=-30),
+    )
+    refresh_token = create_refresh_token(subject="browser-user")
+    stalled_refresh_routes = []
+
+    page.route("**/api/auth/refresh", lambda route: stalled_refresh_routes.append(route))
+    page.goto(f"{browser_server['base_url']}/search", wait_until="networkidle")
+
+    page.evaluate(
+        """
+        ({ expiredAccessToken, refreshToken }) => {
+            window.parker.auth.navigationRefreshTimeoutMs = 50;
+            window.parker.storage.setString('token', expiredAccessToken);
+            window.parker.storage.setString('refresh_token', refreshToken);
+            window.parker.storage.setString('lastActivityAt', String(Math.floor(Date.now() / 1000)));
+            document.cookie = 'access_token=; path=/; max-age=0; SameSite=Lax';
+        }
+        """,
+        {
+            "expiredAccessToken": expired_access_token,
+            "refreshToken": refresh_token,
+        },
+    )
+
+    page.get_by_role("navigation").get_by_role("link", name="Parker").click()
+
+    page.wait_for_url(f"{browser_server['base_url']}/")
+    page.get_by_role("heading", name="Home").wait_for()
+    assert stalled_refresh_routes
+
+
+@pytest.mark.browser
 def test_idle_session_clears_instead_of_refreshing(page, browser_server):
     expired_access_token = create_access_token(
         subject="browser-user",

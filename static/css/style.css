@@ -9,6 +9,29 @@ body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
 }
 
+/* Avoid Chromium 153's stuck input state after accidental drag-selection on clickable UI. */
+a,
+button,
+[role="button"],
+img,
+svg {
+    -webkit-user-drag: none;
+}
+
+a,
+a *,
+button,
+button *,
+[role="button"],
+[role="button"] *,
+label,
+label *,
+summary,
+summary *,
+nav {
+    user-select: none;
+}
+
 /* Navigation */
 .nav-link {
     color: #9ca3af;
