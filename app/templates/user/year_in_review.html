@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/lucide_icon.html" import lucide_icon %}
 
 {% block title %}{{ year }} Year in Review - Parker{% endblock %}
 
@@ -77,7 +78,7 @@
                 <template x-if="data?.favorites?.top_writer?.name">
                     <div class="space-y-3">
                         <div class="flex items-center gap-2">
-                            <span class="text-2xl">✍️</span>
+                            {{ lucide_icon("pen-line", "h-6 w-6 flex-shrink-0 text-blue-200") }}
                             <span class="text-white/60 text-sm font-medium">Top Writer</span>
                         </div>
                         <div class="text-3xl font-bold text-white" x-text="data.favorites.top_writer.name"></div>
@@ -91,7 +92,7 @@
                 <template x-if="data?.favorites?.top_artist?.name">
                     <div class="space-y-3">
                         <div class="flex items-center gap-2">
-                            <span class="text-2xl">🎨</span>
+                            {{ lucide_icon("palette", "h-6 w-6 flex-shrink-0 text-purple-200") }}
                             <span class="text-white/60 text-sm font-medium">Top Artist</span>
                         </div>
                         <div class="text-3xl font-bold text-white" x-text="data.favorites.top_artist.name"></div>
@@ -105,7 +106,7 @@
                 <template x-if="data?.favorites?.top_series?.name">
                     <div class="space-y-3">
                         <div class="flex items-center gap-2">
-                            <span class="text-2xl">📚</span>
+                            {{ lucide_icon("book-open", "h-6 w-6 flex-shrink-0 text-green-200") }}
                             <span class="text-white/60 text-sm font-medium">Top Series</span>
                         </div>
                         <div class="text-3xl font-bold text-white" x-text="data.favorites.top_series.name"></div>
@@ -119,7 +120,7 @@
                 <template x-if="data?.favorites?.top_genre?.name">
                     <div class="space-y-3">
                         <div class="flex items-center gap-2">
-                            <span class="text-2xl">🎭</span>
+                            {{ lucide_icon("theater", "h-6 w-6 flex-shrink-0 text-pink-200") }}
                             <span class="text-white/60 text-sm font-medium">Top Genre</span>
                         </div>
                         <div class="text-3xl font-bold text-white" x-text="data.favorites.top_genre.name"></div>
@@ -133,7 +134,7 @@
                 <template x-if="data?.favorites?.top_character?.name">
                     <div class="space-y-3">
                         <div class="flex items-center gap-2">
-                            <span class="text-2xl">🦸</span>
+                            {{ lucide_icon("shield", "h-6 w-6 flex-shrink-0 text-yellow-200") }}
                             <span class="text-white/60 text-sm font-medium">Top Character</span>
                         </div>
                         <div class="text-3xl font-bold text-white" x-text="data.favorites.top_character.name"></div>
@@ -152,7 +153,7 @@
             <!-- Busiest Month -->
             <template x-if="data?.highlights?.busiest_month?.name">
                 <div class="flex items-start gap-4 p-4 bg-white/5 rounded-xl">
-                    <span class="text-3xl">📅</span>
+                    {{ lucide_icon("calendar-days", "h-8 w-8 flex-shrink-0 text-blue-200") }}
                     <div>
                         <div class="text-white font-bold text-lg">Busiest Reading Month</div>
                         <div class="text-white/80 text-xl mt-1" x-text="data.highlights.busiest_month.name"></div>
@@ -166,7 +167,7 @@
             <!-- Longest Streak -->
             <template x-if="data?.highlights?.longest_streak > 0">
                 <div class="flex items-start gap-4 p-4 bg-white/5 rounded-xl">
-                    <span class="text-3xl">🔥</span>
+                    {{ lucide_icon("flame", "h-8 w-8 flex-shrink-0 text-orange-200") }}
                     <div>
                         <div class="text-white font-bold text-lg">Longest Reading Streak</div>
                         <div class="text-white/80 text-xl mt-1">
@@ -180,7 +181,7 @@
             <!-- Longest Series Completed -->
             <template x-if="data?.highlights?.longest_series_completed?.name">
                 <div class="flex items-start gap-4 p-4 bg-white/5 rounded-xl">
-                    <span class="text-3xl">🏆</span>
+                    {{ lucide_icon("trophy", "h-8 w-8 flex-shrink-0 text-yellow-200") }}
                     <div>
                         <div class="text-white font-bold text-lg">Longest Series Completed</div>
                         <div class="text-white/80 text-xl mt-1" x-text="data.highlights.longest_series_completed.name"></div>
@@ -197,20 +198,23 @@
             <h2 class="text-3xl font-bold text-white mb-6">Fun Facts</h2>
 
             <template x-if="data?.fun_facts?.if_this_was_novels">
-                <div class="text-white/90 text-lg p-4 bg-white/5 rounded-xl">
-                    📖 <span x-text="data.fun_facts.if_this_was_novels"></span>
+                <div class="flex items-center gap-3 text-white/90 text-lg p-4 bg-white/5 rounded-xl">
+                    {{ lucide_icon("book-open", "h-5 w-5 flex-shrink-0 text-blue-200") }}
+                    <span x-text="data.fun_facts.if_this_was_novels"></span>
                 </div>
             </template>
 
             <template x-if="data?.fun_facts?.time_spent">
-                <div class="text-white/90 text-lg p-4 bg-white/5 rounded-xl">
-                    ⏰ <span x-text="data.fun_facts.time_spent"></span>
+                <div class="flex items-center gap-3 text-white/90 text-lg p-4 bg-white/5 rounded-xl">
+                    {{ lucide_icon("clock", "h-5 w-5 flex-shrink-0 text-purple-200") }}
+                    <span x-text="data.fun_facts.time_spent"></span>
                 </div>
             </template>
 
             <template x-if="data?.fun_facts?.marathon">
-                <div class="text-white/90 text-lg p-4 bg-white/5 rounded-xl">
-                    🎯 <span x-text="data.fun_facts.marathon"></span>
+                <div class="flex items-center gap-3 text-white/90 text-lg p-4 bg-white/5 rounded-xl">
+                    {{ lucide_icon("target", "h-5 w-5 flex-shrink-0 text-pink-200") }}
+                    <span x-text="data.fun_facts.marathon"></span>
                 </div>
             </template>
 
@@ -258,7 +262,7 @@
 
     <!-- Empty State -->
     <div x-show="!loading && !data" class="max-w-4xl mx-auto px-4 py-20 text-center">
-        <div class="text-6xl mb-4">📚</div>
+        {{ lucide_icon("book-open", "mx-auto mb-4 h-14 w-14 text-white/50") }}
         <h2 class="text-2xl font-bold text-white mb-4">No Reading Data Yet</h2>
         <p class="text-white/60 mb-8">Start reading some comics to generate your year in review!</p>
         <a :href="window.parker.route('pages.user_dashboard')" class="inline-block bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-bold transition-colors">
@@ -322,10 +326,10 @@ function yearInReview() {
         async shareStats() {
 
             const text = `My ${this.data.year} Year in Comics:\n\n` +
-                `📚 ${this.data.stats.comics_completed} comics completed\n` +
-                `📖 ${this.formatNumber(this.data.stats.total_pages)} pages read\n` +
-                `✍️ Top Writer: ${this.data.favorites.top_writer.name || 'N/A'}\n` +
-                `🎨 Top Artist: ${this.data.favorites.top_artist.name || 'N/A'}`;
+                `${this.data.stats.comics_completed} comics completed\n` +
+                `${this.formatNumber(this.data.stats.total_pages)} pages read\n` +
+                `Top Writer: ${this.data.favorites.top_writer.name || 'N/A'}\n` +
+                `Top Artist: ${this.data.favorites.top_artist.name || 'N/A'}`;
 
             try {
 

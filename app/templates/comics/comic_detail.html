@@ -5,6 +5,7 @@
 {% block content %}
 
 {% from "partials/page_context.html" import page_context with context %}
+{% from "partials/lucide_icon.html" import lucide_icon %}
 {{ page_context(comic_id, comic.color_palette) }}
 
 {% include "partials/dynamic_background.html" %}
@@ -27,7 +28,7 @@
 
         <div x-show="error" style="display: none;" class="max-w-lg mx-auto mt-20 text-center">
             <div class="bg-gray-800 rounded-lg p-8 border border-gray-700 shadow-2xl">
-                <div class="text-5xl mb-4">🤷‍♂️</div>
+                {{ lucide_icon("circle-help", "mx-auto mb-4 h-12 w-12 text-gray-500") }}
                 <h2 class="text-2xl font-bold text-white mb-2" x-text="error?.title"></h2>
                 <p class="text-gray-400 mb-6" x-text="error?.message"></p>
 
@@ -87,11 +88,11 @@
 
 
                     <div class="grid grid-cols-2 gap-3">
-                        <button x-on:click="markRead()" class="bg-gray-700 hover:bg-green-700 hover:text-white text-gray-200 py-2 px-4 rounded-lg transition-colors border border-gray-600">
-                            ✓ Mark Read
+                        <button x-on:click="markRead()" class="inline-flex items-center justify-center gap-2 bg-gray-700 hover:bg-green-700 hover:text-white text-gray-200 py-2 px-4 rounded-lg transition-colors border border-gray-600">
+                            {{ lucide_icon("circle-check", "h-4 w-4 flex-shrink-0") }} Mark Read
                         </button>
-                        <button x-on:click="markUnread()" class="bg-gray-700 hover:bg-red-700 hover:text-white text-gray-200 py-2 px-4 rounded-lg transition-colors border border-gray-600">
-                            ✕ Mark Unread
+                        <button x-on:click="markUnread()" class="inline-flex items-center justify-center gap-2 bg-gray-700 hover:bg-red-700 hover:text-white text-gray-200 py-2 px-4 rounded-lg transition-colors border border-gray-600">
+                            {{ lucide_icon("circle-x", "h-4 w-4 flex-shrink-0") }} Mark Unread
                         </button>
                     </div>
                 </div>

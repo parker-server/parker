@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/lucide_icon.html" import lucide_icon %}
 
 {% block title %}Kavita Migration - Parker{% endblock %}
 
@@ -13,8 +14,11 @@
 
 
     <div class="bg-gray-800 rounded-lg p-8 border border-gray-700 shadow-xl space-y-6">
-        <div class="text-sm text-yellow-400 bg-yellow-900/30 p-4 rounded-lg border border-yellow-800">
-            ⚠️ **WARNING:** This process is irreversible. **BACKUP YOUR PARKER DATABASE BEFORE PROCEEDING!**  The tool handles user creation and reading progress transfer.
+        <div class="flex items-start gap-3 text-sm text-yellow-400 bg-yellow-900/30 p-4 rounded-lg border border-yellow-800">
+            {{ lucide_icon("triangle-alert", "h-5 w-5 flex-shrink-0 text-yellow-300") }}
+            <p>
+                <strong>WARNING:</strong> This process is irreversible. <strong>BACKUP YOUR PARKER DATABASE BEFORE PROCEEDING!</strong> The tool handles user creation and reading progress transfer.
+            </p>
         </div>
 
         <div>
@@ -38,17 +42,17 @@
             <h3 class="text-gray-300 font-medium mb-2">2. User Migration Strategy</h3>
 
             <div class="bg-gray-900 rounded-lg p-4 border border-gray-700 flex items-start gap-3">
-                <div class="text-2xl">🔑</div>
+                {{ lucide_icon("key-round", "h-7 w-7 flex-shrink-0 text-orange-300") }}
                 <div>
                     <div class="text-white font-bold text-sm">Temporary Passwords</div>
                     <p class="text-gray-400 text-sm mt-1">
                         Since Parker uses different encryption than Kavita, user passwords cannot be migrated directly.
                     </p>
-                    <p class="text-orange-400 text-sm mt-2 font-medium">
-                        • Users will be created with random temporary passwords.<br>
-                        • A CSV file containing these credentials will automatically download.<br>
-                        • You must securely distribute these passwords to your users.
-                    </p>
+                    <ul class="mt-2 list-disc space-y-1 pl-5 text-sm font-medium text-orange-400">
+                        <li>Users will be created with random temporary passwords.</li>
+                        <li>A CSV file containing these credentials will automatically download.</li>
+                        <li>You must securely distribute these passwords to your users.</li>
+                    </ul>
                 </div>
             </div>
         </div>
@@ -62,14 +66,17 @@
                 'bg-gray-600 text-gray-400 cursor-not-allowed': !kavitaDbFile || loading,
             }"
         >
-            <span x-show="!loading">🚀 Start Migration</span>
+            <span x-show="!loading" class="flex items-center justify-center gap-2">
+                {{ lucide_icon("circle-play", "h-5 w-5") }}
+                Start Migration
+            </span>
             <span x-show="loading" class="flex items-center justify-center">
                 <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-3"></div>
                 Migrating... This may take a few minutes.
             </span>
         </button>
 
-        <div x-show="message" class="mt-4 p-4 rounded-lg" :class="message.startsWith('✅') ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'" style="display: none;">
+        <div x-show="message" class="mt-4 p-4 rounded-lg" :class="messageType === 'success' ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'" style="display: none;">
             <pre class="whitespace-pre-wrap font-mono text-sm" x-text="message"></pre>
         </div>
 
@@ -85,6 +92,7 @@ function migrationTool() {
         userStrategy: 'temp-password',
         loading: false,
         message: '',
+        messageType: '',
 
         fileChange(event, prop) {
             this[prop] = event.target.files[0];
@@ -102,6 +110,7 @@ function migrationTool() {
 
             this.loading = true;
             this.message = '';
+            this.messageType = '';
 
             const formData = new FormData();
             formData.append('kavita_db_file', this.kavitaDbFile);
@@ -126,10 +135,12 @@ function migrationTool() {
                         document.body.appendChild(a);
                         a.click();
                         a.remove();
-                        this.message = '✅ Migration successful!\n\nYour CSV file has been downloaded.\nPlease distribute credentials securely and delete the file.';
+                        this.messageType = 'success';
+                        this.message = 'Migration successful!\n\nYour CSV file has been downloaded.\nPlease distribute credentials securely and delete the file.';
                     } else {
                         const data = await res.json();
                         // Pretty print the stats
+                        this.messageType = 'success';
                         let msg = data.status + '\n\n';
                         if(data.details) {
                             msg += `Inserted: ${data.details.inserted}\nUpdated:  ${data.details.updated}\nSkipped:  ${data.details.skipped}`;
@@ -138,11 +149,13 @@ function migrationTool() {
                     }
                 } else {
                     const error = await res.json();
-                    this.message = `❌ ERROR: ${error.detail || 'An unknown error occurred.'}`;
+                    this.messageType = 'error';
+                    this.message = `ERROR: ${error.detail || 'An unknown error occurred.'}`;
                 }
 
             } catch (e) {
-                this.message = `❌ FATAL ERROR: ${e.message}`;
+                this.messageType = 'error';
+                this.message = `FATAL ERROR: ${e.message}`;
             } finally {
                 this.loading = false;
             }

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/lucide_icon.html" import lucide_icon %}
 
 {% block title %}Server Statistics - Parker{% endblock %}
 
@@ -54,7 +55,7 @@
                         <div class="text-2xl font-bold text-white" x-text="stats?.counts?.users"></div>
                         <div class="text-sm text-gray-400">Registered Users</div>
                     </div>
-                    <div class="text-3xl opacity-50">👥</div>
+                    {{ lucide_icon("users", "h-8 w-8 text-gray-300 opacity-50") }}
                 </div>
 
                 <div class="bg-gray-800 rounded-lg p-6 border border-gray-700 shadow-lg flex items-center justify-between">
@@ -62,7 +63,7 @@
                         <div class="text-2xl font-bold text-white" x-text="stats?.activity?.pages_read"></div>
                         <div class="text-sm text-gray-400">Total Pages Read</div>
                     </div>
-                    <div class="text-3xl opacity-50">📖</div>
+                    {{ lucide_icon("book-open", "h-8 w-8 text-gray-300 opacity-50") }}
                 </div>
 
                 <div class="bg-gray-800 rounded-lg p-6 border border-gray-700 shadow-lg flex items-center justify-between">
@@ -70,7 +71,7 @@
                         <div class="text-2xl font-bold text-white" x-text="stats?.activity?.completed_books"></div>
                         <div class="text-sm text-gray-400">Comics Finished</div>
                     </div>
-                    <div class="text-3xl opacity-50">✅</div>
+                    {{ lucide_icon("circle-check", "h-8 w-8 text-gray-300 opacity-50") }}
                 </div>
             </div>
         </div>
@@ -81,7 +82,7 @@
             <div class="bg-gray-800 rounded-lg border border-gray-700 shadow-lg overflow-hidden">
 
                 <div x-show="genreStats.length === 0" class="p-12 text-center text-gray-500">
-                    <div class="text-4xl mb-3">📊</div>
+                    {{ lucide_icon("chart-column", "mx-auto mb-3 h-10 w-10 text-gray-500") }}
                     <p class="text-lg">No genre data available yet.</p>
                     <p class="text-sm mt-2">Scan some comics with metadata to see insights here.</p>
                 </div>
@@ -90,7 +91,7 @@
 
                     <div>
                         <h3 class="font-bold text-white mb-4 flex items-center gap-2">
-                            <span>📚</span> Reading Habits by Genre
+                            {{ lucide_icon("library", "h-5 w-5 text-blue-300") }} Reading Habits by Genre
                         </h3>
                         <div class="space-y-4">
                             <template x-for="item in genreStats" :key="item.genre">
@@ -116,7 +117,7 @@
 
                     <div>
                         <h3 class="font-bold text-white mb-4 flex items-center gap-2">
-                            <span>💾</span> Storage Impact
+                            {{ lucide_icon("archive", "h-5 w-5 text-green-300") }} Storage Impact
                         </h3>
                         <div class="space-y-3">
                             <template x-for="item in genreStats" :key="item.genre">

@@ -1,3 +1,5 @@
+{% from "partials/lucide_icon.html" import lucide_icon %}
+
 <div class="relative w-full" x-data="quickSearch()">
 
     <div class="relative">
@@ -33,7 +35,7 @@
                 <div class="px-4 py-2 bg-gray-900/50 text-xs font-bold text-gray-400 uppercase tracking-wider sticky top-0 backdrop-blur-sm">Series</div>
                 <template x-for="item in results.series" :key="item.id">
                     <a :href="window.parker.route('pages.series_detail', {series_id: item.id })" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
-                        <span class="text-xl group-hover:scale-110 transition-transform">📚</span>
+                        {{ lucide_icon("library", "h-5 w-5 flex-shrink-0 text-blue-300 group-hover:scale-110 transition-transform") }}
                         <div class="min-w-0">
                             <div class="font-bold text-white truncate" x-text="item.name"></div>
                             <div class="text-xs text-gray-500" x-text="item.year || 'Series'"></div>
@@ -48,7 +50,7 @@
                 <div class="px-4 py-2 bg-gray-900/50 text-xs font-bold text-gray-400 uppercase tracking-wider sticky top-0 backdrop-blur-sm">Collections</div>
                 <template x-for="item in results.collections" :key="item.id">
                     <a :href="window.parker.route('pages.collection_detail', { collection_id: item.id })" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
-                        <span class="text-xl group-hover:scale-110 transition-transform">📦</span>
+                        {{ lucide_icon("archive", "h-5 w-5 flex-shrink-0 text-purple-300 group-hover:scale-110 transition-transform") }}
                         <div class="font-bold text-white truncate" x-text="item.name"></div>
                     </a>
                 </template>
@@ -60,7 +62,7 @@
                 <div class="px-4 py-2 bg-gray-900/50 text-xs font-bold text-gray-400 uppercase tracking-wider sticky top-0 backdrop-blur-sm">Reading Lists</div>
                 <template x-for="item in results.reading_lists" :key="item.id">
                     <a :href="window.parker.route('pages.reading_list_detail', {reading_list_id: item.id })" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
-                        <span class="text-xl group-hover:scale-110 transition-transform">📖</span>
+                        {{ lucide_icon("book-open", "h-5 w-5 flex-shrink-0 text-green-300 group-hover:scale-110 transition-transform") }}
                         <div class="font-bold text-white truncate" x-text="item.name"></div>
                     </a>
                 </template>
@@ -72,7 +74,7 @@
                 <div class="px-4 py-2 bg-gray-900/50 text-xs font-bold text-gray-400 uppercase tracking-wider sticky top-0 backdrop-blur-sm">People</div>
                 <template x-for="item in results.people" :key="item.id">
                     <a :href="personSearchHref(item)" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
-                        <span class="text-xl group-hover:scale-110 transition-transform">👤</span>
+                        {{ lucide_icon("user", "h-5 w-5 flex-shrink-0 text-cyan-300 group-hover:scale-110 transition-transform") }}
                         <div class="font-bold text-white truncate" x-text="item.name"></div>
                     </a>
                 </template>
@@ -85,7 +87,7 @@
 
                 <template x-for="item in results.characters" :key="'char'+item.id">
                     <a :href="window.parker.route('pages.timelines', {}, `type=character&name=${encodeURIComponent(item.name)}`)" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
-                        <span class="text-xl group-hover:scale-110 transition-transform">🦸‍♂️</span>
+                        {{ lucide_icon("mask", "h-5 w-5 flex-shrink-0 text-blue-300 group-hover:scale-110 transition-transform") }}
                         <div class="min-w-0">
                             <div class="font-bold text-white truncate" x-text="item.name"></div>
                             <div class="text-xs text-blue-400">Character</div>
@@ -95,7 +97,7 @@
 
                 <template x-for="item in results.teams" :key="'team'+item.id">
                     <a :href="window.parker.route('pages.timelines', {}, `type=team&name=${encodeURIComponent(item.name)}`)" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
-                        <span class="text-xl group-hover:scale-110 transition-transform">🛡️</span>
+                        {{ lucide_icon("shield", "h-5 w-5 flex-shrink-0 text-green-300 group-hover:scale-110 transition-transform") }}
                         <div class="min-w-0">
                             <div class="font-bold text-white truncate" x-text="item.name"></div>
                             <div class="text-xs text-green-400">Team</div>
@@ -105,7 +107,7 @@
 
                 <template x-for="item in results.locations" :key="'loc'+item.id">
                     <a :href="window.parker.route('pages.search', {}, `field=location&value=${encodeURIComponent(item.name)}&operator=contains`)" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
-                        <span class="text-xl group-hover:scale-110 transition-transform">📍</span>
+                        {{ lucide_icon("map-pin", "h-5 w-5 flex-shrink-0 text-purple-300 group-hover:scale-110 transition-transform") }}
                         <div class="min-w-0">
                             <div class="font-bold text-white truncate" x-text="item.name"></div>
                             <div class="text-xs text-purple-400">Location</div>
@@ -120,7 +122,7 @@
                 <div class="px-4 py-2 bg-gray-900/50 text-xs font-bold text-gray-400 uppercase tracking-wider sticky top-0 backdrop-blur-sm">Stacks</div>
                 <template x-for="item in results.pull_lists" :key="item.id">
                     <a :href="window.parker.route('pages.stack_detail', { list_id: item.id })" class="block px-4 py-2 hover:bg-gray-700 transition-colors flex items-center gap-3 group">
-                        <span class="text-xl group-hover:scale-110 transition-transform">🗃️</span>
+                        {{ lucide_icon("archive", "h-5 w-5 flex-shrink-0 text-yellow-300 group-hover:scale-110 transition-transform") }}
                         <div class="font-bold text-white truncate" x-text="item.name"></div>
                     </a>
                 </template>

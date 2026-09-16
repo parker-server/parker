@@ -57,6 +57,7 @@ def test_home_page_shows_storage_warning_for_admin_when_startup_looks_suspicious
     assert "Back to Admin" in body
     assert "Manage Libraries Anyway" in body
     assert "storage_mismatch_suspected" in body
+    assert 'data-lucide-icon="triangle-alert"' in body
 
 
 def test_home_page_keeps_normal_onboarding_when_startup_state_is_healthy(admin_client, monkeypatch):
@@ -146,6 +147,160 @@ def test_admin_dashboard_links_to_diagnostics(admin_client):
     body = response.text
     assert "Diagnostics" in body
     assert "Inspect the active database" in body
+    for icon_name in [
+        "arrow-right",
+        "book-open",
+        "chart-column",
+        "clipboard-list",
+        "file-text",
+        "folder-open",
+        "info",
+        "microscope",
+        "move-right",
+        "settings",
+        "users",
+        "wrench",
+    ]:
+        assert f'data-lucide-icon="{icon_name}"' in body
+
+    template = Path("app/templates/admin/dashboard.html").read_text(encoding="utf-8")
+    for glyph in [
+        "\U0001f4c2",
+        "\U0001f465",
+        "\U0001f4cb",
+        "\U0001f6e0",
+        "\u2699",
+        "\U0001f4ca",
+        "\U0001f4d6",
+        "\U0001f4d1",
+        "\u27a1",
+        "\U0001f52c",
+        "\u2139",
+        "\u2192",
+    ]:
+        assert glyph not in template
+
+
+def test_admin_tasks_page_uses_lucide_icons(admin_client):
+    response = admin_client.get("/admin/tasks")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "System Maintenance" in body
+    for icon_name in [
+        "circle-check",
+        "database",
+        "palette",
+        "pen-line",
+        "refresh-cw",
+        "save",
+    ]:
+        assert f'data-lucide-icon="{icon_name}"' in body
+
+    template = Path("app/templates/admin/tasks.html").read_text(encoding="utf-8")
+    for glyph in [
+        "\U0001f9f9",
+        "\U0001f4be",
+        "\U0001f4dd",
+        "\U0001f3a8",
+        "\u21bb",
+        "\u2713",
+    ]:
+        assert glyph not in template
+
+
+def test_admin_stats_page_uses_lucide_icons(admin_client):
+    response = admin_client.get("/admin/stats")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "Statistics" in body
+    for icon_name in [
+        "archive",
+        "book-open",
+        "chart-column",
+        "circle-check",
+        "library",
+        "users",
+    ]:
+        assert f'data-lucide-icon="{icon_name}"' in body
+
+    template = Path("app/templates/admin/stats.html").read_text(encoding="utf-8")
+    for glyph in [
+        "\U0001f465",
+        "\U0001f4d6",
+        "\u2705",
+        "\U0001f4ca",
+        "\U0001f4da",
+        "\U0001f4be",
+    ]:
+        assert glyph not in template
+
+
+def test_admin_reports_index_uses_lucide_icons(admin_client):
+    response = admin_client.get("/admin/reports")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "System Reports" in body
+    for icon_name in [
+        "archive",
+        "arrow-right",
+        "copy",
+        "heart-pulse",
+        "puzzle",
+        "triangle-alert",
+    ]:
+        assert f'data-lucide-icon="{icon_name}"' in body
+
+    template = Path("app/templates/admin/reports/index.html").read_text(encoding="utf-8")
+    for glyph in [
+        "\U0001f9e9",
+        "\U0001f4be",
+        "\u2764",
+        "\ufe0f",
+        "\U0001f46f",
+        "\u26a0",
+        "\u2192",
+    ]:
+        assert glyph not in template
+
+
+def test_admin_report_empty_states_use_lucide_icons(admin_client):
+    checks = [
+        ("/admin/reports/missing", "Collection Complete!", "party-popper", "app/templates/admin/reports/missing.html", ["\U0001f389"]),
+        ("/admin/reports/metadata", "Perfection! No metadata issues found.", "sparkles", "app/templates/admin/reports/metadata.html", ["\u2728"]),
+        ("/admin/reports/duplicates", "Clean Library!", "circle-check", "app/templates/admin/reports/duplicates.html", ["\u2728"]),
+        ("/admin/reports/corrupt", "Clean Sweep!", "circle-check", "app/templates/admin/reports/corrupt.html", ["\U0001f9f9"]),
+    ]
+
+    for path, text, icon_name, template_path, glyphs in checks:
+        response = admin_client.get(path)
+
+        assert response.status_code == 200
+        assert text in response.text
+        assert f'data-lucide-icon="{icon_name}"' in response.text
+
+        template = Path(template_path).read_text(encoding="utf-8")
+        for glyph in glyphs:
+            assert glyph not in template
+
+
+def test_admin_migration_page_uses_lucide_static_icons(admin_client):
+    response = admin_client.get("/admin/migration")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "Kavita Migration Tool" in body
+    for icon_name in [
+        "circle-play",
+        "key-round",
+        "triangle-alert",
+    ]:
+        assert f'data-lucide-icon="{icon_name}"' in body
+
+    template = Path("app/templates/admin/migration.html").read_text(encoding="utf-8")
+    assert all(ord(char) < 128 for char in template)
 
 
 def test_admin_about_page_exposes_wiki_and_git_commit(admin_client, monkeypatch):
@@ -160,6 +315,17 @@ def test_admin_about_page_exposes_wiki_and_git_commit(admin_client, monkeypatch)
     assert "Application Version" in body
     assert "Git Commit" in body
     assert "abc123def456" in body
+    for icon_name in [
+        "book-open",
+        "bug",
+        "download",
+        "heart",
+        "spider",
+    ]:
+        assert f'data-lucide-icon="{icon_name}"' in body
+
+    template = Path("app/templates/admin/about.html").read_text(encoding="utf-8")
+    assert all(ord(char) < 128 for char in template)
 
 
 def test_admin_build_commit_hash_prefers_environment(monkeypatch):
@@ -542,6 +708,20 @@ def test_admin_libraries_page_exposes_folder_browser_route(admin_client):
     assert "Existing comics will remain visible and readable if their files are reachable" in body
 
 
+def test_admin_cbl_sources_page_uses_lucide_catalog_icons(admin_client):
+    response = admin_client.get("/admin/cbl-sources")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "CBL Reading Lists" in body
+    assert 'data-lucide-icon="file-text"' in body
+    assert 'data-lucide-icon="folder-open"' in body
+
+    template = Path("app/templates/admin/cbl_sources.html").read_text(encoding="utf-8")
+    assert "\U0001f4c1" not in template
+    assert "\U0001f4c4" not in template
+
+
 def test_timestamp_views_use_shared_utc_local_date_helpers(admin_client):
     checks = [
         ("/admin/users", "window.parker.formatLocalDateTime(dateStr)"),
@@ -647,6 +827,28 @@ def test_search_widget_people_results_use_person_detail_handoff(auth_client):
 
     widget = Path("app/templates/partials/search_widget.html").read_text(encoding="utf-8")
     assert "People" in widget
+    for icon_name in [
+        "archive",
+        "book-open",
+        "library",
+        "map-pin",
+        "mask",
+        "shield",
+        "user",
+    ]:
+        assert f'data-lucide-icon="{icon_name}"' in body
+
+    for glyph in [
+        "\U0001f4da",
+        "\U0001f4e6",
+        "\U0001f4d6",
+        "\U0001f464",
+        "\U0001f9b8",
+        "\U0001f6e1",
+        "\U0001f4cd",
+        "\U0001f5c3",
+    ]:
+        assert glyph not in widget
 
 
 def test_search_widget_people_results_target_person_pages():
@@ -706,6 +908,24 @@ def test_collection_reading_list_and_stack_pages_expose_comic_count_labels(auth_
     assert "list.comic_count || 0" in stacks_response.text
 
 
+def test_stack_surfaces_use_lucide_icons(auth_client):
+    stacks_response = auth_client.get("/stacks")
+    stack_detail_response = auth_client.get("/stacks/1")
+
+    assert stacks_response.status_code == 200
+    assert stack_detail_response.status_code == 200
+    assert 'data-lucide-icon="archive"' in stacks_response.text
+    assert 'data-lucide-icon="archive"' in stack_detail_response.text
+    assert 'data-lucide-icon="circle-play"' in stack_detail_response.text
+
+    stack_index = Path("app/templates/pull_lists/index.html").read_text(encoding="utf-8")
+    stack_detail = Path("app/templates/pull_lists/detail.html").read_text(encoding="utf-8")
+    selection_widget = Path("app/templates/partials/selection_widget.html").read_text(encoding="utf-8")
+    assert "\U0001f4da" not in stack_index
+    assert "\U0001f5c3" not in selection_widget
+    assert "\u25b6" not in stack_detail
+
+
 def test_collection_and_reading_list_surfaces_use_lucide_icons(auth_client):
     collections_response = auth_client.get("/collections")
     reading_lists_response = auth_client.get("/reading-lists")
@@ -722,6 +942,8 @@ def test_collection_and_reading_list_surfaces_use_lucide_icons(auth_client):
     assert 'data-lucide-icon="arrow-right"' in reading_lists_response.text
     assert 'data-lucide-icon="book-open"' in collection_detail_response.text
     assert 'data-lucide-icon="book-open"' in reading_list_detail_response.text
+    assert 'data-lucide-icon="circle-help"' in collection_detail_response.text
+    assert 'data-lucide-icon="circle-help"' in reading_list_detail_response.text
 
     collection_card = Path("app/templates/partials/collection_card.html").read_text(encoding="utf-8")
     reading_list_card = Path("app/templates/partials/reading_list_card.html").read_text(encoding="utf-8")
@@ -731,6 +953,8 @@ def test_collection_and_reading_list_surfaces_use_lucide_icons(auth_client):
     assert "\U0001f4d6" not in reading_list_card
     assert "\U0001f4d6" not in collection_detail
     assert "\U0001f4d6" not in reading_list_detail
+    assert "\U0001f937" not in collection_detail
+    assert "\U0001f937" not in reading_list_detail
     assert "\u2192" not in collection_card
     assert "\u2192" not in reading_list_card
 
@@ -764,6 +988,17 @@ def test_reader_page_uses_modular_reader_shell(auth_client):
     assert 'data-settings-toggle' in body
     assert 'data-double-page-setting' in body
     assert 'data-reader-toolbar-menu-toggle' in body
+    for icon_name in [
+        "chevron-left",
+        "chevron-right",
+        "skip-back",
+        "skip-forward",
+    ]:
+        assert f'data-lucide-icon="{icon_name}"' in body
+
+    reader_controls = Path("app/templates/reader/partials/_reader_controls.html").read_text(encoding="utf-8")
+    for entity in ["&#9198;", "&#9664;", "&#9654;", "&#9197;"]:
+        assert entity not in reader_controls
 
 
 def test_cover_browser_page_exposes_start_comic_id(auth_client):
@@ -805,11 +1040,18 @@ def test_comic_detail_page_gates_file_location_and_uses_lucide_read_icons(auth_c
     assert 'x-text="comic?.file_path"' in body
     assert 'data-lucide-icon="circle-play"' in body
     assert 'data-lucide-icon="book-open"' in body
+    assert 'data-lucide-icon="circle-check"' in body
+    assert 'data-lucide-icon="circle-help"' in body
+    assert 'data-lucide-icon="circle-x"' in body
     assert 'data-lucide-icon="eye-off"' in body
 
+    comic_detail = Path("app/templates/comics/comic_detail.html").read_text(encoding="utf-8")
     read_comic_button = Path("app/templates/partials/read_comic_button.html").read_text(encoding="utf-8")
     assert 'lucide_icon("circle-play", "h-7 w-7 flex-shrink-0")' in read_comic_button
     assert 'lucide_icon("book-open", "h-7 w-7 flex-shrink-0")' in read_comic_button
+    assert "\U0001f937" not in comic_detail
+    assert "\u2705" not in comic_detail
+    assert "\u274c" not in comic_detail
     assert "\U0001f4d6" not in read_comic_button
     assert "\u25b6" not in read_comic_button
     assert "\U0001f453" not in read_comic_button
@@ -822,6 +1064,10 @@ def test_libraries_page_gates_library_path_on_api_payload(auth_client):
     body = response.text
     assert 'x-show="lib.path"' in body
     assert 'x-text="lib.path"' in body
+    assert 'data-lucide-icon="book-open"' in body
+
+    libraries_index = Path("app/templates/libraries/index.html").read_text(encoding="utf-8")
+    assert "\U0001f4da" not in libraries_index
 
 
 def test_series_page_redirects_to_single_volume_when_setting_enabled(admin_client, db, monkeypatch):
@@ -899,27 +1145,67 @@ def test_series_and_volume_read_controls_use_lucide_icons(admin_client, db, monk
     for body in [series_response.text, volume_response.text]:
         assert 'data-lucide-icon="circle-play"' in body
         assert 'data-lucide-icon="book-open"' in body
+        assert 'data-lucide-icon="circle-help"' in body
         assert "Start Reading" in body
         assert "Continue" in body
 
     series_template = Path("app/templates/comics/series_detail.html").read_text(encoding="utf-8")
+    volume_template = Path("app/templates/comics/volume_detail.html").read_text(encoding="utf-8")
     read_series_button = Path("app/templates/partials/read_series_button.html").read_text(encoding="utf-8")
     read_volume_button = Path("app/templates/partials/read_volume_button.html").read_text(encoding="utf-8")
-    for template in [series_template, read_series_button, read_volume_button]:
+    for template in [series_template, volume_template, read_series_button, read_volume_button]:
         assert "\U0001f4d6" not in template
         assert "\u25b6" not in template
+        assert "\U0001f937" not in template
 
     assert "\U0001f4da" not in series_template
 
 
-def test_user_settings_page_renders_for_authenticated_user(auth_client):
+def test_user_settings_page_uses_lucide_status_icons(auth_client):
     response = auth_client.get("/user/settings")
 
     assert response.status_code == 200
-    assert "Account Settings" in response.text
+    body = response.text
+    assert "Account Settings" in body
+    assert 'data-lucide-icon="circle-check"' in body
+    assert 'data-lucide-icon="circle-x"' in body
+
+    template = Path("app/templates/user/settings.html").read_text(encoding="utf-8")
+    assert "\u2705" not in template
+    assert "\u274c" not in template
 
 
-def test_user_year_in_review_page_renders_for_authenticated_user(auth_client):
+def test_user_year_in_review_page_uses_lucide_icons(auth_client):
     response = auth_client.get("/user/year-in-review")
 
     assert response.status_code == 200
+    body = response.text
+    for icon_name in [
+        "book-open",
+        "calendar-days",
+        "clock",
+        "flame",
+        "palette",
+        "pen-line",
+        "shield",
+        "target",
+        "theater",
+        "trophy",
+    ]:
+        assert f'data-lucide-icon="{icon_name}"' in body
+
+    template = Path("app/templates/user/year_in_review.html").read_text(encoding="utf-8")
+    for glyph in [
+        "\U0001f4da",
+        "\U0001f4d6",
+        "\u270d",
+        "\U0001f3a8",
+        "\U0001f3ad",
+        "\U0001f9b8",
+        "\U0001f4c5",
+        "\U0001f525",
+        "\U0001f3c6",
+        "\u23f0",
+        "\U0001f3af",
+    ]:
+        assert glyph not in template

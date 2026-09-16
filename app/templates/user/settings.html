@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/lucide_icon.html" import lucide_icon %}
 
 {% block title %}Account Settings - Parker{% endblock %}
 
@@ -107,7 +108,15 @@
             </div>
 
             <div class="pt-4 flex items-center justify-between">
-                <span class="text-sm" :class="messageColor" x-text="message"></span>
+                <div class="flex items-center gap-2 text-sm" :class="messageColor" x-show="message" x-cloak>
+                    <span x-show="messageStatus === 'success'">
+                        {{ lucide_icon("circle-check", "h-4 w-4 flex-shrink-0") }}
+                    </span>
+                    <span x-show="messageStatus === 'error'">
+                        {{ lucide_icon("circle-x", "h-4 w-4 flex-shrink-0") }}
+                    </span>
+                    <span x-text="message"></span>
+                </div>
                 
                 <button 
                     type="submit" 
@@ -133,6 +142,7 @@ function userSettings() {
         confirm_password: '',
         loading: false,
         message: '',
+        messageStatus: '',
         messageColor: 'text-green-400',
         preferences: {},
 
@@ -168,10 +178,12 @@ function userSettings() {
         },
         async changePassword() {
             this.message = '';
+            this.messageStatus = '';
             
             // 1. Client Validation
             if (this.form.new_password !== this.confirm_password) {
-                this.message = "❌ New passwords do not match.";
+                this.message = "New passwords do not match.";
+                this.messageStatus = 'error';
                 this.messageColor = 'text-red-400';
                 return;
             }
@@ -188,18 +200,21 @@ function userSettings() {
                 const data = await res.json();
 
                 if (res.ok) {
-                    this.message = "✅ Password updated successfully!";
+                    this.message = "Password updated successfully!";
+                    this.messageStatus = 'success';
                     this.messageColor = 'text-green-400';
                     // Clear form
                     this.form.current_password = '';
                     this.form.new_password = '';
                     this.confirm_password = '';
                 } else {
-                    this.message = `❌ ${data.detail || 'Error updating password'}`;
+                    this.message = data.detail || 'Error updating password';
+                    this.messageStatus = 'error';
                     this.messageColor = 'text-red-400';
                 }
             } catch (e) {
-                this.message = "❌ Network error occurred.";
+                this.message = "Network error occurred.";
+                this.messageStatus = 'error';
                 this.messageColor = 'text-red-400';
             } finally {
                 this.loading = false;

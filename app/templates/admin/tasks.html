@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/lucide_icon.html" import lucide_icon %}
 
 {% block title %}System Tasks - Parker{% endblock %}
 
@@ -18,7 +19,7 @@
             <div class="flex justify-between items-start">
                 <div>
                     <h3 class="text-xl font-bold text-white flex items-center gap-2">
-                        <span>🧹</span> Database Cleanup
+                        {{ lucide_icon("database", "h-5 w-5 text-blue-300") }} Database Cleanup
                     </h3>
                     <p class="text-gray-400 mt-2 text-sm max-w-xl">
                         Scans the database for empty nodes, orphaned metadata, stale thumbnails, missing-file records, and old completed or failed job history.
@@ -30,7 +31,9 @@
                     :disabled="loading"
                     :class="loading ? 'opacity-50 cursor-not-allowed' : ''"
                 >
-                    <span x-show="loading && activeTask === 'cleanup'" class="animate-spin">↻</span>
+                    <span x-show="loading && activeTask === 'cleanup'" x-cloak>
+                        {{ lucide_icon("refresh-cw", "h-4 w-4 animate-spin") }}
+                    </span>
                     <span x-text="!loading ? 'Run Task' : 'Cleaning...'"></span>
                 </button>
             </div>
@@ -58,7 +61,7 @@
             <div class="flex justify-between items-start">
                 <div>
                     <h3 class="text-xl font-bold text-white flex items-center gap-2">
-                        <span>💾</span> Database Backup
+                        {{ lucide_icon("save", "h-5 w-5 text-green-300") }} Database Backup
                     </h3>
                     <p class="text-gray-400 mt-2 text-sm max-w-xl">
                         Creates a hot snapshot of the database (safe for running apps) and compresses it into a <code>.tar.gz</code> archive.
@@ -70,7 +73,9 @@
                     :disabled="loading"
                     :class="loading ? 'opacity-50 cursor-not-allowed' : ''"
                 >
-                    <span x-show="loading && activeTask === 'backup'" class="animate-spin">↻</span>
+                    <span x-show="loading && activeTask === 'backup'" x-cloak>
+                        {{ lucide_icon("refresh-cw", "h-4 w-4 animate-spin") }}
+                    </span>
                     <span x-show="!(loading && activeTask === 'backup')">Run Task</span>
                 </button>
             </div>
@@ -78,7 +83,7 @@
             <div x-show="activeTask === 'backup' && lastResult && lastResult.details" x-transition class="mt-6 bg-green-900/20 rounded p-4 border border-green-500/30 font-mono text-sm">
                 <div class="flex justify-between items-center mb-3">
                     <span class="text-green-400 font-bold flex items-center gap-2">
-                        <span>✓</span> Backup Successful
+                        {{ lucide_icon("circle-check", "h-4 w-4") }} Backup Successful
                     </span>
                     <button x-on:click="lastResult = null" class="text-gray-500 hover:text-white text-xs">Dismiss</button>
                 </div>
@@ -106,7 +111,7 @@
             <div class="flex justify-between items-start">
                 <div>
                     <h3 class="text-xl font-bold text-white flex items-center gap-2">
-                        <span>📝</span> Enrich Descriptions
+                        {{ lucide_icon("pen-line", "h-5 w-5 text-blue-300") }} Enrich Descriptions
                     </h3>
                     <p class="text-gray-400 mt-2 text-sm max-w-xl">
                         Scans all auto-generated Reading Lists and attempts to match them against the internal database of event descriptions.
@@ -118,7 +123,9 @@
                     :disabled="loading"
                     :class="loading ? 'opacity-50 cursor-not-allowed' : ''"
                 >
-                    <span x-show="loading && activeTask === 'refresh-descriptions'" class="animate-spin">↻</span>
+                    <span x-show="loading && activeTask === 'refresh-descriptions'" x-cloak>
+                        {{ lucide_icon("refresh-cw", "h-4 w-4 animate-spin") }}
+                    </span>
                     <span x-show="!(loading && activeTask === 'refresh-descriptions')">Run Task</span>
                 </button>
             </div>
@@ -141,7 +148,7 @@
             <div class="flex justify-between items-start">
                 <div>
                     <h3 class="text-xl font-bold text-white flex items-center gap-2">
-                        <span>🎨</span> Refresh Colorscapes
+                        {{ lucide_icon("palette", "h-5 w-5 text-purple-300") }} Refresh Colorscapes
                     </h3>
                     <p class="text-gray-400 mt-2 text-sm max-w-xl">
                         Analyzes cover art to generate dominant colors for the "Colorscape" and "Hybrid" background modes.
@@ -154,7 +161,9 @@
                     :disabled="loading"
                     :class="loading ? 'opacity-50 cursor-not-allowed' : ''"
                 >
-                    <span x-show="loading && activeTask === 'colorscape_refresh'" class="animate-spin">↻</span>
+                    <span x-show="loading && activeTask === 'colorscape_refresh'" x-cloak>
+                        {{ lucide_icon("refresh-cw", "h-4 w-4 animate-spin") }}
+                    </span>
                     <span x-show="!(loading && activeTask === 'colorscape_refresh')">Run Task</span>
                 </button>
             </div>

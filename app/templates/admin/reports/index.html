@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/lucide_icon.html" import lucide_icon %}
 
 {% block title %}Reports - Parker{% endblock %}
 
@@ -15,10 +16,10 @@
         
         <a :href="window.parker.route('admin.reports_missing')" class="block bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-red-500 rounded-lg p-6 transition-all group shadow-lg">
             <div class="flex items-center justify-between mb-4">
-                <div class="w-12 h-12 bg-red-900/30 rounded-lg flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
-                    🧩
+                <div class="w-12 h-12 bg-red-900/30 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+                    {{ lucide_icon("puzzle", "h-7 w-7 text-red-300") }}
                 </div>
-                <span class="text-gray-500 group-hover:text-red-400 transition-colors">→</span>
+                {{ lucide_icon("arrow-right", "h-5 w-5 text-gray-500 group-hover:text-red-400 transition-colors") }}
             </div>
             <h3 class="text-xl font-bold text-white mb-2">Missing Issues</h3>
             <p class="text-sm text-gray-400">Identify gaps in your collection based on series metadata counts.</p>
@@ -26,10 +27,10 @@
 
         <a :href="window.parker.route('admin.reports_storage')" class="block bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-yellow-500 rounded-lg p-6 transition-all group shadow-lg">
             <div class="flex items-center justify-between mb-4">
-                <div class="w-12 h-12 bg-yellow-900/30 rounded-lg flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
-                    💾
+                <div class="w-12 h-12 bg-yellow-900/30 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+                    {{ lucide_icon("archive", "h-7 w-7 text-yellow-300") }}
                 </div>
-                <span class="text-gray-500 group-hover:text-yellow-400 transition-colors">→</span>
+                {{ lucide_icon("arrow-right", "h-5 w-5 text-gray-500 group-hover:text-yellow-400 transition-colors") }}
             </div>
             <h3 class="text-xl font-bold text-white mb-2">Storage Analysis</h3>
             <p class="text-sm text-gray-400">Breakdown of disk usage by library, series, and file format.</p>
@@ -37,10 +38,10 @@
 
         <a :href="window.parker.route('admin.reports_metadata')" class="block bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-purple-500 rounded-lg p-6 transition-all group shadow-lg">
             <div class="flex items-center justify-between mb-4">
-                <div class="w-12 h-12 bg-purple-900/30 rounded-lg flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
-                    ❤️
+                <div class="w-12 h-12 bg-purple-900/30 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+                    {{ lucide_icon("heart-pulse", "h-7 w-7 text-purple-300") }}
                 </div>
-                <span class="text-gray-500 group-hover:text-purple-400 transition-colors">→</span>
+                {{ lucide_icon("arrow-right", "h-5 w-5 text-gray-500 group-hover:text-purple-400 transition-colors") }}
             </div>
             <h3 class="text-xl font-bold text-white mb-2">Metadata Health</h3>
             <p class="text-sm text-gray-400">Audit your library's metadata quality to find items missing summaries, dates, or other key tags.</p>
@@ -48,20 +49,20 @@
 
         <a :href="window.parker.route('admin.reports_duplicates')" class="block bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-blue-500 rounded-lg p-6 transition-all group shadow-lg">
             <div class="flex items-center justify-between mb-4">
-                <div class="w-12 h-12 bg-blue-900/30 rounded-lg flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
-                    👯
+                <div class="w-12 h-12 bg-blue-900/30 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+                    {{ lucide_icon("copy", "h-7 w-7 text-blue-300") }}
                 </div>
-                <span class="text-gray-500 group-hover:text-blue-400 transition-colors">→</span>
+                {{ lucide_icon("arrow-right", "h-5 w-5 text-gray-500 group-hover:text-blue-400 transition-colors") }}
             </div>
             <h3 class="text-xl font-bold text-white mb-2">Duplicate Analysis</h3>
             <p class="text-sm text-gray-400">Identify and resolve instances where you have multiple files or versions of the same issue.</p>
         </a>
         <a :href="window.parker.route('admin.reports_corrupt')" class="block bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-orange-500 rounded-lg p-6 transition-all group shadow-lg">
             <div class="flex items-center justify-between mb-4">
-                <div class="w-12 h-12 bg-orange-900/30 rounded-lg flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
-                    ⚠️
+                <div class="w-12 h-12 bg-orange-900/30 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+                    {{ lucide_icon("triangle-alert", "h-7 w-7 text-orange-300") }}
                 </div>
-                <span class="text-gray-500 group-hover:text-orange-400 transition-colors">→</span>
+                {{ lucide_icon("arrow-right", "h-5 w-5 text-gray-500 group-hover:text-orange-400 transition-colors") }}
             </div>
             <h3 class="text-xl font-bold text-white mb-2">Corrupt Files</h3>
             <p class="text-sm text-gray-400">Find files with suspiciously low page counts (< 3 pages).</p>

@@ -1,3 +1,5 @@
+{% from "partials/lucide_icon.html" import lucide_icon %}
+
 <div class="fixed bottom-0 left-0 right-0 z-50 flex flex-col items-center pb-8"
      x-on:mouseenter="isHoveringZone = true"
      x-on:mouseleave="isHoveringZone = false"
@@ -32,8 +34,12 @@
          x-on:mouseenter="isHoveringBar = true"
          x-on:mouseleave="isHoveringBar = false">
 
-        <button x-on:click="goToBook(meta.prev_comic_id)" :disabled="!meta.prev_comic_id" class="text-gray-400 hover:text-white disabled:opacity-30">&#9198;</button>
-        <button x-on:click="$data.prevPage()" class="text-white hover:text-blue-400 text-2xl px-2">&#9664;</button>
+        <button x-on:click="goToBook(meta.prev_comic_id)" :disabled="!meta.prev_comic_id" class="text-gray-400 hover:text-white disabled:opacity-30" aria-label="Previous book">
+            {{ lucide_icon("skip-back", "h-5 w-5") }}
+        </button>
+        <button x-on:click="$data.prevPage()" class="text-white hover:text-blue-400 px-2" aria-label="Previous page">
+            {{ lucide_icon("chevron-left", "h-7 w-7") }}
+        </button>
 
         <div class="flex items-center space-x-2 text-sm font-mono text-gray-300 mx-2">
             <span x-text="currentPage + 1" class="text-white font-bold"></span>
@@ -41,8 +47,12 @@
             <span x-text="meta.page_count"></span>
         </div>
 
-        <button x-on:click="$data.nextPage()" class="text-white hover:text-blue-400 text-2xl px-2">&#9654;</button>
-        <button x-on:click="goToBook(meta.next_comic_id)" :disabled="!meta.next_comic_id" class="text-gray-400 hover:text-white disabled:opacity-30">&#9197;</button>
+        <button x-on:click="$data.nextPage()" class="text-white hover:text-blue-400 px-2" aria-label="Next page">
+            {{ lucide_icon("chevron-right", "h-7 w-7") }}
+        </button>
+        <button x-on:click="goToBook(meta.next_comic_id)" :disabled="!meta.next_comic_id" class="text-gray-400 hover:text-white disabled:opacity-30" aria-label="Next book">
+            {{ lucide_icon("skip-forward", "h-5 w-5") }}
+        </button>
 
         <div class="w-px h-6 bg-gray-700 mx-2"></div>
 

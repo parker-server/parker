@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/lucide_icon.html" import lucide_icon %}
 
 {% block title %}About - Parker{% endblock %}
 
@@ -16,7 +17,7 @@
     <div class="bg-gray-800 border border-gray-700 rounded-lg overflow-hidden shadow-xl">
         
         <div class="p-8 text-center border-b border-gray-700 bg-gray-900/50">
-            <div class="text-6xl mb-4">🕷️</div>
+            {{ lucide_icon("spider", "mx-auto mb-4 h-14 w-14 text-blue-300") }}
             <h1 class="text-3xl font-bold text-white mb-2">{{ instance_name }}</h1>
             <p class="text-sm uppercase tracking-[0.24em] text-gray-500 mb-2">Powered by Parker</p>
             <p class="text-blue-400 font-mono">v{{ app_version }}</p>
@@ -72,20 +73,17 @@
                     </a>
 
                     <a href="{{ wiki_url }}" target="_blank" rel="noopener noreferrer" class="flex items-center space-x-2 bg-gray-700 hover:bg-emerald-500 hover:text-white text-white px-4 py-2 rounded transition-colors">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                            <path d="M9 4.804A6.504 6.504 0 004 3H3a1 1 0 00-1 1v11a1 1 0 001 1h1a6.5 6.5 0 015.2 2.6 1 1 0 001.6 0A6.5 6.5 0 0116 16h1a1 1 0 001-1V4a1 1 0 00-1-1h-1a6.504 6.504 0 00-5 1.804V14a1 1 0 11-2 0V4.804z"></path>
-                        </svg>
+                        {{ lucide_icon("book-open", "h-5 w-5") }}
                         <span>Wiki</span>
                     </a>
                     
                     <a href="https://github.com/parker-server/parker/issues" target="_blank" rel="noopener noreferrer" class="flex items-center space-x-2 bg-gray-700 hover:bg-red-500 hover:text-white text-white px-4 py-2 rounded transition-colors">
-                        <span>🐞 Report a Bug</span>
+                        {{ lucide_icon("bug", "h-5 w-5") }}
+                        <span>Report a Bug</span>
                     </a>
 
                     <a :href="window.parker.route('admin.download_logs')" class="flex items-center space-x-2 bg-gray-700 hover:bg-blue-500 hover:text-white text-white px-4 py-2 rounded transition-colors" title="Download latest server log">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                            <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" />
-                        </svg>
+                        {{ lucide_icon("download", "h-5 w-5") }}
                         <span>Download Logs</span>
                     </a>
 
@@ -96,7 +94,10 @@
     </div>
     
     <div class="text-center mt-8 text-gray-500 text-sm">
-        <p>❤️ Thank you for using Parker.</p>
+        <p class="inline-flex items-center justify-center gap-2">
+            {{ lucide_icon("heart", "h-4 w-4 text-red-400") }}
+            <span>Thank you for using Parker.</span>
+        </p>
     </div>
 
 </div>

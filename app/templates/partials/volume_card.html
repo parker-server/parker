@@ -1,3 +1,5 @@
+{% from "partials/lucide_icon.html" import lucide_icon %}
+
 <a :href="window.parker.route('pages.volume_detail', {volume_id: volume.volume_id })" class="block group">
     <div class="aspect-[2/3] bg-gray-700 rounded-lg overflow-hidden relative shadow-md transition-transform duration-200 group-hover:scale-[1.02]">
 
@@ -12,7 +14,7 @@
 
         <template x-if="!volume.first_issue_id">
             <div class="w-full h-full flex items-center justify-center bg-gray-800 text-gray-600">
-                <span class="text-4xl">📚</span>
+                {{ lucide_icon("book-open", "h-10 w-10") }}
             </div>
         </template>
 
