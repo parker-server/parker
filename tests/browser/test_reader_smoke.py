@@ -701,6 +701,8 @@ def test_reader_long_view_toggle_tracks_scroll_progress_and_persists_mode(page, 
 
     page.wait_for_selector(".reader-container")
     page.locator(".nav-zone.center").click()
+    assert page.locator("[data-fit-mode-control]").is_visible()
+
     page.locator("button[title='Settings']").click()
     page.get_by_role("button", name="Long View").click()
 
@@ -716,6 +718,7 @@ def test_reader_long_view_toggle_tracks_scroll_progress_and_persists_mode(page, 
         }
         """
     )
+    assert page.locator("[data-fit-mode-control]").is_hidden()
 
 
 @pytest.mark.browser

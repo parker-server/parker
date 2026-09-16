@@ -54,9 +54,14 @@
             {{ lucide_icon("skip-forward", "h-5 w-5") }}
         </button>
 
-        <div class="w-px h-6 bg-gray-700 mx-2"></div>
+        <div x-show="readingMode === 'paged'" class="w-px h-6 bg-gray-700 mx-2"></div>
 
-        <select x-model="fitMode" class="bg-transparent text-xs text-gray-400 focus:outline-none cursor-pointer" aria-label="Image fit mode" title="Image fit mode">
+        <select x-show="readingMode === 'paged'"
+                x-model="fitMode"
+                class="bg-transparent text-xs text-gray-400 focus:outline-none cursor-pointer"
+                aria-label="Image fit mode"
+                title="Image fit mode"
+                data-fit-mode-control>
             <option value="contain">Fit Screen</option>
             <option value="width">Fit Width</option>
             <option value="height">Fit Height</option>
