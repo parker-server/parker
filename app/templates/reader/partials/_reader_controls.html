@@ -34,10 +34,10 @@
          x-on:mouseenter="isHoveringBar = true"
          x-on:mouseleave="isHoveringBar = false">
 
-        <button x-on:click="goToBook(meta.prev_comic_id)" :disabled="!meta.prev_comic_id" class="text-gray-400 hover:text-white disabled:opacity-30" aria-label="Previous book">
+        <button x-on:click="goToBook(meta.prev_comic_id)" :disabled="!meta.prev_comic_id" class="text-gray-400 hover:text-white disabled:opacity-30" aria-label="Previous issue" title="Previous issue">
             {{ lucide_icon("skip-back", "h-5 w-5") }}
         </button>
-        <button x-on:click="$data.prevPage()" class="text-white hover:text-blue-400 px-2" aria-label="Previous page">
+        <button x-on:click="$data.prevPage()" class="text-white hover:text-blue-400 px-2" aria-label="Previous page" title="Previous page">
             {{ lucide_icon("chevron-left", "h-7 w-7") }}
         </button>
 
@@ -47,16 +47,16 @@
             <span x-text="meta.page_count"></span>
         </div>
 
-        <button x-on:click="$data.nextPage()" class="text-white hover:text-blue-400 px-2" aria-label="Next page">
+        <button x-on:click="$data.nextPage()" class="text-white hover:text-blue-400 px-2" aria-label="Next page" title="Next page">
             {{ lucide_icon("chevron-right", "h-7 w-7") }}
         </button>
-        <button x-on:click="goToBook(meta.next_comic_id)" :disabled="!meta.next_comic_id" class="text-gray-400 hover:text-white disabled:opacity-30" aria-label="Next book">
+        <button x-on:click="goToBook(meta.next_comic_id)" :disabled="!meta.next_comic_id" class="text-gray-400 hover:text-white disabled:opacity-30" aria-label="Next issue" title="Next issue">
             {{ lucide_icon("skip-forward", "h-5 w-5") }}
         </button>
 
         <div class="w-px h-6 bg-gray-700 mx-2"></div>
 
-        <select x-model="fitMode" class="bg-transparent text-xs text-gray-400 focus:outline-none cursor-pointer">
+        <select x-model="fitMode" class="bg-transparent text-xs text-gray-400 focus:outline-none cursor-pointer" aria-label="Image fit mode" title="Image fit mode">
             <option value="contain">Fit Screen</option>
             <option value="width">Fit Width</option>
             <option value="height">Fit Height</option>

@@ -995,6 +995,14 @@ def test_reader_page_uses_modular_reader_shell(auth_client):
         "skip-forward",
     ]:
         assert f'data-lucide-icon="{icon_name}"' in body
+    for control_title in [
+        "Previous issue",
+        "Previous page",
+        "Next page",
+        "Next issue",
+        "Image fit mode",
+    ]:
+        assert f'title="{control_title}"' in body
 
     reader_controls = Path("app/templates/reader/partials/_reader_controls.html").read_text(encoding="utf-8")
     for entity in ["&#9198;", "&#9664;", "&#9654;", "&#9197;"]:

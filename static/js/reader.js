@@ -309,29 +309,34 @@
             imageClasses: {
                 enumerable: true,
                 get() {
-                    const isSmartSpread = this.isDoublePageActive && this.pagesToDisplay.length === 1;
-                    return this.isDoublePageActive && !isSmartSpread
-                        ? 'w-1/2 h-screen object-contain'
-                        : 'w-full h-screen object-contain';
+                    return 'object-contain';
                 }
             },
             imageStyles: {
                 enumerable: true,
                 get() {
-                    const styles = {};
+                    const spreadWidth = this.isDoublePageActive && this.pagesToDisplay.length > 1 ? '50vw' : '100vw';
+                    const styles = {
+                        filter: `brightness(${this.filters.brightness}%) contrast(${this.filters.contrast}%)`
+                    };
 
                     if (this.fitMode === 'contain') {
                         styles.height = '100vh';
                         styles.width = 'auto';
+                        styles.maxWidth = spreadWidth;
+                        styles.maxHeight = '100vh';
                     } else if (this.fitMode === 'width') {
-                        styles.width = this.isDoublePageActive ? '50vw' : '100vw';
+                        styles.width = spreadWidth;
                         styles.height = 'auto';
+                        styles.maxWidth = 'none';
+                        styles.maxHeight = 'none';
                     } else if (this.fitMode === 'height') {
                         styles.height = '100vh';
                         styles.width = 'auto';
+                        styles.maxWidth = 'none';
+                        styles.maxHeight = 'none';
                     }
 
-                    styles.filter = `brightness(${this.filters.brightness}%) contrast(${this.filters.contrast}%)`;
                     return styles;
                 }
             },
