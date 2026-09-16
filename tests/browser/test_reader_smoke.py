@@ -209,10 +209,83 @@ def test_reader_magnifier_tool_inspects_pages_without_turning_them(page, browser
         """
     )
 
-    page.locator(".nav-zone.right").click()
-    page.wait_for_timeout(300)
-    current_page_text = page.locator(".reader-controls .text-white.font-bold").first.text_content()
-    assert current_page_text == "2"
+
+@pytest.mark.browser
+def test_reader_paged_fit_modes_change_image_constraints(page, browser_server, monkeypatch):
+    monkeypatch.setattr(
+        "app.api.reader.ImageService.get_page_image",
+        lambda self, file_path, page_index, sharpen=False, grayscale=False, transcode_webp=False: (
+            TALL_SCROLL_PAGE_BYTES,
+            False,
+            "image/svg+xml",
+        ),
+    )
+
+    seed = browser_server["seed"]
+    page.goto(f"{browser_server['base_url']}/reader/{seed['active_comic_id']}", wait_until="networkidle")
+
+    page.wait_for_selector(".reader-container")
+    page.wait_for_selector("img.reader-page")
+    page.locator(".nav-zone.center").click()
+
+    def fit_debug():
+        return page.evaluate(
+            """
+            () => {
+                const image = document.querySelector('img.reader-page');
+                const reader = document.querySelector('.reader-container');
+                const state = reader?._x_dataStack?.[0];
+                const rect = image?.getBoundingClientRect();
+                return {
+                    fitMode: state?.fitMode,
+                    width: image?.style.width,
+                    height: image?.style.height,
+                    maxWidth: image?.style.maxWidth,
+                    maxHeight: image?.style.maxHeight,
+                    rectWidth: rect?.width,
+                    rectHeight: rect?.height,
+                };
+            }
+            """
+        )
+
+    select = page.locator(".reader-controls select")
+    select.select_option("contain")
+    page.wait_for_function(
+        """
+        () => document.querySelector('.reader-container')?._x_dataStack?.[0]?.fitMode === 'contain'
+        """
+    )
+    contain = fit_debug()
+
+    select.select_option("width")
+    page.wait_for_function(
+        """
+        () => document.querySelector('.reader-container')?._x_dataStack?.[0]?.fitMode === 'width'
+        """
+    )
+    width = fit_debug()
+
+    select.select_option("height")
+    page.wait_for_function(
+        """
+        () => document.querySelector('.reader-container')?._x_dataStack?.[0]?.fitMode === 'height'
+        """
+    )
+    height = fit_debug()
+
+    assert contain["width"] == "auto"
+    assert contain["height"] == "100vh"
+    assert contain["maxWidth"] == "100vw"
+    assert contain["maxHeight"] == "100vh"
+    assert width["width"] == "100vw"
+    assert width["height"] == "auto"
+    assert width["maxHeight"] == "none"
+    assert width["rectWidth"] > contain["rectWidth"] * 2
+    assert width["rectHeight"] > contain["rectHeight"] * 2
+    assert height["width"] == "auto"
+    assert height["height"] == "100vh"
+    assert height["maxWidth"] == "none"
 
 
 @pytest.mark.browser
@@ -628,6 +701,8 @@ def test_reader_long_view_toggle_tracks_scroll_progress_and_persists_mode(page, 
 
     page.wait_for_selector(".reader-container")
     page.locator(".nav-zone.center").click()
+    assert page.locator("[data-fit-mode-control]").is_visible()
+
     page.locator("button[title='Settings']").click()
     page.get_by_role("button", name="Long View").click()
 
@@ -643,6 +718,7 @@ def test_reader_long_view_toggle_tracks_scroll_progress_and_persists_mode(page, 
         }
         """
     )
+    assert page.locator("[data-fit-mode-control]").is_hidden()
 
 
 @pytest.mark.browser

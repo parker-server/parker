@@ -15,9 +15,8 @@
             <template x-for="(page, idx) in pagesToDisplay" :key="page.index">
                 <img
                     :src="getPageUrl(page.index)"
-                    :class="imageClasses"
                     class="reader-page"
-                    :class="{
+                    :class="[imageClasses, {
                         'object-right': isDoublePageActive && pagesToDisplay.length > 1 && (
                             (readDirection === 'ltr' && idx === 0) ||
                             (readDirection === 'rtl' && idx === 1)
@@ -26,7 +25,7 @@
                             (readDirection === 'ltr' && idx === 1) ||
                             (readDirection === 'rtl' && idx === 0)
                         )
-                    }"
+                    }]"
                     :style="imageStyles"
                     x-on:pointerenter="updateMagnifier($event, page.index)"
                     x-on:pointermove="updateMagnifier($event, page.index)"
