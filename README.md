@@ -56,6 +56,9 @@ https://github.com/parker-server/parker/wiki/Getting-Started
   - Metadata Health
   - Corrupt / Low Page Count
 
+- **Administration**
+  - About and admin dashboard surfaces can flag when a newer tagged Parker version is available
+
 - **Scanning**
   - Background ScanManager with priority queues
   - Configurable job history retention for completed and failed background jobs

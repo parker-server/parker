@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, case, desc
 
@@ -11,6 +13,7 @@ from app.models.tags import Genre, comic_genres
 from app.models.user import User
 from app.models.reading_progress import ReadingProgress
 from app.services.startup_diagnostics import build_support_snapshot, collect_startup_diagnostics
+from app.services.version_check import get_version_check_status
 
 router = APIRouter()
 
@@ -47,6 +50,15 @@ async def get_startup_support_snapshot(
         app_version=settings.version,
         git_commit_hash=get_build_commit_hash(),
     )
+
+
+@router.get("/version-check", name="version_check")
+async def get_version_check(admin: AdminUser):
+    """
+    Check whether a newer Parker version tag is available upstream.
+    """
+    status = await asyncio.to_thread(get_version_check_status, settings.version)
+    return status.to_dict()
 
 
 @router.get("/", name="system")
