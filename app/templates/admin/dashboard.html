@@ -123,14 +123,23 @@
             <p class="text-sm text-gray-400">Inspect the active database, startup state, and comics mount when troubleshooting.</p>
         </a>
 
-        <a :href="window.parker.route('admin.about')" class="block bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-blue-400 rounded-lg p-6 transition-all group shadow-lg">
+        <a :href="window.parker.route('admin.about')" x-data="versionCheck()" x-init="load()" class="block bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-blue-400 rounded-lg p-6 transition-all group shadow-lg">
             <div class="flex items-center justify-between mb-4">
                 <div class="w-12 h-12 bg-blue-900/30 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
                     {{ lucide_icon("info", "h-6 w-6 text-blue-200") }}
                 </div>
                 {{ lucide_icon("arrow-right", "h-4 w-4 text-gray-500 group-hover:text-blue-300 transition-colors") }}
             </div>
-            <h3 class="text-xl font-bold text-white mb-2">About</h3>
+            <div class="mb-2 flex flex-wrap items-center gap-2">
+                <h3 class="text-xl font-bold text-white">About</h3>
+                <span
+                    x-show="updateAvailable"
+                    x-cloak
+                    class="inline-flex items-center rounded-full border border-emerald-400/40 bg-emerald-500/15 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-emerald-200"
+                >
+                    Update <span class="ml-1" x-text="latestTag"></span>
+                </span>
+            </div>
             <p class="text-sm text-gray-400">View version info, system details and resource links.</p>
         </a>
 

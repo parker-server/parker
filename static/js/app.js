@@ -431,6 +431,50 @@ document.addEventListener('alpine:init', () => {
         }
     }));
 
+    Alpine.data('versionCheck', () => ({
+        loading: false,
+        checked: false,
+        result: null,
+
+        async load() {
+            if (this.loading || this.checked) return;
+
+            this.loading = true;
+            try {
+                const res = await fetch(window.parker.route('stats.version_check'));
+                if (!res.ok) {
+                    throw new Error('Version check failed');
+                }
+                this.result = await res.json();
+            } catch (error) {
+                this.result = {
+                    status: 'unavailable',
+                    update_available: false,
+                    error: 'Unable to check latest tag'
+                };
+            } finally {
+                this.loading = false;
+                this.checked = true;
+            }
+        },
+
+        get updateAvailable() {
+            return this.result?.update_available === true;
+        },
+
+        get unavailable() {
+            return this.checked && this.result?.status === 'unavailable';
+        },
+
+        get latestTag() {
+            return this.result?.latest_tag || '';
+        },
+
+        get latestUrl() {
+            return this.result?.latest_url || 'https://github.com/parker-server/parker/tags';
+        }
+    }));
+
     Alpine.store('batch', {
 
         items: new Set(), // Stores "comic:1", "series:2", etc.

@@ -14,13 +14,24 @@
         description="System information."
     ) }}
 
-    <div class="bg-gray-800 border border-gray-700 rounded-lg overflow-hidden shadow-xl">
+    <div class="bg-gray-800 border border-gray-700 rounded-lg overflow-hidden shadow-xl" x-data="versionCheck()" x-init="load()">
         
         <div class="p-8 text-center border-b border-gray-700 bg-gray-900/50">
             {{ lucide_icon("spider", "mx-auto mb-4 h-14 w-14 text-blue-300") }}
             <h1 class="text-3xl font-bold text-white mb-2">{{ instance_name }}</h1>
             <p class="text-sm uppercase tracking-[0.24em] text-gray-500 mb-2">Powered by Parker</p>
             <p class="text-blue-400 font-mono">v{{ app_version }}</p>
+            <a
+                x-show="updateAvailable"
+                x-cloak
+                :href="latestUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="mt-3 inline-flex items-center gap-2 rounded-full border border-emerald-400/40 bg-emerald-500/15 px-3 py-1 text-xs font-bold uppercase tracking-wide text-emerald-200 hover:border-emerald-300 hover:text-white transition-colors"
+            >
+                {{ lucide_icon("sparkles", "h-3.5 w-3.5") }}
+                <span>New tag <span x-text="latestTag"></span> available</span>
+            </a>
         </div>
 
         <div class="p-8">
@@ -33,6 +44,32 @@
                     <div>
                         <label class="block text-xs uppercase text-gray-500 font-bold mb-1">Application Version</label>
                         <span class="text-white font-mono">v{{ app_version }}</span>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs uppercase text-gray-500 font-bold mb-1">Version Status</label>
+                        <span x-show="loading" x-cloak class="text-gray-400 text-sm">Checking latest tag...</span>
+                        <a
+                            x-show="updateAvailable"
+                            x-cloak
+                            :href="latestUrl"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="inline-flex items-center gap-2 text-sm font-semibold text-emerald-300 hover:text-emerald-200"
+                        >
+                            <span>New tag <span x-text="latestTag"></span> available</span>
+                        </a>
+                        <span
+                            x-show="checked && !loading && result?.status === 'current'"
+                            x-cloak
+                            class="text-emerald-300 text-sm font-semibold"
+                        >Up to date</span>
+                        <span
+                            x-show="checked && !loading && result?.status === 'unknown'"
+                            x-cloak
+                            class="text-amber-300 text-sm font-semibold"
+                        >Latest tag <span x-text="latestTag"></span> found</span>
+                        <span x-show="unavailable" x-cloak class="text-gray-400 text-sm">Unable to check latest tag</span>
                     </div>
 
                     <div>

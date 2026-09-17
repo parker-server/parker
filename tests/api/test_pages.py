@@ -147,6 +147,8 @@ def test_admin_dashboard_links_to_diagnostics(admin_client):
     body = response.text
     assert "Diagnostics" in body
     assert "Inspect the active database" in body
+    assert 'x-data="versionCheck()"' in body
+    assert "Update <span" in body
     for icon_name in [
         "arrow-right",
         "book-open",
@@ -313,6 +315,8 @@ def test_admin_about_page_exposes_wiki_and_git_commit(admin_client, monkeypatch)
     assert "https://github.com/parker-server/parker/wiki" in body
     assert "Wiki" in body
     assert "Application Version" in body
+    assert "Version Status" in body
+    assert 'x-data="versionCheck()"' in body
     assert "Git Commit" in body
     assert "abc123def456" in body
     for icon_name in [
@@ -320,12 +324,41 @@ def test_admin_about_page_exposes_wiki_and_git_commit(admin_client, monkeypatch)
         "bug",
         "download",
         "heart",
+        "sparkles",
         "spider",
     ]:
         assert f'data-lucide-icon="{icon_name}"' in body
 
     template = Path("app/templates/admin/about.html").read_text(encoding="utf-8")
     assert all(ord(char) < 128 for char in template)
+
+
+def test_admin_version_check_endpoint_reports_update(admin_client, monkeypatch):
+    from app.services.version_check import VersionCheckStatus
+
+    monkeypatch.setattr(
+        "app.api.stats.get_version_check_status",
+        lambda current_version: VersionCheckStatus(
+            current_version=current_version,
+            latest_tag="v9.9.9",
+            latest_version="9.9.9",
+            update_available=True,
+            status="update_available",
+            checked_at="2026-09-17T12:00:00+00:00",
+            latest_url="https://github.com/parker-server/parker/tree/v9.9.9",
+        ),
+    )
+
+    response = admin_client.get("/api/stats/version-check")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["current_version"]
+    assert payload["latest_tag"] == "v9.9.9"
+    assert payload["latest_version"] == "9.9.9"
+    assert payload["update_available"] is True
+    assert payload["status"] == "update_available"
+    assert payload["latest_url"] == "https://github.com/parker-server/parker/tree/v9.9.9"
 
 
 def test_admin_build_commit_hash_prefers_environment(monkeypatch):
