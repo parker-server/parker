@@ -9,12 +9,14 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-ARCHIVE_PAGE_ORDER_VERSION = 2
+ARCHIVE_PAGE_ORDER_VERSION = 3
 IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff', '.jxl', '.avif'}
 IGNORE_FILENAMES = {'thumbs.db', '.ds_store', 'comicinfo.xml', '__macosx'}
 IGNORE_EXTENSIONS = {'.nfo', '.sfv', '.txt', '.xml', '.db', '.ini'}
 EXPLICIT_END_PAGE_RE = re.compile(r'^z+[\W_]')
-EXPLICIT_COVER_RE = re.compile(r'(?:^|[\W_])(?:0+fc|fc|cover|front|scan)(?:$|[\W_])')
+EXPLICIT_COVER_RE = re.compile(
+    r'(?:^|[\W_])(?:0+(?:[a-z]|[\W_]+\d+|fc|cover|cvr|front|scan)|fc|cover|cvr|front|scan)(?:$|[\W_])'
+)
 TRAILING_PAGE_NUMBER_RE = re.compile(r'^(.*?)(?:[\s._-]+)?(\d+)\s*$')
 
 
@@ -34,11 +36,30 @@ def _natural_sort_parts(text: str) -> list:
     return [int(part) if part.isdigit() else part for part in re.split(r'(\d+)', text)]
 
 
-def _priority_bucket(filename: str) -> int:
+def _page_stem_key(filename: str) -> str:
+    directory, basename = _split_archive_path(filename)
+    return f"{directory}{Path(basename).stem.strip()}"
+
+
+def _has_unprefixed_twin(filename: str, page_stems: set[str] | None) -> bool:
+    if page_stems is None:
+        return False
+
+    directory, basename = _split_archive_path(filename)
+    stem = Path(basename).stem.strip()
+    if not stem.startswith("_"):
+        return False
+
+    return f"{directory}{stem[1:]}" in page_stems
+
+
+def _priority_bucket(filename: str, page_stems: set[str] | None = None) -> int:
     text = filename.lower()
     if EXPLICIT_END_PAGE_RE.match(text):
         return 2
     if EXPLICIT_COVER_RE.search(text):
+        return 0
+    if _has_unprefixed_twin(filename, page_stems):
         return 0
     return 1
 
@@ -51,7 +72,7 @@ def _split_trailing_page_number(stem: str) -> tuple[str, int | None]:
     return match.group(1).strip(), int(match.group(2))
 
 
-def _page_sort_key(filename: str) -> tuple:
+def _page_sort_key(filename: str, page_stems: set[str] | None = None) -> tuple:
     """
     Sort comic archive pages while keeping likely base cover files before
     same-stem numbered interior pages.
@@ -60,13 +81,19 @@ def _page_sort_key(filename: str) -> tuple:
     stem = Path(basename).stem
     base_stem, trailing_number = _split_trailing_page_number(stem)
 
+    if trailing_number is not None and page_stems is not None:
+        candidate_base = f"{directory}{base_stem}"
+        if candidate_base not in page_stems:
+            base_stem = stem.strip()
+            trailing_number = None
+
     base_name = f"{directory}{base_stem}"
     normalized_base = _normalize_page_sort_text(base_name)
     normalized_full = _normalize_page_sort_text(filename)
 
     has_trailing_number = trailing_number is not None
     return (
-        _priority_bucket(filename),
+        _priority_bucket(filename, page_stems),
         _natural_sort_parts(normalized_base),
         1 if has_trailing_number else 0,
         trailing_number if trailing_number is not None else -1,
@@ -155,7 +182,8 @@ class ComicArchive:
             if file_path.suffix.lower() in IMAGE_EXTENSIONS:
                 pages.append(f)
 
-        pages.sort(key=_page_sort_key)
+        page_stems = {_page_stem_key(page) for page in pages}
+        pages.sort(key=lambda page: _page_sort_key(page, page_stems))
 
         return pages
 
