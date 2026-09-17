@@ -168,3 +168,123 @@ def test_comic_archive_sort_pages_treats_zero_fc_token_as_cover():
             "hawk_&_dove.v02_a01.imbie.01.jpg",
             "hawk_&_dove.v02_a01.imbie.02.jpg",
         ]
+
+
+def test_comic_archive_sort_pages_treats_cvr_abbreviation_as_cover():
+    with patch("app.services.archive.zipfile.is_zipfile", return_value=True), \
+         patch("app.services.archive.zipfile.ZipFile"):
+        archive = ComicArchive(Path("dummy.cbz"))
+
+        archive.get_file_list = MagicMock(return_value=[
+            "Star Blazers v1 #1 002.jpg",
+            "Star Blazers v1 #1 001 joined cvr.jpg",
+            "Star Blazers v1 #1 000 cvr.jpg",
+        ])
+
+        pages = archive.get_pages()
+
+        assert pages == [
+            "Star Blazers v1 #1 000 cvr.jpg",
+            "Star Blazers v1 #1 001 joined cvr.jpg",
+            "Star Blazers v1 #1 002.jpg",
+        ]
+
+
+def test_comic_archive_sort_pages_treats_zero_prefixed_cover_word_as_cover():
+    with patch("app.services.archive.zipfile.is_zipfile", return_value=True), \
+         patch("app.services.archive.zipfile.ZipFile"):
+        archive = ComicArchive(Path("dummy.cbz"))
+
+        archive.get_file_list = MagicMock(return_value=[
+            "02.jpg",
+            "00Cover.jpg",
+            "01.jpg",
+        ])
+
+        pages = archive.get_pages()
+
+        assert pages == [
+            "00Cover.jpg",
+            "01.jpg",
+            "02.jpg",
+        ]
+
+
+def test_comic_archive_sort_pages_treats_zero_letter_page_as_cover():
+    with patch("app.services.archive.zipfile.is_zipfile", return_value=True), \
+         patch("app.services.archive.zipfile.ZipFile"):
+        archive = ComicArchive(Path("dummy.cbz"))
+
+        archive.get_file_list = MagicMock(return_value=[
+            "Justice Machine(Comico) 01-01.jpg",
+            "Justice Machine(Comico) 01-00b.jpg",
+            "Justice Machine(Comico) 01-00a.jpg",
+        ])
+
+        pages = archive.get_pages()
+
+        assert pages == [
+            "Justice Machine(Comico) 01-00a.jpg",
+            "Justice Machine(Comico) 01-00b.jpg",
+            "Justice Machine(Comico) 01-01.jpg",
+        ]
+
+
+def test_comic_archive_sort_pages_treats_zero_page_with_total_suffix_as_cover():
+    with patch("app.services.archive.zipfile.is_zipfile", return_value=True), \
+         patch("app.services.archive.zipfile.ZipFile"):
+        archive = ComicArchive(Path("dummy.cbz"))
+
+        archive.get_file_list = MagicMock(return_value=[
+            "Untitled-Scanned-02.jpg",
+            "Untitled-Scanned-01-36.jpg",
+            "Untitled-Scanned-00-36.jpg",
+        ])
+
+        pages = archive.get_pages()
+
+        assert pages == [
+            "Untitled-Scanned-00-36.jpg",
+            "Untitled-Scanned-01-36.jpg",
+            "Untitled-Scanned-02.jpg",
+        ]
+
+
+def test_comic_archive_sort_pages_treats_zero_c_as_cover_without_promoting_ifc():
+    with patch("app.services.archive.zipfile.is_zipfile", return_value=True), \
+         patch("app.services.archive.zipfile.ZipFile"):
+        archive = ComicArchive(Path("dummy.cbz"))
+
+        archive.get_file_list = MagicMock(return_value=[
+            "Elementals_Sex_Special_004-01.jpg",
+            "Elementals_Sex_Special_004-00IFC.jpg",
+            "Elementals_Sex_Special_004-00C.jpg",
+        ])
+
+        pages = archive.get_pages()
+
+        assert pages == [
+            "Elementals_Sex_Special_004-00C.jpg",
+            "Elementals_Sex_Special_004-00IFC.jpg",
+            "Elementals_Sex_Special_004-01.jpg",
+        ]
+
+
+def test_comic_archive_sort_pages_prefers_leading_underscore_twin_cover():
+    with patch("app.services.archive.zipfile.is_zipfile", return_value=True), \
+         patch("app.services.archive.zipfile.ZipFile"):
+        archive = ComicArchive(Path("dummy.cbz"))
+
+        archive.get_file_list = MagicMock(return_value=[
+            "Robotech Macross Saga 01-00ifc.jpg",
+            "Robotech Macross Saga 01-00fcbc.jpg",
+            "_Robotech Macross Saga 01-00fcbc.jpg",
+        ])
+
+        pages = archive.get_pages()
+
+        assert pages == [
+            "_Robotech Macross Saga 01-00fcbc.jpg",
+            "Robotech Macross Saga 01-00fcbc.jpg",
+            "Robotech Macross Saga 01-00ifc.jpg",
+        ]

@@ -7,8 +7,8 @@
     <template x-if="{{ imprint_ref }}">
         <span class="metadata-logo-badge" aria-hidden="true">
             <img
-                :src="window.parker.url(`/static/img/imprints/${ {{ imprint_ref }} }.png`)"
-                @error="$el.parentElement.style.display = 'none'"
+                :src="window.parker.metadataLogoUrl('imprints', {{ imprint_ref }})"
+                @error="window.parker.metadataLogoFallback($el, 'imprints', {{ imprint_ref }})"
                 @load="$el.parentElement.style.display = 'inline-flex'"
                 class="metadata-logo-badge__image"
                 alt=""

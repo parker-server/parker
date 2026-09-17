@@ -688,6 +688,76 @@ document.addEventListener('error', function(e) {
         return date.toLocaleDateString();
     }
 
+    const METADATA_LOGO_FOLDERS = {
+        publishers: 'publishers',
+        imprints: 'imprints'
+    };
+    const WINDOWS_UNSAFE_FILENAME_CHARS = /[<>:"/\\|?*]+/g;
+    const COMMON_SYMBOL_CHARS = /[^A-Za-z0-9._ -]+/g;
+    const NON_ALPHANUMERIC_CHARS = /[^A-Za-z0-9]+/g;
+
+    const normalizeMetadataLogoName = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+
+    const uniqueValues = (values) => {
+        const seen = new Set();
+        return values.filter((value) => {
+            if (!value || seen.has(value)) return false;
+            seen.add(value);
+            return true;
+        });
+    };
+
+    const metadataLogoFileCandidates = (label) => {
+        const normalized = normalizeMetadataLogoName(label);
+        if (!normalized) return [];
+
+        return uniqueValues([
+            normalized,
+            normalizeMetadataLogoName(normalized.replace(WINDOWS_UNSAFE_FILENAME_CHARS, ' ')),
+            normalizeMetadataLogoName(normalized.replace(WINDOWS_UNSAFE_FILENAME_CHARS, '')),
+            normalizeMetadataLogoName(normalized.replace(COMMON_SYMBOL_CHARS, ' ')),
+            normalizeMetadataLogoName(normalized.replace(COMMON_SYMBOL_CHARS, '')),
+            normalized.replace(NON_ALPHANUMERIC_CHARS, '')
+        ]);
+    };
+
+    const metadataLogoFolder = (kind) => METADATA_LOGO_FOLDERS[String(kind || '').toLowerCase()] || null;
+
+    const metadataLogoCandidates = (kind, label) => {
+        const folder = metadataLogoFolder(kind);
+        if (!folder) return [];
+
+        return metadataLogoFileCandidates(label).map((fileName) => (
+            window.parker.url(`/static/img/${folder}/${encodeURIComponent(fileName)}.png`)
+        ));
+    };
+
+    const metadataLogoUrl = (kind, label) => metadataLogoCandidates(kind, label)[0] || '';
+
+    const metadataLogoFallback = (image, kind, label) => {
+        if (!image) return;
+
+        const candidates = metadataLogoCandidates(kind, label);
+        const sourceKey = `${metadataLogoFolder(kind) || ''}:${normalizeMetadataLogoName(label)}`;
+        if (image.dataset.metadataLogoSource !== sourceKey) {
+            image.dataset.metadataLogoSource = sourceKey;
+            image.dataset.metadataLogoIndex = '0';
+        }
+
+        const currentIndex = Number.parseInt(image.dataset.metadataLogoIndex || '0', 10);
+        const nextIndex = currentIndex + 1;
+
+        if (candidates[nextIndex]) {
+            image.dataset.metadataLogoIndex = String(nextIndex);
+            image.src = candidates[nextIndex];
+            return;
+        }
+
+        if (image.parentElement) {
+            image.parentElement.style.display = 'none';
+        }
+    };
+
     // Storage & Prefs
     const storage = window.parker.storage;
 
@@ -954,6 +1024,9 @@ document.addEventListener('error', function(e) {
         formatLocalDateTime,
         formatLocalDate,
         formatDate,
+        metadataLogoCandidates,
+        metadataLogoUrl,
+        metadataLogoFallback,
         paginationMixin,
         storage,
         prefs,
