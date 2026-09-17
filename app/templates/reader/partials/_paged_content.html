@@ -1,12 +1,21 @@
 <template x-if="readingMode === 'paged'">
-    <div class="reader-content" :class="{'magnifier-active': magnifierEnabled}">
+    <div class="reader-content"
+         :class="{
+            'magnifier-active': magnifierEnabled,
+            'reader-content-fit-width': fitMode === 'width',
+            'cursor-pointer': fitWidthPointerZone === 'edge'
+         }"
+         x-on:click="handleFitWidthContentClick($event)"
+         x-on:mousemove="handleFitWidthPointerMove($event)"
+         x-on:mouseleave="clearFitWidthPointerZone()">
 
-        <div class="nav-zone left" x-on:click="handleZoneClick('left')"></div>
-        <div class="nav-zone center" x-on:click="handleZoneClick('center')"></div>
-        <div class="nav-zone right" x-on:click="handleZoneClick('right')"></div>
+        <div class="nav-zone left" :style="fitMode === 'width' ? 'pointer-events: none;' : ''" x-on:click="handleZoneClick('left')"></div>
+        <div class="nav-zone center" :style="fitMode === 'width' ? 'pointer-events: none;' : ''" x-on:click="handleZoneClick('center')"></div>
+        <div class="nav-zone right" :style="fitMode === 'width' ? 'pointer-events: none;' : ''" x-on:click="handleZoneClick('right')"></div>
 
-        <div class="flex items-center justify-center h-full w-full"
+        <div class="reader-page-stage flex items-center justify-center h-full w-full"
              :class="{
+                'reader-page-stage-fit-width': fitMode === 'width',
                 'flex-row': readDirection === 'ltr',
                 'flex-row-reverse': readDirection === 'rtl',
                 'gap-0': true

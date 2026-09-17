@@ -55,6 +55,32 @@
         storage.set(key, value);
     }
 
+    function clickStartedOnReaderControl(event) {
+        return !!event.target.closest?.(
+            '.reader-toolbar, .reader-controls, .scrubber-wrapper, .settings-panel, ' +
+            '[data-bookmarks-modal], [data-goto-modal], [data-keyboard-shortcuts-modal], ' +
+            'button, input, select, textarea, a, [role="button"]'
+        );
+    }
+
+    function getFitWidthNavigationZone(event) {
+        const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+        if (viewportWidth <= 0) {
+            return null;
+        }
+
+        const xRatio = event.clientX / viewportWidth;
+        if (xRatio <= 0.2) {
+            return 'left';
+        }
+
+        if (xRatio >= 0.8) {
+            return 'right';
+        }
+
+        return 'center';
+    }
+
     function loadFilters() {
         const savedFilters = storage.getString(STORAGE_KEYS.filters);
         if (!savedFilters) {
@@ -187,6 +213,7 @@
             uiLocked: false,
             isHoveringZone: false,
             isHoveringBar: false,
+            fitWidthPointerZone: null,
             isIncognito: false,
             contextType: null,
             contextId: null,
@@ -1598,6 +1625,42 @@
 
                 this.readDirection = this.readDirection === 'ltr' ? 'rtl' : 'ltr';
                 window.parker.showToast(this.readDirection === 'rtl' ? 'Manga Mode (RTL)' : 'Western Mode (LTR)');
+            },
+
+            handleFitWidthPointerMove(event) {
+                if (this.readingMode !== 'paged' || this.fitMode !== 'width') {
+                    this.fitWidthPointerZone = null;
+                    return;
+                }
+
+                if (event.defaultPrevented || clickStartedOnReaderControl(event)) {
+                    this.fitWidthPointerZone = null;
+                    return;
+                }
+
+                const zone = getFitWidthNavigationZone(event);
+                this.fitWidthPointerZone = zone === 'left' || zone === 'right' ? 'edge' : null;
+            },
+
+            clearFitWidthPointerZone() {
+                this.fitWidthPointerZone = null;
+            },
+
+            handleFitWidthContentClick(event) {
+                if (this.readingMode !== 'paged' || this.fitMode !== 'width') {
+                    return;
+                }
+
+                if (event.defaultPrevented || clickStartedOnReaderControl(event)) {
+                    return;
+                }
+
+                const zone = getFitWidthNavigationZone(event);
+                if (!zone) {
+                    return;
+                }
+
+                this.handleZoneClick(zone);
             },
 
             handleTouchStart(event) {

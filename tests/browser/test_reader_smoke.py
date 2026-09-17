@@ -289,6 +289,86 @@ def test_reader_paged_fit_modes_change_image_constraints(page, browser_server, m
 
 
 @pytest.mark.browser
+def test_reader_fit_width_scrolls_tall_pages_and_preserves_edge_navigation(page, browser_server, monkeypatch):
+    monkeypatch.setattr(
+        "app.api.reader.ImageService.get_page_image",
+        lambda self, file_path, page_index, sharpen=False, grayscale=False, transcode_webp=False: (
+            TALL_SCROLL_PAGE_BYTES,
+            False,
+            "image/svg+xml",
+        ),
+    )
+
+    seed = browser_server["seed"]
+    page.goto(f"{browser_server['base_url']}/reader/{seed['active_comic_id']}", wait_until="networkidle")
+
+    page.wait_for_selector(".reader-container")
+    page.wait_for_selector("img.reader-page")
+    page.locator(".nav-zone.center").click()
+    page.locator(".reader-controls select").select_option("width")
+
+    page.wait_for_function(
+        """
+        () => {
+            const reader = document.querySelector('.reader-container');
+            const content = document.querySelector('.reader-content');
+            const state = reader?._x_dataStack?.[0];
+            return state?.fitMode === 'width'
+                && content?.classList.contains('reader-content-fit-width')
+                && content.scrollHeight > content.clientHeight * 2;
+        }
+        """
+    )
+
+    page.evaluate(
+        """
+        () => {
+            const content = document.querySelector('.reader-content');
+            content.scrollTop = 900;
+        }
+        """
+    )
+    page.wait_for_timeout(150)
+
+    debug_after_scroll = page.evaluate(
+        """
+        () => {
+            const content = document.querySelector('.reader-content');
+            const stage = document.querySelector('.reader-page-stage');
+            const state = document.querySelector('.reader-container')?._x_dataStack?.[0];
+            return {
+                currentPage: state?.currentPage,
+                pointerZone: state?.fitWidthPointerZone,
+                scrollTop: content?.scrollTop ?? null,
+                overflowY: content ? getComputedStyle(content).overflowY : null,
+                stageHeight: stage?.getBoundingClientRect().height ?? null,
+                contentHeight: content?.getBoundingClientRect().height ?? null,
+            };
+        }
+        """
+    )
+    assert debug_after_scroll["currentPage"] == 0, debug_after_scroll
+    assert debug_after_scroll["scrollTop"] > 500, debug_after_scroll
+    assert debug_after_scroll["overflowY"] == "auto", debug_after_scroll
+    assert debug_after_scroll["stageHeight"] > debug_after_scroll["contentHeight"], debug_after_scroll
+
+    content_box = page.locator(".reader-content").bounding_box()
+    assert content_box is not None
+    page.mouse.move(content_box["x"] + content_box["width"] - 12, content_box["y"] + 120)
+    page.wait_for_function(
+        """
+        () => document.querySelector('.reader-container')?._x_dataStack?.[0]?.fitWidthPointerZone === 'edge'
+        """
+    )
+    page.mouse.click(content_box["x"] + content_box["width"] - 12, content_box["y"] + 120)
+    page.wait_for_function(
+        """
+        () => document.querySelector('.reader-container')?._x_dataStack?.[0]?.currentPage === 1
+        """
+    )
+
+
+@pytest.mark.browser
 def test_reader_paged_scrubber_moves_to_selected_page_and_updates_progress(page, browser_server):
     seed = browser_server["seed"]
     page.goto(f"{browser_server['base_url']}/reader/{seed['active_comic_id']}", wait_until="networkidle")
