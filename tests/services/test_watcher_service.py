@@ -80,12 +80,16 @@ def test_library_event_handler_on_any_event_filters_and_batches(monkeypatch):
     ignored_ext = SimpleNamespace(is_directory=False, src_path="/lib/issue.tmp", event_type="created")
     ignored_name = SimpleNamespace(is_directory=False, src_path="/lib/thumbs.db", event_type="modified")
     ignored_dir = SimpleNamespace(is_directory=False, src_path="/lib/storage/issue.cbz", event_type="moved")
+    opened_event = SimpleNamespace(is_directory=False, src_path="/lib/comics/issue.cbz", event_type="opened")
+    closed_no_write_event = SimpleNamespace(is_directory=False, src_path="/lib/comics/issue.cbz", event_type="closed_no_write")
     good_event = SimpleNamespace(is_directory=False, src_path="/lib/comics/issue.cbz", event_type="modified")
 
     handler.on_any_event(directory_event)
     handler.on_any_event(ignored_ext)
     handler.on_any_event(ignored_name)
     handler.on_any_event(ignored_dir)
+    handler.on_any_event(opened_event)
+    handler.on_any_event(closed_no_write_event)
     handler.on_any_event(good_event)
     handler.on_any_event(good_event)
 
@@ -94,6 +98,21 @@ def test_library_event_handler_on_any_event_filters_and_batches(monkeypatch):
     assert isinstance(created_timer, DummyTimer)
     assert created_timer.interval == 30
     assert created_timer.started is True
+
+
+@pytest.mark.parametrize("event_type", ["created", "modified", "moved", "deleted", "closed"])
+def test_library_event_handler_starts_timer_for_actionable_event_types(monkeypatch, event_type):
+    timer_ctor = MagicMock(side_effect=lambda interval, callback: DummyTimer(interval, callback))
+    monkeypatch.setattr(watcher.threading, "Timer", timer_ctor)
+
+    handler = watcher.LibraryEventHandler(34, batch_window_seconds=45)
+    event = SimpleNamespace(is_directory=False, src_path="/lib/comics/issue.cbz", event_type=event_type)
+
+    handler.on_any_event(event)
+
+    timer_ctor.assert_called_once()
+    assert handler._timer.interval == 45
+    assert handler._timer.started is True
 
 
 def test_library_event_handler_on_any_event_stopped_does_not_start_timer(monkeypatch):

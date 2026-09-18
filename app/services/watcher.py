@@ -29,6 +29,11 @@ class LibraryEventHandler(FileSystemEventHandler):
 
         self.logger = logging.getLogger(__name__)
 
+        # Watchdog can emit read-only events such as "opened" when a comic is
+        # read by Parker or another app. Only events that imply content or path
+        # changes should start a scan batch.
+        self.actionable_event_types = {'created', 'modified', 'moved', 'deleted', 'closed'}
+
         # Files to completely ignore
         self.ignored_extensions = {'.webp', '.part', '.tmp', '.crdownload'}
         self.ignored_names = {'.ds_store', 'thumbs.db', 'desktop.ini'}
@@ -56,8 +61,11 @@ class LibraryEventHandler(FileSystemEventHandler):
         scan_manager.add_task(self.library_id, force=False)
 
     def on_any_event(self, event):
-        """Called on any file event (create, modify, move, delete)"""
+        """Called on filesystem events and queues scans for actionable changes."""
         if event.is_directory:
+            return
+
+        if event.event_type not in self.actionable_event_types:
             return
 
         path = Path(event.src_path)
