@@ -163,7 +163,7 @@ class LibraryScanner:
         # Persist any sidecar reconciliation updates found during discovery.
         self.db.commit()
 
-        summary = {"imported": 0, "updated": 0, "errors": 0, "skipped": 0}
+        summary = {"imported": 0, "updated": 0, "errors": 0, "skipped": 0, "error_details": []}
         parse_reading_lists = bool(getattr(self.library, "parse_reading_lists", True))
         parse_collections = bool(getattr(self.library, "parse_collections", True))
         parse_story_arcs = bool(getattr(self.library, "parse_story_arcs", True))
@@ -289,6 +289,7 @@ class LibraryScanner:
             "updated": summary.get("updated", 0),
             "deleted": deleted,
             "errors": summary.get("errors", 0),
+            "error_details": summary.get("error_details", []),
             "elapsed": elapsed,
         }
 

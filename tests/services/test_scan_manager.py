@@ -255,8 +255,17 @@ def test_run_scan_job_success_updates_and_queues_followup(monkeypatch, db):
     lib = create_library_with_root(db, "scan-lib", "/tmp/scan-lib")
     db.commit()
 
+    error_details = [{"file_path": "/tmp/jobs-lib/bad.cbz", "message": "bad archive"}]
     scanner_mock = MagicMock()
-    scanner_mock.scan_parallel.return_value = {"imported": 2, "updated": 1, "deleted": 0, "errors": 0, "elapsed": 1.1}
+    scanner_mock.scan_parallel.return_value = {
+        "imported": 2,
+        "updated": 1,
+        "deleted": 0,
+        "skipped": 3,
+        "errors": 1,
+        "error_details": error_details,
+        "elapsed": 1.1,
+    }
     monkeypatch.setattr(sm, "LibraryScanner", lambda library, session: scanner_mock)
     monkeypatch.setattr(sm, "get_cached_setting", lambda key, default: True)
 
@@ -270,6 +279,9 @@ def test_run_scan_job_success_updates_and_queues_followup(monkeypatch, db):
     assert args.args[0] == 99
     assert args.args[1] == JobStatus.COMPLETED
     assert args.kwargs["summary"]["imported"] == 2
+    assert args.kwargs["summary"]["skipped"] == 3
+    assert args.kwargs["summary"]["errors"] == 1
+    assert args.kwargs["summary"]["error_details"] == error_details
 
     db.expire_all()
     queued = db.query(ScanJob).all()
