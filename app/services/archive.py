@@ -9,15 +9,18 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-ARCHIVE_PAGE_ORDER_VERSION = 3
+ARCHIVE_PAGE_ORDER_VERSION = 4
 IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff', '.jxl', '.avif'}
 IGNORE_FILENAMES = {'thumbs.db', '.ds_store', 'comicinfo.xml', '__macosx'}
 IGNORE_EXTENSIONS = {'.nfo', '.sfv', '.txt', '.xml', '.db', '.ini'}
 EXPLICIT_END_PAGE_RE = re.compile(r'^z+[\W_]')
 EXPLICIT_COVER_RE = re.compile(
-    r'(?:^|[\W_])(?:0+(?:[a-z]|[\W_]+\d+|fc|cover|cvr|front|scan)|fc|cover|cvr|front|scan)(?:$|[\W_])'
+    r'(?:^|[\W_])(?:0+(?:[a-z]|[\W_]+\d+|fc|fcover|cover|cvr|front|scan)|fc|fcover|cover|cvr|front|scan)(?:$|[\W_])'
 )
+INSIDE_COVER_RE = re.compile(r'(?:^|[\W_])(?:ifc|ifcover|inside\s+front\s+cover)(?:$|[\W_])')
+JOINED_COVER_RE = re.compile(r'(?:^|[\W_])(?:\d+\s*page\s+cover|joined\s+(?:cover|cvr))(?:$|[\W_])')
 TRAILING_PAGE_NUMBER_RE = re.compile(r'^(.*?)(?:[\s._-]+)?(\d+)\s*$')
+ZERO_PAGE_STEM_RE = re.compile(r'(?:^|[\W_])0+$')
 
 
 def _split_archive_path(filename: str) -> tuple[str, str]:
@@ -29,7 +32,8 @@ def _split_archive_path(filename: str) -> tuple[str, str]:
 
 
 def _normalize_page_sort_text(text: str) -> str:
-    return text.lower().replace('-', '~').replace('_', '~')
+    text = re.sub(r'[-_](?=\d)', '!', text.lower())
+    return text.replace('-', '~').replace('_', '~')
 
 
 def _natural_sort_parts(text: str) -> list:
@@ -53,11 +57,33 @@ def _has_unprefixed_twin(filename: str, page_stems: set[str] | None) -> bool:
     return f"{directory}{stem[1:]}" in page_stems
 
 
+def _has_zero_letter_twin(filename: str, page_stems: set[str] | None) -> bool:
+    if page_stems is None:
+        return False
+
+    directory, basename = _split_archive_path(filename)
+    stem = Path(basename).stem.strip()
+    if not ZERO_PAGE_STEM_RE.search(stem):
+        return False
+
+    stem_key = f"{directory}{stem}".lower()
+    return any(
+        len(page_stem) == len(stem_key) + 1
+        and page_stem.lower().startswith(stem_key)
+        and page_stem[-1].isalpha()
+        for page_stem in page_stems
+    )
+
+
 def _priority_bucket(filename: str, page_stems: set[str] | None = None) -> int:
     text = filename.lower()
     if EXPLICIT_END_PAGE_RE.match(text):
         return 2
-    if EXPLICIT_COVER_RE.search(text):
+    if INSIDE_COVER_RE.search(text):
+        return 1
+    if EXPLICIT_COVER_RE.search(text) and not JOINED_COVER_RE.search(text):
+        return 0
+    if _has_zero_letter_twin(filename, page_stems):
         return 0
     if _has_unprefixed_twin(filename, page_stems):
         return 0

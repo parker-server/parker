@@ -288,3 +288,75 @@ def test_comic_archive_sort_pages_prefers_leading_underscore_twin_cover():
             "Robotech Macross Saga 01-00fcbc.jpg",
             "Robotech Macross Saga 01-00ifc.jpg",
         ]
+
+
+def test_comic_archive_sort_pages_prefers_bare_zero_page_before_zero_letter_join():
+    with patch("app.services.archive.zipfile.is_zipfile", return_value=True), \
+         patch("app.services.archive.zipfile.ZipFile"):
+        archive = ComicArchive(Path("dummy.cbz"))
+
+        archive.get_file_list = MagicMock(return_value=[
+            "HybridsSpecial001-00A.jpg",
+            "HybridsSpecial001-00.jpg",
+        ])
+
+        pages = archive.get_pages()
+
+        assert pages == [
+            "HybridsSpecial001-00.jpg",
+            "HybridsSpecial001-00A.jpg",
+        ]
+
+
+def test_comic_archive_sort_pages_prefers_separator_number_before_alpha_suffix():
+    with patch("app.services.archive.zipfile.is_zipfile", return_value=True), \
+         patch("app.services.archive.zipfile.ZipFile"):
+        archive = ComicArchive(Path("dummy.cbz"))
+
+        archive.get_file_list = MagicMock(return_value=[
+            "WayofRat23-01.jpg",
+            "WayofRat23NegWarPreviewHeader.jpg",
+        ])
+
+        pages = archive.get_pages()
+
+        assert pages == [
+            "WayofRat23-01.jpg",
+            "WayofRat23NegWarPreviewHeader.jpg",
+        ]
+
+
+def test_comic_archive_sort_pages_does_not_promote_two_page_cover_over_base_page():
+    with patch("app.services.archive.zipfile.is_zipfile", return_value=True), \
+         patch("app.services.archive.zipfile.ZipFile"):
+        archive = ComicArchive(Path("dummy.cbz"))
+
+        archive.get_file_list = MagicMock(return_value=[
+            "The First - 005 Pg00z (2 page cover).jpg",
+            "The First - 005 Pg00.jpg",
+        ])
+
+        pages = archive.get_pages()
+
+        assert pages == [
+            "The First - 005 Pg00.jpg",
+            "The First - 005 Pg00z (2 page cover).jpg",
+        ]
+
+
+def test_comic_archive_sort_pages_prefers_fcover_over_ifcover():
+    with patch("app.services.archive.zipfile.is_zipfile", return_value=True), \
+         patch("app.services.archive.zipfile.ZipFile"):
+        archive = ComicArchive(Path("dummy.cbz"))
+
+        archive.get_file_list = MagicMock(return_value=[
+            "chimera_04_pg_00a_ifcover_(shinter).jpg",
+            "chimera_04_pg_00_fcover_(shinter).jpg",
+        ])
+
+        pages = archive.get_pages()
+
+        assert pages == [
+            "chimera_04_pg_00_fcover_(shinter).jpg",
+            "chimera_04_pg_00a_ifcover_(shinter).jpg",
+        ]
