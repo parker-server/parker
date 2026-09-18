@@ -130,18 +130,26 @@
                         <h4 class="font-bold text-gray-300">Statistics</h4>
 
                         <template x-if="selectedJob.job_type === 'scan' || !selectedJob.job_type">
-                            <div class="grid grid-cols-3 gap-2 text-center">
+                            <div class="grid grid-cols-2 md:grid-cols-5 gap-2 text-center">
                                 <div class="bg-green-900/30 p-3 rounded border border-green-900/50">
-                                    <div class="text-2xl font-bold text-green-400" x-text="selectedJob.summary.imported"></div>
+                                    <div class="text-2xl font-bold text-green-400" x-text="selectedJob.summary.imported || 0"></div>
                                     <div class="text-xs text-gray-400 uppercase">Imported</div>
                                 </div>
                                 <div class="bg-blue-900/30 p-3 rounded border border-blue-900/50">
-                                    <div class="text-2xl font-bold text-blue-400" x-text="selectedJob.summary.updated"></div>
+                                    <div class="text-2xl font-bold text-blue-400" x-text="selectedJob.summary.updated || 0"></div>
                                     <div class="text-xs text-gray-400 uppercase">Updated</div>
                                 </div>
                                 <div class="bg-gray-700/30 p-3 rounded border border-gray-700">
-                                    <div class="text-2xl font-bold text-gray-400" x-text="selectedJob.summary.deleted"></div>
+                                    <div class="text-2xl font-bold text-gray-400" x-text="selectedJob.summary.deleted || 0"></div>
                                     <div class="text-xs text-gray-500 uppercase">Deleted</div>
+                                </div>
+                                <div class="bg-gray-700/30 p-3 rounded border border-gray-700">
+                                    <div class="text-2xl font-bold text-gray-400" x-text="selectedJob.summary.skipped || 0"></div>
+                                    <div class="text-xs text-gray-500 uppercase">Skipped</div>
+                                </div>
+                                <div class="bg-red-900/30 p-3 rounded border border-red-900/50">
+                                    <div class="text-2xl font-bold text-red-400" x-text="selectedJob.summary.errors || 0"></div>
+                                    <div class="text-xs text-gray-400 uppercase">Errors</div>
                                 </div>
                             </div>
 
@@ -215,7 +223,7 @@
                         </template>
 
                         <!-- Unified Error Details (SCAN + THUMBNAIL) -->
-                        <template x-if="selectedJob.summary?.error_details && selectedJob.summary.error_details.length > 0">
+                        <template x-if="(selectedJob.summary?.error_details || []).length > 0">
                             <div class="mt-8">
 
                                 <h4 class="font-bold text-red-400 mb-3">
@@ -235,11 +243,11 @@
                                             </thead>
 
                                             <tbody>
-                                                <template x-for="err in selectedJob.summary.error_details" :key="err.comic_id">
+                                                <template x-for="(err, index) in selectedJob.summary.error_details" :key="`${err.comic_id || 'unknown'}-${index}`">
                                                     <tr class="border-t border-red-900/20 hover:bg-red-900/10">
-                                                        <td class="px-3 py-1 max-w-[260px] truncate" :title="err.comic_id" x-text="err.comic_id"></td>
-                                                        <td class="px-3 py-1 max-w-[260px] truncate" :title="err.file_path" x-text="err.file_path"></td>
-                                                        <td class="px-3 py-1 max-w-[260px] truncate" :title="err.message" x-text="err.message"></td>
+                                                        <td class="px-3 py-1 max-w-[260px] truncate" :title="err.comic_id" x-text="err.comic_id || '-'"></td>
+                                                        <td class="px-3 py-1 max-w-[260px] truncate" :title="err.file_path" x-text="err.file_path || '-'"></td>
+                                                        <td class="px-3 py-1 max-w-[260px] truncate" :title="err.message" x-text="err.message || 'Unknown error'"></td>
                                                     </tr>
                                                 </template>
                                             </tbody>
@@ -259,10 +267,10 @@
                                             </thead>
 
                                             <tbody>
-                                                <template x-for="err in selectedJob.summary.error_details" :key="err.file_path">
+                                                <template x-for="(err, index) in selectedJob.summary.error_details" :key="`${err.file_path || 'unknown'}-${index}`">
                                                     <tr class="border-t border-red-900/20 hover:bg-red-900/10">
-                                                        <td class="px-3 py-1 max-w-[260px] truncate" :title="err.file_path" x-text="err.file_path"></td>
-                                                        <td class="px-3 py-1 max-w-[260px] truncate" :title="err.message" x-text="err.message"></td>
+                                                        <td class="px-3 py-1 max-w-[260px] truncate" :title="err.file_path" x-text="err.file_path || '-'"></td>
+                                                        <td class="px-3 py-1 max-w-[260px] truncate" :title="err.message" x-text="err.message || 'Unknown error'"></td>
                                                     </tr>
                                                 </template>
                                             </tbody>
@@ -270,6 +278,15 @@
                                     </div>
                                 </template>
 
+                            </div>
+                        </template>
+
+                        <template x-if="(selectedJob.summary?.errors || 0) > 0 && (selectedJob.summary?.error_details || []).length === 0">
+                            <div class="mt-8 rounded-lg border border-red-900/30 bg-red-900/10 p-4">
+                                <h4 class="font-bold text-red-400 mb-2">Error Details Unavailable</h4>
+                                <p class="text-sm text-red-100/80">
+                                    This job recorded an error count, but no per-file error details were saved. Older scan jobs may only have summary counts.
+                                </p>
                             </div>
                         </template>
 

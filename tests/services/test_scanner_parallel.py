@@ -231,7 +231,14 @@ def test_scan_parallel_orchestrates_pool_writer_and_summary(monkeypatch, tmp_pat
 
     result_queue = FakeQueue()
     stats_queue = FakeQueue([
-        {"summary": True, "imported": 2, "updated": 0, "errors": 0, "skipped": 0}
+        {
+            "summary": True,
+            "imported": 2,
+            "updated": 0,
+            "errors": 1,
+            "skipped": 0,
+            "error_details": [{"file_path": str(new_file), "message": "bad archive"}],
+        }
     ])
     queues = [result_queue, stats_queue]
 
@@ -249,7 +256,8 @@ def test_scan_parallel_orchestrates_pool_writer_and_summary(monkeypatch, tmp_pat
     assert result["skipped"] == 1
     assert result["imported"] == 2
     assert result["updated"] == 0
-    assert result["errors"] == 0
+    assert result["errors"] == 1
+    assert result["error_details"] == [{"file_path": str(new_file), "message": "bad archive"}]
 
     assert len(FakeProcess.instances) == 1
     assert FakeProcess.instances[0].started is True

@@ -211,6 +211,17 @@ def test_admin_tasks_page_uses_lucide_icons(admin_client):
         assert glyph not in template
 
 
+def test_admin_jobs_page_surfaces_scan_error_details(admin_client):
+    response = admin_client.get("/admin/jobs")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "Scan Errors" in body
+    assert "Error Details Unavailable" in body
+    assert "selectedJob.summary.error_details" in body
+    assert '<div class="text-xs text-gray-400 uppercase">Errors</div>' in body
+
+
 def test_admin_stats_page_uses_lucide_icons(admin_client):
     response = admin_client.get("/admin/stats")
 

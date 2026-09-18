@@ -320,7 +320,9 @@ class ScanManager:
                 "imported": results.get("imported", 0),
                 "updated": results.get("updated", 0),
                 "deleted": results.get("deleted", 0),
+                "skipped": results.get("skipped", 0),
                 "errors": results.get("errors", 0),
+                "error_details": results.get("error_details", []),
                 "elapsed": results.get("elapsed", 0)
             }
             self._safe_job_update(job_id, JobStatus.COMPLETED, summary=summary)
