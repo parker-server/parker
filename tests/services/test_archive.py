@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock, patch
 from pathlib import Path
-from app.services.archive import ComicArchive
+from app.services.archive import ComicArchive, PageRole, _page_sort_score
 
 def test_comic_archive_get_pages_filtering():
     """Test that non-images and ignored files are filtered out."""
@@ -360,3 +360,39 @@ def test_comic_archive_sort_pages_prefers_fcover_over_ifcover():
             "chimera_04_pg_00_fcover_(shinter).jpg",
             "chimera_04_pg_00a_ifcover_(shinter).jpg",
         ]
+
+
+def test_page_sort_score_exposes_named_cover_signals():
+    page_stems = {
+        "HybridsSpecial001-00",
+        "HybridsSpecial001-00A",
+        "chimera_04_pg_00_fcover_(shinter)",
+        "chimera_04_pg_00a_ifcover_(shinter)",
+        "The First - 005 Pg00",
+        "The First - 005 Pg00z (2 page cover)",
+        "WayofRat23-01",
+        "WayofRat23NegWarPreviewHeader",
+    }
+
+    bare_zero = _page_sort_score("HybridsSpecial001-00.jpg", page_stems)
+    zero_letter = _page_sort_score("HybridsSpecial001-00A.jpg", page_stems)
+    front_cover = _page_sort_score("chimera_04_pg_00_fcover_(shinter).jpg", page_stems)
+    inside_front_cover = _page_sort_score("chimera_04_pg_00a_ifcover_(shinter).jpg", page_stems)
+    joined_cover = _page_sort_score("The First - 005 Pg00z (2 page cover).jpg", page_stems)
+    preview_header = _page_sort_score("WayofRat23NegWarPreviewHeader.jpg", page_stems)
+
+    assert bare_zero.role == PageRole.LIKELY_COVER
+    assert bare_zero.cover_signal == "bare_zero_with_zero_letter_twin"
+    assert bare_zero.page_index == 0
+    assert bare_zero.sort_key() < zero_letter.sort_key()
+
+    assert front_cover.role == PageRole.COVER
+    assert front_cover.cover_signal == "explicit_cover_token"
+    assert inside_front_cover.role == PageRole.INTERIOR
+    assert inside_front_cover.cover_signal is None
+    assert "inside_front_cover" in inside_front_cover.penalty_signals
+
+    assert joined_cover.role == PageRole.INTERIOR
+    assert "joined_cover" in joined_cover.penalty_signals
+    assert preview_header.role == PageRole.INTERIOR
+    assert "preview_or_header" in preview_header.penalty_signals

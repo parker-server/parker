@@ -1,6 +1,8 @@
 import logging
 import zipfile
 import rarfile
+from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import List, Optional
 import io
@@ -17,10 +19,53 @@ EXPLICIT_END_PAGE_RE = re.compile(r'^z+[\W_]')
 EXPLICIT_COVER_RE = re.compile(
     r'(?:^|[\W_])(?:0+(?:[a-z]|[\W_]+\d+|fc|fcover|cover|cvr|front|scan)|fc|fcover|cover|cvr|front|scan)(?:$|[\W_])'
 )
-INSIDE_COVER_RE = re.compile(r'(?:^|[\W_])(?:ifc|ifcover|inside\s+front\s+cover)(?:$|[\W_])')
+INSIDE_COVER_RE = re.compile(r'(?:^|[\W_])(?:0+)?(?:ifc|ifcover|inside\s+front\s+cover)(?:$|[\W_])')
 JOINED_COVER_RE = re.compile(r'(?:^|[\W_])(?:\d+\s*page\s+cover|joined\s+(?:cover|cvr))(?:$|[\W_])')
+PREVIEW_HEADER_RE = re.compile(r'(?:preview|header)')
+BACK_COVER_RE = re.compile(r'(?:^|[\W_])(?:bc|bcover|back\s+cover)(?:$|[\W_])')
 TRAILING_PAGE_NUMBER_RE = re.compile(r'^(.*?)(?:[\s._-]+)?(\d+)\s*$')
 ZERO_PAGE_STEM_RE = re.compile(r'(?:^|[\W_])0+$')
+FINAL_PAGE_INDEX_RE = re.compile(r'(\d+)(?:[a-z]*)$', re.IGNORECASE)
+
+
+class PageRole(Enum):
+    COVER = "cover"
+    LIKELY_COVER = "likely_cover"
+    INTERIOR = "interior"
+    BACK_MATTER = "back_matter"
+
+
+PAGE_ROLE_RANK = {
+    PageRole.COVER: 0,
+    PageRole.LIKELY_COVER: 0,
+    PageRole.INTERIOR: 1,
+    PageRole.BACK_MATTER: 2,
+}
+
+
+@dataclass(frozen=True)
+class PageSortScore:
+    role: PageRole
+    page_index: int | None
+    cover_signal: str | None
+    penalty_signals: tuple[str, ...]
+    normalized_base_parts: tuple
+    has_trailing_page_number: bool
+    trailing_page_number: int | None
+    normalized_full_parts: tuple
+    archive_index: int = 0
+
+    def sort_key(self) -> tuple:
+        return (
+            PAGE_ROLE_RANK[self.role],
+            self.normalized_base_parts,
+            self.page_index if self.page_index is not None else -1,
+            1 if self.has_trailing_page_number else 0,
+            self.trailing_page_number if self.trailing_page_number is not None else -1,
+            self.normalized_full_parts,
+            len(self.penalty_signals),
+            self.archive_index,
+        )
 
 
 def _split_archive_path(filename: str) -> tuple[str, str]:
@@ -38,6 +83,10 @@ def _normalize_page_sort_text(text: str) -> str:
 
 def _natural_sort_parts(text: str) -> list:
     return [int(part) if part.isdigit() else part for part in re.split(r'(\d+)', text)]
+
+
+def _natural_sort_tuple(text: str) -> tuple:
+    return tuple(_natural_sort_parts(text))
 
 
 def _page_stem_key(filename: str) -> str:
@@ -75,34 +124,61 @@ def _has_zero_letter_twin(filename: str, page_stems: set[str] | None) -> bool:
     )
 
 
-def _priority_bucket(filename: str, page_stems: set[str] | None = None) -> int:
-    text = filename.lower()
-    if EXPLICIT_END_PAGE_RE.match(text):
-        return 2
+def _page_penalty_signals(text: str) -> tuple[str, ...]:
+    penalties = []
     if INSIDE_COVER_RE.search(text):
-        return 1
-    if EXPLICIT_COVER_RE.search(text) and not JOINED_COVER_RE.search(text):
-        return 0
+        penalties.append("inside_front_cover")
+    if JOINED_COVER_RE.search(text):
+        penalties.append("joined_cover")
+    if PREVIEW_HEADER_RE.search(text):
+        penalties.append("preview_or_header")
+    if BACK_COVER_RE.search(text):
+        penalties.append("back_cover")
+    return tuple(penalties)
+
+
+def _cover_signal(filename: str, text: str, page_stems: set[str] | None, penalty_signals: tuple[str, ...]) -> str | None:
+    if "inside_front_cover" in penalty_signals:
+        return None
+    if EXPLICIT_COVER_RE.search(text) and "joined_cover" not in penalty_signals:
+        return "explicit_cover_token"
     if _has_zero_letter_twin(filename, page_stems):
-        return 0
+        return "bare_zero_with_zero_letter_twin"
     if _has_unprefixed_twin(filename, page_stems):
-        return 0
-    return 1
+        return "leading_underscore_twin"
+    return None
 
 
-def _split_trailing_page_number(stem: str) -> tuple[str, int | None]:
-    match = TRAILING_PAGE_NUMBER_RE.match(stem.strip())
+def _page_role(cover_signal: str | None, text: str, penalty_signals: tuple[str, ...]) -> PageRole:
+    if EXPLICIT_END_PAGE_RE.match(text) or "back_cover" in penalty_signals:
+        return PageRole.BACK_MATTER
+    if cover_signal == "explicit_cover_token":
+        return PageRole.COVER
+    if cover_signal:
+        return PageRole.LIKELY_COVER
+    return PageRole.INTERIOR
+
+
+def _detect_page_index(stem: str, trailing_number: int | None) -> int | None:
+    if trailing_number is not None:
+        return trailing_number
+
+    match = FINAL_PAGE_INDEX_RE.search(stem.strip())
     if not match:
-        return stem.strip(), None
+        return None
 
-    return match.group(1).strip(), int(match.group(2))
+    return int(match.group(1))
 
 
-def _page_sort_key(filename: str, page_stems: set[str] | None = None) -> tuple:
+def _page_sort_score(filename: str, page_stems: set[str] | None = None, archive_index: int = 0) -> PageSortScore:
     """
-    Sort comic archive pages while keeping likely base cover files before
-    same-stem numbered interior pages.
+    Build a named, debug-friendly page ordering score.
+
+    Role and signal fields explain why a page is cover-priority, interior, or
+    back matter. Natural filename fields remain the final tie breakers so the
+    sorter still follows archive naming conventions whenever role signals tie.
     """
+    text = filename.lower()
     directory, basename = _split_archive_path(filename)
     stem = Path(basename).stem
     base_stem, trailing_number = _split_trailing_page_number(stem)
@@ -114,17 +190,36 @@ def _page_sort_key(filename: str, page_stems: set[str] | None = None) -> tuple:
             trailing_number = None
 
     base_name = f"{directory}{base_stem}"
-    normalized_base = _normalize_page_sort_text(base_name)
-    normalized_full = _normalize_page_sort_text(filename)
+    penalty_signals = _page_penalty_signals(text)
+    cover_signal = _cover_signal(filename, text, page_stems, penalty_signals)
 
-    has_trailing_number = trailing_number is not None
-    return (
-        _priority_bucket(filename, page_stems),
-        _natural_sort_parts(normalized_base),
-        1 if has_trailing_number else 0,
-        trailing_number if trailing_number is not None else -1,
-        _natural_sort_parts(normalized_full),
+    return PageSortScore(
+        role=_page_role(cover_signal, text, penalty_signals),
+        page_index=_detect_page_index(stem, trailing_number),
+        cover_signal=cover_signal,
+        penalty_signals=penalty_signals,
+        normalized_base_parts=_natural_sort_tuple(_normalize_page_sort_text(base_name)),
+        has_trailing_page_number=trailing_number is not None,
+        trailing_page_number=trailing_number,
+        normalized_full_parts=_natural_sort_tuple(_normalize_page_sort_text(filename)),
+        archive_index=archive_index,
     )
+
+
+def _split_trailing_page_number(stem: str) -> tuple[str, int | None]:
+    match = TRAILING_PAGE_NUMBER_RE.match(stem.strip())
+    if not match:
+        return stem.strip(), None
+
+    return match.group(1).strip(), int(match.group(2))
+
+
+def _page_sort_key(filename: str, page_stems: set[str] | None = None, archive_index: int = 0) -> tuple:
+    """
+    Sort comic archive pages using a named score so cover decisions are easier
+    to inspect when archive naming gets strange.
+    """
+    return _page_sort_score(filename, page_stems, archive_index).sort_key()
 
 
 # Import the rarfile configuration
@@ -209,9 +304,10 @@ class ComicArchive:
                 pages.append(f)
 
         page_stems = {_page_stem_key(page) for page in pages}
-        pages.sort(key=lambda page: _page_sort_key(page, page_stems))
+        indexed_pages = list(enumerate(pages))
+        indexed_pages.sort(key=lambda item: _page_sort_key(item[1], page_stems, item[0]))
 
-        return pages
+        return [page for _, page in indexed_pages]
 
     def read_file(self, filename: str) -> bytes:
         """Read a specific file from the archive"""
