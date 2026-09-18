@@ -11,7 +11,7 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-ARCHIVE_PAGE_ORDER_VERSION = 4
+ARCHIVE_PAGE_ORDER_VERSION = 5
 IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff', '.jxl', '.avif'}
 IGNORE_FILENAMES = {'thumbs.db', '.ds_store', 'comicinfo.xml', '__macosx'}
 IGNORE_EXTENSIONS = {'.nfo', '.sfv', '.txt', '.xml', '.db', '.ini'}
@@ -124,7 +124,23 @@ def _has_zero_letter_twin(filename: str, page_stems: set[str] | None) -> bool:
     )
 
 
-def _page_penalty_signals(text: str) -> tuple[str, ...]:
+def _has_appended_zero_page_twin(filename: str, page_stems: set[str] | None) -> bool:
+    if page_stems is None:
+        return False
+
+    directory, basename = _split_archive_path(filename)
+    stem = Path(basename).stem.strip()
+    if not ZERO_PAGE_STEM_RE.search(stem):
+        return False
+
+    stem_key = f"{directory}{stem}".lower()
+    return any(
+        re.match(rf'^{re.escape(stem_key)}[\W_]+\d+$', page_stem.lower())
+        for page_stem in page_stems
+    )
+
+
+def _page_penalty_signals(text: str, appended_page_zero_variant: bool = False) -> tuple[str, ...]:
     penalties = []
     if INSIDE_COVER_RE.search(text):
         penalties.append("inside_front_cover")
@@ -134,16 +150,22 @@ def _page_penalty_signals(text: str) -> tuple[str, ...]:
         penalties.append("preview_or_header")
     if BACK_COVER_RE.search(text):
         penalties.append("back_cover")
+    if appended_page_zero_variant:
+        penalties.append("appended_page_zero_variant")
     return tuple(penalties)
 
 
 def _cover_signal(filename: str, text: str, page_stems: set[str] | None, penalty_signals: tuple[str, ...]) -> str | None:
     if "inside_front_cover" in penalty_signals:
         return None
-    if EXPLICIT_COVER_RE.search(text) and "joined_cover" not in penalty_signals:
+
+    explicit_cover_blockers = {"appended_page_zero_variant", "joined_cover"}
+    if EXPLICIT_COVER_RE.search(text) and not explicit_cover_blockers.intersection(penalty_signals):
         return "explicit_cover_token"
     if _has_zero_letter_twin(filename, page_stems):
         return "bare_zero_with_zero_letter_twin"
+    if _has_appended_zero_page_twin(filename, page_stems):
+        return "bare_zero_with_appended_variant"
     if _has_unprefixed_twin(filename, page_stems):
         return "leading_underscore_twin"
     return None
@@ -182,15 +204,18 @@ def _page_sort_score(filename: str, page_stems: set[str] | None = None, archive_
     directory, basename = _split_archive_path(filename)
     stem = Path(basename).stem
     base_stem, trailing_number = _split_trailing_page_number(stem)
+    appended_page_zero_variant = False
 
     if trailing_number is not None and page_stems is not None:
         candidate_base = f"{directory}{base_stem}"
-        if candidate_base not in page_stems:
+        if candidate_base in page_stems:
+            appended_page_zero_variant = ZERO_PAGE_STEM_RE.search(base_stem) is not None
+        else:
             base_stem = stem.strip()
             trailing_number = None
 
     base_name = f"{directory}{base_stem}"
-    penalty_signals = _page_penalty_signals(text)
+    penalty_signals = _page_penalty_signals(text, appended_page_zero_variant)
     cover_signal = _cover_signal(filename, text, page_stems, penalty_signals)
 
     return PageSortScore(
