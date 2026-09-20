@@ -59,7 +59,10 @@
 
         <div x-show="murals.length === 0" class="col-span-full text-center py-20 bg-gray-800/50 rounded-lg border-dashed border-2 border-gray-700">
             {{ lucide_icon("palette", "mx-auto mb-4 h-14 w-14 text-gray-600 opacity-50") }}
-            <p class="text-gray-400 text-lg mb-4">You haven't created any cover murals yet.</p>
+            <p class="text-gray-400 text-lg mb-2">You haven't created any cover murals yet.</p>
+            <p class="text-gray-500 max-w-xl mx-auto mb-5">
+                Create a mural here, then select comics from a cover grid and use the bulk Add to Mural action.
+            </p>
             <button @click="openCreateModal()" class="text-blue-400 hover:text-white font-medium hover:underline">Create your first mural</button>
         </div>
 

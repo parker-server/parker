@@ -111,9 +111,12 @@
                 </template>
 
                 <div x-show="items.length === 0" class="absolute inset-0 flex items-center justify-center text-gray-500">
-                    <div class="text-center">
+                    <div class="text-center max-w-md px-6">
                         {{ lucide_icon("palette", "mx-auto mb-4 h-14 w-14 text-gray-700") }}
-                        <div>No covers yet</div>
+                        <div class="text-lg text-gray-400">No covers yet</div>
+                        <div class="mt-2 text-sm text-gray-500">
+                            Select comics from a cover grid and choose Add to Mural from the bulk actions bar.
+                        </div>
                     </div>
                 </div>
             </div>

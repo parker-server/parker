@@ -978,6 +978,8 @@ def test_cover_mural_surfaces_render_and_use_lucide_icons(auth_client):
     assert mural_detail_response.status_code == 200
     assert "coverMuralIndex()" in murals_response.text
     assert "coverMuralDetail()" in mural_detail_response.text
+    assert "Create a mural here, then select comics from a cover grid" in murals_response.text
+    assert "choose Add to Mural from the bulk actions bar" in mural_detail_response.text
     assert 'data-lucide-icon="palette"' in murals_response.text
     assert 'data-lucide-icon="download"' in mural_detail_response.text
     assert 'data-lucide-icon="trash-2"' in mural_detail_response.text
