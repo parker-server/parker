@@ -48,6 +48,10 @@ def _add_user(db, *, username: str, email: str, social_insights_enabled: bool):
     return user
 
 
+def _grant_library_access(user: User, *libraries):
+    user.accessible_libraries.extend(libraries)
+
+
 def _home_layout_keys(payload: dict) -> list[str]:
     return [rail["key"] for rail in payload["rails"]]
 
@@ -233,17 +237,17 @@ def test_home_layout_reset_clears_saved_layout(auth_client, db, normal_user):
     assert normal_user.home_rail_layout is None
 
 
-def test_home_random_empty_and_skips_series_without_comics(auth_client, db):
+def test_home_random_empty_and_skips_series_without_comics(auth_client, db, normal_user):
     empty = auth_client.get("/api/home/random?limit=10")
     assert empty.status_code == 200
     assert empty.json() == []
 
-    _, no_comics_series, _ = _create_series_graph(
+    no_comics_library, no_comics_series, _ = _create_series_graph(
         db,
         lib_name="home-random-empty-lib",
         series_name="Home Random Empty",
     )
-    _, full_series, full_volume = _create_series_graph(
+    full_library, full_series, full_volume = _create_series_graph(
         db,
         lib_name="home-random-full-lib",
         series_name="Home Random Full",
@@ -256,6 +260,7 @@ def test_home_random_empty_and_skips_series_without_comics(auth_client, db):
         year=2022,
         publisher="Random Pub",
     )
+    _grant_library_access(normal_user, no_comics_library, full_library)
     db.commit()
 
     response = auth_client.get("/api/home/random?limit=10")
@@ -395,8 +400,8 @@ def test_home_recently_updated_series_uses_latest_updated_volume_cover(auth_clie
     assert not payload[0]["thumbnail_path"].startswith(f"/api/comics/{updated_issue.id}/thumbnail")
 
 
-def test_home_rated_orders_by_rating(auth_client, db):
-    _, _, volume = _create_series_graph(db, lib_name="home-rated-lib", series_name="Home Rated")
+def test_home_rated_orders_by_rating(auth_client, db, normal_user):
+    library, _, volume = _create_series_graph(db, lib_name="home-rated-lib", series_name="Home Rated")
 
     high = _add_comic(
         db,
@@ -419,6 +424,7 @@ def test_home_rated_orders_by_rating(auth_client, db):
         title="Below Threshold",
         community_rating=3.9,
     )
+    _grant_library_access(normal_user, library)
     db.commit()
 
     response = auth_client.get("/api/home/rated?limit=10")
@@ -430,8 +436,8 @@ def test_home_rated_orders_by_rating(auth_client, db):
     assert payload[0]["community_rating"] == 4.9
 
 
-def test_home_top_parker_rated_orders_by_average_then_count(auth_client, db):
-    _, _, volume = _create_series_graph(db, lib_name="home-parker-rated-lib", series_name="Home Parker Rated")
+def test_home_top_parker_rated_orders_by_average_then_count(auth_client, db, normal_user):
+    library, _, volume = _create_series_graph(db, lib_name="home-parker-rated-lib", series_name="Home Parker Rated")
 
     top = _add_comic(db, volume, number="3", title="Parker Top")
     tiebreak = _add_comic(db, volume, number="2", title="Parker Tiebreak")
@@ -454,6 +460,7 @@ def test_home_top_parker_rated_orders_by_average_then_count(auth_client, db):
         UserComicRating(user_id=user_c.id, comic_id=fourth.id, rating=3),
         UserComicRating(user_id=user_d.id, comic_id=fourth.id, rating=3),
     ])
+    _grant_library_access(normal_user, library)
     db.commit()
 
     response = auth_client.get("/api/home/parker-rated?limit=10")
@@ -470,8 +477,8 @@ def test_home_top_parker_rated_orders_by_average_then_count(auth_client, db):
     assert payload[1]["parker_rating_count"] == 3
 
 
-def test_home_top_parker_rated_returns_empty_without_enough_qualifying_items(auth_client, db):
-    _, _, volume = _create_series_graph(db, lib_name="home-parker-threshold-lib", series_name="Home Parker Threshold")
+def test_home_top_parker_rated_returns_empty_without_enough_qualifying_items(auth_client, db, normal_user):
+    library, _, volume = _create_series_graph(db, lib_name="home-parker-threshold-lib", series_name="Home Parker Threshold")
 
     first = _add_comic(db, volume, number="1", title="Threshold First")
     second = _add_comic(db, volume, number="2", title="Threshold Second")
@@ -488,6 +495,7 @@ def test_home_top_parker_rated_returns_empty_without_enough_qualifying_items(aut
         UserComicRating(user_id=user_b.id, comic_id=second.id, rating=4),
         UserComicRating(user_id=user_c.id, comic_id=third.id, rating=5),
     ])
+    _grant_library_access(normal_user, library)
     db.commit()
 
     response = auth_client.get("/api/home/parker-rated?limit=10")
@@ -497,11 +505,11 @@ def test_home_top_parker_rated_returns_empty_without_enough_qualifying_items(aut
 
 
 def test_home_top_parker_rated_applies_age_filter(auth_client, db, normal_user):
-    _, _, safe_volume = _create_series_graph(db, lib_name="home-parker-age-safe-lib", series_name="Home Parker Safe")
-    _, _, second_safe_volume = _create_series_graph(db, lib_name="home-parker-age-safe-lib-2", series_name="Home Parker Safe Two")
-    _, _, third_safe_volume = _create_series_graph(db, lib_name="home-parker-age-safe-lib-3", series_name="Home Parker Safe Three")
-    _, _, fourth_safe_volume = _create_series_graph(db, lib_name="home-parker-age-safe-lib-4", series_name="Home Parker Safe Four")
-    _, _, banned_volume = _create_series_graph(db, lib_name="home-parker-age-banned-lib", series_name="Home Parker Banned")
+    safe_library, _, safe_volume = _create_series_graph(db, lib_name="home-parker-age-safe-lib", series_name="Home Parker Safe")
+    second_safe_library, _, second_safe_volume = _create_series_graph(db, lib_name="home-parker-age-safe-lib-2", series_name="Home Parker Safe Two")
+    third_safe_library, _, third_safe_volume = _create_series_graph(db, lib_name="home-parker-age-safe-lib-3", series_name="Home Parker Safe Three")
+    fourth_safe_library, _, fourth_safe_volume = _create_series_graph(db, lib_name="home-parker-age-safe-lib-4", series_name="Home Parker Safe Four")
+    banned_library, _, banned_volume = _create_series_graph(db, lib_name="home-parker-age-banned-lib", series_name="Home Parker Banned")
 
     safe = _add_comic(db, safe_volume, number="1", title="Parker Safe", age_rating="Teen")
     safe_two = _add_comic(db, second_safe_volume, number="1", title="Parker Safe Two", age_rating="Teen")
@@ -525,6 +533,14 @@ def test_home_top_parker_rated_applies_age_filter(auth_client, db, normal_user):
 
     normal_user.max_age_rating = "Teen"
     normal_user.allow_unknown_age_ratings = False
+    _grant_library_access(
+        normal_user,
+        safe_library,
+        second_safe_library,
+        third_safe_library,
+        fourth_safe_library,
+        banned_library,
+    )
     db.commit()
 
     response = auth_client.get("/api/home/parker-rated?limit=10")
@@ -535,7 +551,7 @@ def test_home_top_parker_rated_applies_age_filter(auth_client, db, normal_user):
     assert {item["id"] for item in payload} == {safe.id, safe_two.id, safe_three.id, safe_four.id}
 
 
-def test_home_trending_returns_empty_below_threshold(auth_client, db):
+def test_home_trending_returns_empty_below_threshold(auth_client, db, normal_user):
     sharer = _add_user(
         db,
         username="trending-threshold-sharer",
@@ -545,12 +561,14 @@ def test_home_trending_returns_empty_below_threshold(auth_client, db):
 
     now = datetime.now(timezone.utc)
     comics = []
+    libraries = []
     for idx in range(1, 4):
-        _, _, volume = _create_series_graph(
+        library, _, volume = _create_series_graph(
             db,
             lib_name=f"home-trending-threshold-lib-{idx}",
             series_name=f"Home Trending Threshold {idx}",
         )
+        libraries.append(library)
         comics.append(_add_comic(db, volume, number="1", title=f"Trending Threshold #{idx}"))
 
     for comic in comics:
@@ -565,6 +583,7 @@ def test_home_trending_returns_empty_below_threshold(auth_client, db):
             )
         )
 
+    _grant_library_access(normal_user, *libraries)
     db.commit()
 
     response = auth_client.get("/api/home/trending?limit=10")
@@ -601,30 +620,30 @@ def test_home_trending_orders_by_recent_activity_then_readers_then_latest(auth_c
         social_insights_enabled=False,
     )
 
-    _, top_series, top_volume = _create_series_graph(db, lib_name="home-trending-top-lib", series_name="Trending Top")
+    top_library, top_series, top_volume = _create_series_graph(db, lib_name="home-trending-top-lib", series_name="Trending Top")
     top_comics = [
         _add_comic(db, top_volume, number="1", title="Trending Top #1", year=2024, publisher="Trending Pub"),
         _add_comic(db, top_volume, number="2", title="Trending Top #2", year=2024, publisher="Trending Pub"),
         _add_comic(db, top_volume, number="3", title="Trending Top #3", year=2024, publisher="Trending Pub"),
     ]
 
-    _, tiebreak_series, tiebreak_volume = _create_series_graph(db, lib_name="home-trending-tiebreak-lib", series_name="Trending Tiebreak")
+    tiebreak_library, tiebreak_series, tiebreak_volume = _create_series_graph(db, lib_name="home-trending-tiebreak-lib", series_name="Trending Tiebreak")
     tiebreak_comics = [
         _add_comic(db, tiebreak_volume, number="1", title="Trending Tiebreak #1", year=2024, publisher="Trending Pub"),
         _add_comic(db, tiebreak_volume, number="2", title="Trending Tiebreak #2", year=2024, publisher="Trending Pub"),
         _add_comic(db, tiebreak_volume, number="3", title="Trending Tiebreak #3", year=2024, publisher="Trending Pub"),
     ]
 
-    _, fresh_series, fresh_volume = _create_series_graph(db, lib_name="home-trending-fresh-lib", series_name="Trending Fresh")
+    fresh_library, fresh_series, fresh_volume = _create_series_graph(db, lib_name="home-trending-fresh-lib", series_name="Trending Fresh")
     fresh_comics = [
         _add_comic(db, fresh_volume, number="1", title="Trending Fresh #1", year=2024, publisher="Trending Pub"),
         _add_comic(db, fresh_volume, number="2", title="Trending Fresh #2", year=2024, publisher="Trending Pub"),
     ]
 
-    _, minimal_series, minimal_volume = _create_series_graph(db, lib_name="home-trending-minimal-lib", series_name="Trending Minimal")
+    minimal_library, minimal_series, minimal_volume = _create_series_graph(db, lib_name="home-trending-minimal-lib", series_name="Trending Minimal")
     minimal_comic = _add_comic(db, minimal_volume, number="1", title="Trending Minimal #1", year=2024, publisher="Trending Pub")
 
-    _, stale_series, stale_volume = _create_series_graph(db, lib_name="home-trending-stale-lib", series_name="Trending Stale")
+    stale_library, stale_series, stale_volume = _create_series_graph(db, lib_name="home-trending-stale-lib", series_name="Trending Stale")
     stale_comics = [
         _add_comic(db, stale_volume, number="1", title="Trending Stale #1", year=2024, publisher="Trending Pub"),
         _add_comic(db, stale_volume, number="2", title="Trending Stale #2", year=2024, publisher="Trending Pub"),
@@ -651,6 +670,14 @@ def test_home_trending_orders_by_recent_activity_then_readers_then_latest(auth_c
         ReadingProgress(user_id=hidden.id, comic_id=top_comics[0].id, current_page=10, total_pages=10, completed=True, last_read_at=now),
         ReadingProgress(user_id=normal_user.id, comic_id=fresh_comics[0].id, current_page=9, total_pages=10, completed=False, last_read_at=now),
     ])
+    _grant_library_access(
+        normal_user,
+        top_library,
+        tiebreak_library,
+        fresh_library,
+        minimal_library,
+        stale_library,
+    )
     db.commit()
 
     response = auth_client.get("/api/home/trending?limit=10")
@@ -683,12 +710,14 @@ def test_home_trending_applies_age_filter(auth_client, db, normal_user):
 
     safe_ids = set()
     safe_comics = []
+    safe_libraries = []
     for idx in range(1, 5):
-        _, series, volume = _create_series_graph(
+        library, series, volume = _create_series_graph(
             db,
             lib_name=f"home-trending-age-safe-lib-{idx}",
             series_name=f"Home Trending Age Safe {idx}",
         )
+        safe_libraries.append(library)
         comic = _add_comic(
             db,
             volume,
@@ -701,7 +730,7 @@ def test_home_trending_applies_age_filter(auth_client, db, normal_user):
         safe_ids.add(series.id)
         safe_comics.append(comic)
 
-    _, banned_series, banned_volume = _create_series_graph(
+    banned_library, banned_series, banned_volume = _create_series_graph(
         db,
         lib_name="home-trending-age-banned-lib",
         series_name="Home Trending Age Banned",
@@ -726,6 +755,7 @@ def test_home_trending_applies_age_filter(auth_client, db, normal_user):
 
     normal_user.max_age_rating = "Teen"
     normal_user.allow_unknown_age_ratings = False
+    _grant_library_access(normal_user, *safe_libraries, banned_library)
     db.commit()
 
     response = auth_client.get("/api/home/trending?limit=10")
@@ -737,8 +767,75 @@ def test_home_trending_applies_age_filter(auth_client, db, normal_user):
     assert banned_series.id not in {item["id"] for item in payload}
 
 
+def test_home_trending_hides_inaccessible_libraries(auth_client, db, normal_user):
+    now = datetime.now(timezone.utc)
+    sharers = [
+        _add_user(
+            db,
+            username=f"trending-library-sharer-{idx}",
+            email=f"trending-library-sharer-{idx}@example.com",
+            social_insights_enabled=True,
+        )
+        for idx in range(1, 6)
+    ]
+
+    visible_ids = set()
+    visible_libraries = []
+    for idx in range(1, 5):
+        library, series, volume = _create_series_graph(
+            db,
+            lib_name=f"home-trending-visible-lib-{idx}",
+            series_name=f"Home Trending Visible {idx}",
+        )
+        comic = _add_comic(db, volume, number="1", title=f"Trending Visible #{idx}", year=2024)
+        visible_ids.add(series.id)
+        visible_libraries.append(library)
+        db.add(
+            ReadingProgress(
+                user_id=sharers[idx - 1].id,
+                comic_id=comic.id,
+                current_page=5,
+                total_pages=10,
+                completed=False,
+                last_read_at=now - timedelta(days=idx),
+            )
+        )
+
+    _, hidden_series, hidden_volume = _create_series_graph(
+        db,
+        lib_name="home-trending-hidden-lib",
+        series_name="Home Trending Hidden",
+    )
+    hidden_comics = [
+        _add_comic(db, hidden_volume, number=str(idx), title=f"Trending Hidden #{idx}", year=2024)
+        for idx in range(1, 6)
+    ]
+    for idx, comic in enumerate(hidden_comics):
+        db.add(
+            ReadingProgress(
+                user_id=sharers[idx].id,
+                comic_id=comic.id,
+                current_page=5,
+                total_pages=10,
+                completed=False,
+                last_read_at=now - timedelta(minutes=idx),
+            )
+        )
+
+    _grant_library_access(normal_user, *visible_libraries)
+    db.commit()
+
+    response = auth_client.get("/api/home/trending?limit=4")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 4
+    assert {item["id"] for item in payload} == visible_ids
+    assert hidden_series.id not in {item["id"] for item in payload}
+
+
 def test_home_resume_applies_staleness_and_progress_percentage(auth_client, db, normal_user):
-    _, _, volume = _create_series_graph(db, lib_name="home-resume-lib", series_name="Home Resume")
+    library, _, volume = _create_series_graph(db, lib_name="home-resume-lib", series_name="Home Resume")
 
     recent = _add_comic(db, volume, number="1", title="Recent Resume", page_count=10)
     stale = _add_comic(db, volume, number="2", title="Stale Resume", page_count=20)
@@ -761,6 +858,7 @@ def test_home_resume_applies_staleness_and_progress_percentage(auth_client, db, 
             last_read_at=datetime.now(timezone.utc) - timedelta(weeks=8),
         ),
     ])
+    _grant_library_access(normal_user, library)
     db.commit()
 
     with patch("app.api.home.get_cached_setting", return_value=1):
@@ -1028,7 +1126,7 @@ def test_home_pinned_libraries_uses_latest_updated_volume_cover(auth_client, db,
 
 
 def test_home_up_next_handles_duplicates_reverse_and_non_numeric(auth_client, db, normal_user):
-    _, _, standard_volume = _create_series_graph(
+    standard_library, _, standard_volume = _create_series_graph(
         db,
         lib_name="home-up-next-standard-lib",
         series_name="Up Next Standard",
@@ -1037,14 +1135,14 @@ def test_home_up_next_handles_duplicates_reverse_and_non_numeric(auth_client, db
     std2 = _add_comic(db, standard_volume, number="2", title="Std #2")
     std3 = _add_comic(db, standard_volume, number="3", title="Std #3")
 
-    _, _, bad_volume = _create_series_graph(
+    bad_library, _, bad_volume = _create_series_graph(
         db,
         lib_name="home-up-next-bad-lib",
         series_name="Up Next Bad",
     )
     bad = _add_comic(db, bad_volume, number="A", title="Bad #A")
 
-    _, _, reverse_volume = _create_series_graph(
+    reverse_library, _, reverse_volume = _create_series_graph(
         db,
         lib_name="home-up-next-reverse-lib",
         series_name="Countdown",
@@ -1088,6 +1186,7 @@ def test_home_up_next_handles_duplicates_reverse_and_non_numeric(auth_client, db
             last_read_at=now - timedelta(minutes=3),
         ),
     ])
+    _grant_library_access(normal_user, standard_library, bad_library, reverse_library)
     db.commit()
 
     with patch("app.api.home.get_cached_setting", return_value=0):
@@ -1108,12 +1207,14 @@ def test_home_popular_returns_empty_below_threshold(auth_client, db, normal_user
     )
 
     comics = []
+    libraries = []
     for idx in range(1, 4):
-        _, _, volume = _create_series_graph(
+        library, _, volume = _create_series_graph(
             db,
             lib_name=f"home-popular-threshold-lib-{idx}",
             series_name=f"Home Popular Threshold {idx}",
         )
+        libraries.append(library)
         comics.append(_add_comic(db, volume, number="1", title=f"Threshold #{idx}"))
 
     for comic in comics:
@@ -1127,6 +1228,7 @@ def test_home_popular_returns_empty_below_threshold(auth_client, db, normal_user
             )
         )
 
+    _grant_library_access(normal_user, *libraries)
     db.commit()
 
     response = auth_client.get("/api/home/popular?limit=10")
@@ -1135,7 +1237,7 @@ def test_home_popular_returns_empty_below_threshold(auth_client, db, normal_user
     assert response.json() == []
 
 
-def test_home_popular_secondary_guard_when_cover_picker_drops_items(auth_client, db):
+def test_home_popular_secondary_guard_when_cover_picker_drops_items(auth_client, db, normal_user):
     sharer = _add_user(
         db,
         username="popular-cover-sharer",
@@ -1143,12 +1245,14 @@ def test_home_popular_secondary_guard_when_cover_picker_drops_items(auth_client,
         social_insights_enabled=True,
     )
 
+    libraries = []
     for idx in range(1, 5):
-        _, _, volume = _create_series_graph(
+        library, _, volume = _create_series_graph(
             db,
             lib_name=f"home-popular-cover-lib-{idx}",
             series_name=f"Home Popular Cover {idx}",
         )
+        libraries.append(library)
         comic = _add_comic(db, volume, number="1", title=f"Cover #{idx}")
         db.add(
             ReadingProgress(
@@ -1160,6 +1264,7 @@ def test_home_popular_secondary_guard_when_cover_picker_drops_items(auth_client,
             )
         )
 
+    _grant_library_access(normal_user, *libraries)
     db.commit()
 
     with patch("app.api.home._pick_best_cover", side_effect=lambda series_obj, comics_list: None if series_obj.name.endswith("4") else comics_list[0]):
@@ -1169,7 +1274,7 @@ def test_home_popular_secondary_guard_when_cover_picker_drops_items(auth_client,
     assert response.json() == []
 
 
-def test_home_popular_returns_series_when_enough_data(auth_client, db):
+def test_home_popular_returns_series_when_enough_data(auth_client, db, normal_user):
     sharer_a = _add_user(
         db,
         username="popular-full-sharer-a",
@@ -1184,12 +1289,14 @@ def test_home_popular_returns_series_when_enough_data(auth_client, db):
     )
 
     series_ids = []
+    libraries = []
     for idx in range(1, 5):
-        _, series, volume = _create_series_graph(
+        library, series, volume = _create_series_graph(
             db,
             lib_name=f"home-popular-full-lib-{idx}",
             series_name=f"Home Popular Full {idx}",
         )
+        libraries.append(library)
         comic = _add_comic(db, volume, number="1", title=f"Full #{idx}", year=2020 + idx, publisher="Popular Pub")
         series_ids.append(series.id)
         db.add_all([
@@ -1209,6 +1316,7 @@ def test_home_popular_returns_series_when_enough_data(auth_client, db):
             ),
         ])
 
+    _grant_library_access(normal_user, *libraries)
     db.commit()
 
     response = auth_client.get("/api/home/popular?limit=10")
@@ -1218,3 +1326,64 @@ def test_home_popular_returns_series_when_enough_data(auth_client, db):
     assert len(payload) == 4
     assert {row["id"] for row in payload} == set(series_ids)
     assert all(row["publisher"] == "Popular Pub" for row in payload)
+
+
+def test_home_popular_hides_inaccessible_libraries(auth_client, db, normal_user):
+    sharers = [
+        _add_user(
+            db,
+            username=f"popular-library-sharer-{idx}",
+            email=f"popular-library-sharer-{idx}@example.com",
+            social_insights_enabled=True,
+        )
+        for idx in range(1, 6)
+    ]
+
+    visible_ids = set()
+    visible_libraries = []
+    for idx in range(1, 5):
+        library, series, volume = _create_series_graph(
+            db,
+            lib_name=f"home-popular-visible-lib-{idx}",
+            series_name=f"Home Popular Visible {idx}",
+        )
+        comic = _add_comic(db, volume, number="1", title=f"Popular Visible #{idx}", year=2024)
+        visible_ids.add(series.id)
+        visible_libraries.append(library)
+        db.add(
+            ReadingProgress(
+                user_id=sharers[idx - 1].id,
+                comic_id=comic.id,
+                current_page=5,
+                total_pages=10,
+                completed=True,
+            )
+        )
+
+    _, hidden_series, hidden_volume = _create_series_graph(
+        db,
+        lib_name="home-popular-hidden-lib",
+        series_name="Home Popular Hidden",
+    )
+    hidden_comic = _add_comic(db, hidden_volume, number="1", title="Popular Hidden", year=2024)
+    for sharer in sharers:
+        db.add(
+            ReadingProgress(
+                user_id=sharer.id,
+                comic_id=hidden_comic.id,
+                current_page=5,
+                total_pages=10,
+                completed=True,
+            )
+        )
+
+    _grant_library_access(normal_user, *visible_libraries)
+    db.commit()
+
+    response = auth_client.get("/api/home/popular?limit=4")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 4
+    assert {item["id"] for item in payload} == visible_ids
+    assert hidden_series.id not in {item["id"] for item in payload}

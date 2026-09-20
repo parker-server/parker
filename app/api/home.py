@@ -192,6 +192,14 @@ def _get_layout_user(db: Session, current_user: User) -> User:
     return user
 
 
+def _filter_query_to_user_libraries(query, current_user: User):
+    if current_user.is_superuser:
+        return query
+
+    allowed_ids = [library.id for library in current_user.accessible_libraries]
+    return query.filter(Series.library_id.in_(allowed_ids))
+
+
 @router.get("/layout", response_model=HomeRailLayoutResponse, name="layout")
 def get_home_layout(current_user: CurrentUser):
     return resolve_home_rail_layout(current_user.home_rail_layout)
@@ -501,10 +509,11 @@ def get_random_gems(
 
     """
     Get random Series. Great for 'Spin the Wheel' discovery.
-    Secured with Age Restrictions.
+    Secured with library access and age restrictions.
     """
     # 1. Query Random Series
     query = db.query(Series)
+    query = _filter_query_to_user_libraries(query, current_user)
 
     # --- AGE RESTRICTION ---
     age_filter = get_series_age_restriction(current_user)
@@ -529,12 +538,13 @@ def get_top_rated(
     """
     Get issues with High Community Rating (4.0+).
     Eager loads relationships to avoid N+1.
-    Secured with age restriction
+    Secured with library access and age restrictions.
     """
     query = db.query(Comic) \
         .join(Volume).join(Series) \
         .options(joinedload(Comic.volume).joinedload(Volume.series)) \
         .filter(Comic.community_rating >= 4.0)
+    query = _filter_query_to_user_libraries(query, current_user)
 
     # --- AGE RESTRICTION (Series level) ---
     # Hide "Safe" comics if they belong to a "Banned" series
@@ -565,6 +575,7 @@ def get_top_parker_rated(
     """
     Get issues with the highest Parker rating averages.
     Live aggregate for now; this is the main surface likely to benefit from caching later.
+    Secured with library access and age restrictions.
     """
     rating_stats = (
         db.query(
@@ -587,6 +598,7 @@ def get_top_parker_rated(
         .join(Volume).join(Series)
         .options(joinedload(Comic.volume).joinedload(Volume.series))
     )
+    query = _filter_query_to_user_libraries(query, current_user)
 
     age_filter = get_series_age_restriction(current_user)
     if age_filter is not None:
@@ -624,7 +636,7 @@ def get_resume_reading(
         current_user: CurrentUser,
         limit: int = 10
 ):
-    """Get 'In Progress' issues, respecting staleness settings."""
+    """Get 'In Progress' issues, respecting library access, age restrictions, and staleness settings."""
 
     # 1. Calculate Cutoff
     staleness_weeks = get_cached_setting("ui.on_deck.staleness_weeks", default=4)
@@ -642,6 +654,7 @@ def get_resume_reading(
         ReadingProgress.completed == False,
         ReadingProgress.current_page > 0
     )
+    query = _filter_query_to_user_libraries(query, current_user)
 
     # --- AGE RESTRICTION (Series level) ---
     age_filter = get_series_age_restriction(current_user)
@@ -804,6 +817,7 @@ def get_trending(
     """
     Get time-sensitive trending series based on recent opted-in reading activity.
     Ranked by recent activity volume, then distinct readers, then freshest activity.
+    Secured with library access and age restrictions.
     """
     cutoff_date = datetime.now(timezone.utc) - timedelta(days=30)
 
@@ -815,6 +829,7 @@ def get_trending(
         .filter(ReadingProgress.user_id != current_user.id)
         .filter(ReadingProgress.last_read_at >= cutoff_date)
     )
+    trending_series_query = _filter_query_to_user_libraries(trending_series_query, current_user)
 
     age_filter = get_series_age_restriction(current_user)
     if age_filter is not None:
@@ -850,7 +865,7 @@ def get_up_next(
 ):
     """
     Get the NEXT issue for series recently read. Handles Reverse Numbering
-    Secured for age rating
+    Secured with library access and age restrictions.
     """
 
     # 1. Calculate Cutoff (Reuse the same setting for consistency)
@@ -870,6 +885,7 @@ def get_up_next(
         ReadingProgress.user_id == current_user.id,
         ReadingProgress.completed == True
     )
+    history_query = _filter_query_to_user_libraries(history_query, current_user)
 
     # 3. Apply Staleness Filter
     # (Don't suggest next issues for series I finished years ago)
@@ -922,6 +938,7 @@ def get_up_next(
             .join(Volume).join(Series) \
             .options(joinedload(Comic.volume).joinedload(Volume.series)) \
             .filter(Comic.volume_id == progress.comic.volume_id)
+        next_query = _filter_query_to_user_libraries(next_query, current_user)
 
         if is_reverse:
             # Find next issue (LOWER number)
@@ -965,7 +982,7 @@ def get_popular(
     """
     Get "Popular with Others" series based on other users' reading activity.
     Respects the anonymous social insights preference.
-    Secured for age rating
+    Secured with library access and age restrictions.
     """
 
     # 1. Aggregation Query
@@ -977,6 +994,7 @@ def get_popular(
         .filter(User.social_insights_enabled == True)
         .filter(ReadingProgress.user_id != current_user.id) # Dont include ourselves
     )
+    popular_series_query = _filter_query_to_user_libraries(popular_series_query, current_user)
 
     # --- AGE RESTRICTION ---
     # Apply Series Level Poison Pill
