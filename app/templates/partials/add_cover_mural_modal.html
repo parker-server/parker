@@ -1,0 +1,153 @@
+<div x-data="addCoverMuralModal()"
+     x-show="show"
+     style="display: none;"
+     @open-add-to-cover-mural.window="open($event.detail)"
+     class="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+     x-transition:enter="transition ease-out duration-200"
+     x-transition:enter-start="opacity-0"
+     x-transition:enter-end="opacity-100"
+     x-transition:leave="transition ease-in duration-100"
+     x-transition:leave-start="opacity-100"
+     x-transition:leave-end="opacity-0"
+     x-on:click.self="close()">
+
+    <div class="bg-gray-800 border border-gray-700 p-6 rounded-lg shadow-2xl w-full max-w-md transform transition-all"
+         x-transition:enter="scale-95"
+         x-transition:enter-end="scale-100">
+
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-white font-bold text-lg">Add to Cover Mural</h3>
+            <button x-on:click="close()" class="text-gray-400 hover:text-white">✕</button>
+        </div>
+
+        <div class="max-h-60 overflow-y-auto space-y-2 mb-4 pr-2 scrollbar-thin">
+            <template x-for="mural in murals" :key="mural.id">
+                <button
+                    x-on:click="addItemsToMural(mural.id)"
+                    class="w-full text-left px-4 py-3 rounded bg-gray-700 hover:bg-blue-600 hover:text-white transition-colors flex justify-between items-center group">
+                    <span class="font-medium truncate pr-4" x-text="mural.name"></span>
+                    <span class="text-xs text-gray-500 group-hover:text-blue-200">Select</span>
+                </button>
+            </template>
+
+            <div x-show="murals.length === 0 && !loading" class="text-gray-500 text-center py-4 text-sm">
+                No cover murals yet. Create one below.
+            </div>
+
+            <div x-show="loading" class="text-center py-4">
+                 <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500 mx-auto"></div>
+            </div>
+        </div>
+
+        <div class="border-t border-gray-700 pt-4">
+            <label class="block text-xs text-gray-400 uppercase font-bold mb-2">Create New Cover Mural</label>
+            <div class="flex gap-2">
+                <input
+                    type="text"
+                    x-model="newMuralName"
+                    placeholder="e.g. X-Men Gatefold"
+                    class="flex-1 bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+                    x-on:keydown.enter="createAndAdd()"
+                >
+                <button
+                    x-on:click="createAndAdd()"
+                    :disabled="!newMuralName.trim() || saving"
+                    class="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded text-sm font-bold transition-colors">
+                    Create
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function addCoverMuralModal() {
+    return {
+        show: false,
+        loading: false,
+        saving: false,
+        murals: [],
+        newMuralName: '',
+        batchIds: [],
+
+        async open(detail) {
+            this.show = true;
+            this.newMuralName = '';
+            this.batchIds = Array.isArray(detail.ids) ? detail.ids : [];
+
+            if (this.murals.length === 0) {
+                await this.fetchMurals();
+            }
+        },
+
+        close() {
+            this.show = false;
+        },
+
+        async fetchMurals() {
+            this.loading = true;
+            try {
+                const res = await fetch(window.parker.route('cover_murals.list'));
+                if (res.ok) this.murals = await res.json();
+            } catch (e) {
+                console.error(e);
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async addItemsToMural(muralId) {
+            if (this.batchIds.length === 0) {
+                window.parker.showToast('No comics selected', 'error');
+                return;
+            }
+
+            this.saving = true;
+            try {
+                const res = await fetch(window.parker.route('cover_murals.batch_add_items', { mural_id: muralId }), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ comic_ids: this.batchIds })
+                });
+
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Could not add comics to mural');
+
+                window.parker.showToast(data.message, data.added > 0 ? 'success' : 'info');
+                if (window.Alpine.store('batch')) {
+                    window.Alpine.store('batch').clear();
+                }
+                window.location.href = window.parker.route('pages.cover_mural_detail', { mural_id: muralId });
+            } catch (e) {
+                console.error(e);
+                window.parker.showToast(e.message || 'Could not add comics to mural', 'error');
+            } finally {
+                this.saving = false;
+            }
+        },
+
+        async createAndAdd() {
+            if (!this.newMuralName.trim() || this.saving) return;
+
+            this.saving = true;
+            try {
+                const createRes = await fetch(window.parker.route('cover_murals.create'), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: this.newMuralName })
+                });
+                const mural = await createRes.json();
+                if (!createRes.ok) throw new Error(mural.detail || 'Failed to create cover mural');
+
+                this.murals.push(mural);
+                this.saving = false;
+                await this.addItemsToMural(mural.id);
+            } catch (e) {
+                console.error(e);
+                window.parker.showToast(e.message || 'Could not create cover mural', 'error');
+                this.saving = false;
+            }
+        }
+    }
+}
+</script>

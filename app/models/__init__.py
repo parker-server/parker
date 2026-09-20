@@ -16,6 +16,7 @@ from app.models.interactions import UserSeries, UserVolumeFollow, UserLibraryPin
 from app.models.saved_search import SavedSearch
 from app.models.setting import SystemSetting
 from app.models.pull_list import PullList, PullListItem
+from app.models.cover_mural import CoverMural, CoverMuralItem
 from app.models.smart_list import SmartList
 from app.models.activity_log import ActivityLog
 
@@ -34,6 +35,7 @@ __all__ = [
     'SavedSearch', 'SmartList',
     'SystemSetting',
     'PullList', 'PullListItem',
+    'CoverMural', 'CoverMuralItem',
 
 ]
 

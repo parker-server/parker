@@ -99,6 +99,7 @@
                         </div>
                         <a href="{{ url('/collections') }}" class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors">Collections</a>
                         <a href="{{ url('/reading-lists') }}" class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors">Reading Lists</a>
+                        <a href="{{ url('/cover-murals') }}" class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors">Murals</a>
                         <template x-if="isAdmin">
                             <a href="{{ url('/admin') }}" class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors">Admin</a>
                         </template>
@@ -170,6 +171,7 @@
                 <a href="{{ url('/libraries') }}" class="block px-4 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-gray-800 rounded-md">Libraries</a>
                 <a href="{{ url('/collections') }}" class="block px-4 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-gray-800 rounded-md">Collections</a>
                 <a href="{{ url('/reading-lists') }}" class="block px-4 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-gray-800 rounded-md">Reading Lists</a>
+                <a href="{{ url('/cover-murals') }}" class="block px-4 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-gray-800 rounded-md">Murals</a>
                 <template x-if="isAdmin">
                     <a href="{{ url('/admin') }}" class="block px-4 py-2 text-base font-medium text-gray-300 hover:text-white hover:bg-gray-800 rounded-md">Admin</a>
                 </template>
@@ -192,6 +194,7 @@
 
     {% block global_modals %}
     {% include "partials/add_pull_list_modal.html" %}
+    {% include "partials/add_cover_mural_modal.html" %}
     {% include "partials/selection_widget.html" %}
     {% endblock %}
 

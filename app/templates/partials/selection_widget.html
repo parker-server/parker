@@ -23,6 +23,11 @@
         <span>Add to Stack</span>
     </button>
 
+    <button x-on:click="$dispatch('open-add-to-cover-mural', { ids: $store.batch.payload.comic_ids })" class="text-gray-300 hover:text-white flex items-center gap-1">
+        {{ lucide_icon("palette", "h-4 w-4 flex-shrink-0") }}
+        <span>Add to Mural</span>
+    </button>
+
     <button x-on:click="$dispatch('batch-set-read', { read: !$store.batch.allRead })" class="text-gray-300 hover:text-white flex items-center gap-1">
         <span x-text="$store.batch.allRead ? '○' : '✓'"></span>
         <span x-text="$store.batch.allRead ? 'Mark Unread' : 'Mark Read'"></span>

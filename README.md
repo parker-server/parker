@@ -13,7 +13,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
   - Rich metadata (credits, tags, page counts, colors)
   - Admin folder browser for selecting server-side library paths under `COMICS_PATH`
   - Multi-root libraries with explicit add, disable, relocate, and remove controls
-  - Reading Lists, Collections, Story Arcs, Stacks, Smart Lists
+  - Reading Lists, Collections, Story Arcs, Stacks, Smart Lists, Cover Murals
   - CBL-derived reading lists from uploaded files, direct HTTPS imports, and the DieselTech catalog
   - Volume-level `Following` for future issue tracking by run
   - Optional single-volume series shortcut to open the volume detail page directly
@@ -75,6 +75,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
 - **Visuals**
   - Dynamic backgrounds from cover colors
   - Cover Browser gallery mode with lazy-loaded manifests for very large runs
+  - Cover Murals for arranging selected covers into compact source-size composite images with optional spacing, horizontal/vertical overlap, overlap stacking, and export scaling
 
 - **Format Support**
   - Native archive support for `CBZ` and `CBR`
@@ -129,7 +130,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
 ## 📊 Data Model
 
 - Libraries, Series, Volumes, Comics
-- Collections, Reading Lists, Stacks, Smart Lists
+- Collections, Reading Lists, Stacks, Smart Lists, Cover Murals
 - User access control
 - Batch operations (mark read/unread, add to lists)
 
