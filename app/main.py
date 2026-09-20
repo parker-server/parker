@@ -34,7 +34,7 @@ from app.api import libraries, comics, reader, progress, series, volumes, search
 from app.api import reading_lists, collections, cbl_sources, cbl_catalog
 from app.api import auth, users, saved_searches, smart_lists
 from app.api import tasks, jobs, stats, settings as settings_api
-from app.api import pull_lists
+from app.api import pull_lists, cover_murals
 from app.api import reports
 from app.api import migration
 from app.api import batch
@@ -255,6 +255,7 @@ app.include_router(settings_api.router, prefix="/api/settings", tags=["settings"
 app.include_router(saved_searches.router, prefix="/api/saved-searches", tags=["saved-searches"])
 app.include_router(smart_lists.router, prefix="/api/smart-lists", tags=["smart-lists"])
 app.include_router(pull_lists.router, prefix="/api/pull-lists", tags=["pull-lists"])
+app.include_router(cover_murals.router, prefix="/api/cover-murals", tags=["cover-murals"])
 app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"])
 
 # Pure admin routers

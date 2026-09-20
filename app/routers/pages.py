@@ -252,6 +252,18 @@ async def stack_detail(request: Request, list_id: int, user: CurrentUser):
     })
 
 
+@router.get("/cover-murals", response_class=HTMLResponse, name="cover_murals")
+async def cover_murals_index(request: Request, user: CurrentUser):
+    return templates.TemplateResponse(request=request, name="cover_murals/index.html")
+
+
+@router.get("/cover-murals/{mural_id}", response_class=HTMLResponse, name="cover_mural_detail")
+async def cover_mural_detail(request: Request, mural_id: int, user: CurrentUser):
+    return templates.TemplateResponse(request=request, name="cover_murals/detail.html", context={
+        "mural_id": mural_id
+    })
+
+
 @router.get("/pull-lists", name="pull_lists_legacy")
 async def pull_lists_legacy_redirect(request: Request, user: CurrentUser):
     return RedirectResponse(url=request.url_for("stacks"), status_code=307)

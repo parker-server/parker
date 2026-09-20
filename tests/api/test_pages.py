@@ -970,6 +970,33 @@ def test_stack_surfaces_use_lucide_icons(auth_client):
     assert "\u25b6" not in stack_detail
 
 
+def test_cover_mural_surfaces_render_and_use_lucide_icons(auth_client):
+    murals_response = auth_client.get("/cover-murals")
+    mural_detail_response = auth_client.get("/cover-murals/1")
+
+    assert murals_response.status_code == 200
+    assert mural_detail_response.status_code == 200
+    assert "coverMuralIndex()" in murals_response.text
+    assert "coverMuralDetail()" in mural_detail_response.text
+    assert 'data-lucide-icon="palette"' in murals_response.text
+    assert 'data-lucide-icon="download"' in mural_detail_response.text
+    assert 'data-lucide-icon="trash-2"' in mural_detail_response.text
+    assert "M3 6h18" in mural_detail_response.text
+    assert "Delete Cover Mural?" in mural_detail_response.text
+    assert "Editor workspace width" in mural_detail_response.text
+    assert "Source-size exports start from the original cover page size" in mural_detail_response.text
+    assert "Pixels of horizontal overlap between covers in the same row" in mural_detail_response.text
+    assert "Pixels of vertical overlap between rows" in mural_detail_response.text
+    assert "H Stack" in mural_detail_response.text
+    assert "V Stack" in mural_detail_response.text
+    assert "Controls which side paints on top when covers overlap horizontally" in mural_detail_response.text
+    assert "Controls which row paints on top when rows overlap vertically" in mural_detail_response.text
+
+    selection_widget = Path("app/templates/partials/selection_widget.html").read_text(encoding="utf-8")
+    assert "open-add-to-cover-mural" in selection_widget
+    assert 'lucide_icon("palette"' in selection_widget
+
+
 def test_collection_and_reading_list_surfaces_use_lucide_icons(auth_client):
     collections_response = auth_client.get("/collections")
     reading_lists_response = auth_client.get("/reading-lists")

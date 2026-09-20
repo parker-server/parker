@@ -1,0 +1,576 @@
+{% extends "base.html" %}
+{% from "partials/lucide_icon.html" import lucide_icon %}
+
+{% block title %}Cover Mural - Parker{% endblock %}
+
+{% block extra_head %}
+<style>
+    .mural-canvas-shell {
+        min-height: 520px;
+    }
+
+    .mural-canvas {
+        position: relative;
+        background-image:
+            linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px);
+        background-size: var(--grid-size, 24px) var(--grid-size, 24px);
+    }
+
+    .mural-item {
+        position: absolute;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-drag: none;
+    }
+
+    .mural-item img {
+        -webkit-user-drag: none;
+        user-select: none;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div x-data="coverMuralDetail()" class="max-w-7xl mx-auto">
+
+    <div class="mb-6">
+        <div class="flex items-center space-x-2 text-gray-400 mb-4 text-sm">
+            <a :href="window.parker.route('pages.cover_murals')" class="hover:text-white">Cover Murals</a>
+            <span>/</span>
+            <span class="text-white" x-text="mural?.name || 'Loading'"></span>
+        </div>
+
+        <div class="flex flex-col xl:flex-row justify-between items-start xl:items-end gap-4 bg-gray-800 p-6 rounded-lg border border-gray-700 shadow-lg">
+            <div class="min-w-0 w-full xl:w-auto">
+                <input
+                    type="text"
+                    x-model.trim="mural.name"
+                    maxlength="120"
+                    class="w-full xl:w-[36rem] bg-transparent text-4xl font-bold text-white border-b border-transparent focus:border-blue-500 focus:outline-none"
+                    :disabled="!mural"
+                >
+                <input
+                    type="text"
+                    x-model.trim="mural.description"
+                    maxlength="500"
+                    placeholder="Description"
+                    class="mt-3 w-full xl:w-[36rem] bg-transparent text-gray-400 border-b border-transparent focus:border-blue-500 focus:outline-none"
+                    :disabled="!mural"
+                >
+                <div class="mt-4 text-sm text-gray-500">
+                    <span x-text="items.length"></span> covers
+                </div>
+            </div>
+
+            <div class="flex flex-wrap gap-3">
+                <button x-on:click="applyPreset('row')" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-3 rounded-lg transition-colors">Row</button>
+                <button x-on:click="applyPreset('column')" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-3 rounded-lg transition-colors">Column</button>
+                <button x-on:click="applyPreset('grid')" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-3 rounded-lg transition-colors">Grid</button>
+                <button x-on:click="deleteMural()" :disabled="saving || !mural" class="bg-red-900/40 border border-red-800 hover:bg-red-900/60 disabled:opacity-50 text-red-100 px-5 py-3 rounded-lg font-bold transition-colors flex items-center gap-2">
+                    {{ lucide_icon("trash-2", "h-5 w-5 flex-shrink-0") }}
+                    <span>Delete</span>
+                </button>
+                <button x-on:click="saveLayout()" :disabled="saving || !mural" class="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-5 py-3 rounded-lg font-bold transition-colors flex items-center gap-2">
+                    {{ lucide_icon("save", "h-5 w-5 flex-shrink-0") }}
+                    <span x-text="saving ? 'Saving' : 'Save'"></span>
+                </button>
+                <button x-on:click="exportMural()" :disabled="saving || items.length === 0" class="bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white px-5 py-3 rounded-lg font-bold transition-colors flex items-center gap-2">
+                    {{ lucide_icon("download", "h-5 w-5 flex-shrink-0") }}
+                    <span>Export</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div x-show="loading" class="py-12 text-center">
+        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
+    </div>
+
+    <div x-show="!loading" class="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-6">
+        <div class="mural-canvas-shell bg-gray-950 border border-gray-800 rounded-lg overflow-auto p-6">
+            <div
+                x-ref="canvas"
+                class="mural-canvas shadow-2xl"
+                :style="canvasStyle()"
+                x-on:pointermove="dragItem($event)"
+                x-on:pointerup="endDrag($event)"
+                x-on:pointercancel="endDrag($event)"
+                x-on:click.self="selectedItemId = null">
+
+                <template x-for="item in items" :key="item.item_id">
+                    <div
+                        class="mural-item rounded overflow-hidden border bg-gray-900 shadow-lg"
+                        :class="selectedItemId === item.item_id ? 'border-blue-400 ring-2 ring-blue-400/60' : 'border-gray-700 hover:border-blue-300'"
+                        :style="itemStyle(item)"
+                        x-on:pointerdown="startDrag($event, item)"
+                        x-on:click.stop="selectItem(item)">
+                        <img :src="window.parker.url(item.thumbnail_path)" class="w-full h-full pointer-events-none" :style="imageStyle(item)" :alt="item.label">
+                        <div class="absolute left-0 right-0 bottom-0 bg-black/70 px-2 py-1 text-[11px] text-white truncate" x-text="item.label"></div>
+                    </div>
+                </template>
+
+                <div x-show="items.length === 0" class="absolute inset-0 flex items-center justify-center text-gray-500">
+                    <div class="text-center">
+                        {{ lucide_icon("palette", "mx-auto mb-4 h-14 w-14 text-gray-700") }}
+                        <div>No covers yet</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <aside class="space-y-4">
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-5">
+                <h2 class="text-white font-bold mb-4">Canvas</h2>
+                <div class="grid grid-cols-2 gap-3">
+                    <label class="block">
+                        <span class="block text-xs text-gray-400 uppercase font-bold mb-2">Width</span>
+                        <input type="number" min="240" max="12000" step="24" x-model.number="mural.canvas_width" title="Editor workspace width. Compact source-size export ignores unused canvas space." aria-label="Canvas width" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500">
+                    </label>
+                    <label class="block">
+                        <span class="block text-xs text-gray-400 uppercase font-bold mb-2">Height</span>
+                        <input type="number" min="240" max="12000" step="24" x-model.number="mural.canvas_height" title="Editor workspace height. Compact source-size export crops to the covers." aria-label="Canvas height" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500">
+                    </label>
+                    <label class="block">
+                        <span class="block text-xs text-gray-400 uppercase font-bold mb-2">Grid</span>
+                        <input type="number" min="4" max="200" step="4" x-model.number="mural.grid_size" title="Snap size for dragging and the base size used by Row, Column, and Grid presets." aria-label="Grid size" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500">
+                    </label>
+                    <label class="block">
+                        <span class="block text-xs text-gray-400 uppercase font-bold mb-2">Color</span>
+                        <input type="color" x-model="mural.background_color" title="Background used behind transparent areas and preserve-canvas exports." aria-label="Background color" class="w-full h-[42px] bg-gray-900 border border-gray-600 rounded px-2 py-1">
+                    </label>
+                </div>
+            </div>
+
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-5">
+                <h2 class="text-white font-bold mb-4">Export</h2>
+                <div class="grid grid-cols-2 gap-3">
+                    <label class="block">
+                        <span class="block text-xs text-gray-400 uppercase font-bold mb-2">Scale</span>
+                        <input type="number" min="1" max="8" step="0.5" x-model.number="exportScale" title="Multiplier for export pixels. Source-size exports start from the original cover page size." aria-label="Export scale" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500">
+                    </label>
+                    <label class="block">
+                        <span class="block text-xs text-gray-400 uppercase font-bold mb-2">Spacing</span>
+                        <input type="number" min="0" max="1000" step="1" x-model.number="exportSpacing" title="Base pixels inserted between covers in compact export before overlap is applied." aria-label="Export spacing" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500">
+                    </label>
+                    <label class="block">
+                        <span class="block text-xs text-gray-400 uppercase font-bold mb-2">H Overlap</span>
+                        <input type="number" min="0" max="100" step="1" x-model.number="exportHorizontalBleed" title="Pixels of horizontal overlap between covers in the same row." aria-label="Export horizontal overlap" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500">
+                    </label>
+                    <label class="block">
+                        <span class="block text-xs text-gray-400 uppercase font-bold mb-2">V Overlap</span>
+                        <input type="number" min="0" max="100" step="1" x-model.number="exportVerticalBleed" title="Pixels of vertical overlap between rows; useful when a lower row needs to tuck upward." aria-label="Export vertical overlap" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500">
+                    </label>
+                    <label class="block">
+                        <span class="block text-xs text-gray-400 uppercase font-bold mb-2">H Stack</span>
+                        <select x-model="horizontalStack" title="Controls which side paints on top when covers overlap horizontally." aria-label="Horizontal overlap stacking" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500">
+                            <option value="right-over-left">Right over left</option>
+                            <option value="left-over-right">Left over right</option>
+                        </select>
+                    </label>
+                    <label class="block">
+                        <span class="block text-xs text-gray-400 uppercase font-bold mb-2">V Stack</span>
+                        <select x-model="verticalStack" title="Controls which row paints on top when rows overlap vertically." aria-label="Vertical overlap stacking" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500">
+                            <option value="lower-over-upper">Lower over upper</option>
+                            <option value="upper-over-lower">Upper over lower</option>
+                        </select>
+                    </label>
+                    <label class="col-span-2 flex items-center gap-3 rounded border border-gray-700 bg-gray-900 px-3 py-2" title="Exports only the arranged cover content instead of the full editor canvas.">
+                        <input type="checkbox" x-model="compactExport" class="rounded border-gray-600 bg-gray-950 text-blue-600 focus:ring-blue-500">
+                        <span class="text-sm font-medium text-gray-200">Compact export</span>
+                    </label>
+                    <label class="col-span-2 flex items-center gap-3 rounded border border-gray-700 bg-gray-900 px-3 py-2" title="Uses the original cover page dimensions for compact export. Turn off to export at the editor item sizes.">
+                        <input type="checkbox" x-model="sourceExport" class="rounded border-gray-600 bg-gray-950 text-blue-600 focus:ring-blue-500">
+                        <span class="text-sm font-medium text-gray-200">Source size</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-5">
+                <h2 class="text-white font-bold mb-4">Selected Cover</h2>
+
+                <template x-if="!selectedItem">
+                    <div class="text-gray-500 text-sm">Select a cover on the canvas.</div>
+                </template>
+
+                <template x-if="selectedItem">
+                    <div class="space-y-4">
+                        <div>
+                            <div class="text-xs text-blue-400 mb-1" x-text="selectedItem.series_name"></div>
+                            <div class="font-bold text-white truncate">
+                                <span x-text="`#${selectedItem.number}`"></span>
+                                <span x-show="selectedItem.title" x-text="` - ${selectedItem.title}`" class="text-gray-400 font-normal"></span>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3">
+                            <label class="block">
+                                <span class="block text-xs text-gray-400 uppercase font-bold mb-2">X</span>
+                                <input type="number" min="0" :step="mural.grid_size" x-model.number="selectedItem.x" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500">
+                            </label>
+                            <label class="block">
+                                <span class="block text-xs text-gray-400 uppercase font-bold mb-2">Y</span>
+                                <input type="number" min="0" :step="mural.grid_size" x-model.number="selectedItem.y" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500">
+                            </label>
+                            <label class="block">
+                                <span class="block text-xs text-gray-400 uppercase font-bold mb-2">Width</span>
+                                <input type="number" min="24" max="6000" :step="mural.grid_size" x-model.number="selectedItem.width" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500">
+                            </label>
+                            <label class="block">
+                                <span class="block text-xs text-gray-400 uppercase font-bold mb-2">Height</span>
+                                <input type="number" min="24" max="6000" :step="mural.grid_size" x-model.number="selectedItem.height" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500">
+                            </label>
+                        </div>
+
+                        <label class="block">
+                            <span class="block text-xs text-gray-400 uppercase font-bold mb-2">Rotation</span>
+                            <input type="number" min="-360" max="360" step="1" x-model.number="selectedItem.rotation" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500">
+                        </label>
+
+                        <label class="block">
+                            <span class="block text-xs text-gray-400 uppercase font-bold mb-2">Fit</span>
+                            <select x-model="selectedItem.fit_mode" title="Controls editor preview and layout-sized exports. Source-size compact export uses the original cover shape." aria-label="Selected cover fit mode" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500">
+                                <option value="contain">Contain</option>
+                                <option value="cover">Cover</option>
+                                <option value="stretch">Stretch</option>
+                            </select>
+                        </label>
+
+                        <div class="flex gap-2">
+                            <button x-on:click="bringForward()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded transition-colors">Forward</button>
+                            <button x-on:click="sendBackward()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded transition-colors">Backward</button>
+                        </div>
+
+                        <button x-on:click="removeSelectedItem()" class="w-full bg-red-900/40 border border-red-800 hover:bg-red-900/60 text-red-100 px-3 py-2 rounded transition-colors">
+                            Remove Cover
+                        </button>
+                    </div>
+                </template>
+            </div>
+        </aside>
+    </div>
+</div>
+
+<script>
+function coverMuralDetail() {
+    return {
+        muralId: {{ mural_id }},
+        mural: {
+            name: '',
+            description: '',
+            canvas_width: 1200,
+            canvas_height: 900,
+            grid_size: 24,
+            background_color: '#111827'
+        },
+        items: [],
+        selectedItemId: null,
+        drag: null,
+        loading: true,
+        saving: false,
+        exportSpacing: 0,
+        exportHorizontalBleed: 0,
+        exportVerticalBleed: 0,
+        horizontalStack: 'right-over-left',
+        verticalStack: 'lower-over-upper',
+        exportScale: 1,
+        compactExport: true,
+        sourceExport: true,
+
+        async init() {
+            await this.loadMural();
+        },
+
+        get selectedItem() {
+            return this.items.find(item => item.item_id === this.selectedItemId) || null;
+        },
+
+        async loadMural() {
+            this.loading = true;
+            try {
+                const res = await fetch(window.parker.route('cover_murals.detail', { mural_id: this.muralId }));
+                if (!res.ok) throw new Error('Could not load cover mural');
+
+                const data = await res.json();
+                this.mural = data;
+                this.items = data.items || [];
+                document.title = `${this.mural.name} - Parker`;
+            } catch (e) {
+                console.error(e);
+                window.parker.showToast(e.message || 'Could not load cover mural', 'error');
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        canvasStyle() {
+            if (!this.mural) return '';
+            return [
+                `width: ${this.mural.canvas_width}px`,
+                `height: ${this.mural.canvas_height}px`,
+                `background-color: ${this.mural.background_color}`,
+                `--grid-size: ${this.mural.grid_size}px`
+            ].join(';');
+        },
+
+        itemStyle(item) {
+            return [
+                `left: ${item.x}px`,
+                `top: ${item.y}px`,
+                `width: ${item.width}px`,
+                `height: ${item.height}px`,
+                `z-index: ${item.z_index}`,
+                `transform: rotate(${item.rotation || 0}deg)`
+            ].join(';');
+        },
+
+        imageStyle(item) {
+            if (item.fit_mode === 'cover') return 'object-fit: cover';
+            if (item.fit_mode === 'stretch') return 'object-fit: fill';
+            return 'object-fit: contain';
+        },
+
+        selectItem(item) {
+            this.selectedItemId = item.item_id;
+        },
+
+        gridSize() {
+            return Math.max(Number(this.mural?.grid_size) || 1, 1);
+        },
+
+        spacingSize() {
+            return Math.min(Math.max(Number(this.exportSpacing) || 0, 0), 1000);
+        },
+
+        bleedSize(value) {
+            return Math.min(Math.max(Number(value) || 0, 0), 100);
+        },
+
+        horizontalBleedSize() {
+            return this.bleedSize(this.exportHorizontalBleed);
+        },
+
+        verticalBleedSize() {
+            return this.bleedSize(this.exportVerticalBleed);
+        },
+
+        horizontalStackMode() {
+            return this.horizontalStack === 'left-over-right' ? 'left-over-right' : 'right-over-left';
+        },
+
+        verticalStackMode() {
+            return this.verticalStack === 'upper-over-lower' ? 'upper-over-lower' : 'lower-over-upper';
+        },
+
+        scaleSize() {
+            return Math.min(Math.max(Number(this.exportScale) || 1, 1), 8);
+        },
+
+        snap(value) {
+            const grid = this.gridSize();
+            return Math.max(0, Math.round(Number(value || 0) / grid) * grid);
+        },
+
+        startDrag(event, item) {
+            if (event.button !== 0) return;
+            this.selectItem(item);
+            this.drag = {
+                itemId: item.item_id,
+                pointerId: event.pointerId,
+                startX: event.clientX,
+                startY: event.clientY,
+                itemX: item.x,
+                itemY: item.y
+            };
+            event.currentTarget.setPointerCapture(event.pointerId);
+        },
+
+        dragItem(event) {
+            if (!this.drag) return;
+
+            const item = this.items.find(candidate => candidate.item_id === this.drag.itemId);
+            if (!item) return;
+
+            item.x = this.snap(this.drag.itemX + event.clientX - this.drag.startX);
+            item.y = this.snap(this.drag.itemY + event.clientY - this.drag.startY);
+        },
+
+        endDrag(event) {
+            if (!this.drag) return;
+            const active = this.drag;
+            this.drag = null;
+
+            if (event.target && typeof event.target.releasePointerCapture === 'function') {
+                try { event.target.releasePointerCapture(active.pointerId); } catch (_) {}
+            }
+        },
+
+        applyPreset(mode) {
+            if (!this.mural || this.items.length === 0) return;
+
+            const grid = this.gridSize();
+            const width = grid * 8;
+            const height = grid * 12;
+            const gap = this.spacingSize();
+            const columns = mode === 'row'
+                ? this.items.length
+                : mode === 'column'
+                    ? 1
+                    : Math.max(1, Math.floor((this.mural.canvas_width + gap) / (width + gap)));
+
+            this.items.forEach((item, index) => {
+                item.width = width;
+                item.height = height;
+                item.rotation = 0;
+                item.x = (index % columns) * (width + gap);
+                item.y = Math.floor(index / columns) * (height + gap);
+                item.z_index = index;
+            });
+
+            const rows = Math.ceil(this.items.length / columns);
+            const usedColumns = Math.min(this.items.length, columns);
+            const neededWidth = usedColumns * width + Math.max(usedColumns - 1, 0) * gap;
+            const neededHeight = rows * height + Math.max(rows - 1, 0) * gap;
+            this.mural.canvas_width = Math.max(this.mural.canvas_width, neededWidth);
+            this.mural.canvas_height = Math.max(this.mural.canvas_height, neededHeight);
+        },
+
+        normalizeZIndexes() {
+            this.items
+                .sort((a, b) => a.z_index - b.z_index || a.item_id - b.item_id)
+                .forEach((item, index) => { item.z_index = index; });
+        },
+
+        bringForward() {
+            const item = this.selectedItem;
+            if (!item) return;
+            item.z_index = Math.max(...this.items.map(candidate => candidate.z_index)) + 1;
+            this.normalizeZIndexes();
+        },
+
+        sendBackward() {
+            const item = this.selectedItem;
+            if (!item) return;
+            item.z_index = -1;
+            this.normalizeZIndexes();
+        },
+
+        layoutPayload() {
+            return {
+                name: this.mural.name,
+                description: this.mural.description || null,
+                canvas_width: this.mural.canvas_width,
+                canvas_height: this.mural.canvas_height,
+                grid_size: this.mural.grid_size,
+                background_color: this.mural.background_color,
+                items: this.items.map(item => ({
+                    item_id: item.item_id,
+                    x: Math.max(0, Number(item.x) || 0),
+                    y: Math.max(0, Number(item.y) || 0),
+                    width: Math.max(24, Number(item.width) || 24),
+                    height: Math.max(24, Number(item.height) || 24),
+                    rotation: Number(item.rotation) || 0,
+                    z_index: Number(item.z_index) || 0,
+                    fit_mode: item.fit_mode || 'contain'
+                }))
+            };
+        },
+
+        async saveLayout() {
+            if (!this.mural || this.saving) return false;
+
+            this.saving = true;
+            try {
+                const res = await fetch(window.parker.route('cover_murals.save_layout', { mural_id: this.muralId }), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(this.layoutPayload())
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Could not save mural');
+
+                this.mural = data;
+                this.items = data.items || [];
+                window.parker.showToast('Cover mural saved', 'success');
+                return true;
+            } catch (e) {
+                console.error(e);
+                window.parker.showToast(e.message || 'Could not save mural', 'error');
+                return false;
+            } finally {
+                this.saving = false;
+            }
+        },
+
+        async exportMural() {
+            const saved = await this.saveLayout();
+            if (!saved) return;
+            const params = new URLSearchParams({
+                spacing: String(this.spacingSize()),
+                horizontal_bleed: String(this.horizontalBleedSize()),
+                vertical_bleed: String(this.verticalBleedSize()),
+                horizontal_stack: this.horizontalStackMode(),
+                vertical_stack: this.verticalStackMode(),
+                compact: this.compactExport ? 'true' : 'false',
+                scale: String(this.scaleSize()),
+                source: this.sourceExport ? 'true' : 'false'
+            });
+            window.location.href = `${window.parker.route('cover_murals.export', { mural_id: this.muralId })}?${params}`;
+        },
+
+        async deleteMural() {
+            if (!this.mural || this.saving) return;
+
+            const confirmed = await window.parker.dialog.confirm(
+                'Delete Cover Mural?',
+                'Delete this mural and remove all covers from it? This cannot be undone.',
+                { isDestructive: true, confirmText: 'Delete' }
+            );
+            if (!confirmed) return;
+
+            try {
+                const res = await fetch(window.parker.route('cover_murals.delete', { mural_id: this.muralId }), {
+                    method: 'DELETE'
+                });
+                if (!res.ok) throw new Error('Could not delete cover mural');
+
+                window.parker.showToast('Cover mural deleted', 'success');
+                window.location.href = window.parker.route('pages.cover_murals');
+            } catch (e) {
+                console.error(e);
+                window.parker.showToast(e.message || 'Could not delete cover mural', 'error');
+            }
+        },
+
+        async removeSelectedItem() {
+            const item = this.selectedItem;
+            if (!item) return;
+
+            const confirmed = await window.parker.dialog.confirm(
+                'Remove Cover?',
+                'Remove this cover from the mural?',
+                { isDestructive: true, confirmText: 'Remove' }
+            );
+            if (!confirmed) return;
+
+            try {
+                const res = await fetch(window.parker.route('cover_murals.remove_item', {
+                    mural_id: this.muralId,
+                    item_id: item.item_id
+                }), { method: 'DELETE' });
+
+                if (!res.ok) throw new Error('Could not remove cover');
+
+                this.items = this.items.filter(candidate => candidate.item_id !== item.item_id);
+                this.selectedItemId = null;
+                this.normalizeZIndexes();
+                window.parker.showToast('Cover removed', 'success');
+            } catch (e) {
+                console.error(e);
+                window.parker.showToast(e.message || 'Could not remove cover', 'error');
+            }
+        }
+    }
+}
+</script>
+{% endblock %}
