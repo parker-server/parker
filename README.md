@@ -23,6 +23,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
 - **User System**
   - Multi‑library access with row‑level security
   - Age-rating-aware access control
+  - Admin-enforced password changes for accounts created or reset with temporary passwords
   - Anonymous Social Insights participation is enabled for new users by default, with an account-level opt-out
   - Avatar uploads
   - Hybrid authentication (JWT + secure cookies)

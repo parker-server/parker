@@ -60,6 +60,12 @@ def get_current_user_opds(
             headers={"WWW-Authenticate": OPDS_AUTH_CHALLENGE},
         )
 
+    if user.must_change_password:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Password change required",
+        )
+
     return user
 
 

@@ -48,6 +48,7 @@ class UserCreateRequest(UserBase):
     email: str
     password: str
     is_superuser: bool = False
+    must_change_password: bool = True
     library_ids: List[int] = Field(default_factory=list)
     max_age_rating: Optional[str] = None
     allow_unknown_age_ratings: bool = False
@@ -57,6 +58,7 @@ class UserUpdateRequest(UserBase):
     email: str
     is_superuser: bool | None = None
     is_active: bool | None = None
+    must_change_password: bool | None = None
     library_ids: List[int] | None = None
     max_age_rating: Optional[str] = None
     allow_unknown_age_ratings: Optional[bool] = None
@@ -67,6 +69,7 @@ class UserListResponse(BaseModel):
     email: str
     is_superuser: bool
     is_active: bool
+    must_change_password: bool
     last_login: Optional[datetime]
     created_at: datetime
     # We don't necessarily need to return the full library objects in the list view,
@@ -270,11 +273,15 @@ async def update_password(
     if not verify_password(payload.current_password, current_user.hashed_password):
         raise HTTPException(status_code=400, detail="Incorrect current password")
 
+    if verify_password(payload.new_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="New password must be different from the current password")
+
     # 2. Hash the new password
     new_hash = get_password_hash(payload.new_password)
 
     # 3. Save
     current_user.hashed_password = new_hash
+    current_user.must_change_password = False
     db.add(current_user)
     db.commit()
 
@@ -322,6 +329,7 @@ async def list_users(
             "username": u.username,
             "is_active": u.is_active,
             "is_superuser": u.is_superuser,
+            "must_change_password": u.must_change_password,
             "email": u.email,
             "created_at": u.created_at,
             "last_login": u.last_login,
@@ -361,6 +369,7 @@ async def create_user(
         hashed_password=get_password_hash(user_in.password),
         is_superuser=user_in.is_superuser,
         is_active=True,
+        must_change_password=user_in.must_change_password,
         accessible_libraries = libraries,
         max_age_rating=None if user_in.is_superuser else user_in.max_age_rating,
         allow_unknown_age_ratings=False if user_in.is_superuser else user_in.allow_unknown_age_ratings
@@ -395,6 +404,8 @@ async def update_user(
         user.is_superuser = updates.is_superuser
     if updates.is_active is not None:
         user.is_active = updates.is_active
+    if updates.must_change_password is not None:
+        user.must_change_password = updates.must_change_password
 
     # Update Libraries (with superuser checks)
     if user.is_superuser:

@@ -132,6 +132,7 @@ def ensure_initial_admin(db: Session, *, app_settings: AdminBootstrapSettings) -
         hashed_password=get_password_hash(password),
         is_superuser=True,
         is_active=True,
+        must_change_password=False,
     )
     db.add(user)
 

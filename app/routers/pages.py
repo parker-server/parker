@@ -285,6 +285,10 @@ async def following_page(request: Request, user: CurrentUser):
 async def settings_page(request: Request, user: CurrentUser):
     return templates.TemplateResponse(request=request, name="user/settings.html")
 
+@router.get("/user/change-password", response_class=HTMLResponse, name="force_password_change")
+async def force_password_change_page(request: Request, user: CurrentUser):
+    return templates.TemplateResponse(request=request, name="user/force_password_change.html")
+
 @router.get("/user/year-in-review", response_class=HTMLResponse, name="user_year_in_review")
 async def year_in_review_page(request: Request, user: CurrentUser):
     return templates.TemplateResponse(request=request, name="user/year_in_review.html")

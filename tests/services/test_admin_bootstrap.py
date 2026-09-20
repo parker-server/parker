@@ -22,6 +22,7 @@ def test_ensure_initial_admin_creates_default_admin_when_no_superuser_exists(db)
     assert user.email == "admin@example.com"
     assert user.is_superuser is True
     assert user.is_active is True
+    assert user.must_change_password is False
     assert verify_password("unique-admin-password-123", user.hashed_password)
 
 
