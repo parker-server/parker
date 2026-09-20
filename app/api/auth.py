@@ -22,7 +22,7 @@ class UserCreate(BaseModel):
     email: str
 
 
-class Token(BaseModel):
+class AuthTokenResponse(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str
@@ -40,7 +40,7 @@ class UserResponse(BaseModel):
 class RefreshRequest(BaseModel):
     refresh_token: str
 
-@router.post("/token", response_model=Token, name="login_for_access_token")
+@router.post("/token", response_model=AuthTokenResponse, name="login_for_access_token")
 async def login_for_access_token(
         form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
         db: SessionDep,
@@ -99,7 +99,7 @@ async def login_for_access_token(
     }
 
 
-@router.post("/refresh", response_model=Token)
+@router.post("/refresh", response_model=AuthTokenResponse)
 async def refresh_access_token(req: RefreshRequest, db: SessionDep):
     """
     Use a valid Refresh Token to get a new Access Token.
