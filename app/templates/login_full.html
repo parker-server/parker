@@ -245,10 +245,17 @@ function loginCycler() {
                 // 1. Check for 'next' param in the URL (e.g. /login?next=/settings)
                 const params = new URLSearchParams(window.location.search);
                 const nextUrl = params.get('next');
+                const validNextUrl = nextUrl && nextUrl.startsWith('/') && !nextUrl.startsWith('//');
+
+                if (data.must_change_password) {
+                    const nextParam = validNextUrl ? `?next=${encodeURIComponent(nextUrl)}` : '';
+                    window.location.href = window.parker.url(`/user/change-password${nextParam}`);
+                    return;
+                }
 
                 // 2. Validate it (Security: Prevent Open Redirects to external sites)
                 // We only allow relative paths that start with "/"
-                if (nextUrl && nextUrl.startsWith('/') && !nextUrl.startsWith('//')) {
+                if (validNextUrl) {
                     window.location.href = window.parker.url(nextUrl);
                 } else {
                     // Default Fallback

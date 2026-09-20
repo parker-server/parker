@@ -8,6 +8,7 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import HTTPException
+from jose import JWTError, jwt
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -21,6 +22,7 @@ from app.database import engine, Base
 from app.config import settings, debug_print_settings
 from app.database import SessionLocal
 from app.logging import log_config
+from app.models.user import User
 from app.services.admin_bootstrap import AdminBootstrapError, ensure_initial_admin
 from app.services.settings_service import SettingsService
 from app.services.scheduler import scheduler_service
@@ -173,6 +175,86 @@ app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=settings.trusted_proxie
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+PASSWORD_CHANGE_REQUIRED_DETAIL = "Password change required"
+FORCE_PASSWORD_CHANGE_PATH = "/user/change-password"
+PASSWORD_CHANGE_EXEMPT_PATHS = {
+    "/api/auth/token",
+    "/api/auth/refresh",
+    "/api/auth/me",
+    "/api/users/me/password",
+    FORCE_PASSWORD_CHANGE_PATH,
+    "/health",
+}
+
+
+def _normalized_request_path(request: Request) -> str:
+    path = request.url.path or "/"
+    base_url = settings.clean_base_url.rstrip("/")
+    if base_url and path.startswith(f"{base_url}/"):
+        return path[len(base_url):] or "/"
+    return path
+
+
+def _is_password_change_exempt_path(path: str) -> bool:
+    return (
+        path in PASSWORD_CHANGE_EXEMPT_PATHS
+        or path.startswith("/static/")
+        or path == "/favicon.ico"
+    )
+
+
+def _request_access_token(request: Request) -> str | None:
+    auth_header = request.headers.get("authorization") or ""
+    scheme, _, token = auth_header.partition(" ")
+    if scheme.lower() == "bearer" and token:
+        return token.strip()
+    return request.cookies.get("access_token")
+
+
+@app.middleware("http")
+async def enforce_required_password_change(request: Request, call_next):
+    path = _normalized_request_path(request)
+    if request.method == "OPTIONS" or _is_password_change_exempt_path(path):
+        return await call_next(request)
+
+    token = _request_access_token(request)
+    if not token:
+        return await call_next(request)
+
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        username = payload.get("sub")
+    except JWTError:
+        return await call_next(request)
+
+    if not username:
+        return await call_next(request)
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.username == username).first()
+        must_change_password = bool(user and user.must_change_password)
+    finally:
+        db.close()
+
+    if not must_change_password:
+        return await call_next(request)
+
+    if path.startswith(("/api", "/opds")):
+        return JSONResponse(
+            status_code=403,
+            content={"detail": PASSWORD_CHANGE_REQUIRED_DETAIL},
+        )
+
+    target_url = f"{settings.clean_base_url}{FORCE_PASSWORD_CHANGE_PATH}"
+    if path != "/login":
+        return_url = get_redirect_url(path, request.url.query)
+        if return_url:
+            target_url = f"{target_url}?next={return_url}"
+
+    return RedirectResponse(url=target_url)
 
 
 

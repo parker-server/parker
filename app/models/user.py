@@ -19,6 +19,7 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     username = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
+    must_change_password = Column(Boolean, default=False, nullable=False)
     avatar_path = Column(String, nullable=True)
     social_insights_enabled = Column("share_progress_enabled", Boolean, default=True)
 

@@ -103,6 +103,16 @@ def test_update_password_success_and_incorrect_current(auth_client, db, normal_u
     assert bad.status_code == 400
     assert bad.json()["detail"] == "Incorrect current password"
 
+    same = auth_client.put(
+        "/api/users/me/password",
+        json={"current_password": "test1234", "new_password": "test1234"},
+    )
+    assert same.status_code == 400
+    assert same.json()["detail"] == "New password must be different from the current password"
+
+    normal_user.must_change_password = True
+    db.commit()
+
     good = auth_client.put(
         "/api/users/me/password",
         json={"current_password": "test1234", "new_password": "newpassword1"},
@@ -111,6 +121,7 @@ def test_update_password_success_and_incorrect_current(auth_client, db, normal_u
 
     db.refresh(normal_user)
     assert verify_password("newpassword1", normal_user.hashed_password)
+    assert normal_user.must_change_password is False
 
 
 def test_year_in_review_uses_default_and_explicit_year(auth_client):
@@ -149,6 +160,7 @@ def test_admin_create_user_and_duplicate_username(admin_client, db):
     assert create_response.status_code == 200
     created = create_response.json()
     assert created["username"] == "ReaderOne"
+    assert created["must_change_password"] is True
     assert created["accessible_library_ids"] == [lib.id]
     assert created["max_age_rating"] == "Teen"
     assert created["allow_unknown_age_ratings"] is True
@@ -191,6 +203,7 @@ def test_admin_list_users_includes_library_ids(admin_client, db):
         hashed_password=get_password_hash("password123"),
         is_superuser=False,
         is_active=True,
+        must_change_password=True,
         accessible_libraries=[lib],
     )
     db.add(user)
@@ -204,6 +217,7 @@ def test_admin_list_users_includes_library_ids(admin_client, db):
 
     listed = next(item for item in payload["items"] if item["username"] == "list-user")
     assert listed["accessible_library_ids"] == [lib.id]
+    assert listed["must_change_password"] is True
 
 
 def test_admin_update_user_handles_normal_and_superuser_modes(admin_client, db):
@@ -229,6 +243,7 @@ def test_admin_update_user_handles_normal_and_superuser_modes(admin_client, db):
             "password": "updatedpass123",
             "is_superuser": False,
             "is_active": False,
+            "must_change_password": True,
             "library_ids": [lib_a.id],
             "max_age_rating": "Teen",
             "allow_unknown_age_ratings": True,
@@ -241,6 +256,7 @@ def test_admin_update_user_handles_normal_and_superuser_modes(admin_client, db):
     assert user.email == "updated@example.com"
     assert user.is_active is False
     assert user.is_superuser is False
+    assert user.must_change_password is True
     assert verify_password("updatedpass123", user.hashed_password)
     assert [l.id for l in user.accessible_libraries] == [lib_a.id]
     assert user.max_age_rating == "Teen"
@@ -251,6 +267,7 @@ def test_admin_update_user_handles_normal_and_superuser_modes(admin_client, db):
         json={
             "email": "super@example.com",
             "is_superuser": True,
+            "must_change_password": False,
             "library_ids": [lib_b.id],
             "max_age_rating": "Mature 17+",
             "allow_unknown_age_ratings": True,
@@ -261,6 +278,7 @@ def test_admin_update_user_handles_normal_and_superuser_modes(admin_client, db):
 
     db.refresh(user)
     assert user.is_superuser is True
+    assert user.must_change_password is False
     assert user.max_age_rating is None
     assert user.allow_unknown_age_ratings is False
     assert user.accessible_libraries == []

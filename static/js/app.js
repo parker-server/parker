@@ -34,6 +34,14 @@
         return path;
     };
 
+    const appRelativePath = (path) => {
+        const base = window.parker?.config?.baseUrl || '';
+        if (base && path.startsWith(`${base}/`)) {
+            return path.slice(base.length) || '/';
+        }
+        return path;
+    };
+
     const getJwtPayload = (token) => {
         if (!token || token.split('.').length < 2) return null;
 
@@ -236,6 +244,28 @@
         window.location.href = anchor.href;
     };
 
+    const redirectForRequiredPasswordChange = async (response) => {
+        if (!response || response.status !== 403 || window.location.pathname.includes('/user/change-password')) {
+            return false;
+        }
+
+        try {
+            const payload = await response.clone().json();
+            if (payload?.detail !== 'Password change required') {
+                return false;
+            }
+        } catch (error) {
+            return false;
+        }
+
+        const currentPath = `${appRelativePath(window.location.pathname)}${window.location.search}`;
+        const nextParam = currentPath && currentPath !== '/login'
+            ? `?next=${encodeURIComponent(currentPath)}`
+            : '';
+        window.location.href = appUrl(`/user/change-password${nextParam}`);
+        return true;
+    };
+
     window.parker = {
         ...(window.parker || {}),
         auth: {
@@ -270,6 +300,10 @@
 
         try {
             const response = await originalFetch(url, options);
+
+            if (await redirectForRequiredPasswordChange(response)) {
+                return response;
+            }
 
             // Handle Unauthorized (401)
             if (response.status === 401) {

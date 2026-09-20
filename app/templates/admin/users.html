@@ -35,6 +35,7 @@
                             <span x-text="user.username"></span>
                             <div class="text-xs text-gray-500 font-normal" x-text="user.email"></div>
                             <div x-show="!user.is_active" class="inline-block bg-red-900/50 text-red-200 text-[10px] px-1.5 rounded border border-red-800 mt-1">Inactive</div>
+                            <div x-show="user.must_change_password" class="inline-block bg-amber-900/50 text-amber-100 text-[10px] px-1.5 rounded border border-amber-800 mt-1">Password change required</div>
                         </td>
                         <td class="px-6 py-4">
                             <span x-show="user.is_superuser" class="bg-purple-900/50 text-purple-200 text-xs px-2 py-1 rounded border border-purple-800">Admin</span>
@@ -84,6 +85,14 @@
                                 <label for="new_is_admin" class="text-gray-300 select-none font-medium">Administrator</label>
                             </div>
                             <p class="text-xs text-gray-500 mt-1 ml-6">Grants full access to all libraries and settings.</p>
+                        </div>
+
+                        <div class="bg-gray-900/50 p-3 rounded border border-gray-700/50">
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" x-model="newUser.must_change_password" id="new_must_change_password" class="rounded bg-gray-700 border-gray-600 text-blue-600 focus:ring-blue-500 h-4 w-4">
+                                <label for="new_must_change_password" class="text-gray-300 select-none font-medium">Require password change on first login</label>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-1 ml-6">Use this when assigning a temporary password.</p>
                         </div>
                     </div>
 
@@ -162,6 +171,10 @@
                                 <input type="checkbox" x-model="editingUser.is_superuser" id="edit_is_admin" class="rounded bg-gray-700 border-gray-600 text-blue-600 focus:ring-blue-500" :disabled="editingUser.id === 1" :class="editingUser.id === 1 ? 'opacity-50' : ''">
                                 <label for="edit_is_admin" class="text-gray-300 select-none">Administrator</label>
                             </div>
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" x-model="editingUser.must_change_password" id="edit_must_change_password" class="rounded bg-gray-700 border-gray-600 text-blue-600 focus:ring-blue-500">
+                                <label for="edit_must_change_password" class="text-gray-300 select-none">Require password change on next login</label>
+                            </div>
                         </div>
                     </div>
 
@@ -234,11 +247,11 @@ function userManager() {
         // Data Models
         newUser: {
             username: '', email: '', password: '', is_superuser: false, library_ids: [],
-            max_age_rating: '', allow_unknown_age_ratings: false
+            must_change_password: true, max_age_rating: '', allow_unknown_age_ratings: false
         },
         editingUser: {
             id: null, username: '', password: '', email: '', is_superuser: false, is_active: true, library_ids: [],
-            max_age_rating: '', allow_unknown_age_ratings: false
+            must_change_password: false, max_age_rating: '', allow_unknown_age_ratings: false
         },
 
         // Pagination State
@@ -272,7 +285,7 @@ function userManager() {
         openAddModal() {
             this.newUser = {
                 username: '', email: '', password: '', is_superuser: false, library_ids: [],
-                max_age_rating: '', allow_unknown_age_ratings: false
+                must_change_password: true, max_age_rating: '', allow_unknown_age_ratings: false
             };
             this.showAddModal = true;
         },
@@ -304,6 +317,7 @@ function userManager() {
                 email: user.email,
                 is_superuser: user.is_superuser,
                 is_active: user.is_active,
+                must_change_password: user.must_change_password || false,
                 // Ensure we handle the list of IDs from the API response
                 library_ids: user.accessible_library_ids ? [...user.accessible_library_ids] : [],
                 max_age_rating: user.max_age_rating || '',
@@ -318,6 +332,7 @@ function userManager() {
                 email: this.editingUser.email,
                 is_superuser: this.editingUser.is_superuser,
                 is_active: this.editingUser.is_active,
+                must_change_password: this.editingUser.must_change_password,
                 library_ids: this.editingUser.library_ids,
                 max_age_rating: this.editingUser.max_age_rating,
                 allow_unknown_age_ratings: this.editingUser.allow_unknown_age_ratings
