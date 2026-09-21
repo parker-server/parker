@@ -256,7 +256,7 @@ def clear_version_check_cache() -> None:
                 VERSION_CHECK_CACHE_FILE.unlink()
             except FileNotFoundError:
                 pass
-    except OSError:
+    except (OSError, portalocker.exceptions.LockException):
         try:
             VERSION_CHECK_CACHE_FILE.unlink()
         except OSError:
@@ -313,6 +313,6 @@ def get_version_check_status(current_version: str, force_refresh: bool = False) 
             except OSError as exc:
                 logger.warning("Unable to write version-check cache: %s", exc)
             return status
-    except OSError as exc:
+    except (OSError, portalocker.exceptions.LockException) as exc:
         logger.warning("Unable to use version-check cache lock: %s", exc)
         return _refresh_version_check_status(current_version)

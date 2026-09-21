@@ -1,4 +1,8 @@
 import json
+import multiprocessing
+import time
+from pathlib import Path
+from queue import Empty
 
 import httpx
 
@@ -16,6 +20,47 @@ from app.services.version_check import (
 def _use_temp_cache(monkeypatch, tmp_path):
     monkeypatch.setattr(version_check, "VERSION_CHECK_CACHE_FILE", tmp_path / "version_check.json")
     monkeypatch.setattr(version_check, "VERSION_CHECK_LOCK_FILE", tmp_path / "version_check.lock")
+
+
+class _FailingLock:
+    def __enter__(self):
+        raise version_check.portalocker.exceptions.LockException("lock failed")
+
+    def __exit__(self, exc_type, exc, traceback):
+        return None
+
+
+def _version_check_process_worker(
+    cache_file: str,
+    lock_file: str,
+    fetch_count,
+    start_event,
+    result_queue,
+) -> None:
+    import app.services.version_check as worker_version_check
+
+    worker_version_check.VERSION_CHECK_CACHE_FILE = Path(cache_file)
+    worker_version_check.VERSION_CHECK_LOCK_FILE = Path(lock_file)
+
+    def fetch_tags():
+        with fetch_count.get_lock():
+            fetch_count.value += 1
+        time.sleep(0.2)
+        return [{"name": "v0.1.36"}]
+
+    worker_version_check._fetch_github_tags = fetch_tags
+    result_queue.put(("ready", None))
+    if not start_event.wait(10):
+        result_queue.put(("error", "timed out waiting to start"))
+        return
+
+    try:
+        status = worker_version_check.get_version_check_status("0.1.35")
+    except Exception as exc:
+        result_queue.put(("error", repr(exc)))
+        return
+
+    result_queue.put(("ok", status.to_dict()))
 
 
 def test_parse_version_accepts_plain_and_prefixed_semver():
@@ -169,12 +214,82 @@ def test_version_check_rechecks_cache_after_acquiring_lock(monkeypatch, tmp_path
     assert result == cached
 
 
+def test_version_check_coordinates_shared_cache_across_processes(tmp_path):
+    ctx = multiprocessing.get_context("spawn")
+    process_count = 4
+    cache_file = tmp_path / "version_check.json"
+    lock_file = tmp_path / "version_check.lock"
+    fetch_count = ctx.Value("i", 0)
+    start_event = ctx.Event()
+    result_queue = ctx.Queue()
+    processes = [
+        ctx.Process(
+            target=_version_check_process_worker,
+            args=(str(cache_file), str(lock_file), fetch_count, start_event, result_queue),
+        )
+        for _ in range(process_count)
+    ]
+
+    try:
+        for process in processes:
+            process.start()
+
+        for _ in range(process_count):
+            kind, payload = result_queue.get(timeout=10)
+            assert kind == "ready", payload
+
+        start_event.set()
+        results = []
+        for _ in range(process_count):
+            kind, payload = result_queue.get(timeout=10)
+            assert kind == "ok", payload
+            results.append(payload)
+    except Empty as exc:
+        raise AssertionError("Timed out waiting for version-check worker process") from exc
+    finally:
+        start_event.set()
+        for process in processes:
+            process.join(timeout=10)
+        for process in processes:
+            if process.is_alive():
+                process.terminate()
+                process.join(timeout=5)
+
+    assert all(process.exitcode == 0 for process in processes)
+    assert fetch_count.value == 1
+    assert all(result["status"] == "update_available" for result in results)
+    assert all(result["latest_tag"] == "v0.1.36" for result in results)
+    assert cache_file.exists()
+
+
+def test_version_check_refreshes_when_shared_lock_fails(monkeypatch, tmp_path):
+    _use_temp_cache(monkeypatch, tmp_path)
+    monkeypatch.setattr(version_check, "_shared_cache_lock", lambda: _FailingLock())
+    monkeypatch.setattr(version_check, "_fetch_github_tags", lambda: [{"name": "v0.1.36"}])
+
+    result = get_version_check_status("0.1.35")
+
+    assert result.status == "update_available"
+    assert result.latest_tag == "v0.1.36"
+    assert not version_check.VERSION_CHECK_CACHE_FILE.exists()
+
+
 def test_clear_version_check_cache_removes_shared_file(monkeypatch, tmp_path):
     _use_temp_cache(monkeypatch, tmp_path)
     monkeypatch.setattr(version_check, "_fetch_github_tags", lambda: [{"name": "v0.1.36"}])
 
     get_version_check_status("0.1.35")
     assert version_check.VERSION_CHECK_CACHE_FILE.exists()
+
+    clear_version_check_cache()
+
+    assert not version_check.VERSION_CHECK_CACHE_FILE.exists()
+
+
+def test_clear_version_check_cache_removes_file_when_shared_lock_fails(monkeypatch, tmp_path):
+    _use_temp_cache(monkeypatch, tmp_path)
+    version_check.VERSION_CHECK_CACHE_FILE.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(version_check, "_shared_cache_lock", lambda: _FailingLock())
 
     clear_version_check_cache()
 
