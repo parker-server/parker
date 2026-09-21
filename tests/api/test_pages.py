@@ -216,6 +216,10 @@ def test_admin_jobs_page_surfaces_scan_error_details(admin_client):
 
     assert response.status_code == 200
     body = response.text
+    assert "Active Queue" in body
+    assert "Recent History" in body
+    assert "jobs.queue" in body
+    assert 'data-lucide-icon="clock"' in body
     assert "Scan Errors" in body
     assert "Error Details Unavailable" in body
     assert "selectedJob.summary.error_details" in body
