@@ -269,7 +269,7 @@ AGENTS.md
 .oai/
 .claude
 .agents
-models/
+/models/
 weights/
 embeddings/
 vector_db/
