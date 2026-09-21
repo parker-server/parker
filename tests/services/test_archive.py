@@ -308,6 +308,24 @@ def test_comic_archive_sort_pages_prefers_bare_zero_page_before_zero_letter_join
         ]
 
 
+def test_comic_archive_sort_pages_prefers_bare_zero_page_before_titled_zero_letter_variant():
+    with patch("app.services.archive.zipfile.is_zipfile", return_value=True), \
+         patch("app.services.archive.zipfile.ZipFile"):
+        archive = ComicArchive(Path("dummy.cbz"))
+
+        archive.get_file_list = MagicMock(return_value=[
+            "TarzanJohnCarter1-00a Red Awakenings.jpg",
+            "TarzanJohnCarter1-00 Red Awakenings.jpg",
+        ])
+
+        pages = archive.get_pages()
+
+        assert pages == [
+            "TarzanJohnCarter1-00 Red Awakenings.jpg",
+            "TarzanJohnCarter1-00a Red Awakenings.jpg",
+        ]
+
+
 def test_comic_archive_sort_pages_prefers_bare_zero_page_before_appended_zero_variant():
     with patch("app.services.archive.zipfile.is_zipfile", return_value=True), \
          patch("app.services.archive.zipfile.ZipFile"):
@@ -392,10 +410,14 @@ def test_page_sort_score_exposes_named_cover_signals():
         "WayofRat23NegWarPreviewHeader",
         "Earth4-V2-001-00",
         "Earth4-V2-001-00-35",
+        "TarzanJohnCarter1-00 Red Awakenings",
+        "TarzanJohnCarter1-00a Red Awakenings",
     }
 
     bare_zero = _page_sort_score("HybridsSpecial001-00.jpg", page_stems)
     zero_letter = _page_sort_score("HybridsSpecial001-00A.jpg", page_stems)
+    bare_zero_with_titled_variant = _page_sort_score("TarzanJohnCarter1-00 Red Awakenings.jpg", page_stems)
+    titled_zero_letter_variant = _page_sort_score("TarzanJohnCarter1-00a Red Awakenings.jpg", page_stems)
     bare_zero_with_appended_variant = _page_sort_score("Earth4-V2-001-00.jpg", page_stems)
     appended_zero_variant = _page_sort_score("Earth4-V2-001-00-35.jpg", page_stems)
     front_cover = _page_sort_score("chimera_04_pg_00_fcover_(shinter).jpg", page_stems)
@@ -407,6 +429,13 @@ def test_page_sort_score_exposes_named_cover_signals():
     assert bare_zero.cover_signal == "bare_zero_with_zero_letter_twin"
     assert bare_zero.page_index == 0
     assert bare_zero.sort_key() < zero_letter.sort_key()
+
+    assert bare_zero_with_titled_variant.role == PageRole.LIKELY_COVER
+    assert bare_zero_with_titled_variant.cover_signal == "bare_zero_with_zero_letter_twin"
+    assert titled_zero_letter_variant.role == PageRole.INTERIOR
+    assert titled_zero_letter_variant.cover_signal is None
+    assert "zero_letter_page_variant" in titled_zero_letter_variant.penalty_signals
+    assert bare_zero_with_titled_variant.sort_key() < titled_zero_letter_variant.sort_key()
 
     assert bare_zero_with_appended_variant.role == PageRole.LIKELY_COVER
     assert bare_zero_with_appended_variant.cover_signal == "bare_zero_with_appended_variant"

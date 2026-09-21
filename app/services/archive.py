@@ -25,6 +25,12 @@ PREVIEW_HEADER_RE = re.compile(r'(?:preview|header)')
 BACK_COVER_RE = re.compile(r'(?:^|[\W_])(?:bc|bcover|back\s+cover)(?:$|[\W_])')
 TRAILING_PAGE_NUMBER_RE = re.compile(r'^(.*?)(?:[\s._-]+)?(\d+)\s*$')
 ZERO_PAGE_STEM_RE = re.compile(r'(?:^|[\W_])0+$')
+ZERO_PAGE_WITH_SUFFIX_RE = re.compile(r'^(?P<prefix>.*(?:^|[\W_])0+)(?P<suffix>$|[\W_].*)$')
+ZERO_LETTER_PAGE_WITH_SUFFIX_RE = re.compile(
+    r'^(?P<prefix>.*(?:^|[\W_])0+)[a-z](?P<suffix>$|[\W_].*)$',
+    re.IGNORECASE,
+)
+APPENDED_ZERO_PAGE_SUFFIX_RE = re.compile(r'^[\W_]+\d+$')
 FINAL_PAGE_INDEX_RE = re.compile(r'(\d+)(?:[a-z]*)$', re.IGNORECASE)
 
 
@@ -112,16 +118,39 @@ def _has_zero_letter_twin(filename: str, page_stems: set[str] | None) -> bool:
 
     directory, basename = _split_archive_path(filename)
     stem = Path(basename).stem.strip()
-    if not ZERO_PAGE_STEM_RE.search(stem):
+    match = ZERO_PAGE_WITH_SUFFIX_RE.match(stem)
+    if not match:
         return False
 
-    stem_key = f"{directory}{stem}".lower()
+    prefix = f"{directory}{match.group('prefix')}".lower()
+    suffix = match.group("suffix").lower()
     return any(
-        len(page_stem) == len(stem_key) + 1
-        and page_stem.lower().startswith(stem_key)
-        and page_stem[-1].isalpha()
+        _has_letter_between(page_stem.lower(), prefix, suffix)
         for page_stem in page_stems
     )
+
+
+def _has_letter_between(text: str, prefix: str, suffix: str) -> bool:
+    if not text.startswith(prefix) or (suffix and not text.endswith(suffix)):
+        return False
+
+    suffix_start = len(text) - len(suffix) if suffix else len(text)
+    middle = text[len(prefix):suffix_start]
+    return len(middle) == 1 and middle.isalpha()
+
+
+def _has_bare_zero_page_twin(filename: str, page_stems: set[str] | None) -> bool:
+    if page_stems is None:
+        return False
+
+    directory, basename = _split_archive_path(filename)
+    stem = Path(basename).stem.strip()
+    match = ZERO_LETTER_PAGE_WITH_SUFFIX_RE.match(stem)
+    if not match:
+        return False
+
+    bare_stem = f"{directory}{match.group('prefix')}{match.group('suffix')}".lower()
+    return bare_stem in {page_stem.lower() for page_stem in page_stems}
 
 
 def _has_appended_zero_page_twin(filename: str, page_stems: set[str] | None) -> bool:
@@ -135,12 +164,17 @@ def _has_appended_zero_page_twin(filename: str, page_stems: set[str] | None) -> 
 
     stem_key = f"{directory}{stem}".lower()
     return any(
-        re.match(rf'^{re.escape(stem_key)}[\W_]+\d+$', page_stem.lower())
+        page_stem.lower().startswith(stem_key)
+        and APPENDED_ZERO_PAGE_SUFFIX_RE.match(page_stem.lower()[len(stem_key):]) is not None
         for page_stem in page_stems
     )
 
 
-def _page_penalty_signals(text: str, appended_page_zero_variant: bool = False) -> tuple[str, ...]:
+def _page_penalty_signals(
+    text: str,
+    appended_page_zero_variant: bool = False,
+    zero_letter_page_variant: bool = False,
+) -> tuple[str, ...]:
     penalties = []
     if INSIDE_COVER_RE.search(text):
         penalties.append("inside_front_cover")
@@ -152,6 +186,8 @@ def _page_penalty_signals(text: str, appended_page_zero_variant: bool = False) -
         penalties.append("back_cover")
     if appended_page_zero_variant:
         penalties.append("appended_page_zero_variant")
+    if zero_letter_page_variant:
+        penalties.append("zero_letter_page_variant")
     return tuple(penalties)
 
 
@@ -159,7 +195,7 @@ def _cover_signal(filename: str, text: str, page_stems: set[str] | None, penalty
     if "inside_front_cover" in penalty_signals:
         return None
 
-    explicit_cover_blockers = {"appended_page_zero_variant", "joined_cover"}
+    explicit_cover_blockers = {"appended_page_zero_variant", "joined_cover", "zero_letter_page_variant"}
     if EXPLICIT_COVER_RE.search(text) and not explicit_cover_blockers.intersection(penalty_signals):
         return "explicit_cover_token"
     if _has_zero_letter_twin(filename, page_stems):
@@ -205,6 +241,7 @@ def _page_sort_score(filename: str, page_stems: set[str] | None = None, archive_
     stem = Path(basename).stem
     base_stem, trailing_number = _split_trailing_page_number(stem)
     appended_page_zero_variant = False
+    zero_letter_page_variant = _has_bare_zero_page_twin(filename, page_stems)
 
     if trailing_number is not None and page_stems is not None:
         candidate_base = f"{directory}{base_stem}"
@@ -215,7 +252,7 @@ def _page_sort_score(filename: str, page_stems: set[str] | None = None, archive_
             trailing_number = None
 
     base_name = f"{directory}{base_stem}"
-    penalty_signals = _page_penalty_signals(text, appended_page_zero_variant)
+    penalty_signals = _page_penalty_signals(text, appended_page_zero_variant, zero_letter_page_variant)
     cover_signal = _cover_signal(filename, text, page_stems, penalty_signals)
 
     return PageSortScore(
