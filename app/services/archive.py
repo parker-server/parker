@@ -11,7 +11,7 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-ARCHIVE_PAGE_ORDER_VERSION = 6
+ARCHIVE_PAGE_ORDER_VERSION = 7
 IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff', '.jxl', '.avif'}
 IGNORE_FILENAMES = {'thumbs.db', '.ds_store', 'comicinfo.xml', '__macosx'}
 IGNORE_EXTENSIONS = {'.nfo', '.sfv', '.txt', '.xml', '.db', '.ini'}
@@ -24,6 +24,7 @@ JOINED_COVER_RE = re.compile(r'(?:^|[\W_])(?:\d+\s*page\s+cover|joined\s+(?:cove
 PREVIEW_HEADER_RE = re.compile(r'(?:preview|header)')
 BACK_COVER_RE = re.compile(r'(?:^|[\W_])(?:bc|bcover|back\s+cover)(?:$|[\W_])')
 TRAILING_PAGE_NUMBER_RE = re.compile(r'^(.*?)(?:[\s._-]+)?(\d+)\s*$')
+LEADING_TILDE_SORT_PREFIX_RE = re.compile(r'(^|[\\/])~+')
 ZERO_PAGE_STEM_RE = re.compile(r'(?:^|[\W_])0+$')
 ZERO_PAGE_WITH_SUFFIX_RE = re.compile(r'^(?P<prefix>.*(?:^|[\W_])0+)(?P<suffix>$|[\W_].*)$')
 ZERO_LETTER_PAGE_WITH_SUFFIX_RE = re.compile(
@@ -84,7 +85,13 @@ def _split_archive_path(filename: str) -> tuple[str, str]:
 
 def _normalize_page_sort_text(text: str) -> str:
     text = re.sub(r'[-_](?=\d)', '!', text.lower())
+    text = LEADING_TILDE_SORT_PREFIX_RE.sub(_normalize_leading_tilde_sort_prefix, text)
     return text.replace('-', '~').replace('_', '~')
+
+
+def _normalize_leading_tilde_sort_prefix(match: re.Match) -> str:
+    separator = match.group(1)
+    return f"{separator}{' ' * (len(match.group(0)) - len(separator))}"
 
 
 def _natural_sort_parts(text: str) -> list:

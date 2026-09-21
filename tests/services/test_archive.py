@@ -326,6 +326,26 @@ def test_comic_archive_sort_pages_prefers_bare_zero_page_before_titled_zero_lett
         ]
 
 
+def test_comic_archive_sort_pages_preserves_leading_tilde_page_prefix():
+    with patch("app.services.archive.zipfile.is_zipfile", return_value=True), \
+         patch("app.services.archive.zipfile.ZipFile"):
+        archive = ComicArchive(Path("dummy.cbz"))
+
+        archive.get_file_list = MagicMock(return_value=[
+            "Santa-DCP.jpg",
+            "~max0018.jpg",
+            "~max0017.jpg",
+        ])
+
+        pages = archive.get_pages()
+
+        assert pages == [
+            "~max0017.jpg",
+            "~max0018.jpg",
+            "Santa-DCP.jpg",
+        ]
+
+
 def test_comic_archive_sort_pages_prefers_bare_zero_page_before_appended_zero_variant():
     with patch("app.services.archive.zipfile.is_zipfile", return_value=True), \
          patch("app.services.archive.zipfile.ZipFile"):
@@ -412,6 +432,8 @@ def test_page_sort_score_exposes_named_cover_signals():
         "Earth4-V2-001-00-35",
         "TarzanJohnCarter1-00 Red Awakenings",
         "TarzanJohnCarter1-00a Red Awakenings",
+        "~max0017",
+        "Santa-DCP",
     }
 
     bare_zero = _page_sort_score("HybridsSpecial001-00.jpg", page_stems)
@@ -420,6 +442,8 @@ def test_page_sort_score_exposes_named_cover_signals():
     titled_zero_letter_variant = _page_sort_score("TarzanJohnCarter1-00a Red Awakenings.jpg", page_stems)
     bare_zero_with_appended_variant = _page_sort_score("Earth4-V2-001-00.jpg", page_stems)
     appended_zero_variant = _page_sort_score("Earth4-V2-001-00-35.jpg", page_stems)
+    leading_tilde_page = _page_sort_score("~max0017.jpg", page_stems)
+    unprefixed_extra = _page_sort_score("Santa-DCP.jpg", page_stems)
     front_cover = _page_sort_score("chimera_04_pg_00_fcover_(shinter).jpg", page_stems)
     inside_front_cover = _page_sort_score("chimera_04_pg_00a_ifcover_(shinter).jpg", page_stems)
     joined_cover = _page_sort_score("The First - 005 Pg00z (2 page cover).jpg", page_stems)
@@ -443,6 +467,8 @@ def test_page_sort_score_exposes_named_cover_signals():
     assert appended_zero_variant.cover_signal is None
     assert "appended_page_zero_variant" in appended_zero_variant.penalty_signals
     assert bare_zero_with_appended_variant.sort_key() < appended_zero_variant.sort_key()
+
+    assert leading_tilde_page.sort_key() < unprefixed_extra.sort_key()
 
     assert front_cover.role == PageRole.COVER
     assert front_cover.cover_signal == "explicit_cover_token"
