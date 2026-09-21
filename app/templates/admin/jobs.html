@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/lucide_icon.html" import lucide_icon %}
 
 {% block title %}Job History - Admin{% endblock %}
 
@@ -12,9 +13,97 @@
     {{ admin_header(
         title="Job History",
         description="",
-        refresh_func="loadJobs()",
+        refresh_func="refresh()",
         loading_var="loading"
     ) }}
+
+    <div data-testid="active-job-queue" class="mb-8 bg-gray-800 rounded-xl overflow-hidden shadow-lg border border-gray-700">
+        <div class="px-6 py-5 border-b border-gray-700 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                    {{ lucide_icon("clock", "h-5 w-5 text-blue-300") }} Active Queue
+                </h2>
+                <p class="text-sm text-gray-400 mt-1">Jobs currently running or waiting for the background worker.</p>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2 text-xs font-bold uppercase">
+                <span data-testid="active-running-count" class="px-3 py-1 rounded-full bg-blue-900/40 text-blue-200 border border-blue-800">
+                    <span x-text="activeCounts.running"></span> running
+                </span>
+                <span data-testid="active-pending-count" class="px-3 py-1 rounded-full bg-gray-700 text-gray-200 border border-gray-600">
+                    <span x-text="activeCounts.pending"></span> queued
+                </span>
+            </div>
+        </div>
+
+        <div x-show="activeQueueError" x-cloak class="px-6 py-4 border-b border-red-900/30 bg-red-900/10 text-sm text-red-200" x-text="activeQueueError"></div>
+
+        <div x-show="activeJobs.length > 0" x-cloak class="overflow-x-auto">
+            <table class="w-full text-left text-gray-300">
+                <thead class="bg-gray-900 text-gray-400 uppercase text-xs font-semibold">
+                    <tr>
+                        <th class="px-6 py-4">Position</th>
+                        <th class="px-6 py-4">Status</th>
+                        <th class="px-6 py-4">Type</th>
+                        <th class="px-6 py-4">Library</th>
+                        <th class="px-6 py-4">Queued</th>
+                        <th class="px-6 py-4">Started</th>
+                        <th class="px-6 py-4">Time</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-700">
+                    <template x-for="job in activeJobs" :key="job.id">
+                        <tr data-testid="active-job-row" class="transition-colors" :class="job.status === 'running' ? 'bg-blue-950/20' : 'hover:bg-gray-750'">
+                            <td class="px-6 py-4 font-mono text-sm text-gray-100" x-text="formatQueuePosition(job)"></td>
+
+                            <td class="px-6 py-4">
+                                <span
+                                    class="px-2 py-1 text-xs font-bold rounded-full"
+                                    :class="{
+                                        'bg-blue-900 text-blue-200': job.status === 'running',
+                                        'bg-gray-600 text-gray-200': job.status === 'pending'
+                                    }"
+                                    x-text="job.status === 'running' ? 'running' : 'queued'"
+                                ></span>
+                            </td>
+
+                            <td class="px-6 py-4">
+                                <span
+                                    class="px-2 py-1 text-xs font-bold rounded border uppercase"
+                                    :class="{
+                                        'bg-blue-900/30 text-blue-200 border-blue-800': job.job_type === 'scan',
+                                        'bg-purple-900/30 text-purple-200 border-purple-800': job.job_type === 'thumbnail',
+                                        'bg-orange-900/30 text-orange-200 border-orange-800': job.job_type === 'cleanup',
+                                        'bg-cyan-900/30 text-cyan-200 border-cyan-800': job.job_type === 'metadata_rehydrate'
+                                    }"
+                                    x-text="formatJobType(job.job_type)"
+                                ></span>
+                            </td>
+
+                            <td class="px-6 py-4 font-medium text-white" x-text="job.library_name"></td>
+                            <td class="px-6 py-4 text-sm" x-text="formatDate(job.created_at)"></td>
+                            <td class="px-6 py-4 text-sm" x-text="job.started_at ? formatDate(job.started_at) : '--'"></td>
+                            <td class="px-6 py-4 text-sm font-mono text-gray-100" x-text="formatActiveTime(job)"></td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
+
+        <div x-show="!activeQueueLoaded" x-cloak class="px-6 py-10 text-center text-sm text-gray-400">
+            Loading active jobs...
+        </div>
+
+        <div x-show="activeQueueLoaded && activeJobs.length === 0 && !activeQueueError" x-cloak class="px-6 py-10 text-center">
+            <div class="text-sm font-semibold text-gray-200">No active jobs</div>
+            <p class="text-sm text-gray-500 mt-1">The queue is empty right now.</p>
+        </div>
+    </div>
+
+    <div class="mb-3 flex items-center justify-between">
+        <h2 class="text-xl font-bold text-white">Recent History</h2>
+        <span class="text-xs uppercase tracking-wide text-gray-500">Latest 50 jobs</span>
+    </div>
 
     <div class="bg-gray-800 rounded-xl overflow-hidden shadow-lg border border-gray-700">
         <div class="overflow-x-auto">
@@ -44,7 +133,7 @@
                                         'bg-orange-900/30 text-orange-200 border-orange-800': job.job_type === 'cleanup',
                                         'bg-cyan-900/30 text-cyan-200 border-cyan-800': job.job_type === 'metadata_rehydrate'
                                     }"
-                                    x-text="job.job_type || 'scan'"
+                                    x-text="formatJobType(job.job_type)"
                                 ></span>
                             </td>
 
@@ -115,13 +204,13 @@
 
 
     <div x-show="selectedJob" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm" x-transition.opacity style="display: none;">
-        <div class="bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full mx-4 border border-gray-700" @click.away="selectedJob = null">
+        <div class="bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full mx-4 border border-gray-700" x-on:click.away="selectedJob = null">
             <div class="px-6 py-4 border-b border-gray-700 flex justify-between items-center">
                 <h3 class="text-xl font-bold text-white">
                     <span class="uppercase text-gray-500 text-base mr-2" x-text="selectedJob?.job_type"></span>
                     Job <span x-text="`#${selectedJob?.id}`"></span>
                 </h3>
-                <button @click="selectedJob = null" class="text-gray-400 hover:text-white">✕</button>
+                <button x-on:click="selectedJob = null" class="text-gray-400 hover:text-white">✕</button>
             </div>
 
             <div class="p-6 overflow-y-auto max-h-[70vh]">
@@ -346,10 +435,93 @@
     document.addEventListener('alpine:init', () => {
         Alpine.data('jobHistory', () => ({
             jobs: [],
+            activeJobs: [],
+            activeCounts: { running: 0, pending: 0 },
+            activeQueueLoaded: false,
+            activeLoading: false,
+            activeQueueError: null,
+            activeQueueSignature: '',
             loading: false,
             selectedJob: null,
+            queuePollTimeout: null,
+            queuePollActiveMs: 5000,
+            queuePollIdleMs: 30000,
+            visibilityHandler: null,
+            clockInterval: null,
+            now: Date.now(),
 
-            init() { this.loadJobs(); },
+            init() {
+                this.refresh();
+                this.visibilityHandler = () => {
+                    if (document.visibilityState === 'visible') {
+                        this.refresh();
+                    } else {
+                        this.clearQueuePoll();
+                    }
+                };
+                document.addEventListener('visibilitychange', this.visibilityHandler);
+                this.clockInterval = setInterval(() => { this.now = Date.now(); }, 1000);
+            },
+
+            destroy() {
+                this.clearQueuePoll();
+                if (this.visibilityHandler) document.removeEventListener('visibilitychange', this.visibilityHandler);
+                if (this.clockInterval) clearInterval(this.clockInterval);
+            },
+
+            get hasActiveQueue() {
+                return (this.activeCounts.running || 0) + (this.activeCounts.pending || 0) > 0;
+            },
+
+            async refresh() {
+                this.clearQueuePoll();
+                await Promise.all([this.loadActiveQueue(), this.loadJobs()]);
+                this.scheduleQueuePoll();
+            },
+
+            clearQueuePoll() {
+                if (this.queuePollTimeout) {
+                    clearTimeout(this.queuePollTimeout);
+                    this.queuePollTimeout = null;
+                }
+            },
+
+            scheduleQueuePoll() {
+                this.clearQueuePoll();
+                if (document.visibilityState === 'hidden') return;
+
+                const delay = this.hasActiveQueue ? this.queuePollActiveMs : this.queuePollIdleMs;
+                this.queuePollTimeout = setTimeout(async () => {
+                    await this.loadActiveQueue();
+                    this.scheduleQueuePoll();
+                }, delay);
+            },
+
+            async loadActiveQueue() {
+                const showInitialLoading = !this.activeQueueLoaded;
+                this.activeLoading = showInitialLoading;
+                try {
+                    const response = await fetch(window.parker.route('jobs.queue'));
+                    if (!response.ok) throw new Error('Unable to load active queue');
+                    const payload = await response.json();
+                    const jobs = payload.jobs || [];
+                    const counts = payload.counts || { running: 0, pending: 0 };
+                    const signature = this.queueSignature(jobs, counts);
+                    if (signature !== this.activeQueueSignature) {
+                        this.activeJobs = jobs;
+                        this.activeCounts = counts;
+                        this.activeQueueSignature = signature;
+                    }
+                    this.activeQueueLoaded = true;
+                    this.activeQueueError = null;
+                } catch (e) {
+                    console.error(e);
+                    this.activeQueueLoaded = true;
+                    this.activeQueueError = 'Unable to load the active job queue.';
+                } finally {
+                    this.activeLoading = false;
+                }
+            },
 
             async loadJobs() {
                 this.loading = true;
@@ -362,6 +534,48 @@
 
             viewDetails(job) { this.selectedJob = job; },
 
+            queueSignature(jobs, counts) {
+                return JSON.stringify({
+                    counts,
+                    jobs: jobs.map((job) => ({
+                        id: job.id,
+                        status: job.status,
+                        queue_position: job.queue_position,
+                        job_type: job.job_type,
+                        library_name: job.library_name,
+                        created_at: job.created_at,
+                        started_at: job.started_at,
+                        completed_at: job.completed_at,
+                        force_scan: job.force_scan
+                    }))
+                });
+            },
+
+            formatJobType(type) {
+                return (type || 'scan').replace(/_/g, ' ');
+            },
+
+            formatQueuePosition(job) {
+                if (job.status === 'running') return 'Now';
+                if (job.queue_position) return `#${job.queue_position}`;
+                return '--';
+            },
+
+            secondsSince(dateStr) {
+                const date = window.parker.parseUtcDate(dateStr);
+                if (!date) return null;
+                return Math.max(0, Math.floor((this.now - date.getTime()) / 1000));
+            },
+
+            formatActiveTime(job) {
+                const anchor = job.status === 'running' ? job.started_at : job.created_at;
+                const seconds = this.secondsSince(anchor);
+                if (seconds === null) return '--';
+                return job.status === 'running'
+                    ? `${this.formatDuration(seconds)} running`
+                    : `${this.formatDuration(seconds)} queued`;
+            },
+
             // Helper to sum all deleted items for the table view
             getTotalCleaned(summary) {
                 if (!summary) return 0;
@@ -371,7 +585,11 @@
             formatDuration(seconds) {
                 if (!seconds && seconds !== 0) return '--';
                 if (seconds < 60) return `${Math.round(seconds)}s`;
-                return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+                if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+                const hours = Math.floor(seconds / 3600);
+                const minutes = Math.floor((seconds % 3600) / 60);
+                if (minutes === 0) return `${hours}h`;
+                return `${hours}h ${minutes}m`;
             },
 
             formatDate(dateStr) { return window.parker.formatLocalDateTime(dateStr); }

@@ -77,6 +77,67 @@ def test_list_jobs_applies_filters_and_parses_summary(admin_client, db):
     assert unfiltered_payload[0]["error"] == "Worker died"
 
 
+def test_job_queue_lists_running_then_pending_jobs_in_worker_order(admin_client, db):
+    library = create_library_with_root(db, "Queue-Lib", "/tmp/queue-lib")
+
+    base_time = datetime.now(timezone.utc)
+    running = ScanJob(
+        library_id=None,
+        job_type=JobType.CLEANUP,
+        status=JobStatus.RUNNING,
+        created_at=base_time - timedelta(minutes=30),
+        started_at=base_time - timedelta(minutes=10),
+    )
+    pending_metadata = ScanJob(
+        library_id=library.id,
+        job_type=JobType.METADATA_REHYDRATE,
+        status=JobStatus.PENDING,
+        created_at=base_time - timedelta(minutes=25),
+    )
+    pending_thumbnail = ScanJob(
+        library_id=library.id,
+        job_type=JobType.THUMBNAIL,
+        status=JobStatus.PENDING,
+        created_at=base_time - timedelta(minutes=20),
+    )
+    pending_scan = ScanJob(
+        library_id=library.id,
+        job_type=JobType.SCAN,
+        status=JobStatus.PENDING,
+        created_at=base_time - timedelta(minutes=5),
+    )
+    completed = ScanJob(
+        library_id=library.id,
+        job_type=JobType.SCAN,
+        status=JobStatus.COMPLETED,
+        created_at=base_time - timedelta(minutes=1),
+    )
+    db.add_all([running, pending_metadata, pending_thumbnail, pending_scan, completed])
+    db.commit()
+
+    response = admin_client.get("/api/jobs/queue")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["active"] is True
+    assert payload["counts"] == {"running": 1, "pending": 3}
+    assert [job["id"] for job in payload["running"]] == [running.id]
+    assert [job["id"] for job in payload["pending"]] == [
+        pending_scan.id,
+        pending_thumbnail.id,
+        pending_metadata.id,
+    ]
+    assert [job["queue_position"] for job in payload["pending"]] == [1, 2, 3]
+    assert [job["id"] for job in payload["jobs"]] == [
+        running.id,
+        pending_scan.id,
+        pending_thumbnail.id,
+        pending_metadata.id,
+    ]
+    assert payload["running"][0]["library_name"] == "-"
+    assert payload["pending"][0]["library_name"] == "Queue-Lib"
+
+
 def test_get_job_status_success_and_not_found(admin_client, db):
     library = create_library_with_root(db, "Status-Lib", "/tmp/status-lib")
 
