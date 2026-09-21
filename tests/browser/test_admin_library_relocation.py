@@ -4,6 +4,7 @@ import pytest
 
 from app.config import settings
 from app.models.comic import Volume
+from app.models.library import Library
 from app.models.library_root import LibraryRoot
 from app.models.series import Series
 from app.models.user import User
@@ -13,6 +14,57 @@ from tests.factories import create_comic, create_library_with_root
 def _write_file(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(b"comic")
+
+
+@pytest.mark.browser
+def test_admin_libraries_client_pagination_and_filter(page, browser_server, tmp_path):
+    prefix = f"Pager UI {tmp_path.name}"
+    created_library_ids = []
+
+    session = browser_server["db_factory"]()
+    try:
+        user = session.get(User, browser_server["seed"]["user_id"])
+        user.is_superuser = True
+        for index in range(1, 26):
+            library = create_library_with_root(
+                session,
+                f"{prefix} {index:02d}",
+                str(tmp_path / f"library-{index:02d}"),
+            )
+            created_library_ids.append(library.id)
+        session.commit()
+    finally:
+        session.close()
+
+    try:
+        page.goto(f"{browser_server['base_url']}/admin/libraries", wait_until="networkidle")
+        page.get_by_label("Filter libraries").fill(prefix)
+
+        page.get_by_text("Page 1 of 2").wait_for()
+        page.get_by_role("row").filter(has_text=f"{prefix} 01").wait_for()
+        assert page.get_by_role("row").filter(has_text=f"{prefix} 25").count() == 0
+
+        page.get_by_role("button", name="Next").click()
+        page.get_by_text("Page 2 of 2").wait_for()
+        page.get_by_role("row").filter(has_text=f"{prefix} 25").wait_for()
+
+        page.get_by_label("Filter libraries").fill(f"{prefix} 25")
+        page.get_by_role("row").filter(has_text=f"{prefix} 25").wait_for()
+        page.get_by_text("No libraries match your filter.").wait_for(state="hidden")
+    finally:
+        session = browser_server["db_factory"]()
+        try:
+            if created_library_ids:
+                session.query(LibraryRoot).filter(LibraryRoot.library_id.in_(created_library_ids)).delete(
+                    synchronize_session=False
+                )
+                session.query(Library).filter(Library.id.in_(created_library_ids)).delete(synchronize_session=False)
+            user = session.get(User, browser_server["seed"]["user_id"])
+            if user is not None:
+                user.is_superuser = False
+            session.commit()
+        finally:
+            session.close()
 
 
 @pytest.mark.browser

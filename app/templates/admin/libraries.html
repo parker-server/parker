@@ -13,6 +13,27 @@
             action_func="openAddModal()"
     ) }}
 
+    <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div class="w-full sm:max-w-sm">
+            <label for="library-search" class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">Filter libraries</label>
+            <input
+                id="library-search"
+                type="search"
+                x-model.debounce.150ms="librarySearch"
+                x-on:input="currentPage = 1"
+                class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-white focus:border-blue-500 outline-none"
+                placeholder="Name or path"
+            >
+        </div>
+        <div x-show="libraries.length > 0" class="text-sm text-gray-400">
+            Showing
+            <span class="text-white font-semibold" x-text="pageStart()"></span>-<span class="text-white font-semibold" x-text="pageEnd()"></span>
+            of
+            <span class="text-white font-semibold" x-text="filteredLibraries().length"></span>
+            <span x-text="filteredLibraries().length === 1 ? 'library' : 'libraries'"></span>
+        </div>
+    </div>
+
     <div class="bg-gray-800 rounded-lg overflow-hidden shadow-lg border border-gray-700">
         <table class="w-full text-left">
             <thead class="bg-gray-900 text-gray-400 uppercase text-xs">
@@ -24,7 +45,7 @@
                 </tr>
             </thead>
             <tbody class="divide-y divide-gray-700">
-                <template x-for="lib in libraries" :key="lib.id">
+                <template x-for="lib in visibleLibraries()" :key="lib.id">
                     <tr class="hover:bg-gray-750">
                         <td class="px-6 py-4 font-bold text-white">
                             <a :href="window.parker.route('pages.library_detail', { library_id: lib.id })" class="hover:text-blue-400 transition-colors" x-text="lib.name"></a>
@@ -69,13 +90,33 @@
                         </td>
                     </tr>
                 </template>
-                <tr x-show="libraries.length === 0">
+                <tr x-show="libraries.length === 0 || filteredLibraries().length === 0">
                     <td colspan="4" class="px-6 py-8 text-center text-gray-500">
-                        No libraries found. Add one to get started.
+                        <span x-text="libraries.length === 0 ? 'No libraries found. Add one to get started.' : 'No libraries match your filter.'"></span>
                     </td>
                 </tr>
             </tbody>
         </table>
+    </div>
+
+    <div x-show="filteredLibraries().length > pageSize" class="mt-6 flex flex-col gap-3 border-t border-gray-700 pt-6 sm:flex-row sm:items-center sm:justify-center sm:space-x-4">
+        <button
+            x-on:click="changePage(currentPage - 1)"
+            x-bind:disabled="currentPage === 1"
+            class="px-4 py-2 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors border border-gray-600"
+        >
+            Previous
+        </button>
+        <span class="text-center text-gray-400">
+            Page <span class="text-white font-bold" x-text="currentPage"></span> of <span x-text="totalPages()"></span>
+        </span>
+        <button
+            x-on:click="changePage(currentPage + 1)"
+            x-bind:disabled="currentPage >= totalPages()"
+            class="px-4 py-2 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors border border-gray-600"
+        >
+            Next
+        </button>
     </div>
 
     <div x-show="showModal" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50" style="display: none;" x-transition.opacity>
@@ -521,6 +562,9 @@
 function libraryManager() {
     return {
         libraries: [],
+        librarySearch: '',
+        currentPage: 1,
+        pageSize: 20,
         showModal: false,
         showRootsModal: false,
         showRelocationModal: false,
@@ -584,9 +628,54 @@ function libraryManager() {
                 const res = await fetch(window.parker.route('libraries.list'));
                 if (res.ok) {
                     this.libraries = await res.json();
+                    this.clampCurrentPage();
                     this.syncOpenLibraryRefs();
                 }
             } catch(e) { console.error(e); }
+        },
+
+        filteredLibraries() {
+            const query = String(this.librarySearch || '').trim().toLowerCase();
+            if (!query) return this.libraries;
+
+            return this.libraries.filter((lib) => {
+                const rootPaths = (lib.roots || []).map((root) => root.path).join(' ');
+                return [
+                    lib.name,
+                    this.libraryPrimaryPath(lib),
+                    rootPaths,
+                ].some((value) => String(value || '').toLowerCase().includes(query));
+            });
+        },
+
+        visibleLibraries() {
+            const filtered = this.filteredLibraries();
+            const start = (this.currentPage - 1) * this.pageSize;
+            return filtered.slice(start, start + this.pageSize);
+        },
+
+        totalPages() {
+            return Math.max(1, Math.ceil(this.filteredLibraries().length / this.pageSize));
+        },
+
+        pageStart() {
+            if (this.filteredLibraries().length === 0) return 0;
+            return ((this.currentPage - 1) * this.pageSize) + 1;
+        },
+
+        pageEnd() {
+            return Math.min(this.currentPage * this.pageSize, this.filteredLibraries().length);
+        },
+
+        clampCurrentPage() {
+            const maxPage = this.totalPages();
+            if (this.currentPage > maxPage) this.currentPage = maxPage;
+            if (this.currentPage < 1) this.currentPage = 1;
+        },
+
+        changePage(newPage) {
+            this.currentPage = newPage;
+            this.clampCurrentPage();
         },
 
         syncOpenLibraryRefs() {
