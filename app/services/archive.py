@@ -66,8 +66,8 @@ class PageSortScore:
         return (
             PAGE_ROLE_RANK[self.role],
             self.normalized_base_parts,
-            self.page_index if self.page_index is not None else -1,
             1 if self.has_trailing_page_number else 0,
+            self.page_index if self.page_index is not None else -1,
             self.trailing_page_number if self.trailing_page_number is not None else -1,
             self.normalized_full_parts,
             len(self.penalty_signals),
@@ -179,6 +179,7 @@ def _has_appended_zero_page_twin(filename: str, page_stems: set[str] | None) -> 
 
 def _page_penalty_signals(
     text: str,
+    appended_page_number_variant: bool = False,
     appended_page_zero_variant: bool = False,
     zero_letter_page_variant: bool = False,
 ) -> tuple[str, ...]:
@@ -191,6 +192,8 @@ def _page_penalty_signals(
         penalties.append("preview_or_header")
     if BACK_COVER_RE.search(text):
         penalties.append("back_cover")
+    if appended_page_number_variant:
+        penalties.append("appended_page_number_variant")
     if appended_page_zero_variant:
         penalties.append("appended_page_zero_variant")
     if zero_letter_page_variant:
@@ -202,7 +205,12 @@ def _cover_signal(filename: str, text: str, page_stems: set[str] | None, penalty
     if "inside_front_cover" in penalty_signals:
         return None
 
-    explicit_cover_blockers = {"appended_page_zero_variant", "joined_cover", "zero_letter_page_variant"}
+    explicit_cover_blockers = {
+        "appended_page_number_variant",
+        "appended_page_zero_variant",
+        "joined_cover",
+        "zero_letter_page_variant",
+    }
     if EXPLICIT_COVER_RE.search(text) and not explicit_cover_blockers.intersection(penalty_signals):
         return "explicit_cover_token"
     if _has_zero_letter_twin(filename, page_stems):
@@ -247,19 +255,26 @@ def _page_sort_score(filename: str, page_stems: set[str] | None = None, archive_
     directory, basename = _split_archive_path(filename)
     stem = Path(basename).stem
     base_stem, trailing_number = _split_trailing_page_number(stem)
+    appended_page_number_variant = False
     appended_page_zero_variant = False
     zero_letter_page_variant = _has_bare_zero_page_twin(filename, page_stems)
 
     if trailing_number is not None and page_stems is not None:
         candidate_base = f"{directory}{base_stem}"
         if candidate_base in page_stems:
+            appended_page_number_variant = True
             appended_page_zero_variant = ZERO_PAGE_STEM_RE.search(base_stem) is not None
         else:
             base_stem = stem.strip()
             trailing_number = None
 
     base_name = f"{directory}{base_stem}"
-    penalty_signals = _page_penalty_signals(text, appended_page_zero_variant, zero_letter_page_variant)
+    penalty_signals = _page_penalty_signals(
+        text,
+        appended_page_number_variant,
+        appended_page_zero_variant,
+        zero_letter_page_variant,
+    )
     cover_signal = _cover_signal(filename, text, page_stems, penalty_signals)
 
     return PageSortScore(
