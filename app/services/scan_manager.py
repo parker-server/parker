@@ -33,15 +33,37 @@ class ScanManager:
         self.logger = logging.getLogger(__name__)
 
         self._stop_event = threading.Event()
+        self.worker_thread = None
 
-        # 1. RECOVERY
+        self._initialized = True
+
+    def start(self):
+        """Start the queue worker in the process that owns the manager lock."""
+        if self.worker_thread and self.worker_thread.is_alive():
+            self.logger.info("Scan manager worker already running")
+            return
+
+        self._stop_event.clear()
         self._recover_interrupted_jobs()
 
-        # 2. Start the DB polling worker
         self.worker_thread = threading.Thread(target=self._process_queue, daemon=True)
         self.worker_thread.start()
 
-        self._initialized = True
+    def stop(self, timeout: float = 5.0):
+        """Ask the queue worker to stop and wait briefly for it to exit."""
+        self._stop_event.set()
+
+        if not self.worker_thread:
+            return
+
+        if self.worker_thread.is_alive():
+            self.worker_thread.join(timeout=timeout)
+
+        if self.worker_thread.is_alive():
+            self.logger.warning("Scan manager worker did not stop before timeout")
+            return
+
+        self.worker_thread = None
 
     def _recover_interrupted_jobs(self):
         """Mark jobs that were 'RUNNING' during startup as FAILED"""

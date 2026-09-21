@@ -22,14 +22,18 @@ from app.api.deps import get_current_user
 @pytest.fixture(scope="session", autouse=True)
 def mock_background_services():
     """
-    Global patch to prevent background threads (Watcher, Scheduler)
+    Global patch to prevent background threads (Watcher, Scheduler, ScanManager)
     from trying to start during tests.
     """
     # Import the exact global instances your main.py uses
+    from app.services.scan_manager import scan_manager
     from app.services.scheduler import scheduler_service
     from app.services.watcher import library_watcher
 
     # Replace their start/stop methods with empty mocks
+    scan_manager.start = MagicMock()
+    scan_manager.stop = MagicMock()
+
     scheduler_service.start = MagicMock()
     scheduler_service.stop = MagicMock()
 

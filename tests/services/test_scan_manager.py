@@ -16,7 +16,31 @@ def _manager():
     manager = object.__new__(sm.ScanManager)
     manager.logger = MagicMock()
     manager._stop_event = threading.Event()
+    manager.worker_thread = None
     return manager
+
+
+class _FakeThread:
+    instances = []
+
+    def __init__(self, target=None, daemon=False):
+        self.target = target
+        self.daemon = daemon
+        self.started = False
+        self.join_timeout = None
+        self.alive = False
+        _FakeThread.instances.append(self)
+
+    def start(self):
+        self.started = True
+        self.alive = True
+
+    def is_alive(self):
+        return self.alive
+
+    def join(self, timeout=None):
+        self.join_timeout = timeout
+        self.alive = False
 
 
 def _locked_error():
@@ -34,6 +58,65 @@ def test_scan_manager_init_short_circuits_when_initialized():
     sm.ScanManager.__init__(manager)
 
     assert not hasattr(manager, "worker_thread")
+
+
+def test_scan_manager_init_does_not_start_worker(monkeypatch):
+    manager = object.__new__(sm.ScanManager)
+    manager._initialized = False
+    thread_factory = MagicMock()
+    monkeypatch.setattr(sm.threading, "Thread", thread_factory)
+
+    sm.ScanManager.__init__(manager)
+
+    assert manager.worker_thread is None
+    thread_factory.assert_not_called()
+
+
+def test_scan_manager_start_recovers_and_starts_worker(monkeypatch):
+    manager = _manager()
+    manager._recover_interrupted_jobs = MagicMock()
+
+    _FakeThread.instances.clear()
+    monkeypatch.setattr(sm.threading, "Thread", _FakeThread)
+
+    manager.start()
+
+    manager._recover_interrupted_jobs.assert_called_once()
+    assert len(_FakeThread.instances) == 1
+    thread = _FakeThread.instances[0]
+    assert thread.target == manager._process_queue
+    assert thread.daemon is True
+    assert thread.started is True
+    assert manager.worker_thread is thread
+
+
+def test_scan_manager_start_ignores_already_running_worker(monkeypatch):
+    manager = _manager()
+    running_thread = _FakeThread()
+    running_thread.alive = True
+    manager.worker_thread = running_thread
+    manager._recover_interrupted_jobs = MagicMock()
+
+    thread_factory = MagicMock()
+    monkeypatch.setattr(sm.threading, "Thread", thread_factory)
+
+    manager.start()
+
+    manager._recover_interrupted_jobs.assert_not_called()
+    thread_factory.assert_not_called()
+
+
+def test_scan_manager_stop_joins_worker():
+    manager = _manager()
+    thread = _FakeThread()
+    thread.alive = True
+    manager.worker_thread = thread
+
+    manager.stop(timeout=2.5)
+
+    assert manager._stop_event.is_set()
+    assert thread.join_timeout == 2.5
+    assert manager.worker_thread is None
 
 
 def test_recover_interrupted_jobs_marks_running_as_failed(monkeypatch, db):

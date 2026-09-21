@@ -26,6 +26,7 @@ from app.models.user import User
 from app.services.admin_bootstrap import AdminBootstrapError, ensure_initial_admin
 from app.services.settings_service import SettingsService
 from app.services.scheduler import scheduler_service
+from app.services.scan_manager import scan_manager
 from app.services.startup_diagnostics import log_startup_diagnostics
 
 
@@ -113,7 +114,7 @@ async def lifespan(app: FastAPI):
         portalocker.lock(lock_file, portalocker.LOCK_EX | portalocker.LOCK_NB)
         is_manager = True
 
-        logger.info(f"Worker {worker_pid} acquired Manager Lock. Starting Watcher & Scheduler...")
+        logger.info(f"Worker {worker_pid} acquired Manager Lock. Starting Watcher, Scan Manager & Scheduler...")
 
         try:
             with SessionLocal() as diagnostics_db:
@@ -127,8 +128,12 @@ async def lifespan(app: FastAPI):
         # START WATCHER
         library_watcher.start()
 
+        # START SCAN QUEUE WORKER
+        scan_manager.start()
+
         # START SCHEDULER
         scheduler_service.start()
+
     except:
         # Lock is held by another worker.
         logger.info(f"Worker {worker_pid} could not acquire lock. Skipping singletons.")
@@ -141,6 +146,7 @@ async def lifespan(app: FastAPI):
     if is_manager:
         logger.info(f"Worker {worker_pid} is Manager, also stopping services...")
         library_watcher.stop()
+        scan_manager.stop()
         scheduler_service.stop()
 
         # Release lock
