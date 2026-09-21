@@ -1,3 +1,4 @@
+import warnings
 from pathlib import Path
 from queue import Empty
 from types import SimpleNamespace
@@ -194,6 +195,27 @@ def test_thumbnail_worker_success_and_failure_paths(monkeypatch, result_payload,
         assert payload["palette"]["primary"] == "#abc"
 
 
+def test_thumbnail_worker_captures_image_warnings(monkeypatch):
+    class FakeImageService:
+        def process_cover(self, file_path, target_path):
+            warnings.warn("Corrupt EXIF data. Expecting to read 2 bytes but only got 0.")
+            return {"success": True, "palette": {"primary": "#abc"}}
+
+    monkeypatch.setattr("app.services.images.ImageService", FakeImageService)
+
+    payload = _thumbnail_worker((42, "/tmp/test.cbz"))
+
+    assert payload["error"] is False
+    assert payload["warning_details"] == [
+        {
+            "comic_id": 42,
+            "file_path": "/tmp/test.cbz",
+            "category": "UserWarning",
+            "message": "Corrupt EXIF data. Expecting to read 2 bytes but only got 0.",
+        }
+    ]
+
+
 def test_thumbnail_worker_exception_path(monkeypatch):
     class FakeImageService:
         def process_cover(self, file_path, target_path):
@@ -221,6 +243,7 @@ def test_thumbnail_writer_batches_and_sends_summary(monkeypatch):
                     {"comic_id": item["comic_id"], "file_path": None, "message": "boom"}
                     if item.get("error") else None
                 ),
+                "warning_details": item.get("warning_details", []),
             }
             for item in batch
         ]
@@ -238,7 +261,18 @@ def test_thumbnail_writer_batches_and_sends_summary(monkeypatch):
     result_queue = _ReadQueue(
         [
             {"comic_id": 1, "error": False},
-            {"comic_id": 2, "error": True},
+            {
+                "comic_id": 2,
+                "error": True,
+                "warning_details": [
+                    {
+                        "comic_id": 2,
+                        "file_path": "/tmp/two.cbz",
+                        "category": "UserWarning",
+                        "message": "Corrupt EXIF data.",
+                    }
+                ],
+            },
             {"comic_id": 3, "error": False},
             None,
         ]
@@ -256,6 +290,15 @@ def test_thumbnail_writer_batches_and_sends_summary(monkeypatch):
     assert summary["errors"] == 1
     assert summary["skipped"] == 0
     assert summary["error_details"] == [{"comic_id": 2, "file_path": None, "message": "boom"}]
+    assert summary["warnings"] == 1
+    assert summary["warning_details"] == [
+        {
+            "comic_id": 2,
+            "file_path": "/tmp/two.cbz",
+            "category": "UserWarning",
+            "message": "Corrupt EXIF data.",
+        }
+    ]
 
 
 def test_apply_batch_with_retry_recovers_from_transient_lock(monkeypatch):

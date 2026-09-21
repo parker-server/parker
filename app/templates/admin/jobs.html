@@ -95,6 +95,7 @@
                                         </template>
 
                                         <span x-show="job.summary.errors > 0" class="text-red-400 ml-1" x-text="`(${job.summary.errors} err)`"></span>
+                                        <span x-show="(job.summary.warnings || 0) > 0" class="text-amber-300 ml-1" x-text="`(${job.summary.warnings} warn)`"></span>
                                     </span>
                                 </template>
                                 <span x-show="!job.summary && job.status === 'running'" class="italic text-xs">Working...</span>
@@ -156,7 +157,7 @@
                         </template>
 
                         <template x-if="selectedJob.job_type === 'thumbnail'">
-                            <div class="grid grid-cols-3 gap-2 text-center">
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-center">
                                 <div class="bg-purple-900/30 p-3 rounded border border-purple-900/50">
                                     <div class="text-2xl font-bold text-purple-400" x-text="selectedJob.summary.processed"></div>
                                     <div class="text-xs text-gray-400 uppercase">Generated</div>
@@ -168,6 +169,10 @@
                                 <div class="bg-red-900/30 p-3 rounded border border-red-900/50">
                                     <div class="text-2xl font-bold text-red-400" x-text="selectedJob.summary.errors"></div>
                                     <div class="text-xs text-gray-400 uppercase">Errors</div>
+                                </div>
+                                <div class="bg-amber-900/20 p-3 rounded border border-amber-900/40">
+                                    <div class="text-2xl font-bold text-amber-300" x-text="selectedJob.summary.warnings || 0"></div>
+                                    <div class="text-xs text-gray-400 uppercase">Warnings</div>
                                 </div>
                             </div>
                         </template>
@@ -287,6 +292,36 @@
                                 <p class="text-sm text-red-100/80">
                                     This job recorded an error count, but no per-file error details were saved. Older scan jobs may only have summary counts.
                                 </p>
+                            </div>
+                        </template>
+
+                        <template x-if="selectedJob.job_type === 'thumbnail' && (selectedJob.summary?.warning_details || []).length > 0">
+                            <div class="mt-8">
+                                <h4 class="font-bold text-amber-300 mb-3">Thumbnail Warnings</h4>
+
+                                <div class="bg-amber-900/10 border border-amber-900/30 rounded-lg overflow-hidden">
+                                    <table class="w-full text-xs font-mono text-amber-100">
+                                        <thead class="bg-amber-900/20 text-amber-200 uppercase text-[10px]">
+                                            <tr>
+                                                <th class="px-3 py-2 text-left">Comic ID</th>
+                                                <th class="px-3 py-2 text-left">File</th>
+                                                <th class="px-3 py-2 text-left">Type</th>
+                                                <th class="px-3 py-2 text-left">Warning</th>
+                                            </tr>
+                                        </thead>
+
+                                        <tbody>
+                                            <template x-for="(warning, index) in selectedJob.summary.warning_details" :key="`${warning.comic_id || 'unknown'}-${index}`">
+                                                <tr class="border-t border-amber-900/20 hover:bg-amber-900/10">
+                                                    <td class="px-3 py-1 max-w-[120px] truncate" :title="warning.comic_id" x-text="warning.comic_id || '-'"></td>
+                                                    <td class="px-3 py-1 max-w-[220px] truncate" :title="warning.file_path" x-text="warning.file_path || '-'"></td>
+                                                    <td class="px-3 py-1 max-w-[140px] truncate" :title="warning.category" x-text="warning.category || '-'"></td>
+                                                    <td class="px-3 py-1 max-w-[260px] truncate" :title="warning.message" x-text="warning.message || 'Unknown warning'"></td>
+                                                </tr>
+                                            </template>
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                         </template>
 

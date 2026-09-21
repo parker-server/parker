@@ -1,5 +1,6 @@
 import logging
 import time
+import warnings
 from pathlib import Path
 import multiprocessing
 from multiprocessing import Queue
@@ -17,6 +18,21 @@ from app.services.images import ImageService
 logger = logging.getLogger(__name__)
 
 
+def _format_warning_details(comic_id: int, file_path: str, captured_warnings) -> List[Dict[str, Any]]:
+    """Return serializable warning details for the job summary."""
+    warning_details = []
+
+    for warning in captured_warnings:
+        warning_details.append({
+            "comic_id": comic_id,
+            "file_path": str(file_path),
+            "category": warning.category.__name__,
+            "message": str(warning.message),
+        })
+
+    return warning_details
+
+
 def _apply_batch(db, batch):
     """
     Apply a batch of updates to the DB and commit.
@@ -30,6 +46,7 @@ def _apply_batch(db, batch):
 
     for item in batch:
         comic_id = item.get("comic_id")
+        warning_details = item.get("warning_details", [])
 
         if item.get("error"):
             outcomes.append({
@@ -39,7 +56,8 @@ def _apply_batch(db, batch):
                     "comic_id": comic_id,
                     "file_path": item.get("file_path"),
                     "message": item.get("message", "Unknown thumbnail error")
-                }
+                },
+                "warning_details": warning_details,
             })
             continue
 
@@ -53,7 +71,8 @@ def _apply_batch(db, batch):
                     "comic_id": comic_id,
                     "file_path": item.get("file_path"),
                     "message": "Comic not found in database"
-                }
+                },
+                "warning_details": warning_details,
             })
             continue
 
@@ -69,7 +88,12 @@ def _apply_batch(db, batch):
         # Work is complete, reset the flag
         comic.is_dirty = False
 
-        outcomes.append({"comic_id": comic_id, "status": "processed", "detail": None})
+        outcomes.append({
+            "comic_id": comic_id,
+            "status": "processed",
+            "detail": None,
+            "warning_details": warning_details,
+        })
 
     # Commit the batch (Single Transaction)
     db.commit()
@@ -112,16 +136,26 @@ def _thumbnail_worker(task: Tuple[int, str]) -> Dict[str, Any]:
 
     image_service = ImageService()
     target_path = Path(f"./storage/cover/comic_{comic_id}.webp")
+    captured_warnings = []
 
     try:
-        result = image_service.process_cover(str(file_path), target_path)
+        with warnings.catch_warnings(record=True) as captured_warnings:
+            warnings.simplefilter("always")
+            result = image_service.process_cover(str(file_path), target_path)
+
+        warning_details = _format_warning_details(
+            comic_id,
+            str(file_path),
+            captured_warnings,
+        )
 
         if not result.get("success"):
             return {
                 "comic_id": comic_id,
                 "file_path": file_path,
                 "error": True,
-                "message": "Image processing failed"
+                "message": "Image processing failed",
+                "warning_details": warning_details,
             }
 
         return {
@@ -129,6 +163,7 @@ def _thumbnail_worker(task: Tuple[int, str]) -> Dict[str, Any]:
             "file_path": file_path,
             "thumbnail_path": str(target_path),
             "palette": result.get("palette"),
+            "warning_details": warning_details,
             "error": False,
         }
 
@@ -138,7 +173,12 @@ def _thumbnail_worker(task: Tuple[int, str]) -> Dict[str, Any]:
             "comic_id": comic_id,
             "file_path": str(file_path),
             "error": True,
-            "message": str(e)
+            "message": str(e),
+            "warning_details": _format_warning_details(
+                comic_id,
+                str(file_path),
+                captured_warnings,
+            ),
         }
 
 
@@ -157,15 +197,22 @@ def _thumbnail_writer(queue: Queue, stats_queue: Queue, batch_size: int = 25) ->
     processed = 0
     errors = 0
     skipped = 0
+    warning_count = 0
     error_details = []
+    warning_details = []
     batch = []
 
     def _flush_batch():
-        nonlocal processed, errors
+        nonlocal processed, errors, warning_count
 
         outcomes = _apply_batch_with_retry(db, batch)
         for outcome in outcomes:
             stats_queue.put({"comic_id": outcome["comic_id"], "status": outcome["status"]})
+            item_warning_details = outcome.get("warning_details", [])
+            if item_warning_details:
+                warning_count += len(item_warning_details)
+                warning_details.extend(item_warning_details)
+
             if outcome["status"] == "processed":
                 processed += 1
             else:
@@ -217,7 +264,9 @@ def _thumbnail_writer(queue: Queue, stats_queue: Queue, batch_size: int = 25) ->
             "processed": processed,
             "errors": errors,
             "skipped": skipped,
-            "error_details": error_details
+            "warnings": warning_count,
+            "error_details": error_details,
+            "warning_details": warning_details,
         })
 
 class ThumbnailService:
