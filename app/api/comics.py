@@ -26,6 +26,7 @@ from app.models.interactions import UserComicRating
 
 
 from app.schemas.search import SearchRequest, SearchResponse
+from app.schemas.comic import ComicDetailBookmark, ComicDetailResponse
 from app.services.search import SearchService
 from app.services.comic_ratings import build_parker_rating_state
 from app.services.social_insights import get_visible_comic_reader_count
@@ -104,7 +105,7 @@ async def search_comics(request: SearchRequest, db: SessionDep, current_user: Cu
     results = search_service.search(request)
     return results
 
-@router.get("/{comic_id}", name="detail")
+@router.get("/{comic_id}", response_model=ComicDetailResponse, name="detail")
 async def get_comic(comic_id: int, db: SessionDep, current_user: CurrentUser):
     """
     Get a specific comic with all metadata.
@@ -193,91 +194,78 @@ async def get_comic(comic_id: int, db: SessionDep, current_user: CurrentUser):
 
     web_label, web_title = _get_web_link_presentation(comic.web)
 
-    return {
-        "id": comic.id,
-        "filename": comic.filename,
-        "file_path": comic.absolute_path if current_user.is_superuser else None,
-        "file_size": comic.file_size,
-        "thumbnail_hash": get_thumbnail_hash(comic.updated_at),
+    return ComicDetailResponse(
+        id=comic.id,
+        filename=comic.filename,
+        file_path=comic.absolute_path if current_user.is_superuser else None,
+        file_size=comic.file_size,
+        thumbnail_hash=get_thumbnail_hash(comic.updated_at),
 
-        # Library info
-        "library_id": comic.volume.series.library_id,
-        "library_name": comic.volume.series.library.name,
+        library_id=comic.volume.series.library_id,
+        library_name=comic.volume.series.library.name,
 
-        # Series info
-        "series_id": comic.volume.series.id,
-        "series": comic.volume.series.name,
-        "volume": comic.volume.volume_number,
-        "number": comic.number,
-        "title": comic.title,
-        "summary": comic.summary,
-        "web": comic.web,
-        "web_label": web_label,
-        "web_title": web_title,
-        "notes": comic.notes,
+        series_id=comic.volume.series.id,
+        series=comic.volume.series.name,
+        volume=comic.volume.volume_number,
+        number=comic.number,
+        title=comic.title,
+        summary=comic.summary,
+        web=comic.web,
+        web_label=web_label,
+        web_title=web_title,
+        notes=comic.notes,
 
-        # Date
-        "year": comic.year,
-        "month": comic.month,
-        "day": comic.day,
+        year=comic.year,
+        month=comic.month,
+        day=comic.day,
 
-        # Credits (grouped by role)
-        "credits": credits,
+        credits=credits,
 
-        # Publishing
-        "publisher": comic.publisher,
-        "imprint": comic.imprint,
-        "format": comic.format,
-        "series_group": comic.series_group,
+        publisher=comic.publisher,
+        imprint=comic.imprint,
+        format=comic.format,
+        series_group=comic.series_group,
 
-        # Technical
-        "page_count": comic.page_count,
-        "read_time": read_time,
-        "scan_information": comic.scan_information,
+        page_count=comic.page_count,
+        read_time=read_time,
+        scan_information=comic.scan_information,
 
-        # Misc
-        "age_rating": comic.age_rating,
-        "language_iso": comic.language_iso,
-        "community_rating": comic.community_rating,
-        "source_rating": comic.community_rating,
+        age_rating=comic.age_rating,
+        language_iso=comic.language_iso,
+        community_rating=comic.community_rating,
+        source_rating=comic.community_rating,
 
-        # Tags
-        "characters": sorted((c.name for c in comic.characters), key=alpha_sort_key),
-        "teams": sorted((t.name for t in comic.teams), key=alpha_sort_key),
-        "locations": sorted((l.name for l in comic.locations), key=alpha_sort_key),
-        "genres": sorted((g.name for g in comic.genres), key=alpha_sort_key),
+        characters=sorted((c.name for c in comic.characters), key=alpha_sort_key),
+        teams=sorted((t.name for t in comic.teams), key=alpha_sort_key),
+        locations=sorted((l.name for l in comic.locations), key=alpha_sort_key),
+        genres=sorted((g.name for g in comic.genres), key=alpha_sort_key),
 
-        # Reading lists
-        "alternate_series": comic.alternate_series,
-        "alternate_number": comic.alternate_number,
-        "story_arc": comic.story_arc,
+        alternate_series=comic.alternate_series,
+        alternate_number=comic.alternate_number,
+        story_arc=comic.story_arc,
 
-        # Timestamps
-        "created_at": comic.created_at,
-        "updated_at": comic.updated_at,
+        created_at=comic.created_at,
+        updated_at=comic.updated_at,
 
-        # Read status
-        "read_status": read_status,
-        "resume_page": resume_page,
-        "stack_membership_count": stack_membership_count,
-        "bookmarks": [
-            {
-                "id": bookmark.id,
-                "page_index": bookmark.page_index,
-                "label": bookmark.label,
-            }
+        read_status=read_status,
+        resume_page=resume_page,
+        stack_membership_count=stack_membership_count,
+        bookmarks=[
+            ComicDetailBookmark(
+                id=bookmark.id,
+                page_index=bookmark.page_index,
+                label=bookmark.label,
+            )
             for bookmark in bookmarks
         ],
 
-        # ColorScape data
-        "color_palette": comic.color_palette,
+        color_palette=comic.color_palette,
 
-        # Parker rating
-        **parker_rating,
-
-        # Parker social activity
-        "parker_readers_count": parker_readers_count,
-    }
+        parker_rating_average=parker_rating["parker_rating_average"],
+        parker_rating_count=parker_rating["parker_rating_count"],
+        user_rating=parker_rating["user_rating"],
+        parker_readers_count=parker_readers_count,
+    )
 
 
 @router.put("/{comic_id}/rating", name="set_rating")

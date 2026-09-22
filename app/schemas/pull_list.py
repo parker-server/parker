@@ -1,5 +1,7 @@
-from pydantic import BaseModel, Field, field_validator
+from datetime import datetime
 from typing import Optional, List
+
+from pydantic import BaseModel, Field, field_validator
 
 PULL_LIST_NAME_MAX_LENGTH = 120
 PULL_LIST_DESCRIPTION_MAX_LENGTH = 500
@@ -68,3 +70,52 @@ class ReorderRequest(BaseModel):
 
 class BatchAddComicRequest(BaseModel):
     comic_ids: List[int]
+
+
+class PullListResponse(BaseModel):
+    id: int
+    name: str
+    description: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class PullListListItem(PullListResponse):
+    comic_count: int
+
+
+class PullListComic(BaseModel):
+    id: int
+    item_id: int
+    title: str | None = None
+    series_name: str
+    volume_number: int | None = None
+    number: str | None = None
+    thumbnail_path: str
+    sort_order: int
+    read: bool
+
+
+class PullListMetadataDetails(BaseModel):
+    writers: list[str] = Field(default_factory=list)
+    pencillers: list[str] = Field(default_factory=list)
+    characters: list[str] = Field(default_factory=list)
+    teams: list[str] = Field(default_factory=list)
+    locations: list[str] = Field(default_factory=list)
+
+
+class PullListDetailResponse(BaseModel):
+    id: int
+    name: str
+    description: str | None = None
+    created_at: datetime | None = None
+    items: list[PullListComic] = Field(default_factory=list)
+    details: PullListMetadataDetails
+
+
+class PullListMessageResponse(BaseModel):
+    message: str
+
+
+class PullListAddItemResponse(PullListMessageResponse):
+    sort_order: int

@@ -1,5 +1,3 @@
-from typing import Literal
-
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import Float, case, cast, func, or_
 from sqlalchemy.orm import joinedload
@@ -12,10 +10,22 @@ from app.models.library import Library
 from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.series import Series
 from app.models.tags import Character, Team
+from app.schemas.timeline import (
+    TimelineCollectionAnnotation,
+    TimelineComicEntry,
+    TimelineContainerComicMilestone,
+    TimelineMilestones,
+    TimelineNamedComicMilestone,
+    TimelineReadingListAnnotation,
+    TimelineResponse,
+    TimelineSubject,
+    TimelineSubjectType,
+    TimelineSuggestion,
+    TimelineSummary,
+    TimelineYearGroup,
+)
 
 router = APIRouter()
-
-TimelineSubjectType = Literal["character", "team"]
 
 SUBJECT_MODELS = {
     "character": (Character, Comic.characters),
@@ -94,29 +104,42 @@ def _comic_sort_key(comic: Comic):
     return (year, month, day, series_name.lower(), issue_number, comic.number or "", comic.id)
 
 
-def _serialize_comic(comic: Comic, annotations: dict[int, dict]) -> dict:
+def _serialize_comic(comic: Comic, annotations: dict[int, dict]) -> TimelineComicEntry:
     series = comic.volume.series
     comic_annotations = annotations.get(comic.id, {})
 
-    return {
-        "id": comic.id,
-        "series_id": series.id,
-        "series": series.name,
-        "volume": comic.volume.volume_number,
-        "number": comic.number,
-        "title": comic.title,
-        "year": _valid_year(comic),
-        "month": _valid_month(comic),
-        "day": _valid_day(comic),
-        "date_label": _date_label(comic),
-        "publisher": comic.publisher,
-        "imprint": comic.imprint,
-        "format": comic.format,
-        "story_arc": comic.story_arc,
-        "thumbnail_path": get_thumbnail_url(comic.id, comic.updated_at),
-        "reading_lists": comic_annotations.get("reading_lists", []),
-        "collections": comic_annotations.get("collections", []),
-    }
+    return TimelineComicEntry(
+        id=comic.id,
+        series_id=series.id,
+        series=series.name,
+        volume=comic.volume.volume_number,
+        number=comic.number,
+        title=comic.title,
+        year=_valid_year(comic),
+        month=_valid_month(comic),
+        day=_valid_day(comic),
+        date_label=_date_label(comic),
+        publisher=comic.publisher,
+        imprint=comic.imprint,
+        format=comic.format,
+        story_arc=comic.story_arc,
+        thumbnail_path=get_thumbnail_url(comic.id, comic.updated_at),
+        reading_lists=[
+            TimelineReadingListAnnotation(
+                id=reading_list["id"],
+                name=reading_list["name"],
+                position=reading_list["position"],
+            )
+            for reading_list in comic_annotations.get("reading_lists", [])
+        ],
+        collections=[
+            TimelineCollectionAnnotation(
+                id=collection["id"],
+                name=collection["name"],
+            )
+            for collection in comic_annotations.get("collections", [])
+        ],
+    )
 
 
 def _load_annotations(db: SessionDep, comics: list[Comic]) -> dict[int, dict]:
@@ -185,7 +208,7 @@ def _first_by(items: list[Comic], key_fn) -> list[dict]:
     ]
 
 
-@router.get("/suggestions", name="suggestions")
+@router.get("/suggestions", response_model=list[TimelineSuggestion], name="suggestions")
 async def timeline_suggestions(
     db: SessionDep,
     current_user: CurrentUser,
@@ -212,15 +235,15 @@ async def timeline_suggestions(
             .all()
         )
         suggestions.extend(
-            {"type": subject_type, "name": row[0]}
+            TimelineSuggestion(type=subject_type, name=row[0])
             for row in rows
             if row[0]
         )
 
-    return sorted(suggestions, key=lambda item: (item["name"].lower(), item["type"]))[:limit]
+    return sorted(suggestions, key=lambda item: (item.name.lower(), item.type))[:limit]
 
 
-@router.get("/", name="detail")
+@router.get("/", response_model=TimelineResponse, name="detail")
 async def get_timeline(
     db: SessionDep,
     current_user: CurrentUser,
@@ -269,12 +292,12 @@ async def get_timeline(
         year_comics = [comic for comic in dated_comics if comic.year == year]
         visible = year_comics[:per_year_limit]
         years.append(
-            {
-                "year": year,
-                "issue_count": len(year_comics),
-                "hidden_count": max(len(year_comics) - len(visible), 0),
-                "entries": [_serialize_comic(comic, annotations) for comic in visible],
-            }
+            TimelineYearGroup(
+                year=year,
+                issue_count=len(year_comics),
+                hidden_count=max(len(year_comics) - len(visible), 0),
+                entries=[_serialize_comic(comic, annotations) for comic in visible],
+            )
         )
 
     first_issue = dated_comics[0] if dated_comics else (comics[0] if comics else None)
@@ -300,50 +323,61 @@ async def get_timeline(
     year_values = [_valid_year(comic) for comic in dated_comics]
     year_values = [year for year in year_values if year is not None]
 
-    return {
-        "subject": {
-            "type": subject_type,
-            "name": subject.name,
-        },
-        "summary": {
-            "total_issues": len(comics),
-            "dated_issues": len(dated_comics),
-            "undated_issues": len(undated_comics),
-            "series_count": len({comic.volume.series_id for comic in comics}),
-            "story_arc_count": len(
+    return TimelineResponse(
+        subject=TimelineSubject(type=subject_type, name=subject.name),
+        summary=TimelineSummary(
+            total_issues=len(comics),
+            dated_issues=len(dated_comics),
+            undated_issues=len(undated_comics),
+            series_count=len({comic.volume.series_id for comic in comics}),
+            story_arc_count=len(
                 {
                     comic.story_arc.strip()
                     for comic in comics
                     if comic.story_arc and comic.story_arc.strip()
                 }
             ),
-            "reading_list_count": len(reading_list_firsts),
-            "collection_count": len(collection_firsts),
-            "start_year": min(year_values) if year_values else None,
-            "end_year": max(year_values) if year_values else None,
-            "per_year_limit": per_year_limit,
-        },
-        "milestones": {
-            "first_issue": _serialize_comic(first_issue, annotations) if first_issue else None,
-            "latest_issue": _serialize_comic(latest_issue, annotations) if latest_issue else None,
-            "first_series": [
-                {"name": item["name"], "comic": _serialize_comic(item["comic"], annotations)}
+            reading_list_count=len(reading_list_firsts),
+            collection_count=len(collection_firsts),
+            start_year=min(year_values) if year_values else None,
+            end_year=max(year_values) if year_values else None,
+            per_year_limit=per_year_limit,
+        ),
+        milestones=TimelineMilestones(
+            first_issue=_serialize_comic(first_issue, annotations) if first_issue else None,
+            latest_issue=_serialize_comic(latest_issue, annotations) if latest_issue else None,
+            first_series=[
+                TimelineNamedComicMilestone(
+                    name=item["name"],
+                    comic=_serialize_comic(item["comic"], annotations),
+                )
                 for item in first_series[:12]
             ],
-            "first_story_arcs": [
-                {"name": item["name"], "comic": _serialize_comic(item["comic"], annotations)}
+            first_story_arcs=[
+                TimelineNamedComicMilestone(
+                    name=item["name"],
+                    comic=_serialize_comic(item["comic"], annotations),
+                )
                 for item in first_story_arcs[:12]
             ],
-            "first_reading_lists": [
-                {"id": item["id"], "name": name, "comic": _serialize_comic(item["comic"], annotations)}
+            first_reading_lists=[
+                TimelineContainerComicMilestone(
+                    id=item["id"],
+                    name=name,
+                    comic=_serialize_comic(item["comic"], annotations),
+                )
                 for name, item in sorted(reading_list_firsts.items(), key=lambda item: item[0].lower())[:12]
             ],
-            "first_collections": [
-                {"id": item["id"], "name": name, "comic": _serialize_comic(item["comic"], annotations)}
+            first_collections=[
+                TimelineContainerComicMilestone(
+                    id=item["id"],
+                    name=name,
+                    comic=_serialize_comic(item["comic"], annotations),
+                )
                 for name, item in sorted(collection_firsts.items(), key=lambda item: item[0].lower())[:12]
             ],
-        },
-        "years": years,
-        "undated_entries": [_serialize_comic(comic, annotations) for comic in undated_comics[:25]],
-        "undated_hidden_count": max(len(undated_comics) - 25, 0),
-    }
+        ),
+        years=years,
+        undated_entries=[_serialize_comic(comic, annotations) for comic in undated_comics[:25]],
+        undated_hidden_count=max(len(undated_comics) - 25, 0),
+    )

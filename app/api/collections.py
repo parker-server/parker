@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session, joinedload, aliased
-from sqlalchemy import Float, func, select, and_, or_, not_
-from typing import List, Annotated
+from sqlalchemy.orm import joinedload, aliased
+from sqlalchemy import Float, func, select, not_
+from typing import Annotated
 
 from app.core.comic_helpers import (get_aggregated_metadata, get_series_age_restriction, get_thumbnail_url,
                                     get_banned_comic_condition, check_container_restriction)
@@ -12,11 +12,17 @@ from app.models.comic import Comic, Volume
 from app.models.series import Series
 from app.models.tags import Character, Team, Location
 from app.models.credits import Person
+from app.schemas.collection import (
+    CollectionComic,
+    CollectionDetailResponse,
+    CollectionListItem,
+    CollectionMetadataDetails,
+)
 
 router = APIRouter()
 
 
-@router.get("/", response_model=PaginatedResponse, name="list")
+@router.get("/", response_model=PaginatedResponse[CollectionListItem], name="list")
 async def list_collections(current_user: CurrentUser,
                            db: SessionDep,
                            params: Annotated[PaginationParams, Depends()]):
@@ -80,15 +86,15 @@ async def list_collections(current_user: CurrentUser,
     # 5. Format
     items = []
     for col, v_count in results:
-        items.append({
-            "id": col.id,
-            "name": col.name,
-            "description": col.description,
-            "auto_generated": bool(col.auto_generated),
-            "comic_count": v_count,
-            "created_at": col.created_at,
-            "updated_at": col.updated_at
-        })
+        items.append(CollectionListItem(
+            id=col.id,
+            name=col.name,
+            description=col.description,
+            auto_generated=bool(col.auto_generated),
+            comic_count=v_count,
+            created_at=col.created_at,
+            updated_at=col.updated_at,
+        ))
 
     return {
         "total": total,
@@ -98,7 +104,7 @@ async def list_collections(current_user: CurrentUser,
     }
 
 
-@router.get("/{collection_id}", name="detail")
+@router.get("/{collection_id}", response_model=CollectionDetailResponse, name="detail")
 async def get_collection(current_user: CurrentUser,
                          collection_id: int, db: SessionDep):
     """Get a specific collection with all comics"""
@@ -144,48 +150,48 @@ async def get_collection(current_user: CurrentUser,
     for item in items:
         if not item.comic: continue
         comic = item.comic
-        comics.append({
-            "id": comic.id,
-            "series_id": comic.volume.series_id,
-            "series": comic.volume.series.name,
-            "volume": comic.volume.volume_number,
-            "number": comic.number,
-            "title": comic.title,
-            "filename": comic.filename,
-            "year": comic.year,
-            "format": comic.format,
-            "thumbnail_path": get_thumbnail_url(comic.id, comic.updated_at)
-        })
+        comics.append(CollectionComic(
+            id=comic.id,
+            series_id=comic.volume.series_id,
+            series=comic.volume.series.name,
+            volume=comic.volume.volume_number,
+            number=comic.number,
+            title=comic.title,
+            filename=comic.filename,
+            year=comic.year,
+            format=comic.format,
+            thumbnail_path=get_thumbnail_url(comic.id, comic.updated_at),
+        ))
 
     if len(comics) <= 0:
         raise HTTPException(status_code=404, detail="No comics found")
 
     # 2. Aggregated Metadata (Scoped)
     # Pass allowed_ids to the helper
-    details = {
-        "writers": get_aggregated_metadata(db, Person, CollectionItem, CollectionItem.collection_id, collection_id,
-                                           'writer', allowed_library_ids=allowed_ids),
-        "pencillers": get_aggregated_metadata(db, Person, CollectionItem, CollectionItem.collection_id, collection_id,
-                                              'penciller', allowed_library_ids=allowed_ids),
-        "characters": get_aggregated_metadata(db, Character, CollectionItem, CollectionItem.collection_id,
-                                              collection_id, allowed_library_ids=allowed_ids),
-        "teams": get_aggregated_metadata(db, Team, CollectionItem, CollectionItem.collection_id, collection_id,
-                                         allowed_library_ids=allowed_ids),
-        "locations": get_aggregated_metadata(db, Location, CollectionItem, CollectionItem.collection_id, collection_id,
-                                             allowed_library_ids=allowed_ids)
-    }
+    details = CollectionMetadataDetails(
+        writers=get_aggregated_metadata(db, Person, CollectionItem, CollectionItem.collection_id, collection_id,
+                                        'writer', allowed_library_ids=allowed_ids),
+        pencillers=get_aggregated_metadata(db, Person, CollectionItem, CollectionItem.collection_id, collection_id,
+                                           'penciller', allowed_library_ids=allowed_ids),
+        characters=get_aggregated_metadata(db, Character, CollectionItem, CollectionItem.collection_id,
+                                           collection_id, allowed_library_ids=allowed_ids),
+        teams=get_aggregated_metadata(db, Team, CollectionItem, CollectionItem.collection_id, collection_id,
+                                      allowed_library_ids=allowed_ids),
+        locations=get_aggregated_metadata(db, Location, CollectionItem, CollectionItem.collection_id, collection_id,
+                                          allowed_library_ids=allowed_ids),
+    )
 
-    return {
-        "id": collection.id,
-        "name": collection.name,
-        "description": collection.description,
-        "auto_generated": bool(collection.auto_generated),
-        "comic_count": len(comics),
-        "comics": comics,
-        "created_at": collection.created_at,
-        "updated_at": collection.updated_at,
-        "details": details
-    }
+    return CollectionDetailResponse(
+        id=collection.id,
+        name=collection.name,
+        description=collection.description,
+        auto_generated=bool(collection.auto_generated),
+        comic_count=len(comics),
+        comics=comics,
+        created_at=collection.created_at,
+        updated_at=collection.updated_at,
+        details=details,
+    )
 
 
 @router.delete("/{collection_id}", name="delete")

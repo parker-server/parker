@@ -1,4 +1,5 @@
 import re
+from datetime import datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
@@ -119,3 +120,45 @@ class CoverMuralLayoutUpdate(CoverMuralUpdate):
 
 class BatchAddCoverMuralItemsRequest(BaseModel):
     comic_ids: list[int] = Field(default_factory=list)
+
+
+class CoverMuralResponse(BaseModel):
+    id: int
+    name: str
+    description: str | None = None
+    canvas_width: int
+    canvas_height: int
+    grid_size: int
+    background_color: str
+    item_count: int
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class CoverMuralItemResponse(BaseModel):
+    item_id: int
+    comic_id: int
+    title: str | None = None
+    series_name: str
+    number: str | None = None
+    label: str
+    thumbnail_path: str | None = None
+    x: int
+    y: int
+    width: int
+    height: int
+    rotation: float
+    z_index: int
+    fit_mode: Literal["contain", "cover", "stretch"]
+
+
+class CoverMuralDetailResponse(CoverMuralResponse):
+    items: list[CoverMuralItemResponse] = Field(default_factory=list)
+
+
+class CoverMuralMessageResponse(BaseModel):
+    message: str
+
+
+class BatchAddCoverMuralItemsResponse(CoverMuralMessageResponse):
+    added: int

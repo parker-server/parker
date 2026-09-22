@@ -1,8 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from sqlalchemy.orm import joinedload, aliased
-from sqlalchemy import func, select, and_, or_, not_
-from typing import Annotated, List
+from sqlalchemy import func, select, not_
+from typing import Annotated
 
 from app.api.deps import SessionDep, CurrentUser, AdminUser, PaginationParams, PaginatedResponse
 from app.core.comic_helpers import (get_aggregated_metadata,
@@ -12,9 +11,18 @@ from app.models.comic import Comic, Volume
 from app.models.series import Series
 from app.models.library import Library
 from app.models.tags import Character, Team, Location
-from app.models.credits import Person, ComicCredit
+from app.models.credits import Person
 from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.cbl_source import CBLSource
+from app.schemas.reading_list import (
+    ReadingListCBLSource,
+    ReadingListComic,
+    ReadingListDetailResponse,
+    ReadingListListItem,
+    ReadingListMetadataDetails,
+    ReadingListRenameRequest,
+    ReadingListRenameResponse,
+)
 
 router = APIRouter()
 
@@ -29,11 +37,7 @@ def _source_label(source: str) -> str:
     return SOURCE_LABELS.get(source, source)
 
 
-class ReadingListRenameRequest(BaseModel):
-    name: str
-
-
-@router.get("/", response_model=PaginatedResponse, name="list")
+@router.get("/", response_model=PaginatedResponse[ReadingListListItem], name="list")
 async def list_reading_lists(db: SessionDep,
                              current_user: CurrentUser,
                              params: Annotated[PaginationParams, Depends()]):
@@ -94,16 +98,16 @@ async def list_reading_lists(db: SessionDep,
     # 4. Format Results
     items = []
     for rl, v_count in results:
-        items.append({
-            "id": rl.id,
-            "name": rl.name,
-            "description": rl.description,
-            "source": rl.source,
-            "source_label": _source_label(rl.source),
-            "comic_count": v_count,  # Use the SQL calculated count
-            "created_at": rl.created_at,
-            "updated_at": rl.updated_at
-        })
+        items.append(ReadingListListItem(
+            id=rl.id,
+            name=rl.name,
+            description=rl.description,
+            source=rl.source,
+            source_label=_source_label(rl.source),
+            comic_count=v_count,
+            created_at=rl.created_at,
+            updated_at=rl.updated_at,
+        ))
 
     return {
         "total": total,
@@ -113,7 +117,7 @@ async def list_reading_lists(db: SessionDep,
     }
 
 
-@router.get("/{list_id}", name="detail")
+@router.get("/{list_id}", response_model=ReadingListDetailResponse, name="detail")
 async def get_reading_list(list_id: int, db: SessionDep, current_user: CurrentUser):
     """Get a specific reading list with all comics in order"""
 
@@ -152,66 +156,67 @@ async def get_reading_list(list_id: int, db: SessionDep, current_user: CurrentUs
     for item in items:
         if not item.comic: continue
         comic = item.comic
-        comics.append({
-            "position": item.position,
-            "id": comic.id,
-            "series_id": comic.volume.series_id,
-            "series": comic.volume.series.name,
-            "volume": comic.volume.volume_number,
-            "number": comic.number,
-            "title": comic.title,
-            "summary": comic.summary,
-            "filename": comic.filename,
-            "year": comic.year,
-            "format": comic.format,
-            "thumbnail_path": get_thumbnail_url(comic.id, comic.updated_at)
-        })
+        comics.append(ReadingListComic(
+            position=item.position,
+            id=comic.id,
+            series_id=comic.volume.series_id,
+            series=comic.volume.series.name,
+            volume=comic.volume.volume_number,
+            number=comic.number,
+            title=comic.title,
+            summary=comic.summary,
+            filename=comic.filename,
+            year=comic.year,
+            format=comic.format,
+            thumbnail_path=get_thumbnail_url(comic.id, comic.updated_at),
+        ))
 
     # (Empty lists are valid in some UIs, but keeping 404 behavior)
     if len(comics) <= 0:
         raise HTTPException(status_code=404, detail="No comics found (or access denied)")
 
     # 2. Aggregated Metadata (scoped)
-    details = {
-        "writers": get_aggregated_metadata(db, Person, ReadingListItem, ReadingListItem.reading_list_id, list_id,
-                                           'writer', allowed_library_ids=allowed_ids),
-        "pencillers": get_aggregated_metadata(db, Person, ReadingListItem, ReadingListItem.reading_list_id, list_id,
-                                              'penciller', allowed_library_ids=allowed_ids),
-        "characters": get_aggregated_metadata(db, Character, ReadingListItem, ReadingListItem.reading_list_id, list_id,
-                                              allowed_library_ids=allowed_ids),
-        "teams": get_aggregated_metadata(db, Team, ReadingListItem, ReadingListItem.reading_list_id, list_id,
-                                         allowed_library_ids=allowed_ids),
-        "locations": get_aggregated_metadata(db, Location, ReadingListItem, ReadingListItem.reading_list_id, list_id,
-                                             allowed_library_ids=allowed_ids)
-    }
+    details = ReadingListMetadataDetails(
+        writers=get_aggregated_metadata(db, Person, ReadingListItem, ReadingListItem.reading_list_id, list_id,
+                                        'writer', allowed_library_ids=allowed_ids),
+        pencillers=get_aggregated_metadata(db, Person, ReadingListItem, ReadingListItem.reading_list_id, list_id,
+                                           'penciller', allowed_library_ids=allowed_ids),
+        characters=get_aggregated_metadata(db, Character, ReadingListItem, ReadingListItem.reading_list_id, list_id,
+                                           allowed_library_ids=allowed_ids),
+        teams=get_aggregated_metadata(db, Team, ReadingListItem, ReadingListItem.reading_list_id, list_id,
+                                      allowed_library_ids=allowed_ids),
+        locations=get_aggregated_metadata(db, Location, ReadingListItem, ReadingListItem.reading_list_id, list_id,
+                                          allowed_library_ids=allowed_ids),
+    )
 
-    payload = {
-        "id": reading_list.id,
-        "name": reading_list.name,
-        "description": reading_list.description,
-        "source": reading_list.source,
-        "source_label": _source_label(reading_list.source),
-        "comic_count": len(comics),
-        "comics": comics,
-        "created_at": reading_list.created_at,
-        "updated_at": reading_list.updated_at,
-        "details": details
-    }
+    cbl_source_payload = None
 
     if current_user.is_superuser and reading_list.source_cbl_id:
         cbl_source = db.get(CBLSource, reading_list.source_cbl_id)
         if cbl_source:
-            payload["cbl_source"] = {
-                "id": cbl_source.id,
-                "origin": cbl_source.origin,
-                "last_refresh_status": cbl_source.last_refresh_status,
-                "last_refreshed_at": cbl_source.last_refreshed_at,
-            }
+            cbl_source_payload = ReadingListCBLSource(
+                id=cbl_source.id,
+                origin=cbl_source.origin,
+                last_refresh_status=cbl_source.last_refresh_status,
+                last_refreshed_at=cbl_source.last_refreshed_at,
+            )
 
-    return payload
+    return ReadingListDetailResponse(
+        id=reading_list.id,
+        name=reading_list.name,
+        description=reading_list.description,
+        source=reading_list.source,
+        source_label=_source_label(reading_list.source),
+        comic_count=len(comics),
+        comics=comics,
+        created_at=reading_list.created_at,
+        updated_at=reading_list.updated_at,
+        details=details,
+        cbl_source=cbl_source_payload,
+    )
 
 
-@router.patch("/{list_id}", name="rename")
+@router.patch("/{list_id}", response_model=ReadingListRenameResponse, name="rename")
 async def rename_reading_list(list_id: int, payload: ReadingListRenameRequest, db: SessionDep, admin: AdminUser):
     """
     Rename a reading list. Only CBL-derived lists can be renamed here --
@@ -240,12 +245,12 @@ async def rename_reading_list(list_id: int, payload: ReadingListRenameRequest, d
     reading_list.name = new_name
     db.commit()
 
-    return {
-        "id": reading_list.id,
-        "name": reading_list.name,
-        "source": reading_list.source,
-        "source_label": _source_label(reading_list.source),
-    }
+    return ReadingListRenameResponse(
+        id=reading_list.id,
+        name=reading_list.name,
+        source=reading_list.source,
+        source_label=_source_label(reading_list.source),
+    )
 
 
 @router.delete("/{list_id}", name="delete")

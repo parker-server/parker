@@ -30,6 +30,13 @@ from app.models.tags import Genre, comic_genres
 from app.models.interactions import UserSeries
 from app.models.reading_progress import ReadingProgress
 
+from app.schemas.series import (
+    SeriesDetailContainer,
+    SeriesDetailResponse,
+    SeriesDetailStoryArc,
+    SeriesDetailVolume,
+    SeriesResumeTarget,
+)
 from app.services.social_insights import get_visible_series_reader_count
 from app.services.thumbnailer import ThumbnailService
 
@@ -90,6 +97,14 @@ def _visible_container_counts(
         query = query.filter(SeriesModel.library_id.in_(allowed_ids))
 
     return {container_id: int(comic_count or 0) for container_id, comic_count in query.all()}
+
+
+def _is_series_starred(db, current_user: CurrentUser, series_id: int) -> bool:
+    pref = db.query(UserSeries).filter(
+        UserSeries.user_id == current_user.id,
+        UserSeries.series_id == series_id,
+    ).first()
+    return bool(pref and pref.is_starred)
 
 
 def bulk_serialize_series(series_list: List[Series], db, current_user) -> List[dict]:
@@ -188,7 +203,7 @@ def bulk_serialize_series(series_list: List[Series], db, current_user) -> List[d
     return results
 
 
-@router.get("/{series_id}", name="detail")
+@router.get("/{series_id}", response_model=SeriesDetailResponse, name="detail")
 async def get_series_detail(series: SeriesDep, db: SessionDep, current_user: CurrentUser):
     """
     Get series summary.
@@ -206,11 +221,21 @@ async def get_series_detail(series: SeriesDep, db: SessionDep, current_user: Cur
 
     if not volume_ids:
         # (Return empty structure - kept same as original)
-        return {
-            "id": series.id, "name": series.name, "library_id": series.library_id,
-            "volume_count": 0, "total_issues": 0, "volumes": [], "collections": [], "reading_lists": [],
-            "parker_readers_count": None,
-        }
+        return SeriesDetailResponse(
+            id=series.id,
+            name=series.name,
+            library_id=series.library_id,
+            library_name=series.library.name,
+            volume_count=0,
+            total_issues=0,
+            volumes=[],
+            collections=[],
+            reading_lists=[],
+            first_issue_summary=series.summary_override,
+            starred=_is_series_starred(db, current_user, series.id),
+            is_admin=current_user.is_superuser,
+            parker_readers_count=get_visible_series_reader_count(db, series.id),
+        )
 
     # Get centralized filters
     is_plain, is_annual, is_special = get_format_filters()
@@ -398,68 +423,73 @@ async def get_series_detail(series: SeriesDep, db: SessionDep, current_user: Cur
                     cover_id = pool[0].id
                     cover_hash = get_thumbnail_hash(pool[0].updated_at)
 
-        volumes_data.append({
-            "volume_id": vol.id, "volume_number": vol.volume_number,
-            "first_issue_id": cover_id, # Replaces the SQL window function result
-            "thumbnail_hash": cover_hash,
-            "issue_count": count, "read": (count > 0 and read_count >= count)
-        })
+        volumes_data.append(SeriesDetailVolume(
+            volume_id=vol.id,
+            volume_number=vol.volume_number,
+            first_issue_id=cover_id,
+            thumbnail_hash=cover_hash,
+            issue_count=count,
+            read=(count > 0 and read_count >= count),
+        ))
 
     # Starred Check
-    is_starred = False
-    if current_user:
-        pref = db.query(UserSeries).filter(UserSeries.user_id == current_user.id,
-                                           UserSeries.series_id == series.id).first()
-        is_starred = pref.is_starred if pref else False
+    is_starred = _is_series_starred(db, current_user, series.id)
 
     parker_readers_count = get_visible_series_reader_count(db, series.id)
 
-    return {
-        "id": series.id,
-        "name": series.name,
-        "library_id": series.library_id,
-        "library_name": series.library.name,
-        "publisher": stats.publisher,
-        "imprint": stats.imprint,
-        "start_year": stats.start_year,
-        "volume_count": len(volumes),
-        "total_issues": stats.plain_count,
-        "annual_count": stats.annual_count,
-        "special_count": stats.special_count,
-        "is_standalone": is_standalone,
-        "total_pages": total_pages,
-        "file_size": stats.total_size or 0,
-        "read_time": read_time,
-        "starred": is_starred,
-        "first_issue_id": first_issue.id if first_issue else None,
-        "first_issue_summary": series.summary_override or (first_issue.summary if first_issue else None),
-        "volumes": volumes_data,
-        "collections": [
-            {
-                "id": c.id,
-                "name": c.name,
-                "description": c.description,
-                "comic_count": related_collection_counts.get(c.id, 0),
-            }
+    return SeriesDetailResponse(
+        id=series.id,
+        name=series.name,
+        library_id=series.library_id,
+        library_name=series.library.name,
+        publisher=stats.publisher,
+        imprint=stats.imprint,
+        start_year=stats.start_year,
+        volume_count=len(volumes),
+        total_issues=stats.plain_count,
+        annual_count=stats.annual_count,
+        special_count=stats.special_count,
+        is_standalone=is_standalone,
+        total_pages=total_pages,
+        file_size=stats.total_size or 0,
+        read_time=read_time,
+        starred=is_starred,
+        first_issue_id=first_issue.id if first_issue else None,
+        first_issue_summary=series.summary_override or (first_issue.summary if first_issue else None),
+        volumes=volumes_data,
+        collections=[
+            SeriesDetailContainer(
+                id=c.id,
+                name=c.name,
+                description=c.description,
+                comic_count=related_collection_counts.get(c.id, 0),
+            )
             for c in related_collections
         ],
-        "reading_lists": [
-            {
-                "id": l.id,
-                "name": l.name,
-                "description": l.description,
-                "comic_count": related_reading_list_counts.get(l.id, 0),
-            }
+        reading_lists=[
+            SeriesDetailContainer(
+                id=l.id,
+                name=l.name,
+                description=l.description,
+                comic_count=related_reading_list_counts.get(l.id, 0),
+            )
             for l in related_reading_lists
         ],
-        "story_arcs": story_arcs_data,
-        "resume_to": {"comic_id": resume_comic_id, "status": read_status},
-        "colors": colors,
-        "is_admin": current_user.is_superuser,
-        "is_reverse_numbering": is_reverse_series,
-        "thumbnail_hash": get_thumbnail_hash(first_issue.updated_at),
-        "parker_readers_count": parker_readers_count,
-    }
+        story_arcs=[
+            SeriesDetailStoryArc(
+                name=arc["name"],
+                first_issue_id=arc["first_issue_id"],
+                count=arc["count"],
+            )
+            for arc in story_arcs_data
+        ],
+        resume_to=SeriesResumeTarget(comic_id=resume_comic_id, status=read_status),
+        colors=colors,
+        is_admin=current_user.is_superuser,
+        is_reverse_numbering=is_reverse_series,
+        thumbnail_hash=get_thumbnail_hash(first_issue.updated_at) if first_issue else None,
+        parker_readers_count=parker_readers_count,
+    )
 
 
 @router.get("/{series_id}/details", name="details")

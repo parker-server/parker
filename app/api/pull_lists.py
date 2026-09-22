@@ -13,12 +13,35 @@ from app.models.tags import Character, Team, Location
 from app.models.credits import Person
 
 
-from app.schemas.pull_list import PullListCreate, PullListUpdate, AddComicRequest, ReorderRequest, BatchAddComicRequest
+from app.schemas.pull_list import (
+    AddComicRequest,
+    BatchAddComicRequest,
+    PullListAddItemResponse,
+    PullListComic,
+    PullListCreate,
+    PullListDetailResponse,
+    PullListListItem,
+    PullListMessageResponse,
+    PullListMetadataDetails,
+    PullListResponse,
+    PullListUpdate,
+    ReorderRequest,
+)
 
 router = APIRouter()
 
 
-@router.get("/", name="list")
+def _serialize_pull_list(plist: PullList) -> PullListResponse:
+    return PullListResponse(
+        id=plist.id,
+        name=plist.name,
+        description=plist.description,
+        created_at=plist.created_at,
+        updated_at=plist.updated_at,
+    )
+
+
+@router.get("/", response_model=list[PullListListItem], name="list")
 def get_my_lists(db: SessionDep, current_user: CurrentUser):
     """List all pull lists for the current user."""
 
@@ -47,19 +70,19 @@ def get_my_lists(db: SessionDep, current_user: CurrentUser):
     )
 
     return [
-        {
-            "id": plist.id,
-            "name": plist.name,
-            "description": plist.description,
-            "comic_count": int(comic_count or 0),
-            "created_at": plist.created_at,
-            "updated_at": plist.updated_at,
-        }
+        PullListListItem(
+            id=plist.id,
+            name=plist.name,
+            description=plist.description,
+            comic_count=int(comic_count or 0),
+            created_at=plist.created_at,
+            updated_at=plist.updated_at,
+        )
         for plist, comic_count in results
     ]
 
 
-@router.post("/", name="create")
+@router.post("/", response_model=PullListResponse, name="create")
 def create_list(list_data: PullListCreate, db: SessionDep, current_user: CurrentUser):
     """Create a new pull list."""
     new_list = PullList(
@@ -70,10 +93,10 @@ def create_list(list_data: PullListCreate, db: SessionDep, current_user: Current
     db.add(new_list)
     db.commit()
     db.refresh(new_list)
-    return new_list
+    return _serialize_pull_list(new_list)
 
 
-@router.get("/{list_id}", name="detail")
+@router.get("/{list_id}", response_model=PullListDetailResponse, name="detail")
 def get_list_details(list_id: int, db: SessionDep, current_user: CurrentUser):
     """
     Get list details + items sorted by user preference.
@@ -115,40 +138,41 @@ def get_list_details(list_id: int, db: SessionDep, current_user: CurrentUser):
     for item in items:
         if not item.comic: continue
 
-        items_data.append({
-            "id": item.comic.id,
-            "item_id": item.id,
-            "title": item.comic.title,
-            # These accesses are now safe/cached
-            "series_name": item.comic.volume.series.name,
-            "volume_number": item.comic.volume.volume_number,
-            "number": item.comic.number,
-            "thumbnail_path": get_thumbnail_url(item.comic.id, item.comic.updated_at),
-            "sort_order": item.sort_order,
-            "read": False  # we could join ReadingProgress here in the future
-        })
+        items_data.append(
+            PullListComic(
+                id=item.comic.id,
+                item_id=item.id,
+                title=item.comic.title,
+                # These accesses are now safe/cached
+                series_name=item.comic.volume.series.name,
+                volume_number=item.comic.volume.volume_number,
+                number=item.comic.number,
+                thumbnail_path=get_thumbnail_url(item.comic.id, item.comic.updated_at),
+                sort_order=item.sort_order,
+                read=False,  # we could join ReadingProgress here in the future
+            )
+        )
 
     # 3. Aggregated Metadata (5 queries, acceptable for detail view)
-    details = {
-        "writers": get_aggregated_metadata(db, Person, PullListItem, PullListItem.pull_list_id, list_id, 'writer'),
-        "pencillers": get_aggregated_metadata(db, Person, PullListItem, PullListItem.pull_list_id, list_id,
-                                              'penciller'),
-        "characters": get_aggregated_metadata(db, Character, PullListItem, PullListItem.pull_list_id, list_id),
-        "teams": get_aggregated_metadata(db, Team, PullListItem, PullListItem.pull_list_id, list_id),
-        "locations": get_aggregated_metadata(db, Location, PullListItem, PullListItem.pull_list_id, list_id)
-    }
+    details = PullListMetadataDetails(
+        writers=get_aggregated_metadata(db, Person, PullListItem, PullListItem.pull_list_id, list_id, 'writer'),
+        pencillers=get_aggregated_metadata(db, Person, PullListItem, PullListItem.pull_list_id, list_id, 'penciller'),
+        characters=get_aggregated_metadata(db, Character, PullListItem, PullListItem.pull_list_id, list_id),
+        teams=get_aggregated_metadata(db, Team, PullListItem, PullListItem.pull_list_id, list_id),
+        locations=get_aggregated_metadata(db, Location, PullListItem, PullListItem.pull_list_id, list_id),
+    )
 
-    return {
-        "id": plist.id,
-        "name": plist.name,
-        "description": plist.description,
-        "created_at": plist.created_at,
-        "items": items_data,
-        "details": details
-    }
+    return PullListDetailResponse(
+        id=plist.id,
+        name=plist.name,
+        description=plist.description,
+        created_at=plist.created_at,
+        items=items_data,
+        details=details,
+    )
 
 
-@router.put("/{list_id}", name="update")
+@router.put("/{list_id}", response_model=PullListResponse, name="update")
 def update_list(list_id: int, update_data: PullListUpdate, db: SessionDep, current_user: CurrentUser):
     """Rename or update description."""
     plist = db.query(PullList).filter(PullList.id == list_id, PullList.user_id == current_user.id).first()
@@ -164,10 +188,10 @@ def update_list(list_id: int, update_data: PullListUpdate, db: SessionDep, curre
 
     db.commit()
     db.refresh(plist)
-    return plist
+    return _serialize_pull_list(plist)
 
 
-@router.delete("/{list_id}", name="delete")
+@router.delete("/{list_id}", response_model=PullListMessageResponse, name="delete")
 def delete_list(list_id: int, db: SessionDep, current_user: CurrentUser):
     """Delete the entire list (does not delete comics)."""
     plist = db.query(PullList).filter(PullList.id == list_id, PullList.user_id == current_user.id).first()
@@ -181,7 +205,7 @@ def delete_list(list_id: int, db: SessionDep, current_user: CurrentUser):
 
 # --- Item Management ---
 
-@router.post("/{list_id}/items", name="add_item")
+@router.post("/{list_id}/items", response_model=PullListAddItemResponse, name="add_item")
 def add_item_to_list(list_id: int, item_data: AddComicRequest, db: SessionDep, current_user: CurrentUser):
     plist = db.query(PullList).filter(PullList.id == list_id, PullList.user_id == current_user.id).first()
     if not plist: raise HTTPException(status_code=404, detail="Pull list not found")
@@ -203,7 +227,7 @@ def add_item_to_list(list_id: int, item_data: AddComicRequest, db: SessionDep, c
     return {"message": "Comic added", "sort_order": new_order}
 
 
-@router.delete("/{list_id}/items/{comic_id}", name="remove_item")
+@router.delete("/{list_id}/items/{comic_id}", response_model=PullListMessageResponse, name="remove_item")
 def remove_item_from_list(list_id: int, comic_id: int, db: SessionDep, current_user: CurrentUser):
     plist = db.query(PullList).filter(PullList.id == list_id, PullList.user_id == current_user.id).first()
     if not plist: raise HTTPException(status_code=404, detail="Pull list not found")
@@ -217,7 +241,7 @@ def remove_item_from_list(list_id: int, comic_id: int, db: SessionDep, current_u
     return {"message": "Item removed"}
 
 
-@router.post("/{list_id}/reorder", name="reorder_list_items")
+@router.post("/{list_id}/reorder", response_model=PullListMessageResponse, name="reorder_list_items")
 def reorder_list_items(list_id: int, order_data: ReorderRequest, db: SessionDep, current_user: CurrentUser):
     plist = db.query(PullList).filter(PullList.id == list_id, PullList.user_id == current_user.id).first()
     if not plist: raise HTTPException(status_code=404, detail="Pull list not found")
@@ -233,7 +257,7 @@ def reorder_list_items(list_id: int, order_data: ReorderRequest, db: SessionDep,
     return {"message": "List reordered successfully"}
 
 
-@router.post("/{list_id}/items/batch", name="batch_add_items")
+@router.post("/{list_id}/items/batch", response_model=PullListMessageResponse, name="batch_add_items")
 def batch_add_items_to_list(list_id: int, batch_data: BatchAddComicRequest, db: SessionDep, current_user: CurrentUser):
     plist = db.query(PullList).filter(PullList.id == list_id, PullList.user_id == current_user.id).first()
     if not plist: raise HTTPException(status_code=404, detail="Pull list not found")

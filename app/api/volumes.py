@@ -24,6 +24,8 @@ from app.models.series import Series
 from app.models.interactions import UserVolumeFollow
 from app.models.reading_progress import ReadingProgress
 
+from app.schemas.volume import VolumeDetailResponse, VolumeDetailStoryArc, VolumeResumeTarget
+
 router = APIRouter()
 
 
@@ -251,7 +253,7 @@ def get_followed_volumes(
     return payload
 
 
-@router.get("/{volume_id}", name="detail")
+@router.get("/{volume_id}", response_model=VolumeDetailResponse, name="detail")
 async def get_volume_detail(volume: VolumeDep, db: SessionDep, current_user: CurrentUser):
     """
     Get volume summary with categorized counts.
@@ -406,45 +408,47 @@ async def get_volume_detail(volume: VolumeDep, db: SessionDep, current_user: Cur
         Volume.series_id == volume.series_id
     ).scalar() or 0
 
-    return {
-        "id": volume.id,
-        "volume_number": volume.volume_number,
-        "series_id": volume.series.id,
-        "series_name": volume.series.name,
-        "series_volume_count": series_volume_count,
-        "library_id": volume.series.library_id,
-        "library_name": volume.series.library.name,
+    return VolumeDetailResponse(
+        id=volume.id,
+        volume_number=volume.volume_number,
+        series_id=volume.series.id,
+        series_name=volume.series.name,
+        series_volume_count=series_volume_count,
+        library_id=volume.series.library_id,
+        library_name=volume.series.library.name,
 
-        # Counts
-        "total_issues": stats.plain_count,  # Use plain count as main count
-        "annual_count": stats.annual_count,
-        "special_count": stats.special_count,
-        "total_pages": total_pages,
-        "read_time": read_time,
-        "file_size": stats.total_size or 0,
+        total_issues=stats.plain_count,
+        annual_count=stats.annual_count,
+        special_count=stats.special_count,
+        total_pages=total_pages,
+        read_time=read_time,
+        file_size=stats.total_size or 0,
 
-        # Status Fields
-        "status": status,  # "Ongoing" or "Ended"
-        "expected_count": expected_count,  # e.g. 12
-        "is_completed": is_completed,  # True if you have 1..12
-        "missing_issues": missing_issues,  # e.g. [5, 6] or []
-        "is_standalone": is_standalone,
+        status=status,
+        expected_count=expected_count,
+        is_completed=is_completed,
+        missing_issues=missing_issues,
+        is_standalone=is_standalone,
 
-        "publisher": stats.publisher,
-        "imprint": stats.imprint,
-        "start_year": stats.start_year,
-        "end_year": stats.end_year,
-        "first_issue_id": first_issue.id if first_issue else None,
-        "first_issue_summary": volume.summary_override or (first_issue.summary if first_issue else None),
-        "story_arcs": story_arcs_data,
-        "resume_to": {
-            "comic_id": resume_comic_id,
-            "status": read_status
-        },
-        "is_following": bool(follow),
-        "colors": colors,
-        "is_reverse_numbering": is_reverse_series,
-    }
+        publisher=stats.publisher,
+        imprint=stats.imprint,
+        start_year=stats.start_year,
+        end_year=stats.end_year,
+        first_issue_id=first_issue.id if first_issue else None,
+        first_issue_summary=volume.summary_override or (first_issue.summary if first_issue else None),
+        story_arcs=[
+            VolumeDetailStoryArc(
+                name=arc["name"],
+                first_issue_id=arc["first_issue_id"],
+                count=arc["count"],
+            )
+            for arc in story_arcs_data
+        ],
+        resume_to=VolumeResumeTarget(comic_id=resume_comic_id, status=read_status),
+        is_following=bool(follow),
+        colors=colors,
+        is_reverse_numbering=is_reverse_series,
+    )
 
 
 @router.get("/{volume_id}/details", name="details")

@@ -16,12 +16,17 @@ from app.models.cover_mural import CoverMural, CoverMuralItem
 from app.models.series import Series
 from app.schemas.cover_mural import (
     BatchAddCoverMuralItemsRequest,
+    BatchAddCoverMuralItemsResponse,
     COVER_MURAL_MAX_EXPORT_BLEED,
     COVER_MURAL_MAX_EXPORT_SPACING,
     COVER_MURAL_MAX_EXPORT_SCALE,
     COVER_MURAL_MAX_PIXELS,
     CoverMuralCreate,
+    CoverMuralDetailResponse,
+    CoverMuralItemResponse,
     CoverMuralLayoutUpdate,
+    CoverMuralMessageResponse,
+    CoverMuralResponse,
     CoverMuralUpdate,
 )
 from app.services.images import ImageService
@@ -42,19 +47,19 @@ def _get_mural_or_404(mural_id: int, db: SessionDep, current_user: CurrentUser) 
     return mural
 
 
-def _serialize_mural(mural: CoverMural, item_count: int | None = None) -> dict:
-    return {
-        "id": mural.id,
-        "name": mural.name,
-        "description": mural.description,
-        "canvas_width": mural.canvas_width,
-        "canvas_height": mural.canvas_height,
-        "grid_size": mural.grid_size,
-        "background_color": mural.background_color,
-        "item_count": item_count if item_count is not None else len(mural.items or []),
-        "created_at": mural.created_at,
-        "updated_at": mural.updated_at,
-    }
+def _serialize_mural(mural: CoverMural, item_count: int | None = None) -> CoverMuralResponse:
+    return CoverMuralResponse(
+        id=mural.id,
+        name=mural.name,
+        description=mural.description,
+        canvas_width=mural.canvas_width,
+        canvas_height=mural.canvas_height,
+        grid_size=mural.grid_size,
+        background_color=mural.background_color,
+        item_count=item_count if item_count is not None else len(mural.items or []),
+        created_at=mural.created_at,
+        updated_at=mural.updated_at,
+    )
 
 
 def _visible_mural_items_query(db: SessionDep, mural_id: int, current_user: CurrentUser):
@@ -81,26 +86,26 @@ def _visible_mural_items_query(db: SessionDep, mural_id: int, current_user: Curr
     return query.order_by(CoverMuralItem.z_index.asc(), CoverMuralItem.id.asc())
 
 
-def _serialize_item(item: CoverMuralItem) -> dict:
+def _serialize_item(item: CoverMuralItem) -> CoverMuralItemResponse:
     comic = item.comic
     series_name = comic.volume.series.name if comic and comic.volume and comic.volume.series else ""
     label = f"{series_name} #{comic.number}" if comic else ""
-    return {
-        "item_id": item.id,
-        "comic_id": item.comic_id,
-        "title": comic.title if comic else None,
-        "series_name": series_name,
-        "number": comic.number if comic else None,
-        "label": label,
-        "thumbnail_path": get_thumbnail_url(comic.id, comic.updated_at) if comic else None,
-        "x": item.x,
-        "y": item.y,
-        "width": item.width,
-        "height": item.height,
-        "rotation": item.rotation,
-        "z_index": item.z_index,
-        "fit_mode": item.fit_mode,
-    }
+    return CoverMuralItemResponse(
+        item_id=item.id,
+        comic_id=item.comic_id,
+        title=comic.title if comic else None,
+        series_name=series_name,
+        number=comic.number if comic else None,
+        label=label,
+        thumbnail_path=get_thumbnail_url(comic.id, comic.updated_at) if comic else None,
+        x=item.x,
+        y=item.y,
+        width=item.width,
+        height=item.height,
+        rotation=item.rotation,
+        z_index=item.z_index,
+        fit_mode=item.fit_mode,
+    )
 
 
 def _validate_canvas_size(width: int, height: int) -> None:
@@ -305,7 +310,7 @@ def _compose_export_image(
     return canvas
 
 
-@router.get("/", name="list")
+@router.get("/", response_model=list[CoverMuralResponse], name="list")
 def list_cover_murals(db: SessionDep, current_user: CurrentUser):
     murals = (
         db.query(CoverMural, func.count(CoverMuralItem.id).label("item_count"))
@@ -319,7 +324,7 @@ def list_cover_murals(db: SessionDep, current_user: CurrentUser):
     return [_serialize_mural(mural, int(item_count or 0)) for mural, item_count in murals]
 
 
-@router.post("/", name="create")
+@router.post("/", response_model=CoverMuralResponse, name="create")
 def create_cover_mural(
     mural_data: CoverMuralCreate,
     db: SessionDep,
@@ -342,16 +347,18 @@ def create_cover_mural(
     return _serialize_mural(mural, 0)
 
 
-@router.get("/{mural_id}", name="detail")
+@router.get("/{mural_id}", response_model=CoverMuralDetailResponse, name="detail")
 def get_cover_mural(mural_id: int, db: SessionDep, current_user: CurrentUser):
     mural = _get_mural_or_404(mural_id, db, current_user)
     items = _visible_mural_items_query(db, mural_id, current_user).all()
     data = _serialize_mural(mural, len(items))
-    data["items"] = [_serialize_item(item) for item in items]
-    return data
+    return CoverMuralDetailResponse(
+        **data.model_dump(),
+        items=[_serialize_item(item) for item in items],
+    )
 
 
-@router.put("/{mural_id}", name="update")
+@router.put("/{mural_id}", response_model=CoverMuralResponse, name="update")
 def update_cover_mural(
     mural_id: int,
     update_data: CoverMuralUpdate,
@@ -381,7 +388,7 @@ def update_cover_mural(
     return _serialize_mural(mural)
 
 
-@router.delete("/{mural_id}", name="delete")
+@router.delete("/{mural_id}", response_model=CoverMuralMessageResponse, name="delete")
 def delete_cover_mural(mural_id: int, db: SessionDep, current_user: CurrentUser):
     mural = _get_mural_or_404(mural_id, db, current_user)
     db.delete(mural)
@@ -389,7 +396,7 @@ def delete_cover_mural(mural_id: int, db: SessionDep, current_user: CurrentUser)
     return {"message": "Cover mural deleted"}
 
 
-@router.post("/{mural_id}/items/batch", name="batch_add_items")
+@router.post("/{mural_id}/items/batch", response_model=BatchAddCoverMuralItemsResponse, name="batch_add_items")
 def batch_add_items_to_mural(
     mural_id: int,
     batch_data: BatchAddCoverMuralItemsRequest,
@@ -455,7 +462,7 @@ def batch_add_items_to_mural(
     return {"message": f"Added {len(new_items)} comics to mural", "added": len(new_items)}
 
 
-@router.delete("/{mural_id}/items/{item_id}", name="remove_item")
+@router.delete("/{mural_id}/items/{item_id}", response_model=CoverMuralMessageResponse, name="remove_item")
 def remove_mural_item(mural_id: int, item_id: int, db: SessionDep, current_user: CurrentUser):
     _get_mural_or_404(mural_id, db, current_user)
     item = (
@@ -471,7 +478,7 @@ def remove_mural_item(mural_id: int, item_id: int, db: SessionDep, current_user:
     return {"message": "Item removed"}
 
 
-@router.post("/{mural_id}/layout", name="save_layout")
+@router.post("/{mural_id}/layout", response_model=CoverMuralDetailResponse, name="save_layout")
 def save_mural_layout(
     mural_id: int,
     layout_data: CoverMuralLayoutUpdate,
