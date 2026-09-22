@@ -61,7 +61,7 @@ class _FakeCatalogClient:
     async def get(self, url, headers=None):
         return self._get_response
 
-    def stream(self, method, url, headers=None):
+    def stream(self, method, url, headers=None, **kwargs):
         return _FakeStreamCtx(_FakeStreamResponse(self._stream_chunks or []))
 
 
@@ -187,6 +187,29 @@ def test_import_url_rejects_non_https(admin_client):
     assert "https" in response.json()["detail"]
 
 
+def test_import_url_success_creates_source(admin_client, tmp_path, monkeypatch):
+    _patch_cbl_dir(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        cbl_source_service_module.CBLSourceService,
+        "_resolve_safe_addresses",
+        lambda self, host: ["93.184.216.34"],
+    )
+    monkeypatch.setattr(
+        cbl_source_service_module.httpx,
+        "AsyncClient",
+        lambda *args, **kwargs: _FakeCatalogClient(stream_chunks=[VALID_CBL]),
+    )
+
+    response = admin_client.post("/api/cbl-sources/url", json={"url": "https://example.com/list.cbl"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["display_name"] == "list"
+    assert payload["origin"] == "url"
+    assert payload["source_url"] == "https://example.com/list.cbl"
+    assert payload["reading_list_name"] == "API Test List"
+
+
 def test_refresh_rejects_source_with_no_url(admin_client, tmp_path, monkeypatch):
     _patch_cbl_dir(monkeypatch, tmp_path)
 
@@ -203,6 +226,62 @@ def test_refresh_rejects_source_with_no_url(admin_client, tmp_path, monkeypatch)
 def test_refresh_missing_source_404(admin_client):
     response = admin_client.post("/api/cbl-sources/999999/refresh")
     assert response.status_code == 404
+
+
+def test_refresh_direct_url_source_rebuilds_when_refresh_succeeds(admin_client, db, tmp_path, monkeypatch):
+    _patch_cbl_dir(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        cbl_source_service_module.CBLSourceService,
+        "_resolve_safe_addresses",
+        lambda self, host: ["93.184.216.34"],
+    )
+    _patch_catalog_client_sequence(monkeypatch, [
+        _FakeCatalogClient(stream_chunks=[VALID_CBL]),
+        _FakeCatalogClient(stream_chunks=[VALID_CBL.replace(b"API Test List", b"Updated URL List")]),
+    ])
+
+    created = admin_client.post("/api/cbl-sources/url", json={"url": "https://example.com/list.cbl"}).json()
+
+    response = admin_client.post(f"/api/cbl-sources/{created['id']}/refresh")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["last_refresh_status"] == "ok"
+
+    source = db.get(CBLSource, created["id"])
+    assert Path(source.stored_path).read_bytes() == VALID_CBL.replace(b"API Test List", b"Updated URL List")
+
+
+def test_refresh_value_error_maps_to_404(admin_client, db, tmp_path, monkeypatch):
+    _patch_cbl_dir(monkeypatch, tmp_path)
+
+    fingerprint = hashlib.sha256(VALID_CBL).hexdigest()
+    cbl_dir = tmp_path / "cbl"
+    cbl_dir.mkdir(parents=True, exist_ok=True)
+    stored_path = cbl_dir / f"{fingerprint}.cbl"
+    stored_path.write_bytes(VALID_CBL)
+
+    source = CBLSource(
+        display_name="URL Source",
+        stored_path=str(stored_path),
+        original_filename="url-source.cbl",
+        origin="url",
+        source_url="https://example.com/url-source.cbl",
+        fingerprint=fingerprint,
+        last_refresh_status="never",
+    )
+    db.add(source)
+    db.commit()
+
+    async def fail_refresh(self, source_id):
+        raise ValueError(f"CBL source {source_id} not found")
+
+    monkeypatch.setattr(cbl_source_service_module.CBLSourceService, "refresh", fail_refresh)
+
+    response = admin_client.post(f"/api/cbl-sources/{source.id}/refresh")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == f"CBL source {source.id} not found"
 
 
 def test_refresh_dispatches_to_catalog_path_for_catalog_origin_sources(admin_client, db, tmp_path, monkeypatch):
