@@ -145,6 +145,43 @@ def test_preview_success(admin_client, monkeypatch):
     assert payload["sample_truncated"] is False
 
 
+def test_preview_not_found_maps_to_404(admin_client, monkeypatch):
+    _patch_client_sequence(monkeypatch, [
+        _FakeCatalogClient(get_response=_FakeGetResponse(404, {"message": "Not Found"})),
+    ])
+
+    response = admin_client.get("/api/cbl-catalog/preview?path=Missing.cbl")
+
+    assert response.status_code == 404
+    assert "Path not found" in response.json()["detail"]
+
+
+def test_preview_rate_limited_maps_to_502(admin_client, monkeypatch):
+    _patch_client_sequence(monkeypatch, [
+        _FakeCatalogClient(get_response=_FakeGetResponse(403, {"message": "rate limited"})),
+    ])
+
+    response = admin_client.get("/api/cbl-catalog/preview?path=Infinity-Gauntlet.cbl")
+
+    assert response.status_code == 502
+    assert "rate limit" in response.json()["detail"]
+
+
+def test_preview_bad_download_host_maps_to_400(admin_client, monkeypatch):
+    bad_meta = {
+        **FILE_META_JSON,
+        "download_url": "https://example.com/not-the-catalog.cbl",
+    }
+    _patch_client_sequence(monkeypatch, [
+        _FakeCatalogClient(get_response=_FakeGetResponse(200, bad_meta)),
+    ])
+
+    response = admin_client.get("/api/cbl-catalog/preview?path=Infinity-Gauntlet.cbl")
+
+    assert response.status_code == 400
+    assert "unexpected host" in response.json()["detail"]
+
+
 def test_import_creates_source_and_reading_list(admin_client, db, tmp_path, monkeypatch):
     _patch_cbl_dir(monkeypatch, tmp_path)
 
@@ -197,3 +234,25 @@ def test_import_duplicate_maps_to_400(admin_client, tmp_path, monkeypatch):
 
     assert second.status_code == 400
     assert "already imported" in second.json()["detail"]
+
+
+def test_import_not_found_maps_to_404(admin_client, monkeypatch):
+    _patch_client_sequence(monkeypatch, [
+        _FakeCatalogClient(get_response=_FakeGetResponse(404, {"message": "Not Found"})),
+    ])
+
+    response = admin_client.post("/api/cbl-catalog/import", json={"path": "Missing.cbl"})
+
+    assert response.status_code == 404
+    assert "Path not found" in response.json()["detail"]
+
+
+def test_import_rate_limited_maps_to_502(admin_client, monkeypatch):
+    _patch_client_sequence(monkeypatch, [
+        _FakeCatalogClient(get_response=_FakeGetResponse(429, {"message": "rate limited"})),
+    ])
+
+    response = admin_client.post("/api/cbl-catalog/import", json={"path": "Infinity-Gauntlet.cbl"})
+
+    assert response.status_code == 502
+    assert "rate limit" in response.json()["detail"]

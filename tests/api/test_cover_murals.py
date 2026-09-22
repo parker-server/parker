@@ -3,6 +3,7 @@ from io import BytesIO
 
 from PIL import Image
 
+import app.api.cover_murals as cover_murals_api
 from app.core.security import get_password_hash
 from app.models.comic import Volume
 from app.models.cover_mural import CoverMural, CoverMuralItem
@@ -66,7 +67,8 @@ def _seed_comics(
 def _write_cover_archive(path, color=(40, 60, 120), size=(48, 72), image_format="JPEG"):
     extension = ".png" if image_format == "PNG" else ".jpg"
     image_path = path.with_suffix(extension)
-    Image.new("RGB", size, color=color).save(image_path, format=image_format)
+    mode = "RGBA" if image_format == "PNG" and len(color) == 4 else "RGB"
+    Image.new(mode, size, color=color).save(image_path, format=image_format)
     with zipfile.ZipFile(path, "w") as archive:
         archive.write(image_path, arcname=f"00_cover{extension}")
 
@@ -110,6 +112,45 @@ def test_cover_murals_create_list_and_owner_filter(auth_client, db, normal_user)
 
     invalid = auth_client.post("/api/cover-murals/", json={"name": "x" * (COVER_MURAL_NAME_MAX_LENGTH + 1)})
     assert invalid.status_code == 422
+
+    oversized = auth_client.post(
+        "/api/cover-murals/",
+        json={"name": "Too Big", "canvas_width": 12000, "canvas_height": 12000},
+    )
+    assert oversized.status_code == 422
+    assert "Canvas is too large" in oversized.json()["detail"]
+
+
+def test_cover_mural_update_persists_optional_fields(auth_client, db, normal_user):
+    mural = CoverMural(user_id=normal_user.id, name="Old Name", description="Old")
+    db.add(mural)
+    db.commit()
+
+    response = auth_client.put(
+        f"/api/cover-murals/{mural.id}",
+        json={
+            "name": "  Updated Name  ",
+            "description": "  Updated description  ",
+            "canvas_width": 960,
+            "canvas_height": 720,
+            "grid_size": 20,
+            "background_color": "#ABCDEF",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["name"] == "Updated Name"
+    assert payload["description"] == "Updated description"
+    assert payload["canvas_width"] == 960
+    assert payload["canvas_height"] == 720
+    assert payload["grid_size"] == 20
+    assert payload["background_color"] == "#abcdef"
+
+    cleared = auth_client.put(f"/api/cover-murals/{mural.id}", json={"description": None})
+
+    assert cleared.status_code == 200
+    assert cleared.json()["description"] is None
 
 
 def test_cover_mural_batch_add_save_layout_and_remove_item(auth_client, db, normal_user):
@@ -182,6 +223,273 @@ def test_cover_mural_batch_add_save_layout_and_remove_item(auth_client, db, norm
     assert removed.json() == {"message": "Item removed"}
     remaining = db.query(CoverMuralItem).filter(CoverMuralItem.mural_id == mural.id).all()
     assert [item.comic_id for item in remaining] == [comics[1].id]
+
+
+def test_cover_mural_empty_batch_missing_item_and_missing_layout_item(auth_client, db, normal_user):
+    _, comics = _seed_comics(db, normal_user, prefix="layout-guards")
+    mural = CoverMural(user_id=normal_user.id, name="Layout Guards", description="Keep me")
+    db.add(mural)
+    db.flush()
+    item = CoverMuralItem(
+        mural_id=mural.id,
+        comic_id=comics[0].id,
+        x=0,
+        y=0,
+        width=96,
+        height=144,
+        z_index=0,
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+
+    empty = auth_client.post(f"/api/cover-murals/{mural.id}/items/batch", json={"comic_ids": []})
+
+    assert empty.status_code == 200
+    assert empty.json() == {"message": "No comics selected", "added": 0}
+
+    missing_delete = auth_client.delete(f"/api/cover-murals/{mural.id}/items/999999")
+
+    assert missing_delete.status_code == 404
+    assert missing_delete.json()["detail"] == "Item not found in mural"
+
+    saved = auth_client.post(
+        f"/api/cover-murals/{mural.id}/layout",
+        json={
+            "description": None,
+            "items": [
+                {
+                    "item_id": item.id,
+                    "x": 12,
+                    "y": 24,
+                    "width": 120,
+                    "height": 180,
+                    "rotation": 0,
+                    "z_index": 0,
+                    "fit_mode": "contain",
+                },
+                {
+                    "item_id": 999999,
+                    "x": 40,
+                    "y": 40,
+                    "width": 120,
+                    "height": 180,
+                    "rotation": 0,
+                    "z_index": 1,
+                    "fit_mode": "cover",
+                },
+            ],
+        },
+    )
+
+    assert saved.status_code == 200
+    payload = saved.json()
+    assert payload["description"] is None
+    assert payload["item_count"] == 1
+    assert payload["items"][0]["x"] == 12
+
+
+def test_cover_mural_detail_and_export_filter_age_restricted_items(auth_client, db, normal_user, tmp_path):
+    _, comics = _seed_comics(
+        db,
+        normal_user,
+        tmp_path=tmp_path,
+        prefix="age-filtered",
+        with_files=True,
+    )
+    comics[0].age_rating = "Mature 17+"
+    normal_user.max_age_rating = "Teen"
+    normal_user.allow_unknown_age_ratings = True
+    mural = CoverMural(user_id=normal_user.id, name="Age Filtered")
+    db.add(mural)
+    db.flush()
+    db.add(
+        CoverMuralItem(
+            mural_id=mural.id,
+            comic_id=comics[1].id,
+            x=0,
+            y=0,
+            width=96,
+            height=144,
+            z_index=0,
+        )
+    )
+    db.commit()
+
+    detail = auth_client.get(f"/api/cover-murals/{mural.id}")
+
+    assert detail.status_code == 200
+    assert detail.json()["items"] == []
+    assert detail.json()["item_count"] == 0
+
+    exported = auth_client.get(f"/api/cover-murals/{mural.id}/export")
+
+    assert exported.status_code == 400
+    assert exported.json()["detail"] == "Mural has no exportable covers"
+
+
+def test_cover_mural_export_rejects_empty_and_unreadable_murals(auth_client, db, normal_user):
+    _, comics = _seed_comics(db, normal_user, prefix="missing-cover")
+    empty_mural = CoverMural(user_id=normal_user.id, name="Empty Export")
+    unreadable_mural = CoverMural(user_id=normal_user.id, name="Unreadable Export")
+    db.add_all([empty_mural, unreadable_mural])
+    db.flush()
+    db.add(
+        CoverMuralItem(
+            mural_id=unreadable_mural.id,
+            comic_id=comics[0].id,
+            x=0,
+            y=0,
+            width=96,
+            height=144,
+            z_index=0,
+        )
+    )
+    db.commit()
+
+    empty = auth_client.get(f"/api/cover-murals/{empty_mural.id}/export")
+
+    assert empty.status_code == 400
+    assert empty.json()["detail"] == "Mural has no exportable covers"
+
+    unreadable = auth_client.get(f"/api/cover-murals/{unreadable_mural.id}/export")
+
+    assert unreadable.status_code == 404
+    assert "Could not read cover" in unreadable.json()["detail"]
+
+
+def test_cover_mural_export_rejects_renderer_with_no_rendered_items(
+    auth_client,
+    db,
+    normal_user,
+    tmp_path,
+    monkeypatch,
+):
+    _, comics = _seed_comics(
+        db,
+        normal_user,
+        tmp_path=tmp_path,
+        prefix="empty-render",
+        with_files=True,
+    )
+    mural = CoverMural(user_id=normal_user.id, name="Empty Render")
+    db.add(mural)
+    db.flush()
+    db.add(
+        CoverMuralItem(
+            mural_id=mural.id,
+            comic_id=comics[0].id,
+            x=0,
+            y=0,
+            width=96,
+            height=144,
+            z_index=0,
+        )
+    )
+    db.commit()
+    monkeypatch.setattr(cover_murals_api, "_render_export_covers", lambda *args, **kwargs: [])
+
+    response = auth_client.get(f"/api/cover-murals/{mural.id}/export")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Mural has no exportable covers"
+
+
+def test_render_export_covers_skips_items_without_comics():
+    item = CoverMuralItem(comic_id=999999, x=0, y=0, width=96, height=144)
+
+    rendered = cover_murals_api._render_export_covers(
+        [item],
+        image_service=object(),
+        scale=1,
+        source_size=True,
+    )
+
+    assert rendered == []
+
+
+def test_cover_mural_export_applies_cover_stretch_rotation_and_transparent_content(
+    auth_client,
+    db,
+    normal_user,
+    tmp_path,
+):
+    _, comics = _seed_comics(
+        db,
+        normal_user,
+        tmp_path=tmp_path,
+        prefix="fit-export",
+        with_files=True,
+        cover_format="PNG",
+    )
+    _write_cover_archive(
+        tmp_path / "fit-export-transparent.cbz",
+        color=(0, 0, 0, 0),
+        image_format="PNG",
+    )
+    transparent_comic = create_comic(
+        db,
+        comics[0].volume,
+        comics[0].library_root,
+        "fit-export-transparent.cbz",
+        number="4",
+        title="Transparent",
+        filename="fit-export-transparent.cbz",
+        page_count=1,
+    )
+    mural = CoverMural(
+        user_id=normal_user.id,
+        name="Fit Export",
+        canvas_width=360,
+        canvas_height=240,
+        grid_size=12,
+        background_color="#112233",
+    )
+    db.add(mural)
+    db.flush()
+    db.add_all(
+        [
+            CoverMuralItem(
+                mural_id=mural.id,
+                comic_id=comics[0].id,
+                x=0,
+                y=0,
+                width=96,
+                height=96,
+                rotation=12,
+                z_index=0,
+                fit_mode="cover",
+            ),
+            CoverMuralItem(
+                mural_id=mural.id,
+                comic_id=comics[1].id,
+                x=120,
+                y=0,
+                width=96,
+                height=144,
+                z_index=1,
+                fit_mode="stretch",
+            ),
+            CoverMuralItem(
+                mural_id=mural.id,
+                comic_id=transparent_comic.id,
+                x=240,
+                y=0,
+                width=96,
+                height=144,
+                z_index=2,
+                fit_mode="contain",
+            ),
+        ]
+    )
+    db.commit()
+
+    response = auth_client.get(f"/api/cover-murals/{mural.id}/export?source=false&spacing=8")
+
+    assert response.status_code == 200
+    exported = Image.open(BytesIO(response.content))
+    assert exported.size[0] > 96
+    assert exported.size[1] >= 144
 
 
 def test_cover_mural_export_generates_compact_png_from_original_covers(auth_client, db, normal_user, tmp_path):
