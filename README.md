@@ -87,6 +87,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
 - **Enrichment**
   - Auto‑populated event descriptions
   - Reading time estimates
+  - Opt-in external critic review summaries from ComicBookRoundup, cached lazily when an issue is viewed
 
 - **Search**
   - Advanced rule‑based search builder

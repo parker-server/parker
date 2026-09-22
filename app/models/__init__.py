@@ -19,6 +19,7 @@ from app.models.pull_list import PullList, PullListItem
 from app.models.cover_mural import CoverMural, CoverMuralItem
 from app.models.smart_list import SmartList
 from app.models.activity_log import ActivityLog
+from app.models.external_review import ExternalReviewLookup, ExternalReview
 
 # This ensures all models are loaded before relationships are configured
 __all__ = [
@@ -36,6 +37,7 @@ __all__ = [
     'SystemSetting',
     'PullList', 'PullListItem',
     'CoverMural', 'CoverMuralItem',
+    'ExternalReviewLookup', 'ExternalReview',
 
 ]
 

@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import Response, FileResponse
 from sqlalchemy import Float, func, case, or_
-from sqlalchemy.orm import joinedload, selectinload
+from sqlalchemy.orm import Session, joinedload, selectinload
 from typing import List, Annotated, Literal
 from pathlib import Path
 import re
@@ -27,8 +27,15 @@ from app.models.interactions import UserComicRating
 
 from app.schemas.search import SearchRequest, SearchResponse
 from app.schemas.comic import ComicDetailBookmark, ComicDetailResponse
+from app.schemas.external_review import ExternalReviewsResponse
 from app.services.search import SearchService
 from app.services.comic_ratings import build_parker_rating_state
+from app.services.external_reviews import (
+    EXTERNAL_REVIEWS_ENABLED_SETTING,
+    ExternalReviewService,
+    refresh_external_reviews_for_comic,
+)
+from app.services.settings_service import SettingsService
 from app.services.social_insights import get_visible_comic_reader_count
 
 
@@ -80,6 +87,10 @@ def _get_web_link_presentation(web_url: str | None) -> tuple[str | None, str | N
         return "ComicVine", "View on ComicVine"
 
     return "Web Link", "Open web link"
+
+
+def _external_reviews_enabled(db: Session) -> bool:
+    return bool(SettingsService(db).get(EXTERNAL_REVIEWS_ENABLED_SETTING))
 
 @router.post("/search", response_model=SearchResponse, name="search")
 async def search_comics(request: SearchRequest, db: SessionDep, current_user: CurrentUser):
@@ -314,6 +325,35 @@ async def delete_comic_rating(
         db.commit()
 
     return build_parker_rating_state(db, comic.id, current_user.id)
+
+
+@router.get("/{comic_id}/external-reviews", response_model=ExternalReviewsResponse, name="external_reviews")
+async def get_external_reviews(
+        comic: ComicDep,
+        db: SessionDep,
+        current_user: CurrentUser,
+        background_tasks: BackgroundTasks,
+):
+    _ensure_user_can_view_comic(current_user, comic)
+
+    enabled = _external_reviews_enabled(db)
+    service = ExternalReviewService(db)
+    lookup = service.get_lookup(comic.id)
+
+    if not enabled:
+        return service.response_for_lookup(None, enabled=False)
+
+    lookup = service.normalize_lookup_policy(lookup, comic)
+
+    if service.should_refresh(lookup):
+        lookup, refresh_claimed = service.claim_refresh(comic.id)
+    else:
+        refresh_claimed = False
+
+    if refresh_claimed:
+        background_tasks.add_task(refresh_external_reviews_for_comic, comic.id)
+
+    return service.response_for_lookup(lookup, enabled=True)
 
 
 @router.get("/{comic_id}/thumbnail", name="thumbnail")

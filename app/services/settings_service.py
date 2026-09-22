@@ -308,6 +308,15 @@ class SettingsService:
             "label": "Enable OPDS Feed",
             "description": "Allows external readers (Chunky, Panels) to access library via /opds using Basic Auth."
         },
+        {
+            "key": "integrations.external_reviews.enabled",
+            "value": "false",
+            "category": "server",
+            "data_type": "bool",
+            "label": "Enable External Critic Reviews",
+            "description": "Fetch and cache attributed critic review summaries from supported external sources when users view an issue.",
+            "display_group": "External Reviews",
+        },
 
 
     ]

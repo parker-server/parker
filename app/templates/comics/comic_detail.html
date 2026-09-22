@@ -410,6 +410,64 @@
 
                 </div>
 
+                <template x-if="shouldShowExternalReviews()">
+                    <section class="bg-gray-800/70 border border-gray-700 rounded-xl p-4 shadow-lg">
+                        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div>
+                                <div class="text-[10px] uppercase tracking-[0.2em] text-blue-300/80 font-bold">Critic Reviews</div>
+                                <h3 class="mt-1 text-lg font-bold text-white">ComicBookRoundup</h3>
+                                <p class="text-sm text-gray-400" x-text="externalReviewsSubtitle()"></p>
+                            </div>
+
+                            <div class="flex items-center gap-2">
+                                <template x-if="externalReviews?.source_issue_url">
+                                    <a :href="externalReviews.source_issue_url"
+                                       target="_blank"
+                                       rel="noopener noreferrer"
+                                       class="inline-flex items-center gap-1 rounded-lg border border-blue-500/30 px-3 py-1.5 text-sm font-semibold text-blue-200 transition-colors hover:border-blue-400/60 hover:bg-blue-500/10">
+                                        CBR Page
+                                        <span class="text-xs">↗</span>
+                                    </a>
+                                </template>
+                            </div>
+                        </div>
+
+                        <div x-show="externalReviewsLoading || externalReviews?.status === 'pending'" class="mt-4 rounded-lg border border-blue-500/20 bg-blue-500/10 px-3 py-2 text-sm text-blue-100">
+                            Checking for external critic reviews...
+                        </div>
+
+                        <div x-show="externalReviews?.reviews?.length" class="mt-4 grid max-h-80 grid-cols-1 gap-3 overflow-y-auto overscroll-contain pr-1 sm:max-h-96 lg:max-h-[28rem]">
+                            <template x-for="review in externalReviews.reviews" :key="review.id">
+                                <article class="rounded-lg border border-gray-700 bg-gray-900/80 p-4">
+                                    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                        <div class="min-w-0">
+                                            <div class="flex flex-wrap items-center gap-2">
+                                                <span class="font-semibold text-white" x-text="review.source_name"></span>
+                                                <span x-show="review.author" class="text-sm text-gray-400" x-text="`by ${review.author}`"></span>
+                                            </div>
+                                            <p x-show="review.review_date" class="mt-1 text-xs text-gray-500" x-text="window.parker.formatLocalDate(review.review_date)"></p>
+                                        </div>
+                                        <template x-if="review.score !== null && review.score !== undefined">
+                                            <div class="shrink-0 rounded-lg border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-sm font-bold text-yellow-200" x-text="externalReviewScore(review)"></div>
+                                        </template>
+                                    </div>
+
+                                    <p x-show="review.excerpt" class="mt-3 text-sm leading-relaxed text-gray-300" x-text="review.excerpt"></p>
+
+                                    <a x-show="review.full_review_url"
+                                       :href="review.full_review_url"
+                                       target="_blank"
+                                       rel="noopener noreferrer"
+                                       class="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-blue-300 transition-colors hover:text-white">
+                                        Read full review
+                                        <span class="text-xs">↗</span>
+                                    </a>
+                                </article>
+                            </template>
+                        </div>
+                    </section>
+                </template>
+
             </div>
         </div>
     </div>
@@ -424,6 +482,12 @@ function comicDetail() {
         error: null,
         hoverRating: 0,
         submittingRating: false,
+        externalReviews: null,
+        externalReviewsLoading: false,
+        externalReviewPolls: 0,
+        externalReviewVisiblePolls: 5,
+        externalReviewMaxPolls: 24,
+        externalReviewPollTimer: null,
 
         get activeRating() {
             return this.hoverRating || this.comic?.user_rating || 0;
@@ -449,6 +513,7 @@ function comicDetail() {
                 this.comic = await res.json();
                 this.loading = false;
                 document.title = `${this.comic?.series} #${this.comic?.number} - Parker`;
+                this.loadExternalReviews();
             } catch (e) {
                 console.error(e);
             }
@@ -571,6 +636,81 @@ function comicDetail() {
             } finally {
                 this.submittingRating = false;
             }
+        },
+
+        shouldShowExternalReviews() {
+            if (!this.externalReviews?.enabled) {
+                return false;
+            }
+
+            const hasReviews = !!this.externalReviews.reviews?.length;
+            const pendingVisible = (
+                this.externalReviews.status === 'pending' &&
+                this.externalReviewPolls < this.externalReviewVisiblePolls
+            );
+            const loadingVisible = this.externalReviewsLoading && (pendingVisible || hasReviews);
+
+            return loadingVisible || pendingVisible || hasReviews;
+        },
+
+        externalReviewsSubtitle() {
+            if (!this.externalReviews) {
+                return 'Loading external critic review summaries.';
+            }
+            if (this.externalReviews.reviews?.length) {
+                const count = this.externalReviews.reviews.length;
+                return `${count} critic review${count === 1 ? '' : 's'} cached from ComicBookRoundup.`;
+            }
+            if (this.externalReviews.status === 'pending') {
+                return 'Looking for a confident issue match.';
+            }
+            return 'No external critic reviews are available for this issue yet.';
+        },
+
+        externalReviewScore(review) {
+            const score = Number(review?.score);
+            if (!Number.isFinite(score)) {
+                return 'N/A';
+            }
+            return `${score.toFixed(score % 1 === 0 ? 0 : 1)}/10`;
+        },
+
+        async loadExternalReviews() {
+            if (this.externalReviewsLoading) return;
+            this.externalReviewsLoading = true;
+
+            try {
+                const res = await fetch(window.parker.route('comics.external_reviews', { comic_id: this.comicId }));
+                if (!res.ok) throw new Error('Failed to load external reviews');
+
+                this.externalReviews = await res.json();
+                this.scheduleExternalReviewPoll();
+            } catch (e) {
+                console.error(e);
+            } finally {
+                this.externalReviewsLoading = false;
+            }
+        },
+
+        scheduleExternalReviewPoll() {
+            if (this.externalReviewPollTimer) {
+                clearTimeout(this.externalReviewPollTimer);
+                this.externalReviewPollTimer = null;
+            }
+
+            if (!this.externalReviews?.enabled || this.externalReviews.status !== 'pending') {
+                this.externalReviewPolls = 0;
+                return;
+            }
+
+            if (this.externalReviewPolls >= this.externalReviewMaxPolls) {
+                return;
+            }
+
+            this.externalReviewPolls += 1;
+            this.externalReviewPollTimer = setTimeout(() => {
+                this.loadExternalReviews();
+            }, 2500);
         },
 
     }

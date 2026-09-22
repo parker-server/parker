@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -9,12 +10,20 @@ from app.models.bookmark import Bookmark
 from app.models.comic import Comic, Volume
 from app.models.credits import ComicCredit, Person
 from app.models.interactions import UserComicRating
+from app.models.external_review import ExternalReviewLookup
 from app.models.pull_list import PullList, PullListItem
 from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.reading_progress import ReadingProgress
 from app.models.series import Series
+from app.models.setting import SystemSetting
 from app.models.tags import Character, Genre, Location, Team
 from app.models.user import User
+from app.services.external_reviews import (
+    COMICBOOKROUNDUP_PROVIDER,
+    EXTERNAL_REVIEWS_ENABLED_SETTING,
+    STATUS_MATCHED,
+    STATUS_NO_MATCH,
+)
 from tests.factories import create_comic, create_library_with_root
 
 
@@ -427,6 +436,142 @@ def test_get_comic_detail_exposes_opted_in_completed_reader_count(auth_client, d
 
     assert response.status_code == 200
     assert response.json()["parker_readers_count"] == 2
+
+
+def test_external_reviews_endpoint_returns_disabled_when_feature_off(auth_client, db, normal_user):
+    library, _, volume = _create_graph(db, lib_name="comic-external-reviews-off", series_name="External Off")
+    comic = create_comic(
+        db,
+        volume,
+        library.active_root,
+        "external-off.cbz",
+        number="1",
+        title="External Off #1",
+        filename="external-off.cbz",
+    )
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    response = auth_client.get(f"/api/comics/{comic.id}/external-reviews")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "enabled": False,
+        "provider": "comicbookroundup",
+        "provider_name": "ComicBookRoundup",
+        "status": "disabled",
+        "source_issue_url": None,
+        "confidence_score": None,
+        "last_checked_at": None,
+        "next_retry_at": None,
+        "is_stale": False,
+        "reviews": [],
+    }
+
+
+def test_external_reviews_endpoint_queues_lazy_lookup_when_enabled(auth_client, db, normal_user):
+    library, _, volume = _create_graph(db, lib_name="comic-external-reviews-on", series_name="External On")
+    comic = create_comic(
+        db,
+        volume,
+        library.active_root,
+        "external-on.cbz",
+        number="1",
+        title="External On #1",
+        filename="external-on.cbz",
+    )
+    normal_user.accessible_libraries.append(library)
+    db.add(SystemSetting(
+        key=EXTERNAL_REVIEWS_ENABLED_SETTING,
+        value="true",
+        category="server",
+        data_type="bool",
+        label="Enable External Critic Reviews",
+    ))
+    db.commit()
+
+    with patch("app.api.comics.refresh_external_reviews_for_comic") as refresh_task:
+        response = auth_client.get(f"/api/comics/{comic.id}/external-reviews")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["enabled"] is True
+    assert payload["status"] == "pending"
+    assert payload["reviews"] == []
+    refresh_task.assert_called_once_with(comic.id)
+
+    with patch("app.api.comics.refresh_external_reviews_for_comic") as refresh_task:
+        response = auth_client.get(f"/api/comics/{comic.id}/external-reviews")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "pending"
+    refresh_task.assert_not_called()
+
+    with patch("app.api.comics.refresh_external_reviews_for_comic") as refresh_task:
+        response = auth_client.get(f"/api/comics/{comic.id}/external-reviews?refresh=true")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "pending"
+    refresh_task.assert_not_called()
+
+    lookup = db.query(ExternalReviewLookup).filter_by(
+        comic_id=comic.id,
+        provider=COMICBOOKROUNDUP_PROVIDER,
+    ).one()
+    lookup.status = STATUS_NO_MATCH
+    lookup.next_retry_at = datetime.now(timezone.utc) + timedelta(days=14)
+    db.commit()
+
+    with patch("app.api.comics.refresh_external_reviews_for_comic") as refresh_task:
+        response = auth_client.get(f"/api/comics/{comic.id}/external-reviews?refresh=true")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == STATUS_NO_MATCH
+    refresh_task.assert_not_called()
+
+
+def test_external_reviews_endpoint_normalizes_old_matched_retry_without_refresh(auth_client, db, normal_user):
+    library, _, volume = _create_graph(db, lib_name="comic-external-reviews-old-match", series_name="External Old")
+    comic = create_comic(
+        db,
+        volume,
+        library.active_root,
+        "external-old.cbz",
+        number="1",
+        title="External Old #1",
+        year=2024,
+        month=10,
+        day=1,
+        filename="external-old.cbz",
+    )
+    normal_user.accessible_libraries.append(library)
+    db.add(SystemSetting(
+        key=EXTERNAL_REVIEWS_ENABLED_SETTING,
+        value="true",
+        category="server",
+        data_type="bool",
+        label="Enable External Critic Reviews",
+    ))
+    lookup = ExternalReviewLookup(
+        comic_id=comic.id,
+        provider=COMICBOOKROUNDUP_PROVIDER,
+        status=STATUS_MATCHED,
+        last_checked_at=datetime.now(timezone.utc),
+        next_retry_at=datetime.now(timezone.utc) + timedelta(days=30),
+    )
+    db.add(lookup)
+    db.commit()
+
+    with patch("app.api.comics.refresh_external_reviews_for_comic") as refresh_task:
+        response = auth_client.get(f"/api/comics/{comic.id}/external-reviews")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == STATUS_MATCHED
+    assert response.json()["next_retry_at"] is None
+    refresh_task.assert_not_called()
+
+    db.refresh(lookup)
+    assert lookup.next_retry_at is None
 
 
 def test_set_comic_rating_creates_and_updates_single_user_row(auth_client, db, normal_user):
