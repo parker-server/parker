@@ -285,6 +285,28 @@ def test_cleanup_duplicate_tags_merges_case_insensitive_duplicates(
         assert tag_names == ["Action"]
 
 
+def test_cleanup_duplicate_tags_merges_non_ascii_case_variants_the_index_allows(db, tmp_path):
+    lib = _create_library(db, "maint-duplicate-non-ascii", tmp_path)
+    comic_a = _create_comic(db, lib, "non-ascii-a", "a.cbz")
+    comic_b = _create_comic(db, lib, "non-ascii-b", "b.cbz")
+
+    # SQLite's ASCII-only lower() treats these as distinct, so the unique index
+    # (left in place here) allows both; the janitor still folds them together.
+    canonical = Location(name="Île-de-France")
+    variant = Location(name="île-de-france")
+    comic_a.locations.append(canonical)
+    comic_b.locations.append(variant)
+    db.add_all([canonical, variant])
+    db.commit()
+
+    stats = MaintenanceService(db).cleanup_duplicate_tags()
+    db.expire_all()
+
+    assert stats["duplicate_locations"] == 1
+    assert [tag.name for tag in db.query(Location).all()] == ["Île-de-France"]
+    assert [tag.name for tag in comic_b.locations] == ["Île-de-France"]
+
+
 def test_cleanup_missing_files_scoped_with_batch_commits(db, tmp_path, monkeypatch):
     lib_a = _create_library(db, "maint-missing-a", tmp_path)
     lib_b = _create_library(db, "maint-missing-b", tmp_path)
