@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import and_, func
 
 from app.api.deps import CurrentUser, SessionDep
-from app.core.comic_helpers import get_series_age_restriction, get_smart_cover, get_thumbnail_url
+from app.core.comic_helpers import get_series_age_restriction, get_smart_covers_by_series, get_thumbnail_url
 from app.models.comic import Comic, Volume
 from app.models.credits import ComicCredit, Person
 from app.models.reading_progress import ReadingProgress
@@ -112,10 +112,15 @@ def _get_role_series(db: SessionDep, person_id: int, role: str, current_user: Cu
         .all()
     )
 
+    # Batch the covers (one query, not one per series). Same rules as get_smart_cover.
+    covers = get_smart_covers_by_series(
+        _person_role_comics_query(db, person_id, role, current_user),
+        {row.id: row.name for row in rows},
+    )
+
     items = []
     for row in rows:
-        cover_query = _person_role_comics_query(db, person_id, role, current_user).filter(Series.id == row.id)
-        cover = get_smart_cover(cover_query, series_name=row.name)
+        cover = covers.get(row.id)
         issue_total = int(row.issue_count or 0)
         read_total = int(row.read_count or 0)
         items.append(

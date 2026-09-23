@@ -157,3 +157,46 @@ def test_person_detail_superuser_can_view_all_credits(admin_client, db, normal_u
     assert payload["end_year"] == 1995
     assert "Banned Publisher" in {row["name"] for row in payload["top_publishers"]}
     assert "Hidden Publisher" in {row["name"] for row in payload["top_publishers"]}
+
+
+def test_person_detail_query_count_does_not_scale_with_series(auth_client, db, normal_user, count_queries):
+    library = create_library_with_root(db, "Person Query Library", "/tmp/person-query")
+    root = library.active_root
+    normal_user.accessible_libraries.append(library)
+
+    def make_person(name: str, series_count: int) -> int:
+        person = Person(name=name)
+        db.add(person)
+        db.flush()
+        for index in range(series_count):
+            series = Series(name=f"{name} Series {index}", library=library)
+            db.add(series)
+            db.flush()
+            volume = Volume(series=series, volume_number=1)
+            db.add(volume)
+            db.flush()
+            comic = create_comic(
+                db, volume, root, f"{name}-{index}.cbz",
+                number="1",
+                year=2000,
+                filename=f"{name}-{index}.cbz",
+            )
+            db.add(ComicCredit(comic_id=comic.id, person_id=person.id, role="writer"))
+        db.flush()
+        return person.id
+
+    solo_id = make_person("Solo", 1)
+    prolific_id = make_person("Prolific", 6)
+    db.commit()
+
+    def detail_query_count(person_id: int, expected_series: int) -> int:
+        # The test session is shared across requests; expire it so the identity map
+        # can't mask per-series work a fresh request session wouldn't.
+        db.expire_all()
+        with count_queries() as statements:
+            response = auth_client.get(f"/api/people/{person_id}")
+        assert response.status_code == 200
+        assert len(response.json()["roles"][0]["series"]) == expected_series
+        return len(statements)
+
+    assert detail_query_count(prolific_id, 6) == detail_query_count(solo_id, 1)

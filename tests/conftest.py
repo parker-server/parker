@@ -1,9 +1,10 @@
 import os
+from contextlib import contextmanager
 from typing import Generator
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from unittest.mock import MagicMock
@@ -71,6 +72,31 @@ def db():
     # Cleanup
     session.close()
     Base.metadata.drop_all(bind=engine)
+
+
+@pytest.fixture(scope="function")
+def count_queries():
+    """
+    Returns a context manager that records every SQL statement executed on the
+    test engine, so tests can assert that query counts don't scale with data (N+1).
+
+    Usage: with count_queries() as statements: ...; then len(statements).
+    """
+
+    @contextmanager
+    def _count():
+        statements: list[str] = []
+
+        def _record(conn, cursor, statement, parameters, context, executemany):
+            statements.append(statement)
+
+        event.listen(engine, "before_cursor_execute", _record)
+        try:
+            yield statements
+        finally:
+            event.remove(engine, "before_cursor_execute", _record)
+
+    return _count
 
 
 # 3. CLIENT FIXTURE (Unauthenticated)

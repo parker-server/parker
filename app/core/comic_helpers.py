@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime, timezone
 from functools import lru_cache
-from sqlalchemy import func, or_, not_, case, cast, Float
+from sqlalchemy import func, or_, and_, not_, case, cast, Float
 from fastapi import HTTPException
 
 from app.api.deps import SessionDep
@@ -272,6 +272,36 @@ def get_format_filters():
     return is_plain, is_annual, is_special
 
 
+def _smart_cover_sort_order(is_reverse_series: bool, prefer_volume_order: bool = False) -> tuple:
+    """Ordering shared by get_smart_cover and get_smart_covers_by_series."""
+    sort_year = case((or_(Comic.year == None, Comic.year == -1), 9999), else_=Comic.year)
+    sort_month = case((or_(Comic.month == None, Comic.month == -1), 99), else_=Comic.month)
+    sort_day = case((or_(Comic.day == None, Comic.day == -1), 99), else_=Comic.day)
+
+    number_order = get_issue_number_sort_keys(is_reverse_series)
+    sort_order = (
+        *number_order,
+        sort_year.asc(),
+        sort_month.asc(),
+        sort_day.asc(),
+    )
+    if prefer_volume_order:
+        sort_order = (Volume.volume_number.asc(), *sort_order)
+
+    return sort_order
+
+
+def _smart_cover_strict_filters() -> list:
+    """Conditions a comic must meet to be a "Best Cover" candidate (shared by both cover pickers)."""
+    is_plain, _, _ = get_format_filters()
+    return [
+        is_plain,
+        Comic.number != '0',
+        not_(Comic.number.like('-%')),
+        not_(Comic.number.like('%.5')),
+    ]
+
+
 def get_smart_cover(base_query, series_name: str = None, prefer_volume_order: bool = False):
     """
     Given a base query (filtered by series or volume), find the best cover.
@@ -284,33 +314,14 @@ def get_smart_cover(base_query, series_name: str = None, prefer_volume_order: bo
         series_name: Optional name to trigger "Gimmick Detection" for reverse numbering.
         prefer_volume_order: Sort by volume number first for full-series cover selection.
     """
-    is_plain, _, _ = get_format_filters()
-
-    # Define Sort Logic
-    sort_year = case((or_(Comic.year == None, Comic.year == -1), 9999), else_=Comic.year)
-    sort_month = case((or_(Comic.month == None, Comic.month == -1), 99), else_=Comic.month)
-    sort_day = case((or_(Comic.day == None, Comic.day == -1), 99), else_=Comic.day)
-
     # GIMMICK DETECTION
     # If this is a known reverse-numbering series, we want the HIGHEST number
     # (e.g., #51 or #4) to be the cover, not the lowest (#1 or #0).
     is_reverse_series = bool(series_name and series_name.lower() in REVERSE_NUMBERING_SERIES)
-    number_order = get_issue_number_sort_keys(is_reverse_series)
-    sort_order = (
-        *number_order,
-        sort_year.asc(),
-        sort_month.asc(),
-        sort_day.asc(),
-    )
-    if prefer_volume_order:
-        sort_order = (Volume.volume_number.asc(), *sort_order)
+    sort_order = _smart_cover_sort_order(is_reverse_series, prefer_volume_order)
 
     # PHASE 1: Strict "Best Cover" Search
-    query = base_query.filter(is_plain) \
-        .filter(Comic.number != '0') \
-        .filter(not_(Comic.number.like('-%'))) \
-        .filter(not_(Comic.number.like('%.5'))) \
-        .order_by(*sort_order)
+    query = base_query.filter(*_smart_cover_strict_filters()).order_by(*sort_order)
 
     cover = query.first()
     if cover:
@@ -318,6 +329,44 @@ def get_smart_cover(base_query, series_name: str = None, prefer_volume_order: bo
 
     # PHASE 2: Fallback
     return base_query.order_by(*sort_order).first()
+
+
+def get_smart_covers_by_series(base_query, series_names: dict[int, str]) -> dict:
+    """
+    Batched get_smart_cover: picks the best cover for many series without one query per series.
+    Uses the same rules (strict candidates first, then the fallback) as get_smart_cover.
+
+    Args:
+        base_query: A Comic query already joined to Volume and Series, scoped to whatever
+            comics the caller may show (visibility, credits, etc.) but not to a single series.
+        series_names: {series_id: series_name} for the series that need a cover. Names drive
+            "Gimmick Detection", which sorts the other way, so they cost one extra query at most.
+
+    Returns:
+        {series_id: row} where row has .id and .updated_at. Series with no comics are absent.
+    """
+    is_strict_candidate = case((and_(*_smart_cover_strict_filters()), 0), else_=1)
+    covers = {}
+
+    for is_reverse_series in (False, True):
+        series_ids = [
+            series_id for series_id, name in series_names.items()
+            if (name.lower() in REVERSE_NUMBERING_SERIES) == is_reverse_series
+        ]
+        if not series_ids:
+            continue
+
+        rows = (
+            base_query
+            .filter(Series.id.in_(series_ids))
+            .with_entities(Series.id.label("series_id"), Comic.id, Comic.updated_at)
+            .order_by(is_strict_candidate.asc(), *_smart_cover_sort_order(is_reverse_series))
+            .all()
+        )
+        for row in rows:
+            covers.setdefault(row.series_id, row)
+
+    return covers
 
 
 def get_reading_time(total_pages):

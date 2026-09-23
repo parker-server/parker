@@ -254,6 +254,43 @@ def test_series_issues_filters_and_read_state(auth_client, db, normal_user):
     assert all(item["read"] is False for item in unread_payload["items"])
 
 
+def test_series_issues_query_count_does_not_scale_with_volumes(auth_client, db, normal_user, count_queries):
+    library = create_library_with_root(db, "issues-query-lib", "/tmp/issues-query-lib")
+    root = library.active_root
+    normal_user.accessible_libraries.append(library)
+
+    def make_series(name: str, volume_count: int) -> int:
+        series = Series(name=name, library=library)
+        db.add(series)
+        db.flush()
+        for volume_number in range(1, volume_count + 1):
+            volume = Volume(series=series, volume_number=volume_number)
+            db.add(volume)
+            db.flush()
+            create_comic(
+                db, volume, root, f"{name}-v{volume_number}.cbz",
+                number="1",
+                filename=f"{name}-v{volume_number}.cbz",
+            )
+        return series.id
+
+    one_volume_id = make_series("One Volume", 1)
+    many_volumes_id = make_series("Many Volumes", 5)
+    db.commit()
+
+    def issues_query_count(series_id: int, expected_total: int) -> int:
+        # The test session is shared across requests; expire it so the identity map
+        # can't mask per-volume lazy loads the way a fresh request session wouldn't.
+        db.expire_all()
+        with count_queries() as statements:
+            response = auth_client.get(f"/api/series/{series_id}/issues?type=all")
+        assert response.status_code == 200
+        assert response.json()["total"] == expected_total
+        return len(statements)
+
+    assert issues_query_count(many_volumes_id, 5) == issues_query_count(one_volume_id, 1)
+
+
 def test_series_issues_filters_annual_and_special(auth_client, db, normal_user):
     data = _create_series_with_volume(db, lib_name="issues-type-lib", series_name="Type Logic")
     normal_user.accessible_libraries.append(data["library"])

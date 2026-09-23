@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy import func, case, Float, and_, not_
-from sqlalchemy.orm import joinedload, aliased
+from sqlalchemy.orm import joinedload, aliased, contains_eager
 from typing import List, Optional, Annotated
 from datetime import datetime, timezone
 from collections import defaultdict
@@ -539,10 +539,12 @@ async def get_series_issues(
             sort_order = "asc"
 
     # Select Comic AND the completed status
+    # OPTIMIZATION: contains_eager(Comic.volume) reuses the Volume join below, so
+    # comic_to_simple_dict doesn't lazy-load one Volume per distinct volume (N+1)
     query = db.query(Comic, ReadingProgress.completed).outerjoin(
         ReadingProgress,
         (ReadingProgress.comic_id == Comic.id) & (ReadingProgress.user_id == current_user.id)
-    ).join(Volume).join(Series).filter(Series.id == series_id)
+    ).join(Volume).join(Series).options(contains_eager(Comic.volume)).filter(Series.id == series_id)
 
     # --- AGE RATING FILTER ---
     # TODO: If partial views are ever implemented we can uncomment this check
