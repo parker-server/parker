@@ -411,12 +411,18 @@
                 </div>
 
                 <template x-if="shouldShowExternalReviews()">
-                    <section class="bg-gray-800/70 border border-gray-700 rounded-xl p-4 shadow-lg">
+                    <section class="bg-gray-800/70 border border-gray-700 rounded-xl p-4 shadow-lg" aria-labelledby="external-reviews-heading">
                         <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                             <div>
-                                <div class="text-[10px] uppercase tracking-[0.2em] text-blue-300/80 font-bold">Critic Reviews</div>
-                                <h3 class="mt-1 text-lg font-bold text-white">ComicBookRoundup</h3>
-                                <p class="text-sm text-gray-400" x-text="externalReviewsSubtitle()"></p>
+                                <h3 id="external-reviews-heading" class="sr-only">Critic reviews from ComicBookRoundup</h3>
+                                <div class="flex flex-wrap items-center gap-3">
+                                    <img
+                                        src="{{ url('/static/img/assets/CBR_Logo.svg') }}"
+                                        alt="ComicBookRoundup"
+                                        class="h-8 max-w-[220px] object-contain"
+                                    >
+                                </div>
+                                <p class="mt-2 text-sm text-gray-400" x-text="externalReviewsSubtitle()"></p>
                             </div>
 
                             <div class="flex items-center gap-2">
@@ -484,6 +490,7 @@ function comicDetail() {
         submittingRating: false,
         externalReviews: null,
         externalReviewsLoading: false,
+        externalReviewsEnabled: {{ get_system_setting('integrations.external_reviews.enabled') | tojson }},
         externalReviewPolls: 0,
         externalReviewVisiblePolls: 5,
         externalReviewMaxPolls: 24,
@@ -513,7 +520,9 @@ function comicDetail() {
                 this.comic = await res.json();
                 this.loading = false;
                 document.title = `${this.comic?.series} #${this.comic?.number} - Parker`;
-                this.loadExternalReviews();
+                if (this.externalReviewsEnabled) {
+                    this.loadExternalReviews();
+                }
             } catch (e) {
                 console.error(e);
             }
