@@ -180,6 +180,17 @@ def test_admin_create_user_and_duplicate_username(admin_client, db):
     assert dup_response.json()["detail"] == "Username already exists"
 
 
+def test_admin_create_user_rejects_duplicate_username_with_non_ascii_capital(admin_client):
+    payload = {"username": "Élise", "password": "password123", "is_superuser": False, "library_ids": []}
+
+    first = admin_client.post("/api/users/", json={**payload, "email": "elise1@example.com"})
+    duplicate = admin_client.post("/api/users/", json={**payload, "email": "elise2@example.com"})
+
+    assert first.status_code == 200
+    assert duplicate.status_code == 400
+    assert duplicate.json()["detail"] == "Username already exists"
+
+
 def test_admin_create_user_rejects_empty_fields(admin_client):
     response = admin_client.post(
         "/api/users/",

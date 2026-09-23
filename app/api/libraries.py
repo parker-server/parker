@@ -104,7 +104,9 @@ def _find_library_by_name(
         *,
         exclude_library_id: Optional[int] = None,
 ) -> Optional[Library]:
-    query = db.query(Library).filter(func.lower(Library.name) == name.lower())
+    # Lower-case both sides in SQLite: its ASCII-only lower() disagrees with
+    # Python's str.lower() on non-ASCII letters, so exact duplicates were missed.
+    query = db.query(Library).filter(func.lower(Library.name) == func.lower(name))
     if exclude_library_id is not None:
         query = query.filter(Library.id != exclude_library_id)
 

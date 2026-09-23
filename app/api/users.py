@@ -354,7 +354,7 @@ async def create_user(
         db: SessionDep,
         admin: AdminUser
 ):
-    existing = db.query(User).filter(func.lower(User.username) == user_in.username.lower()).first()
+    existing = db.query(User).filter(func.lower(User.username) == func.lower(user_in.username)).first()
     if existing:
         raise HTTPException(status_code=400, detail="Username already exists")
 

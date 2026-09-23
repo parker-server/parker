@@ -32,6 +32,26 @@ def test_tag_service_reuses_existing_tag_case_insensitively(
 
 
 @pytest.mark.parametrize(("model", "single_method", "plural_method"), TAG_CASES)
+def test_tag_service_reuses_existing_tag_with_non_ascii_capital(
+    db,
+    model,
+    single_method,
+    plural_method,
+):
+    existing = model(name="Île-de-France")
+    db.add(existing)
+    db.flush()
+
+    # A fresh service has an empty cache, so this exercises the DB lookup
+    # against the ASCII-only lower() unique index.
+    tag = getattr(TagService(db), single_method)("Île-de-France")
+    db.flush()
+
+    assert tag.id == existing.id
+    assert db.query(model).count() == 1
+
+
+@pytest.mark.parametrize(("model", "single_method", "plural_method"), TAG_CASES)
 def test_tag_service_deduplicates_tag_lists_case_insensitively(
     db,
     model,
