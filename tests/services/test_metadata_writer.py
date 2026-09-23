@@ -630,6 +630,55 @@ def test_metadata_writer_emits_error_summary_on_exception(monkeypatch):
     assert summary["skipped"] == 0
     assert summary["error_details"][0]["file_path"] is None
     assert "db boom" in summary["error_details"][0]["message"]
+    assert summary["fatal_error"] == "db boom"
+
+
+def test_metadata_writer_keeps_committed_counts_when_a_later_batch_crashes(monkeypatch, tmp_path):
+    fake_db = _FakeDB(str(tmp_path / "lib"))
+    batches = []
+
+    def fake_apply_batch(db, batch, *_args, **_kwargs):
+        batches.append(list(batch))
+        if len(batches) == 2:
+            raise RuntimeError("batch boom")
+        return {
+            "imported": 2,
+            "updated": 0,
+            "errors": 1,
+            "skipped": 0,
+            "error_details": [{"file_path": "a.cbz", "message": "bad"}],
+        }
+
+    monkeypatch.setattr(database_module.engine, "dispose", MagicMock())
+    monkeypatch.setattr(database_module, "SessionLocal", lambda: fake_db)
+    monkeypatch.setattr(metadata_writer_module, "_apply_metadata_batch", fake_apply_batch)
+
+    item = {"error": False, "mtime": 1.0, "size": 1, "metadata": {"page_count": 1}}
+    result_queue = _ReadQueue([
+        {**item, "file_path": "a.cbz"},
+        {**item, "file_path": "b.cbz"},
+        {**item, "file_path": "c.cbz"},
+        {**item, "file_path": "d.cbz"},
+        None,
+    ])
+    stats_queue = _WriteQueue()
+
+    metadata_writer_module.metadata_writer(result_queue, stats_queue, library_id=5, batch_size=2)
+
+    assert len(batches) == 2
+
+    summary = stats_queue.items[-1]
+    assert summary["summary"] is True
+    # The first batch was committed before the crash, so its counts survive.
+    assert summary["imported"] == 2
+    assert summary["updated"] == 0
+    assert summary["errors"] == 2
+    assert summary["error_details"] == [
+        {"file_path": "a.cbz", "message": "bad"},
+        {"file_path": None, "message": "batch boom"},
+    ]
+    assert summary["fatal_error"] == "batch boom"
+    assert fake_db.closed is True
 
 
 

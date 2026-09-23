@@ -227,6 +227,11 @@ class LibraryScanner:
                 self.logger.debug(f"Scanning {len(tasks)} comic(s)")
                 with multiprocessing.Pool(processes=workers) as pool:
                     for payload in pool.imap_unordered(metadata_worker, tasks):
+                        if not writer_proc.is_alive():
+                            # The writer only exits after the sentinel below, so it
+                            # crashed; nothing more can be written, stop extracting.
+                            self.logger.error("Metadata writer exited early; abandoning remaining metadata extraction.")
+                            break
                         result_queue.put(payload)
 
                 # Signal writer to finish
@@ -255,6 +260,8 @@ class LibraryScanner:
                     writer_proc.terminate()
                     writer_proc.join(timeout=5)
 
+        fatal_error = summary.get("fatal_error")
+
         # --- Phase 3: Cleanup missing files ---
         deleted = self._cleanup_missing_files(scanned_keys, existing_by_key)
 
@@ -272,12 +279,13 @@ class LibraryScanner:
             except Exception as exc:
                 self.logger.error(f"Failed to rebuild CBL source {cbl_source.id}: {exc}")
 
-        # Update library scan time
-        scanned_at = datetime.now(timezone.utc)
-        self.library.last_scanned = scanned_at
-        for library_root in library_roots:
-            library_root.last_scanned_at = scanned_at
-            library_root.last_scan_error = None
+        # Update library scan time, unless the writer failed and the scan is incomplete
+        if not fatal_error:
+            scanned_at = datetime.now(timezone.utc)
+            self.library.last_scanned = scanned_at
+            for library_root in library_roots:
+                library_root.last_scanned_at = scanned_at
+                library_root.last_scan_error = None
         self.db.commit()
 
         elapsed = round(time.time() - start_time, 2)
@@ -290,6 +298,7 @@ class LibraryScanner:
             "deleted": deleted,
             "errors": summary.get("errors", 0),
             "error_details": summary.get("error_details", []),
+            "fatal_error": fatal_error,
             "elapsed": elapsed,
         }
 

@@ -258,6 +258,8 @@ def test_scan_parallel_orchestrates_pool_writer_and_summary(monkeypatch, tmp_pat
     assert result["updated"] == 0
     assert result["errors"] == 1
     assert result["error_details"] == [{"file_path": str(new_file), "message": "bad archive"}]
+    assert result["fatal_error"] is None
+    assert library.last_scanned is not None
 
     assert len(FakeProcess.instances) == 1
     assert FakeProcess.instances[0].started is True
@@ -425,6 +427,68 @@ def test_scan_parallel_pool_error_still_signals_and_joins_writer(monkeypatch, tm
     assert writer_proc.joined is True
     assert writer_proc.terminated is False
     assert result_queue.put_items[-1] is None
+
+
+class DyingProcess(FakeProcess):
+    """Writer that is alive for the first payload and has crashed by the second."""
+
+    def is_alive(self):
+        self.alive_checks = getattr(self, "alive_checks", 0) + 1
+        return self.alive_checks == 1
+
+
+def test_scan_parallel_reports_writer_crash_and_stops_feeding_dead_writer(monkeypatch, tmp_path):
+    library_path = tmp_path / "library"
+    _create_file(library_path / "one.cbz")
+    _create_file(library_path / "two.cbz")
+
+    library_root = SimpleNamespace(id=1, path=str(library_path), last_scanned_at=None, last_scan_error=None)
+    db = DummyDB(existing=[], library_root=library_root)
+    library = SimpleNamespace(name="Test", id=102, last_scanned=None)
+    scanner = LibraryScanner(library, db)
+
+    scanner._reconcile_sidecars = lambda *_args, **_kwargs: None
+    scanner._cleanup_missing_files = lambda *_args, **_kwargs: 0
+    _disable_container_cleanup(scanner)
+
+    result_queue = FakeQueue()
+    stats_queue = FakeQueue([
+        {
+            "summary": True,
+            "imported": 1,
+            "updated": 0,
+            "errors": 1,
+            "skipped": 0,
+            "error_details": [{"file_path": None, "message": "writer boom"}],
+            "fatal_error": "writer boom",
+        }
+    ])
+    queues = [result_queue, stats_queue]
+
+    FakeProcess.instances = []
+    FakeProcess.force_stuck = False
+
+    monkeypatch.setattr(scanner_module, "Queue", lambda: queues.pop(0))
+    monkeypatch.setattr(scanner_module, "metadata_worker", fake_worker)
+    monkeypatch.setattr(scanner_module.multiprocessing, "Process", DyingProcess)
+    monkeypatch.setattr(scanner_module.multiprocessing, "Pool", FakePool)
+    monkeypatch.setattr(scanner_module, "get_cached_setting", lambda _key, default=0: default)
+
+    result = scanner.scan_parallel(force=False, worker_limit=2)
+
+    assert result["fatal_error"] == "writer boom"
+    assert result["imported"] == 1
+    assert result["errors"] == 1
+    assert result["error_details"] == [{"file_path": None, "message": "writer boom"}]
+
+    # Only the first payload reached the writer; the second was abandoned.
+    queued_payloads = [item for item in result_queue.put_items if item is not None]
+    assert len(queued_payloads) == 1
+    assert result_queue.put_items[-1] is None
+
+    # An incomplete scan must not stamp the library as freshly scanned.
+    assert library.last_scanned is None
+    assert library_root.last_scanned_at is None
 
 
 def test_scan_parallel_requested_workers_capped_by_cpu_count(monkeypatch, tmp_path):

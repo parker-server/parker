@@ -372,6 +372,51 @@ def test_run_scan_job_success_updates_and_queues_followup(monkeypatch, db):
     assert {row.job_type for row in queued} == {JobType.THUMBNAIL, JobType.CLEANUP}
 
 
+def test_run_scan_job_writer_failure_marks_failed_but_keeps_counts_and_queues_followup(monkeypatch, db):
+    manager = _manager()
+    monkeypatch.setattr(sm, "SessionLocal", _session_local_factory(db))
+
+    lib = create_library_with_root(db, "scan-writer-fail-lib", "/tmp/scan-writer-fail-lib")
+    db.commit()
+
+    error_details = [{"file_path": None, "message": "writer boom"}]
+    scanner_mock = MagicMock()
+    scanner_mock.scan_parallel.return_value = {
+        "imported": 800,
+        "updated": 0,
+        "deleted": 0,
+        "skipped": 0,
+        "errors": 1,
+        "error_details": error_details,
+        "fatal_error": "writer boom",
+        "elapsed": 64.5,
+    }
+    monkeypatch.setattr(sm, "LibraryScanner", lambda library, session: scanner_mock)
+    monkeypatch.setattr(sm, "get_cached_setting", lambda key, default: False)
+    update_last_scanned = MagicMock()
+    monkeypatch.setattr(sm.ScanManager, "update_library_last_scanned", update_last_scanned)
+
+    manager._safe_job_update = MagicMock()
+
+    manager._run_scan_job({"id": 98, "library_id": lib.id, "force": False})
+
+    manager._safe_job_update.assert_called_once()
+    args = manager._safe_job_update.call_args
+    assert args.args[0] == 98
+    assert args.args[1] == JobStatus.FAILED
+    assert args.kwargs["error"] == "writer boom"
+    assert args.kwargs["summary"]["imported"] == 800
+    assert args.kwargs["summary"]["error_details"] == error_details
+
+    # The library is not reported as freshly scanned...
+    update_last_scanned.assert_not_called()
+
+    # ...but comics committed before the failure still get thumbnails and cleanup.
+    db.expire_all()
+    queued = db.query(ScanJob).all()
+    assert {row.job_type for row in queued} == {JobType.THUMBNAIL, JobType.CLEANUP}
+
+
 def test_run_scan_job_handles_missing_library(monkeypatch, db):
     manager = _manager()
     monkeypatch.setattr(sm, "SessionLocal", _session_local_factory(db))
