@@ -323,7 +323,8 @@ class ScanManager:
 
                 results = scanner.scan_parallel(force=force, worker_limit=workers)
 
-                ScanManager.update_library_last_scanned(library_id)
+                if not results.get("fatal_error"):
+                    ScanManager.update_library_last_scanned(library_id)
 
             else:
                 error = "Library not found"
@@ -347,10 +348,22 @@ class ScanManager:
                 "error_details": results.get("error_details", []),
                 "elapsed": results.get("elapsed", 0)
             }
-            self._safe_job_update(job_id, JobStatus.COMPLETED, summary=summary)
+            # A writer failure leaves the scan incomplete: report it as FAILED, but keep
+            # the counts for what was committed before the failure.
+            fatal_error = results.get("fatal_error")
+            if fatal_error:
+                self.logger.error(f"SCAN job {job_id} failed in the metadata writer: {fatal_error}")
+
+            self._safe_job_update(
+                job_id,
+                JobStatus.FAILED if fatal_error else JobStatus.COMPLETED,
+                summary=summary,
+                error=fatal_error,
+            )
 
             # 3. Queue Pipeline: THUMBNAIL -> CLEANUP
             # We queue both now so they run in sequence via priority
+            # (also after a writer failure: comics committed before it still need thumbnails)
             db_queue = SessionLocal()
             try:
                 # Add Thumbnail Job

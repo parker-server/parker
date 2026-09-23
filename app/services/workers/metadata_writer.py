@@ -276,6 +276,9 @@ def metadata_writer(
     parse_story_arcs=True,
 ):
 
+    # Defined up front so a crash can still report the batches committed before it.
+    processed = {"imported": 0, "updated": 0, "errors": 0, "skipped": 0, "error_details": []}
+
     try:
 
         from app.database import SessionLocal, engine
@@ -389,8 +392,6 @@ def metadata_writer(
             volume_cache[key] = v
             return v
 
-        processed = {"imported": 0, "updated": 0, "errors": 0, "skipped": 0, "error_details": []}
-
         while True:
             item = queue.get()
             if item is None:
@@ -444,14 +445,14 @@ def metadata_writer(
         })
 
     except Exception as e:
-        # Send failure summary so scan_parallel can finish
+        # Send failure summary so scan_parallel can finish. Counts cover the batches
+        # that were already committed; only the batch in flight is lost.
         stats_queue.put({
             "summary": True,
-            "imported": 0,
-            "updated": 0,
-            "errors": 1,
-            "skipped": 0,
-            "error_details": [{"file_path": None, "message": str(e)}]
+            **processed,
+            "errors": processed["errors"] + 1,
+            "error_details": [*processed["error_details"], {"file_path": None, "message": str(e)}],
+            "fatal_error": str(e),
         })
     finally:
         try:
