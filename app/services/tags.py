@@ -54,9 +54,12 @@ class TagService:
         if key in cache:
             return cache[key]
 
+        # Compare with SQLite's lower() on both sides so the lookup matches the
+        # ux_*_name_lower unique index. Python's casefold() folds non-ASCII
+        # letters (e.g. 'Î' -> 'î') that SQLite's ASCII-only lower() leaves alone.
         tag = (
             self.db.query(model)
-            .filter(func.lower(model.name) == key)
+            .filter(func.lower(model.name) == func.lower(name))
             .order_by(model.id)
             .first()
         )

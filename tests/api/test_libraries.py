@@ -154,6 +154,15 @@ def test_create_library_rejects_case_insensitive_duplicate_name(admin_client, db
     assert response.json() == {"detail": "Library name already exists"}
 
 
+def test_create_library_rejects_duplicate_name_with_non_ascii_capital(admin_client, db):
+    create_library_with_root(db, "Île-de-France", "/tmp/ile")
+
+    response = admin_client.post("/api/libraries/", json={"name": "Île-de-France", "path": "/tmp/ile-other"})
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Library name already exists"}
+
+
 def test_create_library_rejects_overlapping_child_path(admin_client, db):
     create_library_with_root(db, "Main Library", "/tmp/comics")
 
@@ -641,6 +650,16 @@ def test_update_library_rejects_case_insensitive_duplicate_name(admin_client, db
     create_library_with_root(db, "Marvel", "/tmp/marvel")
 
     response = admin_client.patch(f"/api/libraries/{original.id}", json={"name": "marvel"})
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Library name already exists"}
+
+
+def test_update_library_rejects_duplicate_name_with_non_ascii_capital(admin_client, db):
+    original = create_library_with_root(db, "Original", "/tmp/original")
+    create_library_with_root(db, "Île-de-France", "/tmp/ile")
+
+    response = admin_client.patch(f"/api/libraries/{original.id}", json={"name": "Île-de-France"})
 
     assert response.status_code == 400
     assert response.json() == {"detail": "Library name already exists"}
