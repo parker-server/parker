@@ -32,6 +32,7 @@ def _seed_search_fixture(db, normal_user):
         db, safe_vol, visible_root, "findme-safe-1.cbz",
         number="1",
         title="FindMe Safe #1",
+        year=1984,
         publisher="FindMe Publisher",
         format="mini-series",
         imprint="FindMe Imprint",
@@ -43,6 +44,7 @@ def _seed_search_fixture(db, normal_user):
         db, safe_vol, visible_root, "findme-safe-2.cbz",
         number="2",
         title="FindMe Safe #2",
+        year=1985,
         publisher="FindMe Publisher",
         format="mini-series",
         imprint="FindMe Imprint",
@@ -225,6 +227,7 @@ def test_quick_search_segments_and_scoping(auth_client, db, normal_user):
     payload = response.json()
 
     assert [row["name"] for row in payload["series"]] == ["FindMe Safe Series"]
+    assert payload["series"][0]["year"] == 1984
     assert [row["name"] for row in payload["collections"]] == ["FindMe Safe Collection"]
     assert [row["name"] for row in payload["reading_lists"]] == ["FindMe Safe Reading List"]
 

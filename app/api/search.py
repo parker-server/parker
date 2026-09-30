@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 from typing import List, Annotated, Optional
-from sqlalchemy import not_
+from sqlalchemy import func, not_
 from sqlalchemy.orm import Query as SqlQuery
 
 from app.api.deps import SessionDep, CurrentUser
@@ -235,7 +235,27 @@ async def quick_search(
 
     # 1. Series (Scoped to User)
     series_objs = get_scoped_results(Series, Series.name)
-    results["series"] = [{"id": s.id, "name": s.name, "year": s.created_at.year} for s in series_objs]
+    series_ids = [s.id for s in series_objs]
+    series_years = {}
+    if series_ids:
+        series_years = {
+            row.series_id: row.start_year
+            for row in (
+                db.query(
+                    Volume.series_id,
+                    func.min(Comic.year).label("start_year"),
+                )
+                .join(Comic, Comic.volume_id == Volume.id)
+                .filter(
+                    Volume.series_id.in_(series_ids),
+                    Comic.year != None,
+                    Comic.year > 0,
+                )
+                .group_by(Volume.series_id)
+                .all()
+            )
+        }
+    results["series"] = [{"id": s.id, "name": s.name, "year": series_years.get(s.id)} for s in series_objs]
 
     # 2. Collections
     collections_objs = get_scoped_results(Collection, Collection.name)
