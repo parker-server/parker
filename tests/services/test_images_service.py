@@ -3,7 +3,7 @@ from io import BytesIO
 from pathlib import Path
 
 import app  # noqa: F401  # Ensure optional Pillow codecs register before creating fixtures.
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFile
 
 from app.services.images import ImageService
 
@@ -146,6 +146,29 @@ def test_image_service_process_cover_converts_non_rgb_cover(tmp_path):
     assert result["success"] is True
     assert thumbnail_path.exists()
     assert result["palette"] is not None
+
+
+def test_image_service_process_cover_accepts_truncated_jpeg_cover(tmp_path):
+    cover_bytes = _image_bytes(Image.new("RGB", (64, 96), (10, 20, 30)), "JPEG")[:-2]
+    archive_path = _build_cbz(
+        tmp_path,
+        "truncated-cover.cbz",
+        {"Hex_#05_00FC.jpg": cover_bytes},
+    )
+    thumbnail_path = tmp_path / "truncated-cover.webp"
+    original_truncated_flag = ImageFile.LOAD_TRUNCATED_IMAGES
+    ImageFile.LOAD_TRUNCATED_IMAGES = False
+
+    try:
+        result = ImageService().process_cover(str(archive_path), thumbnail_path)
+
+        assert result["success"] is True
+        assert thumbnail_path.exists()
+        assert thumbnail_path.stat().st_size > 0
+        assert result["palette"] is not None
+        assert ImageFile.LOAD_TRUNCATED_IMAGES is False
+    finally:
+        ImageFile.LOAD_TRUNCATED_IMAGES = original_truncated_flag
 
 
 def test_image_service_get_page_image_handles_missing_and_out_of_range_pages(tmp_path):

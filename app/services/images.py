@@ -1,8 +1,9 @@
 import logging
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional, Tuple, Annotated, Dict
 from io import BytesIO
-from PIL import Image, ImageFilter, ImageOps
+from PIL import Image, ImageFile, ImageFilter, ImageOps
 from colorthief import ColorThief
 
 
@@ -10,6 +11,16 @@ from app.services.archive import ComicArchive
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def _allow_truncated_image_loads():
+    previous = ImageFile.LOAD_TRUNCATED_IMAGES
+    ImageFile.LOAD_TRUNCATED_IMAGES = True
+    try:
+        yield
+    finally:
+        ImageFile.LOAD_TRUNCATED_IMAGES = previous
 
 
 class ImageService:
@@ -38,43 +49,45 @@ class ImageService:
             if not success or not cover_bytes:
                 return result
 
-            # 2. Load into Pillow
-            img = Image.open(BytesIO(cover_bytes))
-            if img.mode != 'RGB':
-                img = img.convert('RGB')
+            with _allow_truncated_image_loads():
+                # 2. Load into Pillow
+                img = Image.open(BytesIO(cover_bytes))
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
 
-            # 3. Extract Colors (Run ColorThief on a small copy)
-            # Optimization: Resizing to 150px makes ColorThief 10x faster with 99% accuracy
-            small_img = img.copy()
-            small_img.thumbnail((150, 150))
+                # 3. Extract Colors (Run ColorThief on a small copy)
+                # Optimization: Resizing to 150px makes ColorThief 10x faster with 99% accuracy
+                small_img = img.copy()
+                small_img.thumbnail((150, 150))
 
-            # ColorThief needs a file-like object
-            small_bytes = BytesIO()
-            small_img.save(small_bytes, format='JPEG')
+                # ColorThief needs a file-like object
+                small_bytes = BytesIO()
+                small_img.save(small_bytes, format='JPEG')
+                small_bytes.seek(0)
 
-            color_thief = ColorThief(small_bytes)
-            # Get 5 colors
-            raw_palette = color_thief.get_palette(color_count=5, quality=10)
+                color_thief = ColorThief(small_bytes)
+                # Get 5 colors
+                raw_palette = color_thief.get_palette(color_count=5, quality=10)
 
-            def rgb_to_hex(rgb):
-                return f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
+                def rgb_to_hex(rgb):
+                    return f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
 
-            result['palette'] = {
-                'primary': rgb_to_hex(raw_palette[0]),
-                'secondary': rgb_to_hex(raw_palette[1]),
-                'accent1': rgb_to_hex(raw_palette[2]),
-                'accent2': rgb_to_hex(raw_palette[3]) if len(raw_palette) > 3 else None,
-                'accent3': rgb_to_hex(raw_palette[4]) if len(raw_palette) > 4 else None
-            }
+                result['palette'] = {
+                    'primary': rgb_to_hex(raw_palette[0]),
+                    'secondary': rgb_to_hex(raw_palette[1]),
+                    'accent1': rgb_to_hex(raw_palette[2]),
+                    'accent2': rgb_to_hex(raw_palette[3]) if len(raw_palette) > 3 else None,
+                    'accent3': rgb_to_hex(raw_palette[4]) if len(raw_palette) > 4 else None
+                }
 
-            # 4. Generate Thumbnail (Resize the original high-res img)
-            # We do this LAST so we don't accidentally use the tiny 150px image
-            width, height = self.thumbnail_size
-            img.thumbnail((width, height), Image.Resampling.LANCZOS)
+                # 4. Generate Thumbnail (Resize the original high-res img)
+                # We do this LAST so we don't accidentally use the tiny 150px image
+                width, height = self.thumbnail_size
+                img.thumbnail((width, height), Image.Resampling.LANCZOS)
 
-            # Save
-            thumbnail_path.parent.mkdir(parents=True, exist_ok=True)
-            img.save(thumbnail_path, format='WEBP', quality=85)
+                # Save
+                thumbnail_path.parent.mkdir(parents=True, exist_ok=True)
+                img.save(thumbnail_path, format='WEBP', quality=85)
 
             result['success'] = True
             return result
@@ -141,42 +154,43 @@ class ImageService:
 
                 # SLOW PATH: Pillow Processing
                 try:
-                    img = Image.open(BytesIO(image_bytes))
+                    with _allow_truncated_image_loads():
+                        img = Image.open(BytesIO(image_bytes))
 
-                    # Convert to RGB (Strip Alpha/Palette if transcoding to optimize size)
-                    # For WebP, RGBA is fine, but for Grayscale we need L.
-                    if img.mode not in ('RGB', 'L', 'RGBA'):
-                        img = img.convert('RGB')
+                        # Convert to RGB (Strip Alpha/Palette if transcoding to optimize size)
+                        # For WebP, RGBA is fine, but for Grayscale we need L.
+                        if img.mode not in ('RGB', 'L', 'RGBA'):
+                            img = img.convert('RGB')
 
-                    # 2. OPTIMIZATION: Resize Huge Images
-                    # If we are transcoding for bandwidth/speed, we shouldn't serve 4000px images.
-                    # 2560px is more than enough for iPad Pros/Tablets.
-                    if transcode_webp:
-                        max_dimension = 2560
-                        if img.width > max_dimension or img.height > max_dimension:
-                            img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
+                        # 2. OPTIMIZATION: Resize Huge Images
+                        # If we are transcoding for bandwidth/speed, we shouldn't serve 4000px images.
+                        # 2560px is more than enough for iPad Pros/Tablets.
+                        if transcode_webp:
+                            max_dimension = 2560
+                            if img.width > max_dimension or img.height > max_dimension:
+                                img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
 
-                    # A. Apply Grayscale
-                    if grayscale:
-                        img = ImageOps.grayscale(img)
+                        # A. Apply Grayscale
+                        if grayscale:
+                            img = ImageOps.grayscale(img)
 
-                    # B. Apply Sharpening (UnsharpMask is best for scans)
-                    if sharpen:
-                        img = img.filter(ImageFilter.UnsharpMask(radius=2, percent=150, threshold=3))
+                        # B. Apply Sharpening (UnsharpMask is best for scans)
+                        if sharpen:
+                            img = img.filter(ImageFilter.UnsharpMask(radius=2, percent=150, threshold=3))
 
-                    # 4. Save / Transcode
-                    output = BytesIO()
+                        # 4. Save / Transcode
+                        output = BytesIO()
 
-                    if needs_transcode or mime_type == "image/webp":
-                        # Encode fast (The biggest latency saver)
-                        # quality=75: Good visual fidelity, low file size
-                        # method=0: Fastest encoding speed
-                        img.save(output, format="WEBP", quality=75, method=0)
-                        return output.getvalue(), True, "image/webp"
-                    else:
-                        # Fallback to JPEG if we just sharpened but didn't ask for WebP
-                        img.save(output, format="JPEG", quality=85)
-                        return output.getvalue(), True, "image/jpeg"
+                        if needs_transcode or mime_type == "image/webp":
+                            # Encode fast (The biggest latency saver)
+                            # quality=75: Good visual fidelity, low file size
+                            # method=0: Fastest encoding speed
+                            img.save(output, format="WEBP", quality=75, method=0)
+                            return output.getvalue(), True, "image/webp"
+                        else:
+                            # Fallback to JPEG if we just sharpened but didn't ask for WebP
+                            img.save(output, format="JPEG", quality=85)
+                            return output.getvalue(), True, "image/jpeg"
 
                 except Exception as e:
                     logger.error(f"Image processing failed: {e}")
@@ -245,8 +259,9 @@ class ImageService:
             if not success or not cover_bytes:
                 return None
 
-            color_thief = ColorThief(BytesIO(cover_bytes))
-            palette = color_thief.get_palette(color_count=num_colors, quality=10)
+            with _allow_truncated_image_loads():
+                color_thief = ColorThief(BytesIO(cover_bytes))
+                palette = color_thief.get_palette(color_count=num_colors, quality=10)
 
             # Convert to HEX
             def rgb_to_hex(rgb_tuple):
