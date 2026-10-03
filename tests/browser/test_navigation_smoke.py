@@ -195,9 +195,9 @@ def test_reading_list_can_open_reader_and_return(page, browser_server):
 
     page.get_by_role("heading", name=seed["reading_list_name"]).wait_for()
     page.get_by_text(seed["active_comic_summary"]).wait_for()
-    page.get_by_role("button", name="Start Reading").click()
+    page.get_by_role("button", name="Continue").click()
 
-    page.wait_for_url(f"**/reader/{seed['active_comic_id']}*")
+    page.wait_for_url(f"**/reader/{seed['in_progress_comic_id']}*")
     page.locator(".reader-container").wait_for()
 
     page.locator(".nav-zone.center").click()

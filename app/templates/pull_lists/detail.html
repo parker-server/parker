@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "partials/lucide_icon.html" import lucide_icon %}
+{% from "partials/cover_browser_link.html" import cover_browser_link %}
 
 {% block title %}Stack Details - Parker{% endblock %}
 
@@ -43,24 +44,24 @@
                 </div>
             </div>
 
-            <div class="flex gap-3">
+            <div class="flex items-center gap-3">
                 <template x-if="list?.items?.length > 0">
                     <a x-ref="startReadingLink"
-                       :href="window.parker.readerRoute(list.items[0].id, `context_type=pull_list&context_id=${listId}`, { includeReturnTo: false })"
-                       class="bg-green-600 hover:bg-green-500 text-white px-6 py-3 rounded-full font-bold transition-colors flex items-center gap-2 shadow-lg hover:shadow-green-900/20">
-                        {{ lucide_icon("circle-play", "h-5 w-5 flex-shrink-0") }} Start Reading
+                       :href="window.parker.readerRoute(list?.resume_to?.comic_id || list.items[0].id, `context_type=pull_list&context_id=${listId}`, { includeReturnTo: false })"
+                       class="bg-green-600 hover:bg-green-500 text-white px-6 py-3 md:px-4 md:py-2 rounded-lg font-bold transition-colors flex items-center gap-2 shadow-lg hover:shadow-green-900/20">
+                        <span x-show="list?.resume_to?.status !== 'new'" x-cloak>
+                            {{ lucide_icon("circle-play", "h-5 w-5 flex-shrink-0") }}
+                        </span>
+                        <span x-show="list?.resume_to?.status === 'new'" x-cloak>
+                            {{ lucide_icon("book-open", "h-5 w-5 flex-shrink-0") }}
+                        </span>
+                        <span x-text="list?.resume_to?.status !== 'new' ? 'Continue' : 'Start Reading'"></span>
                     </a>
                 </template>
 
-                <a :href="window.parker.route('pages.cover_browser', { context_id: listId, context_type: 'pull_list' }, 'start_comic_id=0')"
-                   class="bg-gray-700 hover:bg-gray-600 text-white p-3 rounded-full transition-colors"
-                   title="Cover Browser">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                </a>
+                {{ cover_browser_link("pull_list", "listId") }}
 
-                <button x-on:click="openEditModal()" class="bg-gray-700 hover:bg-gray-600 text-white p-3 rounded-full transition-colors" title="Edit Stack Details">
+                <button x-on:click="openEditModal()" class="text-gray-400 hover:text-white hover:bg-gray-700 h-12 w-12 rounded-full transition-colors flex items-center justify-center" title="Edit Stack Details">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                     </svg>
@@ -310,8 +311,13 @@ function pullListDetail() {
         updateStartReadingLink(orderIds) {
             if (!orderIds.length || !this.$refs.startReadingLink) return;
 
+            const resumeTarget = this.list?.resume_to;
+            const targetComicId = resumeTarget?.status !== 'new' && orderIds.includes(resumeTarget.comic_id)
+                ? resumeTarget.comic_id
+                : orderIds[0];
+
             this.$refs.startReadingLink.href = window.parker.readerRoute(
-                orderIds[0],
+                targetComicId,
                 `context_type=pull_list&context_id=${this.listId}`,
                 { includeReturnTo: false }
             );
@@ -362,6 +368,10 @@ function pullListDetail() {
                 if (!res.ok) {
                     throw new Error(`Reorder failed with status ${res.status}`);
                 }
+
+                const payload = await res.json();
+                this.list.resume_to = payload.resume_to;
+                this.updateStartReadingLink(newOrderIds);
             } catch(e) {
                 console.error('Reorder failed', e);
                 if (requestId === reorderRequestId) {

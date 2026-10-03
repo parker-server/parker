@@ -468,6 +468,47 @@ def get_resume_target(
     return first_issue_id, "new"
 
 
+def get_container_resume_target(
+        db: SessionDep,
+        *,
+        user_id: int,
+        ordered_comic_ids: list[int],
+) -> tuple[int | None, str]:
+    """Resolve a Continue target for a container's current comic order."""
+    if not ordered_comic_ids:
+        return None, "new"
+
+    progress_records = (
+        db.query(ReadingProgress)
+        .filter(
+            ReadingProgress.user_id == user_id,
+            ReadingProgress.comic_id.in_(ordered_comic_ids),
+        )
+        .all()
+    )
+
+    if not progress_records:
+        return ordered_comic_ids[0], "new"
+
+    latest_progress = max(progress_records, key=lambda progress: progress.last_read_at)
+
+    if not latest_progress.completed and (latest_progress.current_page or 0) > 0:
+        return latest_progress.comic_id, "in_progress"
+
+    completed_ids = {
+        progress.comic_id
+        for progress in progress_records
+        if progress.completed
+    }
+    start_index = ordered_comic_ids.index(latest_progress.comic_id) + 1
+
+    for comic_id in ordered_comic_ids[start_index:]:
+        if comic_id not in completed_ids:
+            return comic_id, "continue"
+
+    return ordered_comic_ids[0], "new"
+
+
 # Helper for SQL Order By
 def get_format_sort_index():
     """

@@ -63,6 +63,27 @@ def _add_comics_to_pull_list(db_factory, pull_list_id, comic_ids):
         session.close()
 
 
+def _cover_browser_dimensions(page):
+    return page.evaluate(
+        """
+        () => {
+            const control = document.querySelector('a[title="Cover Browser"]');
+            const icon = control.querySelector('svg');
+            return {
+                control: {
+                    width: Math.round(control.getBoundingClientRect().width),
+                    height: Math.round(control.getBoundingClientRect().height),
+                },
+                icon: {
+                    width: Math.round(icon.getBoundingClientRect().width),
+                    height: Math.round(icon.getBoundingClientRect().height),
+                },
+            };
+        }
+        """
+    )
+
+
 @pytest.mark.browser
 def test_login_page_focuses_username_field_on_load(page, browser_server):
     page.goto(f"{browser_server['base_url']}/login", wait_until="networkidle")
@@ -562,6 +583,37 @@ def test_stack_detail_reorder_saves_sortable_update_without_on_end(page, browser
         "(rows) => rows.map((row) => Number(row.dataset.id))"
     )
     assert rendered_order == initial_order
+    action_heights = page.evaluate(
+        """
+        () => {
+            const startReading = document.querySelector('a[x-ref="startReadingLink"]');
+            const coverBrowser = document.querySelector('a[title="Cover Browser"]');
+            const editStack = document.querySelector('button[title="Edit Stack Details"]');
+            return {
+                startReading: Math.round(startReading.getBoundingClientRect().height),
+                coverBrowser: Math.round(coverBrowser.getBoundingClientRect().height),
+                editStack: Math.round(editStack.getBoundingClientRect().height),
+            };
+        }
+        """
+    )
+    assert action_heights == {"startReading": 40, "coverBrowser": 48, "editStack": 48}
+    action_backgrounds = page.evaluate(
+        """
+        () => {
+            const coverBrowser = document.querySelector('a[title="Cover Browser"]');
+            const editStack = document.querySelector('button[title="Edit Stack Details"]');
+            return {
+                coverBrowser: getComputedStyle(coverBrowser).backgroundColor,
+                editStack: getComputedStyle(editStack).backgroundColor,
+            };
+        }
+        """
+    )
+    assert action_backgrounds == {
+        "coverBrowser": "rgba(0, 0, 0, 0)",
+        "editStack": "rgba(0, 0, 0, 0)",
+    }
     sortable_options = page.evaluate(
         """
         () => {
@@ -620,13 +672,40 @@ def test_stack_detail_reorder_saves_sortable_update_without_on_end(page, browser
         "startHref": f"{browser_server['base_url']}/reader/{target_order[0]}?context_type=pull_list&context_id={pull_list_id}",
         "targetOrder": target_order,
     }
-    start_link = page.locator("a").filter(has_text="Start Reading").first.get_attribute("href")
+    start_link = page.locator("a").filter(has_text="Continue").first.get_attribute("href")
     assert start_link is not None
     assert f"/reader/{target_order[0]}" in start_link
+
+    page.locator("a[title='Cover Browser']").click()
+    page.wait_for_url(f"**/browse/pull_list/{pull_list_id}?start_comic_id=0")
+    page.locator(".browser-container .font-bold", has_text="Stack").wait_for()
 
     reordered_list = _get_pull_list_snapshot(browser_server["db_factory"], list_name)
     assert reordered_list is not None
     assert reordered_list["comic_ids"] == target_order
+
+
+@pytest.mark.browser
+def test_stack_cover_browser_control_matches_reading_list(page, browser_server):
+    seed = browser_server["seed"]
+    pull_list_id = _create_pull_list(browser_server["db_factory"], seed["user_id"], "Cover Browser Size Stack")
+    _add_comic_to_pull_list(browser_server["db_factory"], pull_list_id, seed["active_comic_id"])
+
+    page.goto(f"{browser_server['base_url']}/stacks/{pull_list_id}", wait_until="networkidle")
+    page.get_by_role("heading", name="Cover Browser Size Stack").wait_for()
+    stack_dimensions = _cover_browser_dimensions(page)
+
+    page.goto(
+        f"{browser_server['base_url']}/reading-lists/{seed['reading_list_id']}",
+        wait_until="networkidle",
+    )
+    page.get_by_role("heading", name=seed["reading_list_name"]).wait_for()
+    reading_list_dimensions = _cover_browser_dimensions(page)
+
+    assert stack_dimensions == reading_list_dimensions == {
+        "control": {"width": 48, "height": 48},
+        "icon": {"width": 32, "height": 32},
+    }
 
 
 @pytest.mark.browser

@@ -30,6 +30,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
 
 - **Reader**
   - Context‑aware navigation (series, volume, lists, story arcs)
+  - Context-aware Continue actions for series, volumes, reading lists, collections, and stacks
   - Manga mode (RTL), responsive double‑page spreads, `Long View`
   - Per-book reader overrides for view mode, double-page, and reading direction
   - Incognito reading sessions that avoid persisting per-book overrides

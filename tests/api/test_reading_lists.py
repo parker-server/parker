@@ -1,4 +1,5 @@
 from app.models.comic import Volume
+from app.models.reading_progress import ReadingProgress
 from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.series import Series
 from tests.factories import create_comic, create_library_with_root
@@ -192,6 +193,7 @@ def test_get_reading_list_success_returns_position_order_and_details(auth_client
     assert [c["id"] for c in payload["comics"]] == [c1.id, c2.id]
     assert [c["position"] for c in payload["comics"]] == [1.0, 2.0]
     assert payload["comics"][0]["summary"] == "The event begins with a compact issue summary."
+    assert payload["resume_to"] == {"comic_id": c1.id, "status": "new"}
     assert payload["details"] == {
         "writers": [],
         "pencillers": [],
@@ -199,6 +201,20 @@ def test_get_reading_list_success_returns_position_order_and_details(auth_client
         "teams": [],
         "locations": [],
     }
+
+    db.add(ReadingProgress(
+        user_id=normal_user.id,
+        comic_id=c1.id,
+        current_page=19,
+        total_pages=20,
+        completed=True,
+    ))
+    db.commit()
+
+    continued = auth_client.get(f"/api/reading-lists/{reading_list.id}")
+
+    assert continued.status_code == 200
+    assert continued.json()["resume_to"] == {"comic_id": c2.id, "status": "continue"}
 
 
 def test_get_reading_list_404_for_missing_list(auth_client):

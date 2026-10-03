@@ -3,6 +3,8 @@ from typing import Optional, List
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.comic import ReaderResumeTarget
+
 PULL_LIST_NAME_MAX_LENGTH = 120
 PULL_LIST_DESCRIPTION_MAX_LENGTH = 500
 
@@ -111,10 +113,15 @@ class PullListDetailResponse(BaseModel):
     created_at: datetime | None = None
     items: list[PullListComic] = Field(default_factory=list)
     details: PullListMetadataDetails
+    resume_to: ReaderResumeTarget
 
 
 class PullListMessageResponse(BaseModel):
     message: str
+
+
+class PullListReorderResponse(PullListMessageResponse):
+    resume_to: ReaderResumeTarget
 
 
 class PullListAddItemResponse(PullListMessageResponse):

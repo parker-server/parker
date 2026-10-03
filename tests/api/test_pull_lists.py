@@ -1,6 +1,7 @@
 from app.core.security import get_password_hash
 from app.models.comic import Volume
 from app.models.pull_list import PullList, PullListItem
+from app.models.reading_progress import ReadingProgress
 from app.models.series import Series
 from app.models.user import User
 from app.schemas.pull_list import PULL_LIST_DESCRIPTION_MAX_LENGTH, PULL_LIST_NAME_MAX_LENGTH
@@ -170,6 +171,7 @@ def test_pull_list_detail_returns_items_and_metadata(auth_client, db, normal_use
     payload = response.json()
     assert payload["name"] == "Detail List"
     assert [item["id"] for item in payload["items"]] == [comics[0].id, comics[1].id]
+    assert payload["resume_to"] == {"comic_id": comics[0].id, "status": "new"}
     assert payload["details"] == {
         "writers": [],
         "pencillers": [],
@@ -177,6 +179,20 @@ def test_pull_list_detail_returns_items_and_metadata(auth_client, db, normal_use
         "teams": [],
         "locations": [],
     }
+
+    db.add(ReadingProgress(
+        user_id=normal_user.id,
+        comic_id=comics[0].id,
+        current_page=9,
+        total_pages=10,
+        completed=True,
+    ))
+    db.commit()
+
+    continued = auth_client.get(f"/api/pull-lists/{plist.id}")
+
+    assert continued.status_code == 200
+    assert continued.json()["resume_to"] == {"comic_id": comics[1].id, "status": "continue"}
 
     missing = auth_client.get("/api/pull-lists/999999")
     assert missing.status_code == 404
@@ -315,6 +331,7 @@ def test_pull_list_reorder_paths(auth_client, db, normal_user):
     )
 
     assert reordered.status_code == 200
+    assert reordered.json()["resume_to"] == {"comic_id": comics[2].id, "status": "new"}
 
     items = db.query(PullListItem).filter(PullListItem.pull_list_id == plist.id).all()
     order_map = {i.comic_id: i.sort_order for i in items}

@@ -6,7 +6,7 @@ from typing import Annotated
 from app.api.deps import SessionDep, CurrentUser, AdminUser, PaginationParams, PaginatedResponse
 from app.core.comic_helpers import (get_aggregated_metadata,
                                     get_thumbnail_url, get_banned_comic_condition,
-                                    check_container_restriction)
+                                    check_container_restriction, get_container_resume_target)
 from app.models.comic import Comic, Volume
 from app.models.series import Series
 from app.models.library import Library
@@ -23,6 +23,7 @@ from app.schemas.reading_list import (
     ReadingListRenameRequest,
     ReadingListRenameResponse,
 )
+from app.schemas.comic import ReaderResumeTarget
 
 router = APIRouter()
 
@@ -175,6 +176,12 @@ async def get_reading_list(list_id: int, db: SessionDep, current_user: CurrentUs
     if len(comics) <= 0:
         raise HTTPException(status_code=404, detail="No comics found (or access denied)")
 
+    resume_comic_id, resume_status = get_container_resume_target(
+        db,
+        user_id=current_user.id,
+        ordered_comic_ids=[comic.id for comic in comics],
+    )
+
     # 2. Aggregated Metadata (scoped)
     details = ReadingListMetadataDetails(
         writers=get_aggregated_metadata(db, Person, ReadingListItem, ReadingListItem.reading_list_id, list_id,
@@ -212,6 +219,7 @@ async def get_reading_list(list_id: int, db: SessionDep, current_user: CurrentUs
         created_at=reading_list.created_at,
         updated_at=reading_list.updated_at,
         details=details,
+        resume_to=ReaderResumeTarget(comic_id=resume_comic_id, status=resume_status),
         cbl_source=cbl_source_payload,
     )
 
