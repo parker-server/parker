@@ -3,7 +3,7 @@ from sqlalchemy.orm import joinedload, aliased
 from sqlalchemy import func, select
 
 from app.core.comic_helpers import (get_aggregated_metadata, get_series_age_restriction,
-                                    get_thumbnail_url)
+                                    get_thumbnail_url, get_container_resume_target)
 from app.api.deps import SessionDep, CurrentUser
 from app.models.pull_list import PullList, PullListItem
 from app.models.comic import Comic
@@ -23,10 +23,12 @@ from app.schemas.pull_list import (
     PullListListItem,
     PullListMessageResponse,
     PullListMetadataDetails,
+    PullListReorderResponse,
     PullListResponse,
     PullListUpdate,
     ReorderRequest,
 )
+from app.schemas.comic import ReaderResumeTarget
 
 router = APIRouter()
 
@@ -153,6 +155,12 @@ def get_list_details(list_id: int, db: SessionDep, current_user: CurrentUser):
             )
         )
 
+    resume_comic_id, resume_status = get_container_resume_target(
+        db,
+        user_id=current_user.id,
+        ordered_comic_ids=[item.id for item in items_data],
+    )
+
     # 3. Aggregated Metadata (5 queries, acceptable for detail view)
     details = PullListMetadataDetails(
         writers=get_aggregated_metadata(db, Person, PullListItem, PullListItem.pull_list_id, list_id, 'writer'),
@@ -169,6 +177,7 @@ def get_list_details(list_id: int, db: SessionDep, current_user: CurrentUser):
         created_at=plist.created_at,
         items=items_data,
         details=details,
+        resume_to=ReaderResumeTarget(comic_id=resume_comic_id, status=resume_status),
     )
 
 
@@ -241,7 +250,7 @@ def remove_item_from_list(list_id: int, comic_id: int, db: SessionDep, current_u
     return {"message": "Item removed"}
 
 
-@router.post("/{list_id}/reorder", response_model=PullListMessageResponse, name="reorder_list_items")
+@router.post("/{list_id}/reorder", response_model=PullListReorderResponse, name="reorder_list_items")
 def reorder_list_items(list_id: int, order_data: ReorderRequest, db: SessionDep, current_user: CurrentUser):
     plist = db.query(PullList).filter(PullList.id == list_id, PullList.user_id == current_user.id).first()
     if not plist: raise HTTPException(status_code=404, detail="Pull list not found")
@@ -253,8 +262,34 @@ def reorder_list_items(list_id: int, order_data: ReorderRequest, db: SessionDep,
         if comic_id in item_map:
             item_map[comic_id].sort_order = index
 
+    db.flush()
+
+    visible_items_query = (
+        db.query(PullListItem.comic_id)
+        .join(Comic)
+        .join(Volume)
+        .join(Series)
+        .filter(PullListItem.pull_list_id == list_id)
+    )
+    series_filter = get_series_age_restriction(current_user)
+    if series_filter is not None:
+        visible_items_query = visible_items_query.filter(series_filter)
+
+    ordered_comic_ids = [
+        row[0]
+        for row in visible_items_query.order_by(PullListItem.sort_order).all()
+    ]
+    resume_comic_id, resume_status = get_container_resume_target(
+        db,
+        user_id=current_user.id,
+        ordered_comic_ids=ordered_comic_ids,
+    )
+
     db.commit()
-    return {"message": "List reordered successfully"}
+    return {
+        "message": "List reordered successfully",
+        "resume_to": {"comic_id": resume_comic_id, "status": resume_status},
+    }
 
 
 @router.post("/{list_id}/items/batch", response_model=PullListMessageResponse, name="batch_add_items")

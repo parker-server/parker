@@ -4,7 +4,8 @@ from sqlalchemy import Float, func, select, not_
 from typing import Annotated
 
 from app.core.comic_helpers import (get_aggregated_metadata, get_series_age_restriction, get_thumbnail_url,
-                                    get_banned_comic_condition, check_container_restriction)
+                                    get_banned_comic_condition, check_container_restriction,
+                                    get_container_resume_target)
 from app.api.deps import SessionDep, CurrentUser, AdminUser, PaginationParams, PaginatedResponse
 from app.models.library import Library
 from app.models.collection import Collection, CollectionItem
@@ -18,6 +19,7 @@ from app.schemas.collection import (
     CollectionListItem,
     CollectionMetadataDetails,
 )
+from app.schemas.comic import ReaderResumeTarget
 
 router = APIRouter()
 
@@ -166,6 +168,12 @@ async def get_collection(current_user: CurrentUser,
     if len(comics) <= 0:
         raise HTTPException(status_code=404, detail="No comics found")
 
+    resume_comic_id, resume_status = get_container_resume_target(
+        db,
+        user_id=current_user.id,
+        ordered_comic_ids=[comic.id for comic in comics],
+    )
+
     # 2. Aggregated Metadata (Scoped)
     # Pass allowed_ids to the helper
     details = CollectionMetadataDetails(
@@ -191,6 +199,7 @@ async def get_collection(current_user: CurrentUser,
         created_at=collection.created_at,
         updated_at=collection.updated_at,
         details=details,
+        resume_to=ReaderResumeTarget(comic_id=resume_comic_id, status=resume_status),
     )
 
 

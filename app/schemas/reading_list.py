@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from app.schemas.comic import ReaderResumeTarget
+
 
 class ReadingListRenameRequest(BaseModel):
     name: str
@@ -66,4 +68,5 @@ class ReadingListDetailResponse(BaseModel):
     created_at: datetime | None = None
     updated_at: datetime | None = None
     details: ReadingListMetadataDetails
+    resume_to: ReaderResumeTarget
     cbl_source: ReadingListCBLSource | None = None

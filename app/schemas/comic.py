@@ -10,6 +10,11 @@ class ComicDetailBookmark(BaseModel):
     label: str | None = None
 
 
+class ReaderResumeTarget(BaseModel):
+    comic_id: int | None = None
+    status: Literal["new", "in_progress", "continue"]
+
+
 class ComicDetailResponse(BaseModel):
     id: int
     filename: str

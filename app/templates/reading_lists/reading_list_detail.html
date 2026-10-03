@@ -56,7 +56,13 @@
                 <div class="w-full md:w-auto flex items-stretch shadow-lg rounded-lg" x-show="readingList?.comics?.length > 0" x-data="{ menuOpen: false }">
 
                     <button class="flex-1 md:flex-none bg-green-600 hover:bg-green-500 text-white font-bold py-3 px-6 md:py-2 md:px-4 rounded-l-lg transition-colors flex items-center justify-center gap-2 border-r border-green-700 whitespace-nowrap" x-on:click="startReading(false)">
-                        {{ lucide_icon("book-open", "h-5 w-5 flex-shrink-0") }} Start Reading
+                        <span x-show="readingList?.resume_to?.status !== 'new'" x-cloak>
+                            {{ lucide_icon("circle-play", "h-5 w-5 flex-shrink-0") }}
+                        </span>
+                        <span x-show="readingList?.resume_to?.status === 'new'" x-cloak>
+                            {{ lucide_icon("book-open", "h-5 w-5 flex-shrink-0") }}
+                        </span>
+                        <span x-text="readingList?.resume_to?.status !== 'new' ? 'Continue' : 'Start Reading'"></span>
                     </button>
 
                     <div class="relative">
@@ -214,9 +220,12 @@ function readingListDetail() {
 
         startReading(incognito = false) {
             if (this.readingList?.comics?.length > 0) {
+                const targetComicId = incognito
+                    ? this.readingList.comics[0].id
+                    : this.readingList.resume_to?.comic_id || this.readingList.comics[0].id;
                 let qs = `context_type=reading_list&context_id=${this.readingList.id}`;
                 if (incognito) qs += '&incognito=true';
-                window.location.href = window.parker.readerRoute(this.readingList.comics[0].id, qs, { includeReturnTo: false });
+                window.location.href = window.parker.readerRoute(targetComicId, qs, { includeReturnTo: false });
             }
         }
     }

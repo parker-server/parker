@@ -1,5 +1,6 @@
 from app.models.collection import Collection, CollectionItem
 from app.models.comic import Volume
+from app.models.reading_progress import ReadingProgress
 from app.models.series import Series
 from tests.factories import create_comic, create_library_with_root
 
@@ -158,6 +159,7 @@ def test_get_collection_success_returns_sorted_comics_and_details(auth_client, d
     assert payload["name"] == "Detail Collection"
     assert payload["comic_count"] == 2
     assert [c["id"] for c in payload["comics"]] == [older.id, newer.id]
+    assert payload["resume_to"] == {"comic_id": older.id, "status": "new"}
     assert payload["details"] == {
         "writers": [],
         "pencillers": [],
@@ -165,6 +167,20 @@ def test_get_collection_success_returns_sorted_comics_and_details(auth_client, d
         "teams": [],
         "locations": [],
     }
+
+    db.add(ReadingProgress(
+        user_id=normal_user.id,
+        comic_id=older.id,
+        current_page=19,
+        total_pages=20,
+        completed=True,
+    ))
+    db.commit()
+
+    continued = auth_client.get(f"/api/collections/{collection.id}")
+
+    assert continued.status_code == 200
+    assert continued.json()["resume_to"] == {"comic_id": newer.id, "status": "continue"}
 
 
 def test_get_collection_404_for_missing_collection(auth_client):

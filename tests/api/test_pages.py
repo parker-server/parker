@@ -1091,6 +1091,7 @@ def test_reader_page_uses_modular_reader_shell(auth_client):
 def test_cover_browser_page_exposes_start_comic_id(auth_client):
     default_response = auth_client.get("/browse/series/123")
     response = auth_client.get("/browse/series/123?start_comic_id=456&return_to=%2Fcomics%2F456")
+    stack_response = auth_client.get("/browse/pull_list/123")
 
     assert default_response.status_code == 200
     assert "startComicId: 0" in default_response.text
@@ -1098,6 +1099,8 @@ def test_cover_browser_page_exposes_start_comic_id(auth_client):
     assert response.status_code == 200
     assert "startComicId: 456" in response.text
     assert 'returnTo: "/comics/456"' in response.text
+    assert stack_response.status_code == 200
+    assert "contextLabel: 'Stack'" in stack_response.text
 
 
 def test_comic_detail_page_gates_file_location_and_uses_lucide_read_icons(auth_client, db, normal_user):
