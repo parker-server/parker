@@ -684,11 +684,65 @@
                                :value="`${window.location.origin}${window.parker.url('/opds/')}`"
                                class="w-full text-xs bg-gray-900 text-gray-300 px-3 py-2 rounded border border-gray-700 font-mono cursor-pointer"
                                @click="$event.target.select()">
-                        <button @click="copyToClipboard($event.target.previousElementSibling.value)"
-                                class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded text-sm font-bold transition-colors">
-                            Copy URL
+                        <button @click="copyToClipboard($event.target.previousElementSibling.value, 'Feed URL copied!')"
+                                class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded text-sm font-bold transition-colors inline-flex items-center justify-center gap-2">
+                            {{ lucide_icon("copy", "h-4 w-4 flex-shrink-0") }} Copy URL
                         </button>
-                        <span class="text-xs text-gray-500 block">Use your Parker username & password.</span>
+
+                        <div class="border-t border-gray-700 pt-4 space-y-3">
+                            <div class="flex items-center justify-between gap-3">
+                                <h4 class="text-sm font-bold text-white">OPDS Keys</h4>
+                                <span class="text-xs text-gray-500">Use with your Parker username</span>
+                            </div>
+
+                            <form @submit.prevent="createOpdsToken()" class="flex gap-2">
+                                <input x-model="newOpdsTokenName"
+                                       maxlength="80"
+                                       placeholder="Reader name"
+                                       class="min-w-0 flex-1 text-sm bg-gray-900 text-gray-200 px-3 py-2 rounded border border-gray-700"
+                                       required>
+                                <button type="submit"
+                                        class="shrink-0 bg-gray-700 hover:bg-blue-600 text-white px-3 py-2 rounded text-sm font-bold transition-colors"
+                                        title="Create OPDS key">
+                                    {{ lucide_icon("plus", "h-4 w-4 flex-shrink-0") }}
+                                </button>
+                            </form>
+
+                            <template x-if="newOpdsTokenValue">
+                                <div class="space-y-2 rounded border border-blue-700/60 bg-blue-950/30 p-3">
+                                    <span class="text-xs font-bold uppercase tracking-wide text-blue-200">New key</span>
+                                    <input readonly
+                                           :value="newOpdsTokenValue"
+                                           class="w-full text-xs bg-gray-950 text-blue-100 px-3 py-2 rounded border border-blue-800 font-mono"
+                                           @click="$event.target.select()">
+                                    <button @click="copyToClipboard(newOpdsTokenValue, 'OPDS key copied!')"
+                                            class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded text-sm font-bold transition-colors inline-flex items-center justify-center gap-2">
+                                        {{ lucide_icon("copy", "h-4 w-4 flex-shrink-0") }} Copy Key
+                                    </button>
+                                </div>
+                            </template>
+
+                            <div class="space-y-2">
+                                <template x-for="token in opdsTokens" :key="token.id">
+                                    <div class="flex items-center justify-between gap-3 rounded border border-gray-700 bg-gray-900/70 px-3 py-2">
+                                        <div class="min-w-0">
+                                            <div class="truncate text-sm font-medium text-gray-100" x-text="token.name"></div>
+                                            <div class="text-xs text-gray-500">
+                                                <span x-text="token.token_hint"></span>
+                                                <template x-if="token.last_used_at">
+                                                    <span> · Used <span x-text="formatDate(token.last_used_at)"></span></span>
+                                                </template>
+                                            </div>
+                                        </div>
+                                        <button @click="revokeOpdsToken(token)"
+                                                class="shrink-0 rounded p-2 text-gray-400 hover:bg-red-900/40 hover:text-red-200 transition-colors"
+                                                title="Revoke OPDS key">
+                                            {{ lucide_icon("trash-2", "h-4 w-4 flex-shrink-0") }}
+                                        </button>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </template>
@@ -712,6 +766,9 @@ function dashboard() {
         data: null,
         detailedStatsExpanded: false,  // Collapsed by default
         avatarCueSuppressed: false,
+        opdsTokens: [],
+        newOpdsTokenName: '',
+        newOpdsTokenValue: '',
         heatmapDays: [], // Array of {date, count}
         reviewYear:activeReviewYear,
 
@@ -726,6 +783,7 @@ function dashboard() {
                 if(res.ok) {
                     this.data = await res.json();
                     await this.fetchSmartLists();
+                    if (this.data?.opds_enabled) await this.fetchOpdsTokens();
                     this.generateHeatmapDays();
                 }
 
@@ -799,7 +857,7 @@ function dashboard() {
             return copied;
         },
 
-        async copyToClipboard(text) {
+        async copyToClipboard(text, successMessage = "Copied!") {
             try {
                 if (navigator.clipboard?.writeText && window.isSecureContext) {
                     await navigator.clipboard.writeText(text);
@@ -807,15 +865,75 @@ function dashboard() {
                     throw new Error('Clipboard unavailable');
                 }
 
-                window.parker.showToast("Feed URL copied!", "success");
+                window.parker.showToast(successMessage, "success");
             } catch (err) {
                 if (this.fallbackCopyText(text)) {
-                    window.parker.showToast("Feed URL copied!", "success");
+                    window.parker.showToast(successMessage, "success");
                     return;
                 }
 
                 console.error('Failed to copy!', err);
-                window.parker.showToast("Unable to copy feed URL.", "error");
+                window.parker.showToast("Unable to copy.", "error");
+            }
+        },
+
+        async fetchOpdsTokens() {
+            try {
+                const res = await fetch(window.parker.route('users.list_opds_tokens'));
+                if (res.ok) this.opdsTokens = await res.json();
+            } catch(e) {
+                console.error(e);
+            }
+        },
+
+        async createOpdsToken() {
+            const name = this.newOpdsTokenName.trim();
+            if (!name) return;
+
+            try {
+                const res = await fetch(window.parker.route('users.create_opds_token'), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name })
+                });
+
+                if (!res.ok) throw new Error('Unable to create OPDS key');
+
+                const token = await res.json();
+                this.newOpdsTokenValue = token.token;
+                this.newOpdsTokenName = '';
+                this.opdsTokens = [token, ...this.opdsTokens.filter(item => item.id !== token.id)];
+                window.parker.showToast("OPDS key created", "success");
+            } catch(e) {
+                console.error(e);
+                window.parker.showToast("Failed to create OPDS key", "error");
+            }
+        },
+
+        async revokeOpdsToken(token) {
+            const confirmed = await window.parker.dialog.confirm(
+                "Revoke Key?",
+                `Revoke ${token.name}?`,
+                { isDestructive: true, confirmText: 'Revoke' }
+            );
+
+            if (!confirmed) return;
+
+            try {
+                const res = await fetch(window.parker.route('users.revoke_opds_token', { token_id: token.id }), {
+                    method: 'DELETE'
+                });
+
+                if (!res.ok) throw new Error('Unable to revoke OPDS key');
+
+                this.opdsTokens = this.opdsTokens.filter(item => item.id !== token.id);
+                if (this.newOpdsTokenValue && token.token_hint && this.newOpdsTokenValue.startsWith(token.token_hint.split('...')[0])) {
+                    this.newOpdsTokenValue = '';
+                }
+                window.parker.showToast("OPDS key revoked", "success");
+            } catch(e) {
+                console.error(e);
+                window.parker.showToast("Failed to revoke OPDS key", "error");
             }
         },
 

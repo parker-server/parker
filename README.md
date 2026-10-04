@@ -99,7 +99,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
   - OPDS 1.2 compliant feeds
   - Paginated library and series feeds
   - Dublin Core metadata
-  - Legacy client authentication
+  - Revocable per-user OPDS keys for external readers
   - JPEG cover thumbnails for reader compatibility
   - Android reader compatibility improvements
   - User dashboard integration
@@ -219,6 +219,9 @@ upgrades do not reset or overwrite existing accounts.
 ### OPDS Reader Compatibility
 
 Parker's OPDS feed serves original comic archives and preserves their file type.
+Users can connect reader apps with their Parker username and a revocable OPDS
+key created from the user dashboard. Account passwords still work for legacy
+setups, but OPDS keys can be revoked without changing the main Parker password.
 Reader support varies by app: some Android readers can download a CBR but fail
 to open it if the archive uses RAR5 compression. In that case, use a reader with
 RAR5 support or convert the file to CBZ/RAR4 at the library owner's discretion.
@@ -246,4 +249,3 @@ Please check the issues list for open tasks, or propose new features via pull re
 
 ## 📜 License
 MIT License
-

@@ -6,6 +6,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from app.api.deps import SessionDep
 from app.models.user import User
 from app.core.security import verify_password
+from app.services.opds_tokens import authenticate_opds_token, mark_opds_token_used
 from app.services.settings_service import SettingsService
 
 OPDS_AUTH_CHALLENGE = 'Basic realm="Parker OPDS"'
@@ -46,8 +47,13 @@ def get_current_user_opds(
             headers={"WWW-Authenticate": OPDS_AUTH_CHALLENGE},
         )
 
-    # 3. Verify Password
-    if not verify_password(credentials.password, str(user.hashed_password)):
+    # 3. Verify a revocable OPDS key or the account password.
+    opds_token = authenticate_opds_token(db, user, credentials.password)
+    password_valid = False
+    if not opds_token:
+        password_valid = verify_password(credentials.password, str(user.hashed_password))
+
+    if not password_valid and not opds_token:
         logger.warning(
             "Authentication failed via OPDS basic auth: username=%r ip=%s path=%s reason=invalid_password",
             credentials.username,
@@ -65,6 +71,9 @@ def get_current_user_opds(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Password change required",
         )
+
+    if opds_token:
+        mark_opds_token_used(db, opds_token)
 
     return user
 

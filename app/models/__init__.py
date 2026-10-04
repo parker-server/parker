@@ -12,6 +12,7 @@ from app.models.reading_progress import ReadingProgress
 from app.models.bookmark import Bookmark
 from app.models.job import ScanJob
 from app.models.user import User
+from app.models.opds_token import UserOPDSToken
 from app.models.interactions import UserSeries, UserVolumeFollow, UserLibraryPin, UserComicRating
 from app.models.saved_search import SavedSearch
 from app.models.setting import SystemSetting
@@ -31,7 +32,7 @@ __all__ = [
     'Collection', 'CollectionItem',
     'ReadingProgress', 'ActivityLog', 'Bookmark',
     'ScanJob',
-    'User',
+    'User', 'UserOPDSToken',
     'UserSeries', 'UserVolumeFollow', 'UserLibraryPin', 'UserComicRating',
     'SavedSearch', 'SmartList',
     'SystemSetting',
