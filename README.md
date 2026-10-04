@@ -1,6 +1,6 @@
 # Parker Comic Server
 
-Parker is a self‑hosted media server for comic books (CBZ/CBR). It follows a **“Filesystem is Truth”** philosophy, parsing metadata directly from `ComicInfo.xml` inside archives. Parker is currently at **Version 0.1.40 (Stable)**.
+Parker is a self‑hosted media server for comic books (CBZ/CBR). It follows a **“Filesystem is Truth”** philosophy, parsing metadata directly from `ComicInfo.xml` inside archives. Parker is currently at **Version 0.1.41 (Stable)**.
 
 https://github.com/parker-server/parker/wiki/Getting-Started
 
@@ -98,6 +98,9 @@ https://github.com/parker-server/parker/wiki/Getting-Started
 - **OPDS Support**
   - OPDS 1.2 compliant feeds
   - Paginated library and series feeds
+  - Root shortcuts for Continue Reading and recently added/updated series
+  - Collection and reading list feeds
+  - Optional volume browsing alongside the flat series issue feed
   - Dublin Core metadata
   - Revocable per-user OPDS keys for external readers
   - JPEG cover thumbnails for reader compatibility
