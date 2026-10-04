@@ -37,8 +37,14 @@ The main OPDS implementation lives in:
 Current feed hierarchy:
 
 - `Library -> Series -> Issues`
+- optional `Series -> Volumes -> Issues`
+- `Collections -> Issues`
+- `Reading Lists -> Issues`
 
-Volumes are flattened in the series feed and issues are ordered by volume number, then issue number. This is valid OPDS and keeps reader navigation simple, but it means Parker does not currently expose a structured `Series -> Volume -> Issues` OPDS path.
+The OPDS root also exposes shortcut feeds for Continue Reading, Recently Added,
+Recently Updated, Collections, and Reading Lists.
+
+Volumes remain flattened in the default series feed and issues are ordered by volume number, then issue number. This is valid OPDS and keeps reader navigation simple. Parker also exposes an additive structured `Series -> Volume -> Issues` path for clients and users that prefer volume-aware browsing.
 
 Current compatibility choices:
 
@@ -88,14 +94,17 @@ Open questions:
 
 Expose Parker-native browsing surfaces from the OPDS root without disturbing the existing library path.
 
-Candidate root entries:
+Initial support has been added for:
 
-- Libraries
 - Continue Reading
 - Recently Updated
 - Recently Added
 - Reading Lists
 - Collections
+
+Candidate root entries:
+
+- Libraries
 - Smart Lists
 
 The root feed should remain readable in simple clients. Avoid deep hierarchy unless the user selected an entry that naturally needs it.
@@ -134,13 +143,15 @@ Open questions:
 
 Add volume-aware feeds without replacing the current flat series feed.
 
-Recommended additive routes:
+Initial support has been added for additive volume navigation.
+
+Additive routes:
 
 - `/opds/series/{series_id}` remains flat for compatibility
 - `/opds/series/{series_id}/volumes` lists volumes
 - `/opds/volumes/{volume_id}` lists issues for one volume
 
-The series feed could include a `Browse Volumes` navigation entry if testing shows clients handle it cleanly.
+The series feed includes a `Browse Volumes` navigation entry when the series has more than one volume.
 
 ### 6. Revocable OPDS Tokens
 
@@ -229,3 +240,6 @@ Suggested smoke tests:
 - download a CBR and confirm client-specific behavior
 - test a large library feed once pagination exists
 - test access restrictions for users with limited libraries or age ratings
+
+For a repeatable manual fixture and client comparison checklist, see
+`docs/opds-client-smoke-test.md`.
