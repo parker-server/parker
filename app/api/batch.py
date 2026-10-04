@@ -1,11 +1,13 @@
-from fastapi import APIRouter, HTTPException, Body
+from fastapi import APIRouter
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List
 from datetime import datetime, timezone
 
 from app.api.deps import SessionDep, CurrentUser
+from app.core.comic_helpers import get_series_age_restriction
 from app.models.comic import Comic, Volume
 from app.models.reading_progress import ReadingProgress
+from app.models.series import Series
 
 router = APIRouter()
 
@@ -18,6 +20,20 @@ class BatchActionRequest(BaseModel):
     read: bool = True
 
 
+def _authorized_comic_id_query(db: SessionDep, current_user: CurrentUser):
+    query = db.query(Comic.id).join(Volume).join(Series)
+
+    if not current_user.is_superuser:
+        allowed_ids = [library.id for library in current_user.accessible_libraries]
+        query = query.filter(Series.library_id.in_(allowed_ids))
+
+    age_filter = get_series_age_restriction(current_user)
+    if age_filter is not None:
+        query = query.filter(age_filter)
+
+    return query
+
+
 @router.post("/read-status", name="mark_read")
 async def batch_mark_read(
         payload: BatchActionRequest,
@@ -28,18 +44,23 @@ async def batch_mark_read(
     Marks items as read.
     OPTIMIZED: Uses bulk operations (Insert/Update mappings) to handle large sets efficiently.
     """
-    target_comic_ids = set(payload.comic_ids)
+    target_comic_ids = set()
+    authorized_comics = _authorized_comic_id_query(db, current_user)
+
+    if payload.comic_ids:
+        direct_comics = authorized_comics.filter(Comic.id.in_(payload.comic_ids)).all()
+        target_comic_ids.update(c[0] for c in direct_comics)
 
     # 1. Expand Volumes (Future proofing)
     if payload.volume_ids:
         # Find all comics in these volumes
-        vol_comics = db.query(Comic.id).filter(Comic.volume_id.in_(payload.volume_ids)).all()
+        vol_comics = authorized_comics.filter(Comic.volume_id.in_(payload.volume_ids)).all()
         target_comic_ids.update(c[0] for c in vol_comics)
 
     # 2. Expand Series (Future proofing)
     if payload.series_ids:
         # Find all comics in these series
-        series_comics = db.query(Comic.id).join(Volume).filter(Volume.series_id.in_(payload.series_ids)).all()
+        series_comics = authorized_comics.filter(Volume.series_id.in_(payload.series_ids)).all()
         target_comic_ids.update(c[0] for c in series_comics)
 
     if not target_comic_ids:

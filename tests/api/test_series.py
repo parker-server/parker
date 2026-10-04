@@ -196,6 +196,17 @@ def test_series_star_and_unstar_flow(auth_client, db, normal_user):
     assert pref.starred_at is None
 
 
+def test_series_star_hides_inaccessible_library_series(auth_client, db, normal_user):
+    data = _create_series_with_volume(db, lib_name="hidden-star-lib", series_name="Hidden Star")
+
+    response = auth_client.post(f"/api/series/{data['series'].id}/star")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Series not found"}
+    pref = db.query(UserSeries).filter_by(user_id=normal_user.id, series_id=data["series"].id).first()
+    assert pref is None
+
+
 def test_series_list_only_starred_returns_starred_items(auth_client, db, normal_user):
     first = _create_series_with_volume(db, lib_name="list-lib-1", series_name="Alpha Line")
     second = _create_series_with_volume(db, lib_name="list-lib-2", series_name="Beta Line")
@@ -252,6 +263,29 @@ def test_series_issues_filters_and_read_state(auth_client, db, normal_user):
     assert unread_payload["total"] == 2
     assert [item["number"] for item in unread_payload["items"]] == ["3", "2"]
     assert all(item["read"] is False for item in unread_payload["items"])
+
+
+def test_series_issues_hide_inaccessible_library_series(auth_client, db):
+    data = _create_series_with_volume(db, lib_name="hidden-issues-lib", series_name="Hidden Issues")
+
+    response = auth_client.get(f"/api/series/{data['series'].id}/issues?type=all")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Series not found"}
+
+
+def test_series_issues_block_age_restricted_series(auth_client, db, normal_user):
+    data = _create_series_with_volume(db, lib_name="restricted-issues-lib", series_name="Restricted Issues")
+    data["comics"][0].age_rating = "Mature 17+"
+    normal_user.accessible_libraries.append(data["library"])
+    normal_user.max_age_rating = "Teen"
+    normal_user.allow_unknown_age_ratings = True
+    db.commit()
+
+    response = auth_client.get(f"/api/series/{data['series'].id}/issues?type=all")
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Content restricted by age rating"}
 
 
 def test_series_issues_query_count_does_not_scale_with_volumes(auth_client, db, normal_user, count_queries):
@@ -745,6 +779,32 @@ def test_series_recommendations_includes_group_lane(auth_client, db, normal_user
     assert shared_lane["items"][0]["id"] == other.id
 
 
+def test_series_recommendations_do_not_use_inaccessible_source_series(auth_client, db, normal_user):
+    hidden_library = create_library_with_root(db, "hidden-rec-lib", "/tmp/hidden-rec-lib")
+    visible_library = create_library_with_root(db, "visible-rec-lib", "/tmp/visible-rec-lib")
+
+    hidden = _create_single_issue_series(
+        db,
+        hidden_library,
+        name="Hidden Recommendation Source",
+        series_group="Shared Hidden Group",
+    )
+    _create_single_issue_series(
+        db,
+        visible_library,
+        name="Visible Recommendation Match",
+        series_group="Shared Hidden Group",
+    )
+
+    normal_user.accessible_libraries.append(visible_library)
+    db.commit()
+
+    response = auth_client.get(f"/api/series/{hidden['series'].id}/recommendations?limit=10")
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
 
 def _create_single_issue_series(
     db,
@@ -1213,7 +1273,7 @@ def test_series_issues_sort_order_none_uses_reverse_numbering_rule(db, normal_us
     reverse_payload = asyncio.run(
         get_series_issues(
             current_user=normal_user,
-            series_id=reverse_series.id,
+            series=reverse_series,
             params=params,
             db=db,
             type="all",
@@ -1226,7 +1286,7 @@ def test_series_issues_sort_order_none_uses_reverse_numbering_rule(db, normal_us
     normal_payload = asyncio.run(
         get_series_issues(
             current_user=normal_user,
-            series_id=normal_series.id,
+            series=normal_series,
             params=params,
             db=db,
             type="all",

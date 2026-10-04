@@ -74,6 +74,8 @@ def test_batch_mark_read_returns_no_items_when_empty(auth_client):
 
 def test_batch_mark_read_upserts_from_comic_ids(auth_client, db, normal_user):
     data = _seed_batch_graph(db, prefix="batch-upsert")
+    normal_user.accessible_libraries.append(data["library"])
+    db.commit()
 
     existing = ReadingProgress(
         user_id=normal_user.id,
@@ -115,6 +117,8 @@ def test_batch_mark_read_upserts_from_comic_ids(auth_client, db, normal_user):
 
 def test_batch_mark_read_expands_volume_ids(auth_client, db, normal_user):
     data = _seed_batch_graph(db, prefix="batch-volume")
+    normal_user.accessible_libraries.append(data["library"])
+    db.commit()
 
     response = auth_client.post(
         "/api/batch/read-status",
@@ -131,6 +135,8 @@ def test_batch_mark_read_expands_volume_ids(auth_client, db, normal_user):
 
 def test_batch_mark_read_expands_series_ids(auth_client, db, normal_user):
     data = _seed_batch_graph(db, prefix="batch-series")
+    normal_user.accessible_libraries.append(data["library"])
+    db.commit()
 
     response = auth_client.post(
         "/api/batch/read-status",
@@ -147,6 +153,8 @@ def test_batch_mark_read_expands_series_ids(auth_client, db, normal_user):
 
 def test_batch_mark_unread_deletes_progress_for_target_ids(auth_client, db, normal_user):
     data = _seed_batch_graph(db, prefix="batch-unread")
+    normal_user.accessible_libraries.append(data["library"])
+    db.commit()
 
     db.add_all([
         ReadingProgress(
@@ -187,6 +195,8 @@ def test_batch_mark_unread_deletes_progress_for_target_ids(auth_client, db, norm
 
 def test_batch_mark_read_skips_unknown_comic_ids(auth_client, db, normal_user):
     data = _seed_batch_graph(db, prefix="batch-unknown")
+    normal_user.accessible_libraries.append(data["library"])
+    db.commit()
 
     response = auth_client.post(
         "/api/batch/read-status",
@@ -194,8 +204,87 @@ def test_batch_mark_read_skips_unknown_comic_ids(auth_client, db, normal_user):
     )
 
     assert response.status_code == 200
-    assert response.json() == {"message": "Marked 2 comics as read"}
+    assert response.json() == {"message": "Marked 1 comics as read"}
 
     rows = db.query(ReadingProgress).filter(ReadingProgress.user_id == normal_user.id).all()
     assert len(rows) == 1
     assert rows[0].comic_id == data["c3"].id
+
+
+def test_batch_mark_read_skips_inaccessible_targets(auth_client, db, normal_user):
+    visible = _seed_batch_graph(db, prefix="batch-visible")
+    hidden = _seed_batch_graph(db, prefix="batch-hidden")
+    normal_user.accessible_libraries.append(visible["library"])
+    db.commit()
+
+    response = auth_client.post(
+        "/api/batch/read-status",
+        json={
+            "comic_ids": [visible["c1"].id, hidden["c1"].id],
+            "volume_ids": [hidden["vol_a1"].id],
+            "series_ids": [hidden["series_b"].id],
+            "read": True,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "Marked 1 comics as read"}
+
+    rows = db.query(ReadingProgress).filter(ReadingProgress.user_id == normal_user.id).all()
+    assert {row.comic_id for row in rows} == {visible["c1"].id}
+
+
+def test_batch_mark_read_skips_comics_in_age_restricted_series(auth_client, db, normal_user):
+    data = _seed_batch_graph(db, prefix="batch-age")
+    data["c1"].age_rating = "Mature 17+"
+    normal_user.accessible_libraries.append(data["library"])
+    normal_user.max_age_rating = "Teen"
+    normal_user.allow_unknown_age_ratings = True
+    db.commit()
+
+    response = auth_client.post(
+        "/api/batch/read-status",
+        json={"comic_ids": [data["c2"].id, data["c4"].id], "read": True},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "Marked 1 comics as read"}
+
+    rows = db.query(ReadingProgress).filter(ReadingProgress.user_id == normal_user.id).all()
+    assert {row.comic_id for row in rows} == {data["c4"].id}
+
+
+def test_batch_mark_unread_preserves_inaccessible_progress(auth_client, db, normal_user):
+    visible = _seed_batch_graph(db, prefix="batch-visible-unread")
+    hidden = _seed_batch_graph(db, prefix="batch-hidden-unread")
+    normal_user.accessible_libraries.append(visible["library"])
+    db.commit()
+
+    db.add_all([
+        ReadingProgress(
+            user_id=normal_user.id,
+            comic_id=visible["c1"].id,
+            current_page=9,
+            total_pages=10,
+            completed=True,
+        ),
+        ReadingProgress(
+            user_id=normal_user.id,
+            comic_id=hidden["c1"].id,
+            current_page=9,
+            total_pages=10,
+            completed=True,
+        ),
+    ])
+    db.commit()
+
+    response = auth_client.post(
+        "/api/batch/read-status",
+        json={"comic_ids": [visible["c1"].id, hidden["c1"].id], "read": False},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "Marked 1 comics as unread"}
+
+    rows = db.query(ReadingProgress).filter(ReadingProgress.user_id == normal_user.id).all()
+    assert {row.comic_id for row in rows} == {hidden["c1"].id}

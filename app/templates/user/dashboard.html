@@ -684,11 +684,23 @@
                                :value="`${window.location.origin}${window.parker.url('/opds/')}`"
                                class="w-full text-xs bg-gray-900 text-gray-300 px-3 py-2 rounded border border-gray-700 font-mono cursor-pointer"
                                @click="$event.target.select()">
-                        <button @click="copyToClipboard($event.target.previousElementSibling.value)"
-                                class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded text-sm font-bold transition-colors">
-                            Copy URL
+                        <button @click="copyToClipboard($event.target.previousElementSibling.value, 'Feed URL copied!')"
+                                class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded text-sm font-bold transition-colors inline-flex items-center justify-center gap-2">
+                            {{ lucide_icon("copy", "h-4 w-4 flex-shrink-0") }} Copy URL
                         </button>
-                        <span class="text-xs text-gray-500 block">Use your Parker username & password.</span>
+
+                        <div class="border-t border-gray-700 pt-4">
+                            <div class="flex items-center justify-between gap-3 rounded-lg bg-gray-900/70 px-3 py-3 border border-gray-700">
+                                <div class="min-w-0">
+                                    <h4 class="text-sm font-bold text-white">OPDS Keys</h4>
+                                    <p class="text-xs text-gray-500" x-text="opdsKeySummary()"></p>
+                                </div>
+                                <a :href="window.parker.route('pages.user_opds_keys')"
+                                   class="shrink-0 inline-flex items-center justify-center gap-1.5 rounded bg-gray-700 px-3 py-2 text-xs font-bold text-white hover:bg-blue-600 transition-colors">
+                                    {{ lucide_icon("key-round", "h-4 w-4 flex-shrink-0") }} Manage Keys
+                                </a>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </template>
@@ -712,6 +724,7 @@ function dashboard() {
         data: null,
         detailedStatsExpanded: false,  // Collapsed by default
         avatarCueSuppressed: false,
+        opdsTokens: [],
         heatmapDays: [], // Array of {date, count}
         reviewYear:activeReviewYear,
 
@@ -726,6 +739,7 @@ function dashboard() {
                 if(res.ok) {
                     this.data = await res.json();
                     await this.fetchSmartLists();
+                    if (this.data?.opds_enabled) await this.fetchOpdsTokens();
                     this.generateHeatmapDays();
                 }
 
@@ -799,7 +813,7 @@ function dashboard() {
             return copied;
         },
 
-        async copyToClipboard(text) {
+        async copyToClipboard(text, successMessage = "Copied!") {
             try {
                 if (navigator.clipboard?.writeText && window.isSecureContext) {
                     await navigator.clipboard.writeText(text);
@@ -807,17 +821,32 @@ function dashboard() {
                     throw new Error('Clipboard unavailable');
                 }
 
-                window.parker.showToast("Feed URL copied!", "success");
+                window.parker.showToast(successMessage, "success");
             } catch (err) {
                 if (this.fallbackCopyText(text)) {
-                    window.parker.showToast("Feed URL copied!", "success");
+                    window.parker.showToast(successMessage, "success");
                     return;
                 }
 
                 console.error('Failed to copy!', err);
-                window.parker.showToast("Unable to copy feed URL.", "error");
+                window.parker.showToast("Unable to copy.", "error");
             }
         },
+
+        async fetchOpdsTokens() {
+            try {
+                const res = await fetch(window.parker.route('users.list_opds_tokens'));
+                if (res.ok) this.opdsTokens = await res.json();
+            } catch(e) {
+                console.error(e);
+            }
+        },
+
+        opdsKeySummary() {
+            const count = this.opdsTokens?.length || 0;
+            return `${count} active ${count === 1 ? 'key' : 'keys'}`;
+        },
+
 
         async fetchSmartLists() {
             try {

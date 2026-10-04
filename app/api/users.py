@@ -1,11 +1,10 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from fastapi import APIRouter, status, HTTPException, UploadFile, File, Depends
 from fastapi.responses import FileResponse
 from sqlalchemy import or_
 from sqlalchemy.orm import selectinload, contains_eager
 from typing import List, Annotated, Optional
 from pydantic import BaseModel, Field, field_validator
-from datetime import datetime
 from pathlib import Path
 from sqlalchemy import func, not_, and_
 
@@ -19,7 +18,9 @@ from app.models.user import User
 from app.models.library import Library
 from app.models.reading_progress import ReadingProgress
 from app.models.pull_list import PullList, PullListItem
+from app.schemas.opds_token import OPDSTokenCreateRequest, OPDSTokenCreateResponse, OPDSTokenResponse
 from app.services.images import ImageService
+from app.services.opds_tokens import create_opds_token, list_active_opds_tokens, revoke_opds_token
 from app.services.settings_service import SettingsService
 from app.services.statistics import StatisticsService
 
@@ -165,6 +166,42 @@ async def get_user_dashboard(db: SessionDep, current_user: CurrentUser):
         "continue_reading": continue_reading,
         **dashboard_payload,
     }
+
+
+@router.get("/me/opds-tokens", response_model=List[OPDSTokenResponse], name="list_opds_tokens")
+async def list_opds_tokens(db: SessionDep, current_user: CurrentUser):
+    return list_active_opds_tokens(db, current_user)
+
+
+@router.post("/me/opds-tokens", response_model=OPDSTokenCreateResponse, name="create_opds_token")
+async def create_opds_token_for_user(
+        payload: OPDSTokenCreateRequest,
+        db: SessionDep,
+        current_user: CurrentUser,
+):
+    token, raw_token = create_opds_token(
+        db,
+        current_user,
+        payload.name,
+        expires_at=payload.expires_at,
+    )
+    return OPDSTokenCreateResponse(
+        id=token.id,
+        name=token.name,
+        token_hint=token.token_hint,
+        created_at=token.created_at,
+        last_used_at=token.last_used_at,
+        expires_at=token.expires_at,
+        token=raw_token,
+    )
+
+
+@router.delete("/me/opds-tokens/{token_id}", name="revoke_opds_token")
+async def revoke_opds_token_for_user(token_id: int, db: SessionDep, current_user: CurrentUser):
+    token = revoke_opds_token(db, current_user, token_id)
+    if not token:
+        raise HTTPException(status_code=404, detail="OPDS key not found")
+    return {"message": "OPDS key revoked"}
 
 
 @router.post("/me/avatar", name="upload_avatar")
