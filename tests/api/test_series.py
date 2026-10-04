@@ -1273,7 +1273,7 @@ def test_series_issues_sort_order_none_uses_reverse_numbering_rule(db, normal_us
     reverse_payload = asyncio.run(
         get_series_issues(
             current_user=normal_user,
-            series_id=reverse_series.id,
+            series=reverse_series,
             params=params,
             db=db,
             type="all",
@@ -1286,7 +1286,7 @@ def test_series_issues_sort_order_none_uses_reverse_numbering_rule(db, normal_us
     normal_payload = asyncio.run(
         get_series_issues(
             current_user=normal_user,
-            series_id=normal_series.id,
+            series=normal_series,
             params=params,
             db=db,
             type="all",

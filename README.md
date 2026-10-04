@@ -102,7 +102,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
   - Revocable per-user OPDS keys for external readers
   - JPEG cover thumbnails for reader compatibility
   - Android reader compatibility improvements
-  - User dashboard integration
+  - Account settings integration for reader key management
 
 - **WebP Transcoding**
   - On‑the‑fly conversion for bandwidth savings
@@ -220,7 +220,7 @@ upgrades do not reset or overwrite existing accounts.
 
 Parker's OPDS feed serves original comic archives and preserves their file type.
 Users can connect reader apps with their Parker username and a revocable OPDS
-key created from the user dashboard. Account passwords still work for legacy
+key created from Account Settings. Account passwords still work for legacy
 setups, but OPDS keys can be revoked without changing the main Parker password.
 Reader support varies by app: some Android readers can download a CBR but fail
 to open it if the archive uses RAR5 compression. In that case, use a reader with

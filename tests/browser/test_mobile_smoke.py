@@ -29,10 +29,10 @@ def test_mobile_reading_list_can_start_reader_flow(mobile_page, browser_server):
     )
 
     mobile_page.get_by_role("heading", name=seed["reading_list_name"]).wait_for()
-    mobile_page.get_by_role("button", name="Start Reading").wait_for()
-    mobile_page.get_by_role("button", name="Start Reading").click()
+    mobile_page.get_by_role("button", name="Continue").wait_for()
+    mobile_page.get_by_role("button", name="Continue").click()
 
-    mobile_page.wait_for_url(f"**/reader/{seed['active_comic_id']}*")
+    mobile_page.wait_for_url(f"**/reader/{seed['in_progress_comic_id']}*")
     mobile_page.locator(".reader-container").wait_for()
     mobile_page.locator(".nav-zone.center").click()
     mobile_page.get_by_role("button", name="Close").wait_for()
