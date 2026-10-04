@@ -514,7 +514,7 @@ async def get_series_metadata_details(
 @router.get("/{series_id}/issues", response_model=PaginatedResponse, name="issues")
 async def get_series_issues(
         current_user: CurrentUser,
-        series_id: int,
+        series: SeriesDep,
         params: Annotated[PaginationParams, Depends()],
         db: SessionDep,
         type: Annotated[str, Query(pattern="^(plain|annual|special|all)$")] = "plain",
@@ -526,10 +526,12 @@ async def get_series_issues(
     Defaults to ASC, unless series is a known 'Reverse Numbering' title.
     """
 
+    _assert_series_allowed_for_user(series, db, current_user)
+
     # Fetch Series Name for Gimmick Detection
     # We need the name to check the list.
     # Optimization: We can just fetch the name column.
-    series_name = db.query(Series.name).filter(Series.id == series_id).scalar()
+    series_name = series.name
 
     # Determine Sort Order
     if sort_order is None:
@@ -544,7 +546,7 @@ async def get_series_issues(
     query = db.query(Comic, ReadingProgress.completed).outerjoin(
         ReadingProgress,
         (ReadingProgress.comic_id == Comic.id) & (ReadingProgress.user_id == current_user.id)
-    ).join(Volume).join(Series).options(contains_eager(Comic.volume)).filter(Series.id == series_id)
+    ).join(Volume).join(Series).options(contains_eager(Comic.volume)).filter(Series.id == series.id)
 
     # --- AGE RATING FILTER ---
     # TODO: If partial views are ever implemented we can uncomment this check
@@ -668,16 +670,14 @@ async def list_series(
 
 
 @router.post("/{series_id}/star", name="star")
-async def star_series(series_id: int, db: SessionDep, current_user: CurrentUser):
-    # Check if series exists
-    series = db.get(Series, series_id)
-    if not series: raise HTTPException(404)
+async def star_series(series: SeriesDep, db: SessionDep, current_user: CurrentUser):
+    _assert_series_allowed_for_user(series, db, current_user)
 
     # Get or create preference
-    pref = db.query(UserSeries).filter_by(user_id=current_user.id, series_id=series_id).first()
+    pref = db.query(UserSeries).filter_by(user_id=current_user.id, series_id=series.id).first()
 
     if not pref:
-        pref = UserSeries(user_id=current_user.id, series_id=series_id)
+        pref = UserSeries(user_id=current_user.id, series_id=series.id)
         db.add(pref)
 
     pref.is_starred = True
@@ -687,8 +687,10 @@ async def star_series(series_id: int, db: SessionDep, current_user: CurrentUser)
 
 
 @router.delete("/{series_id}/star", name="unstar")
-async def unstar_series(series_id: int, db: SessionDep, current_user: CurrentUser):
-    pref = db.query(UserSeries).filter_by(user_id=current_user.id, series_id=series_id).first()
+async def unstar_series(series: SeriesDep, db: SessionDep, current_user: CurrentUser):
+    _assert_series_allowed_for_user(series, db, current_user)
+
+    pref = db.query(UserSeries).filter_by(user_id=current_user.id, series_id=series.id).first()
     if pref:
         pref.is_starred = False
         pref.starred_at = None
@@ -725,7 +727,16 @@ async def regenerate_thumbnails(series_id: int, background_tasks: BackgroundTask
 
 @router.get("/{series_id}/recommendations", name="recommendations")
 async def get_series_recommendations(series_id: int, db: SessionDep, user: CurrentUser, limit: int = 10):
-    source = db.query(Series).filter(Series.id == series_id).first()
+    source_query = db.query(Series).filter(Series.id == series_id)
+    if not user.is_superuser:
+        allowed_ids = [l.id for l in user.accessible_libraries]
+        source_query = source_query.filter(Series.library_id.in_(allowed_ids))
+
+        age_filter = get_series_age_restriction(user)
+        if age_filter is not None:
+            source_query = source_query.filter(age_filter)
+
+    source = source_query.first()
     if not source: return []
 
     # RLS: Define visible series IDs
@@ -811,6 +822,5 @@ async def get_series_recommendations(series_id: int, db: SessionDep, user: Curre
             {"title": f"New in {source.library.name}", "items": bulk_serialize_series(lib_matches, db, user)})
 
     return lanes
-
 
 

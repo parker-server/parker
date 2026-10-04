@@ -250,6 +250,8 @@ async def opds_library(
             raise HTTPException(status_code=404, detail="Library not found")
 
     library = db.query(Library).filter(Library.id == library_id).first()
+    if not library:
+        raise HTTPException(status_code=404, detail="Library not found")
 
     # Fetch series
     query = db.query(Series).filter(Series.library_id == library_id)
@@ -330,15 +332,21 @@ async def opds_series(
         params: Annotated[PaginationParams, Depends()]
 ):
 
-    # Security check for Series existence and Library Access would ideally happen here too
-    # Assuming 'get_series_age_restriction' at library level helps, but let's be strict.
+    series_query = db.query(Series).filter(Series.id == series_id)
+    if not user.is_superuser:
+        allowed_ids = [l.id for l in user.accessible_libraries]
+        series_query = series_query.filter(Series.library_id.in_(allowed_ids))
+
+    series = series_query.first()
+    if not series:
+        raise HTTPException(status_code=404, detail="Series not found")
 
     # Fetch comics with RICH metadata
     query = (
         db.query(Comic)
         .join(Volume)
         .join(Series) # Explicit join for filtering
-        .filter(Volume.series_id == series_id)
+        .filter(Volume.series_id == series.id)
     )
 
     # --- AGE RESTRICTION (Filter Comics) ---
@@ -355,16 +363,12 @@ async def opds_series(
         ).order_by(Volume.volume_number, Comic.number).offset(params.skip).limit(params.size).all()
 
     # If all comics are restricted, handle empty list gracefully
-    feed_title = "Series"
+    feed_title = series.name
     if comics:
         feed_title = comics[0].volume.series.name
-    else:
-        # Fallback fetch name if empty (optional)
-        s = db.query(Series.name).filter(Series.id == series_id).scalar()
-        if s: feed_title = s
 
     return render_xml(request, {
-        "feed_id": f"urn:parker:series:{series_id}",
+        "feed_id": f"urn:parker:series:{series.id}",
         "feed_title": feed_title,
         "updated_at": format_opds_datetime(datetime.now(timezone.utc)),
         "feed_links": get_opds_pagination_links(request, total, params),

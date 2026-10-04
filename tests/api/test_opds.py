@@ -271,6 +271,36 @@ def test_opds_series_feed_handles_missing_month_and_day(client, db, normal_user)
     assert acquisition.get("href", "").endswith("/Comic%20-%20Stormbreaker.cbz")
 
 
+def test_opds_series_feed_hides_inaccessible_library_series(client, db, normal_user):
+    _enable_opds(db)
+
+    hidden_library = create_library_with_root(db, "Hidden OPDS Library", "/tmp/hidden-opds-library")
+    root = hidden_library.active_root
+    series = Series(name="Hidden OPDS Series", library=hidden_library)
+    volume = Volume(series=series, volume_number=1)
+    comic = Comic(
+        volume=volume,
+        number="1",
+        title="Hidden OPDS Issue",
+        filename="hidden-opds-001.cbz",
+        library_root_id=root.id,
+        relative_path="hidden-opds-001.cbz",
+    )
+    db.add_all([series, volume, comic])
+    db.commit()
+
+    from unittest.mock import patch
+
+    with patch("app.api.opds_deps.verify_password", return_value=True):
+        response = client.get(
+            f"/opds/series/{series.id}",
+            auth=(normal_user.username, "any_password")
+        )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Series not found"}
+
+
 def test_opds_series_feed_paginates_issue_entries(client, db, normal_user):
     _enable_opds(db)
 
