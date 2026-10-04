@@ -78,7 +78,8 @@ def test_user_dashboard_page_shows_base_aware_opds_url(auth_client):
 
 
 def test_user_opds_keys_page_shows_key_manager(auth_client):
-    response = auth_client.get("/user/opds-keys")
+    with patch("app.routers.pages.SettingsService.get", return_value=True):
+        response = auth_client.get("/user/opds-keys")
 
     assert response.status_code == 200
     assert "OPDS Keys" in response.text
@@ -89,13 +90,38 @@ def test_user_opds_keys_page_shows_key_manager(auth_client):
     assert "document.execCommand('copy')" in response.text
 
 
+def test_user_opds_keys_page_hidden_when_opds_disabled(auth_client):
+    with patch("app.routers.pages.SettingsService.get", return_value=False):
+        response = auth_client.get("/user/opds-keys")
+
+    assert response.status_code == 404
+
+
+def test_user_settings_opds_access_respects_opds_setting(auth_client):
+    with patch("app.routers.pages.SettingsService.get", return_value=False):
+        disabled = auth_client.get("/user/settings")
+
+    assert disabled.status_code == 200
+    assert "OPDS Access" not in disabled.text
+    assert "pages.user_opds_keys" not in disabled.text
+
+    with patch("app.routers.pages.SettingsService.get", return_value=True):
+        enabled = auth_client.get("/user/settings")
+
+    assert enabled.status_code == 200
+    assert "OPDS Access" in enabled.text
+    assert "pages.user_opds_keys" in enabled.text
+
+
 def test_user_opds_token_api_flow(auth_client):
-    initial = auth_client.get("/api/users/me/opds-tokens")
+    with patch("app.api.users.SettingsService.get", return_value=True):
+        initial = auth_client.get("/api/users/me/opds-tokens")
 
     assert initial.status_code == 200
     assert initial.json() == []
 
-    created = auth_client.post("/api/users/me/opds-tokens", json={"name": " Tablet Reader "})
+    with patch("app.api.users.SettingsService.get", return_value=True):
+        created = auth_client.post("/api/users/me/opds-tokens", json={"name": " Tablet Reader "})
 
     assert created.status_code == 200
     created_payload = created.json()
@@ -103,7 +129,8 @@ def test_user_opds_token_api_flow(auth_client):
     assert created_payload["token"].startswith(OPDS_TOKEN_PREFIX)
     assert created_payload["token_hint"].endswith(created_payload["token"][-4:])
 
-    listed = auth_client.get("/api/users/me/opds-tokens")
+    with patch("app.api.users.SettingsService.get", return_value=True):
+        listed = auth_client.get("/api/users/me/opds-tokens")
 
     assert listed.status_code == 200
     listed_payload = listed.json()
@@ -111,10 +138,23 @@ def test_user_opds_token_api_flow(auth_client):
     assert listed_payload[0]["id"] == created_payload["id"]
     assert "token" not in listed_payload[0]
 
-    revoked = auth_client.delete(f"/api/users/me/opds-tokens/{created_payload['id']}")
+    with patch("app.api.users.SettingsService.get", return_value=True):
+        revoked = auth_client.delete(f"/api/users/me/opds-tokens/{created_payload['id']}")
 
     assert revoked.status_code == 200
-    assert auth_client.get("/api/users/me/opds-tokens").json() == []
+    with patch("app.api.users.SettingsService.get", return_value=True):
+        assert auth_client.get("/api/users/me/opds-tokens").json() == []
+
+
+def test_user_opds_token_api_rejects_when_opds_disabled(auth_client):
+    with patch("app.api.users.SettingsService.get", return_value=False):
+        listed = auth_client.get("/api/users/me/opds-tokens")
+        created = auth_client.post("/api/users/me/opds-tokens", json={"name": "Tablet"})
+        revoked = auth_client.delete("/api/users/me/opds-tokens/1")
+
+    for response in [listed, created, revoked]:
+        assert response.status_code == 503
+        assert response.json()["detail"] == "OPDS Support is disabled on this server."
 
 
 def test_get_and_update_preferences(auth_client):

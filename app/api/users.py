@@ -31,6 +31,11 @@ router = APIRouter()
 
 MAX_AVATAR_SIZE_BYTES = 5 * 1024 * 1024 # 5 MB
 
+
+def _ensure_opds_enabled(db: SessionDep) -> None:
+    if not SettingsService(db).get("server.opds_enabled"):
+        raise HTTPException(status_code=503, detail="OPDS Support is disabled on this server.")
+
 # Schemas
 class UserBase(BaseModel):
     email: str | None = None
@@ -170,6 +175,7 @@ async def get_user_dashboard(db: SessionDep, current_user: CurrentUser):
 
 @router.get("/me/opds-tokens", response_model=List[OPDSTokenResponse], name="list_opds_tokens")
 async def list_opds_tokens(db: SessionDep, current_user: CurrentUser):
+    _ensure_opds_enabled(db)
     return list_active_opds_tokens(db, current_user)
 
 
@@ -179,6 +185,7 @@ async def create_opds_token_for_user(
         db: SessionDep,
         current_user: CurrentUser,
 ):
+    _ensure_opds_enabled(db)
     token, raw_token = create_opds_token(
         db,
         current_user,
@@ -198,6 +205,7 @@ async def create_opds_token_for_user(
 
 @router.delete("/me/opds-tokens/{token_id}", name="revoke_opds_token")
 async def revoke_opds_token_for_user(token_id: int, db: SessionDep, current_user: CurrentUser):
+    _ensure_opds_enabled(db)
     token = revoke_opds_token(db, current_user, token_id)
     if not token:
         raise HTTPException(status_code=404, detail="OPDS key not found")

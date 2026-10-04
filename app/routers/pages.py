@@ -1,6 +1,6 @@
 import random
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.core.comic_helpers import get_smart_cover
@@ -282,11 +282,18 @@ async def following_page(request: Request, user: CurrentUser):
     return templates.TemplateResponse(request=request, name="user/following.html")
 
 @router.get("/user/settings", response_class=HTMLResponse, name="user_settings")
-async def settings_page(request: Request, user: CurrentUser):
-    return templates.TemplateResponse(request=request, name="user/settings.html")
+async def settings_page(request: Request, db: SessionDep, user: CurrentUser):
+    opds_enabled = bool(SettingsService(db).get("server.opds_enabled"))
+    return templates.TemplateResponse(
+        request=request,
+        name="user/settings.html",
+        context={"opds_enabled": opds_enabled},
+    )
 
 @router.get("/user/opds-keys", response_class=HTMLResponse, name="user_opds_keys")
-async def opds_keys_page(request: Request, user: CurrentUser):
+async def opds_keys_page(request: Request, db: SessionDep, user: CurrentUser):
+    if not SettingsService(db).get("server.opds_enabled"):
+        raise HTTPException(status_code=404, detail="OPDS keys not found")
     return templates.TemplateResponse(request=request, name="user/opds_keys.html")
 
 @router.get("/user/change-password", response_class=HTMLResponse, name="force_password_change")

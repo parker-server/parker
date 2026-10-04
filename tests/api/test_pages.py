@@ -1257,10 +1257,6 @@ def test_user_settings_page_uses_lucide_status_icons(auth_client):
     assert response.status_code == 200
     body = response.text
     assert "Account Settings" in body
-    assert "OPDS Access" in body
-    assert "pages.user_opds_keys" in body
-    assert 'data-lucide-icon="rss"' in body
-    assert 'data-lucide-icon="key-round"' in body
     assert 'data-lucide-icon="circle-check"' in body
     assert 'data-lucide-icon="circle-x"' in body
 
