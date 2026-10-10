@@ -17,7 +17,7 @@ class LibraryEventHandler(FileSystemEventHandler):
     """
         Handles file system events for a specific library.
         Uses a 'Batching Window' strategy: The first event starts a timer.
-        Subsequent events are ignored until the timer fires.
+        Subsequent events are coalesced until the timer fires.
     """
 
     def __init__(self, library_id: int, batch_window_seconds: int = 600): # Default 10 mins
@@ -60,6 +60,40 @@ class LibraryEventHandler(FileSystemEventHandler):
         self.logger.info(f"Watcher: Batch window ended for Library {self.library_id}. Queuing scan...")
         scan_manager.add_task(self.library_id, force=False)
 
+    def _is_ignored_path(self, path: Path) -> bool:
+        """Return True when a path is watcher noise."""
+        # Ignore thumbnails and temp files
+        if path.suffix.lower() in self.ignored_extensions:
+            return True
+
+        # Ignore system files
+        if path.name.lower() in self.ignored_names:
+            return True
+
+        # Ignore internal storage/git folders if they somehow got into the watch path
+        # Check if any part of the path matches ignored dirs
+        if any(part in self.ignored_dirs for part in path.parts):
+            return True
+
+        return False
+
+    def _actionable_path_for_event(self, event) -> Path | None:
+        """Pick the path that should represent this filesystem event."""
+        paths = [Path(event.src_path)]
+
+        # Metadata tools often rewrite archives by creating a temp file and
+        # renaming it over the comic. For those moved events, src_path can be
+        # ignored noise while dest_path is the actual archive that changed.
+        dest_path = getattr(event, "dest_path", None)
+        if event.event_type == "moved" and dest_path:
+            paths.insert(0, Path(dest_path))
+
+        for path in paths:
+            if not self._is_ignored_path(path):
+                return path
+
+        return None
+
     def on_any_event(self, event):
         """Called on filesystem events and queues scans for actionable changes."""
         if event.is_directory:
@@ -68,34 +102,33 @@ class LibraryEventHandler(FileSystemEventHandler):
         if event.event_type not in self.actionable_event_types:
             return
 
-        path = Path(event.src_path)
-
-        # --- FILTER NOISE ---
-        # Ignore thumbnails and temp files
-        if path.suffix.lower() in self.ignored_extensions:
+        path = self._actionable_path_for_event(event)
+        if not path:
             return
-
-        # Ignore system files
-        if path.name.lower() in self.ignored_names:
-            return
-
-        # Ignore internal storage/git folders if they somehow got into the watch path
-        # Check if any part of the path matches ignored dirs
-        if any(part in self.ignored_dirs for part in path.parts):
-            return
-        # -----------------------
 
         # Coalescing Logic (Batching)
-        # If a timer is already running, do nothing (let it gather more changes).
+        # If a timer is already running, log that this change is covered by it.
         # If no timer, start one.
         with self._lock:
-            if not self._stopped and not self._timer:
+            if self._stopped:
+                return
 
-                self.logger.debug(f"Watcher: Change detected in Library {self.library_id} ({event.event_type}: {path.name}). Starting {self.batch_window_seconds}s batch window.")
+            if self._timer:
+                self.logger.debug(
+                    f"Watcher: Change detected in Library {self.library_id} "
+                    f"({event.event_type}: {path.name}). Existing batch window will rescan."
+                )
+                return
 
-                # Start timer
-                self._timer = threading.Timer(self.batch_window_seconds, self._trigger_scan)
-                self._timer.start()
+            self.logger.debug(
+                f"Watcher: Change detected in Library {self.library_id} "
+                f"({event.event_type}: {path.name}). "
+                f"Starting {self.batch_window_seconds}s batch window."
+            )
+
+            # Start timer
+            self._timer = threading.Timer(self.batch_window_seconds, self._trigger_scan)
+            self._timer.start()
 
 
 class LibraryWatcher:

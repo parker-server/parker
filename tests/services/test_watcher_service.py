@@ -100,6 +100,42 @@ def test_library_event_handler_on_any_event_filters_and_batches(monkeypatch):
     assert created_timer.started is True
 
 
+def test_library_event_handler_uses_moved_destination_for_temp_rewrite(monkeypatch):
+    timer_ctor = MagicMock(side_effect=lambda interval, callback: DummyTimer(interval, callback))
+    monkeypatch.setattr(watcher.threading, "Timer", timer_ctor)
+
+    handler = watcher.LibraryEventHandler(35, batch_window_seconds=30)
+    handler.logger = MagicMock()
+    event = SimpleNamespace(
+        is_directory=False,
+        src_path="/lib/comics/issue.cbz.tmp",
+        dest_path="/lib/comics/issue.cbz",
+        event_type="moved",
+    )
+
+    handler.on_any_event(event)
+
+    timer_ctor.assert_called_once()
+    handler.logger.debug.assert_called_once()
+    assert "issue.cbz" in handler.logger.debug.call_args.args[0]
+
+
+def test_library_event_handler_logs_actionable_event_during_existing_batch(monkeypatch):
+    timer_ctor = MagicMock(side_effect=lambda interval, callback: DummyTimer(interval, callback))
+    monkeypatch.setattr(watcher.threading, "Timer", timer_ctor)
+
+    handler = watcher.LibraryEventHandler(36, batch_window_seconds=30)
+    handler.logger = MagicMock()
+    event = SimpleNamespace(is_directory=False, src_path="/lib/comics/issue.cbz", event_type="modified")
+
+    handler.on_any_event(event)
+    handler.on_any_event(event)
+
+    timer_ctor.assert_called_once()
+    assert handler.logger.debug.call_count == 2
+    assert "Existing batch window will rescan" in handler.logger.debug.call_args.args[0]
+
+
 @pytest.mark.parametrize("event_type", ["created", "modified", "moved", "deleted", "closed"])
 def test_library_event_handler_starts_timer_for_actionable_event_types(monkeypatch, event_type):
     timer_ctor = MagicMock(side_effect=lambda interval, callback: DummyTimer(interval, callback))
