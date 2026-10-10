@@ -8,6 +8,7 @@ from app.models.comic import Comic, Volume
 from app.models.interactions import UserVolumeFollow
 from app.models.series import Series
 from app.models.tags import Character
+from app.core.templates import templates
 from tests.factories import create_comic
 
 
@@ -93,6 +94,44 @@ def _add_extra_detail_characters(browser_server):
         session.add_all(characters)
         session.commit()
         return names
+    finally:
+        session.close()
+
+
+def _add_second_volume_issue(browser_server):
+    seed = browser_server["seed"]
+    session = browser_server["db_factory"]()
+    try:
+        series = session.get(Series, seed["series_id"])
+        root = series.library.active_root
+        volume = Volume(series=series, volume_number=2)
+        session.add(volume)
+        session.flush()
+        comic = create_comic(
+            session,
+            volume,
+            root,
+            "smoke-volume-two-1.cbz",
+            number="1",
+            title="Smoke Volume Two Begins",
+            filename="smoke-volume-two-1.cbz",
+            page_count=3,
+        )
+        session.commit()
+        return volume.id, comic.id
+    finally:
+        session.close()
+
+
+def _remove_volume(browser_server, volume_id):
+    session = browser_server["db_factory"]()
+    try:
+        volume = session.get(Volume, volume_id)
+        if volume is not None:
+            for comic in list(volume.comics):
+                session.delete(comic)
+            session.delete(volume)
+            session.commit()
     finally:
         session.close()
 
@@ -237,6 +276,46 @@ def test_series_detail_page_filters_read_items(page, browser_server):
     page.wait_for_timeout(300)
     assert page.locator(f"text={seed['completed_comic_title']}").first.is_visible()
     assert page.locator(f"text={seed['active_comic_title']}").count() == 0
+
+
+@pytest.mark.browser
+def test_series_issues_mark_new_volume_boundaries(page, browser_server, monkeypatch):
+    original_get_system_setting = templates.env.globals["get_system_setting"]
+    divider_setting = {"enabled": True}
+
+    def get_system_setting(key, default=None):
+        if key == "ui.series_issue_volume_dividers":
+            return divider_setting["enabled"]
+        return original_get_system_setting(key, default)
+
+    monkeypatch.setitem(templates.env.globals, "get_system_setting", get_system_setting)
+    volume_id, comic_id = _add_second_volume_issue(browser_server)
+    seed = browser_server["seed"]
+
+    try:
+        page.goto(f"{browser_server['base_url']}/series/{seed['series_id']}", wait_until="networkidle")
+        page.get_by_role("button", name="Issues").click()
+
+        divider = page.locator("[data-volume-divider='true']")
+        divider.wait_for()
+        assert divider.count() == 1
+        assert divider.locator(f'a[href*="/comics/{comic_id}"]').is_visible()
+        assert divider.locator("[data-volume-divider-line]").evaluate(
+            "element => getComputedStyle(element).width"
+        ) == "2px"
+        divider_height = divider.locator("a > div").first.bounding_box()["height"]
+        regular_height = page.locator("[data-volume-divider='false']").first.locator(
+            "a > div"
+        ).first.bounding_box()["height"]
+        assert divider_height == pytest.approx(regular_height, abs=0.1)
+
+        divider_setting["enabled"] = False
+        page.reload(wait_until="networkidle")
+        page.get_by_role("button", name="Issues").click()
+        page.wait_for_selector(f'a[href*="/comics/{comic_id}"]')
+        assert page.locator("[data-volume-divider='true']").count() == 0
+    finally:
+        _remove_volume(browser_server, volume_id)
 
 
 @pytest.mark.browser

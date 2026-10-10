@@ -138,6 +138,15 @@ class SettingsService:
             ]
         },
         {
+            "key": "ui.series_issue_volume_dividers",
+            "value": "true",
+            "category": "appearance",
+            "data_type": "bool",
+            "label": "Show Series Issue Volume Dividers",
+            "description": "Show a vertical divider before the first issue of each new volume in the Series Issues tab.",
+            "display_group": "Browsing Behavior",
+        },
+        {
             "key": "ui.auto_redirect_single_volume_series",
             "value": "false",
             "category": "appearance",
