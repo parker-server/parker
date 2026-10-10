@@ -26,6 +26,7 @@ class LibraryEventHandler(FileSystemEventHandler):
         self._timer = None
         self._lock = threading.Lock()
         self._stopped = False
+        self._coalesced_event_count = 0
 
         self.logger = logging.getLogger(__name__)
 
@@ -48,6 +49,7 @@ class LibraryEventHandler(FileSystemEventHandler):
             if self._timer:
                 self._timer.cancel()
                 self._timer = None
+                self._coalesced_event_count = 0
 
     def _trigger_scan(self):
         """Trigger the scan and reset the timer"""
@@ -56,8 +58,17 @@ class LibraryEventHandler(FileSystemEventHandler):
             if self._stopped:
                 return
             self._timer = None
+            coalesced_event_count = self._coalesced_event_count
+            self._coalesced_event_count = 0
 
-        self.logger.info(f"Watcher: Batch window ended for Library {self.library_id}. Queuing scan...")
+        if coalesced_event_count:
+            self.logger.info(
+                f"Watcher: Batch window ended for Library {self.library_id} "
+                f"after coalescing {coalesced_event_count} additional event(s). "
+                "Queuing scan..."
+            )
+        else:
+            self.logger.info(f"Watcher: Batch window ended for Library {self.library_id}. Queuing scan...")
         scan_manager.add_task(self.library_id, force=False)
 
     def _is_ignored_path(self, path: Path) -> bool:
@@ -114,10 +125,12 @@ class LibraryEventHandler(FileSystemEventHandler):
                 return
 
             if self._timer:
-                self.logger.debug(
-                    f"Watcher: Change detected in Library {self.library_id} "
-                    f"({event.event_type}: {path.name}). Existing batch window will rescan."
-                )
+                self._coalesced_event_count += 1
+                if self._coalesced_event_count == 1:
+                    self.logger.debug(
+                        f"Watcher: Change detected in Library {self.library_id} "
+                        f"({event.event_type}: {path.name}). Existing batch window will rescan."
+                    )
                 return
 
             self.logger.debug(
@@ -127,6 +140,7 @@ class LibraryEventHandler(FileSystemEventHandler):
             )
 
             # Start timer
+            self._coalesced_event_count = 0
             self._timer = threading.Timer(self.batch_window_seconds, self._trigger_scan)
             self._timer.start()
 

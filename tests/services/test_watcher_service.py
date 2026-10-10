@@ -70,6 +70,24 @@ def test_library_event_handler_trigger_scan_active_queues(monkeypatch):
     add_task.assert_called_once_with(22, force=False)
 
 
+def test_library_event_handler_trigger_scan_logs_coalesced_count(monkeypatch):
+    handler = watcher.LibraryEventHandler(23, batch_window_seconds=10)
+    handler._timer = object()
+    handler._coalesced_event_count = 4
+    handler.logger = MagicMock()
+
+    add_task = MagicMock()
+    monkeypatch.setattr(watcher.scan_manager, "add_task", add_task)
+
+    handler._trigger_scan()
+
+    assert handler._timer is None
+    assert handler._coalesced_event_count == 0
+    handler.logger.info.assert_called_once()
+    assert "coalescing 4 additional event(s)" in handler.logger.info.call_args.args[0]
+    add_task.assert_called_once_with(23, force=False)
+
+
 def test_library_event_handler_on_any_event_filters_and_batches(monkeypatch):
     timer_ctor = MagicMock(side_effect=lambda interval, callback: DummyTimer(interval, callback))
     monkeypatch.setattr(watcher.threading, "Timer", timer_ctor)
@@ -130,9 +148,11 @@ def test_library_event_handler_logs_actionable_event_during_existing_batch(monke
 
     handler.on_any_event(event)
     handler.on_any_event(event)
+    handler.on_any_event(event)
 
     timer_ctor.assert_called_once()
     assert handler.logger.debug.call_count == 2
+    assert handler._coalesced_event_count == 2
     assert "Existing batch window will rescan" in handler.logger.debug.call_args.args[0]
 
 
