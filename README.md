@@ -78,6 +78,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
 
 - **Visuals**
   - Dynamic backgrounds from cover colors
+  - Configurable login backgrounds with curated static covers, cover context, and solid-color previews
   - Cover Browser gallery mode with lazy-loaded manifests for very large runs
   - Cover Murals for arranging selected covers into compact source-size composite images with optional spacing, horizontal/vertical overlap, overlap stacking, and export scaling
 

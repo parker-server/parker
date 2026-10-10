@@ -234,6 +234,7 @@ async def login_page(request: Request, db: SessionDep):
         if cover_filename not in STATIC_COVERS:
             cover_filename = "amazing-fantasy-15.webp"  # Handle stale DB values
         context["login_static_cover"] = cover_filename
+        context["login_static_cover_info"] = STATIC_COVERS[cover_filename]
 
     elif login_background_style == "cycling_static_covers":
         context["login_static_cover_urls"] = _shuffled_login_static_cover_urls(settings.clean_base_url)

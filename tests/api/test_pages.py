@@ -1,7 +1,10 @@
 from pathlib import Path
 
+from starlette.requests import Request
+
 from app.core.login_backgrounds import STATIC_COVERS
 from app.core.templates import templates
+from app.main import app
 from app.models.comic import Comic, Volume
 from app.models.series import Series
 from app.services.settings_service import SettingsService
@@ -35,6 +38,24 @@ def _seed_series_page_data(db, volume_count=1):
         db.refresh(volume)
 
     return series, volumes
+
+
+def _render_login_full(**context):
+    request = Request({
+        "type": "http",
+        "method": "GET",
+        "path": "/login",
+        "headers": [],
+        "app": app,
+    })
+    template_context = {
+        "request": request,
+        "base_url": "",
+        "active_effect": None,
+        "login_bg_style": "static_cover",
+    }
+    template_context.update(context)
+    return templates.env.get_template("login_full.html").render(**template_context)
 
 
 def test_home_page_shows_storage_warning_for_admin_when_startup_looks_suspicious(admin_client, monkeypatch):
@@ -654,6 +675,7 @@ def test_login_page_cycles_static_covers(client, db):
     assert "/static/img/login-covers/amazing-fantasy-15.webp" in body
     assert "fetchBackgrounds()" not in body
     assert "loadStaticCovers()" in body
+    assert "About this cover" not in body
 
 
 def test_login_page_shuffles_static_cover_cycle(client, db, monkeypatch):
@@ -705,6 +727,22 @@ def test_login_page_static_cover_fallback_uses_webp_asset(client, db):
     body = response.text
     assert "/static/img/login-covers/amazing-fantasy-15.webp" in body
     assert "/static/img/login-covers/amazing-fantasy-15.jpg" not in body
+
+
+def test_login_page_static_cover_exposes_cover_info_modal():
+    cover_filename = "amazing-fantasy-15.webp"
+
+    body = _render_login_full(
+        login_static_cover=cover_filename,
+        login_static_cover_info=STATIC_COVERS[cover_filename],
+    )
+
+    assert 'title="About this cover"' in body
+    assert 'aria-label="About this cover"' in body
+    assert 'aria-modal="true"' in body
+    assert "sm:items-center" in body
+    assert "Amazing Fantasy #15 (Spider-Man)" in body
+    assert STATIC_COVERS[cover_filename]["description"] in body
 
 
 def test_admin_settings_page_exposes_quick_navigation(admin_client):

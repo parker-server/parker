@@ -228,6 +228,16 @@ def test_all_bundled_login_cover_assets_are_selectable():
     assert asset_filenames == set(STATIC_COVERS)
 
 
+def test_all_static_cover_metadata_has_descriptions():
+    missing = [
+        filename
+        for filename, data in STATIC_COVERS.items()
+        if not data.get("name") or not data.get("description")
+    ]
+
+    assert missing == []
+
+
 def test_get_protected_setting_requires_auth(client):
     response = client.get("/api/settings/server.opds_enabled")
 

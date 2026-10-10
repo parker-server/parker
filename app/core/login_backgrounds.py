@@ -117,54 +117,198 @@ SOLID_COLORS = {
 }
 
 
-# Static covers with labels
+# Static covers with labels and concise login-page context.
 STATIC_COVERS = {
-    "action-comics-1.webp": {"name": "Action Comics #1 (Superman)"},
-    "amazing-fantasy-15.webp": {"name": "Amazing Fantasy #15 (Spider-Man)"},
-    "amazing-spiderman-50.webp": {"name": "Amazing Spider-Man #50"},
-    "amazing-spiderman-129.webp": {"name": "Amazing Spider-Man #129 (Punisher)"},
-    "amazing-spiderman-300.webp": {"name": "Amazing Spider-Man #300"},
-    "amazing-spiderman-361.webp": {"name": "Amazing Spider-Man #361 (Carnage)"},
-    "avengers-1.webp": {"name": "Avengers #1"},
-    "avengers-4.webp": {"name": "Avengers #4 (Captain America)"},
-    "batman-1.webp": {"name": "Batman #1"},
-    "batman-227.webp": {"name": "Batman #227"},
-    "batman-423.webp": {"name": "Batman #423"},
-    "brave-bold-28.webp": {"name": "Brave and the Bold (JLA) #28"},
-    "crisis-infinite-earths-1.webp": {"name": "Crisis on Infinite Earths #1"},
-    "daredevil-168.webp": {"name": "Daredevil #168 (Elektra)"},
-    "dark-knight-returns-1.webp": {"name": "Dark Knight Returns #1"},
-    "detective-comics-27.webp": {"name": "Detective Comics #27 (Batman)"},
-    "detective-comics-359.webp": {"name": "Detective Comics #359 (Batgirl)"},
-    "fantastic-four-1.webp": {"name": "Fantastic Four #1"},
-    "giant-size-x-men-1.webp": {"name": "Giant-Size X-Men #1"},
-    "incredible-hulk-1.webp": {"name": "Incredible Hulk #1"},
-    "hellboy-seed-of-destruction-1.webp": {"name": "Hellboy - Seed of Destruction #1"},
-    "hulk-181.webp": {"name": "Incredible Hulk #181 (Wolverine)"},
-    "hulk-340.webp": {"name": "Incredible Hulk #340"},
-    "hulk-annual-1.webp": {"name": "Incredible Hulk Annual #1"},
-    "infinite-crisis-1.webp": {"name": "Infinite Crisis #1"},
-    "infinity-gauntlet-1.webp": {"name": "Infinity Gauntlet #1"},
-    "iron-man-1.webp": {"name": "Iron Man #1"},
-    "man-of-steel-1.webp": {"name": "Man of Steel #1"},
-    "mister-x-1.webp": {"name": "Mister X #1"},
-    "new-mutants-87.webp": {"name": "New Mutants #87 (Cable)"},
-    "new-mutants-98.webp": {"name": "New Mutants #98 (Deadpool)"},
-    "new-teen-titans-1.webp": {"name": "New Teen Titans #1"},
-    "punisher-1.webp": {"name": "Punisher #1"},
-    "sandman-1.webp": {"name": "Sandman #1"},
-    "spawn-1.webp": {"name": "Spawn #1"},
-    "spiderman-1.webp": {"name": "Spider-Man #1"},
-    "superman-1.webp": {"name": "Superman #1"},
-    "superman-75.webp": {"name": "Superman #75 (Death of Superman)"},
-    "tmnt-1.webp": {"name": "Teenage Mutant Ninja Turtles #1"},
-    "thor-337.webp": {"name": "Thor #337 (Beta Ray Bill)"},
-    "uncanny-x-men-101.webp": {"name": "Uncanny X-Men #101"},
-    "uncanny-x-men-141.webp": {"name": "Uncanny X-Men #141"},
-    "uncanny-x-men-281.webp": {"name": "Uncanny X-Men #281"},
-    "walking-dead-1.webp": {"name": "Walking Dead #1"},
-    "watchmen-1.webp": {"name": "Watchmen #1"},
-    "wolverine-27.webp": {"name": "Wolverine #27"},
-    "wonder-woman-v2-1.webp": {"name": "Wonder Woman #1 (Vol. 2)"},
-    "x-men-1.webp": {"name": "X-Men #1"},
+    "action-comics-1.webp": {
+        "name": "Action Comics #1 (Superman)",
+        "description": "The debut of Superman and a defining starting point for the superhero comic tradition.",
+    },
+    "amazing-fantasy-15.webp": {
+        "name": "Amazing Fantasy #15 (Spider-Man)",
+        "description": "The first appearance of Spider-Man, introducing a flawed teenage hero whose problems felt close to home.",
+    },
+    "amazing-spiderman-50.webp": {
+        "name": "Amazing Spider-Man #50",
+        "description": "A classic Spider-Man identity-crisis cover from the John Romita Sr. era.",
+    },
+    "amazing-spiderman-129.webp": {
+        "name": "Amazing Spider-Man #129 (Punisher)",
+        "description": "The Punisher's first appearance, adding a harder-edged antihero presence to Spider-Man's world.",
+    },
+    "amazing-spiderman-300.webp": {
+        "name": "Amazing Spider-Man #300",
+        "description": "A major anniversary issue and the first full appearance of Venom.",
+    },
+    "amazing-spiderman-361.webp": {
+        "name": "Amazing Spider-Man #361 (Carnage)",
+        "description": "The first full appearance of Carnage, one of Spider-Man's most recognizable 1990s threats.",
+    },
+    "avengers-1.webp": {
+        "name": "Avengers #1",
+        "description": "The first gathering of the Avengers, bringing several Marvel headliners together as a team.",
+    },
+    "avengers-4.webp": {
+        "name": "Avengers #4 (Captain America)",
+        "description": "Captain America's Silver Age return, reconnecting Marvel's modern universe to its wartime legacy.",
+    },
+    "batman-1.webp": {
+        "name": "Batman #1",
+        "description": "Batman's first solo title, helping define Gotham's early rogues gallery and pulp-crime tone.",
+    },
+    "batman-227.webp": {
+        "name": "Batman #227",
+        "description": "A celebrated Neal Adams gothic image that helped restore Batman's darker visual identity.",
+    },
+    "batman-423.webp": {
+        "name": "Batman #423",
+        "description": "A dramatic Todd McFarlane cover remembered for its sweeping cape silhouette.",
+    },
+    "brave-bold-28.webp": {
+        "name": "Brave and the Bold (JLA) #28",
+        "description": "The first appearance of the Justice League of America, uniting DC icons under one banner.",
+    },
+    "crisis-infinite-earths-1.webp": {
+        "name": "Crisis on Infinite Earths #1",
+        "description": "The opening chapter of DC's landmark continuity-shaping crossover.",
+    },
+    "daredevil-168.webp": {
+        "name": "Daredevil #168 (Elektra)",
+        "description": "The first appearance of Elektra and a key issue from Frank Miller's Daredevil run.",
+    },
+    "dark-knight-returns-1.webp": {
+        "name": "Dark Knight Returns #1",
+        "description": "Frank Miller's older, harsher Batman helped reshape how superhero stories could age and darken.",
+    },
+    "detective-comics-27.webp": {
+        "name": "Detective Comics #27 (Batman)",
+        "description": "Batman's first appearance, introducing one of comics' most enduring crime-fighting icons.",
+    },
+    "detective-comics-359.webp": {
+        "name": "Detective Comics #359 (Batgirl)",
+        "description": "Barbara Gordon's debut as Batgirl, expanding the Bat-family for a new era.",
+    },
+    "fantastic-four-1.webp": {
+        "name": "Fantastic Four #1",
+        "description": "The launch of Marvel's first family and an early foundation for the modern Marvel Universe.",
+    },
+    "giant-size-x-men-1.webp": {
+        "name": "Giant-Size X-Men #1",
+        "description": "The relaunch that introduced a new international X-Men lineup and changed the franchise's future.",
+    },
+    "incredible-hulk-1.webp": {
+        "name": "Incredible Hulk #1",
+        "description": "The first appearance of the Hulk, blending monster-comic tragedy with superhero mythology.",
+    },
+    "hellboy-seed-of-destruction-1.webp": {
+        "name": "Hellboy - Seed of Destruction #1",
+        "description": "Hellboy's first major solo miniseries, establishing Mike Mignola's occult adventure world.",
+    },
+    "hulk-181.webp": {
+        "name": "Incredible Hulk #181 (Wolverine)",
+        "description": "Wolverine's first full appearance, introducing a breakout character who became central to the X-Men.",
+    },
+    "hulk-340.webp": {
+        "name": "Incredible Hulk #340",
+        "description": "A memorable Todd McFarlane cover built around Wolverine's claws reflecting the Hulk.",
+    },
+    "hulk-annual-1.webp": {
+        "name": "Incredible Hulk Annual #1",
+        "description": "A bold Silver Age annual that captures the Hulk's larger-than-life crossover appeal.",
+    },
+    "infinite-crisis-1.webp": {
+        "name": "Infinite Crisis #1",
+        "description": "A modern DC event kickoff that revisited legacy, multiverse fallout, and heroic identity.",
+    },
+    "infinity-gauntlet-1.webp": {
+        "name": "Infinity Gauntlet #1",
+        "description": "The start of a defining Marvel cosmic event centered on Thanos and ultimate power.",
+    },
+    "iron-man-1.webp": {
+        "name": "Iron Man #1",
+        "description": "Iron Man's first solo series issue, cementing Tony Stark as a headline Marvel hero.",
+    },
+    "man-of-steel-1.webp": {
+        "name": "Man of Steel #1",
+        "description": "John Byrne's post-Crisis Superman reboot, streamlining the character for a new continuity.",
+    },
+    "mister-x-1.webp": {
+        "name": "Mister X #1",
+        "description": "A design-forward independent comic known for urban-noir atmosphere and architectural style.",
+    },
+    "new-mutants-87.webp": {
+        "name": "New Mutants #87 (Cable)",
+        "description": "Cable's first full appearance, bringing a harder-edged future-warrior energy to mutant comics.",
+    },
+    "new-mutants-98.webp": {
+        "name": "New Mutants #98 (Deadpool)",
+        "description": "The first appearance of Deadpool, later one of Marvel's most distinctive antiheroes.",
+    },
+    "new-teen-titans-1.webp": {
+        "name": "New Teen Titans #1",
+        "description": "The launch of the Wolfman and Perez Titans era, redefining DC's young hero team.",
+    },
+    "punisher-1.webp": {
+        "name": "Punisher #1",
+        "description": "A solo spotlight that helped establish the Punisher as a headline street-level antihero.",
+    },
+    "sandman-1.webp": {
+        "name": "Sandman #1",
+        "description": "The beginning of Neil Gaiman's Sandman, a major bridge between fantasy, horror, and literary comics.",
+    },
+    "spawn-1.webp": {
+        "name": "Spawn #1",
+        "description": "A flagship Image Comics debut that marked a major creator-owned moment in 1990s comics.",
+    },
+    "spiderman-1.webp": {
+        "name": "Spider-Man #1",
+        "description": "Todd McFarlane's solo Spider-Man launch, remembered as a defining blockbuster of its era.",
+    },
+    "superman-1.webp": {
+        "name": "Superman #1",
+        "description": "An early solo Superman milestone that helped prove a superhero could anchor an entire title.",
+    },
+    "superman-75.webp": {
+        "name": "Superman #75 (Death of Superman)",
+        "description": "The climax of the Death of Superman storyline, one of the most visible comics events of the 1990s.",
+    },
+    "tmnt-1.webp": {
+        "name": "Teenage Mutant Ninja Turtles #1",
+        "description": "The indie debut that launched the Ninja Turtles from black-and-white comics into pop-culture history.",
+    },
+    "thor-337.webp": {
+        "name": "Thor #337 (Beta Ray Bill)",
+        "description": "Walt Simonson's Thor debut, introducing Beta Ray Bill with an instantly striking cover image.",
+    },
+    "uncanny-x-men-101.webp": {
+        "name": "Uncanny X-Men #101",
+        "description": "Jean Grey's transformation into Phoenix, a turning point for the X-Men's cosmic scale.",
+    },
+    "uncanny-x-men-141.webp": {
+        "name": "Uncanny X-Men #141",
+        "description": "The opening of Days of Future Past, one of the X-Men's most influential alternate-future stories.",
+    },
+    "uncanny-x-men-281.webp": {
+        "name": "Uncanny X-Men #281",
+        "description": "A Jim Lee era X-Men issue that helped define the team's early-1990s visual identity.",
+    },
+    "walking-dead-1.webp": {
+        "name": "Walking Dead #1",
+        "description": "The start of Robert Kirkman's long-running survival series and a major modern Image Comics success.",
+    },
+    "watchmen-1.webp": {
+        "name": "Watchmen #1",
+        "description": "The first issue of Alan Moore and Dave Gibbons' influential superhero deconstruction.",
+    },
+    "wolverine-27.webp": {
+        "name": "Wolverine #27",
+        "description": "A striking early-1990s Wolverine cover from the character's solo-series boom.",
+    },
+    "wonder-woman-v2-1.webp": {
+        "name": "Wonder Woman #1 (Vol. 2)",
+        "description": "George Perez's post-Crisis relaunch, reconnecting Wonder Woman with mythic scale and purpose.",
+    },
+    "x-men-1.webp": {
+        "name": "X-Men #1",
+        "description": "Jim Lee's 1991 X-Men launch, one of the most recognizable blockbuster comics of the modern era.",
+    },
 }

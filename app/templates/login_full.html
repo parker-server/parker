@@ -123,18 +123,74 @@
 
     </div>
 
-    {% if active_effect %}
-    <!-- FX Toggle Button (z-30) -->
-    <button x-on:click="toggleFx"
-            class="fx-toggle absolute bottom-6 right-6 z-30 p-3 rounded-full text-white transition-all"
-            :title="fxEnabled ? 'Disable seasonal effect' : 'Enable seasonal effect'">
-        <svg x-show="fxEnabled" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"></path>
-        </svg>
-        <svg x-show="!fxEnabled" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path>
-        </svg>
-    </button>
+    {% if login_static_cover_info or active_effect %}
+    <div class="absolute bottom-6 right-6 z-30 flex items-center gap-3">
+        {% if login_static_cover_info %}
+        <button
+            x-on:click="openCoverInfo()"
+            class="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-black/50 text-lg font-bold italic text-white shadow-lg backdrop-blur transition-all hover:border-white/30 hover:bg-black/70 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-gray-950"
+            title="About this cover"
+            aria-label="About this cover"
+            type="button"
+        >
+            <span aria-hidden="true">i</span>
+        </button>
+        {% endif %}
+
+        {% if active_effect %}
+        <!-- FX Toggle Button (z-30) -->
+        <button x-on:click="toggleFx"
+                class="fx-toggle p-3 rounded-full text-white transition-all"
+                :title="fxEnabled ? 'Disable seasonal effect' : 'Enable seasonal effect'"
+                type="button">
+            <svg x-show="fxEnabled" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"></path>
+            </svg>
+            <svg x-show="!fxEnabled" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path>
+            </svg>
+        </button>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% if login_static_cover_info %}
+    <div
+        x-show="coverInfoOpen"
+        x-transition.opacity.duration.200ms
+        x-on:keydown.escape.window="closeCoverInfo()"
+        class="fixed inset-0 z-40 flex items-end justify-center bg-black/70 p-4 sm:items-center sm:p-6"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="cover-info-title"
+        x-cloak
+    >
+        <div class="absolute inset-0" x-on:click="closeCoverInfo()" aria-hidden="true"></div>
+        <div class="relative z-10 max-h-[calc(100vh-2rem)] w-full max-w-lg overflow-y-auto rounded-2xl border border-white/10 bg-gray-950/95 p-5 shadow-2xl backdrop-blur sm:max-h-[calc(100vh-3rem)] sm:p-6">
+            <div class="flex items-start justify-between gap-4">
+                <div class="min-w-0">
+                    <div class="text-[11px] font-bold uppercase tracking-[0.24em] text-blue-300">Static Cover</div>
+                    <h2 id="cover-info-title" class="mt-2 text-2xl font-bold leading-tight text-white">
+                        {{ login_static_cover_info.name }}
+                    </h2>
+                </div>
+                <button
+                    x-on:click="closeCoverInfo()"
+                    class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-gray-300 transition-colors hover:border-white/30 hover:text-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    title="Close"
+                    aria-label="Close cover information"
+                    type="button"
+                >
+                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            <p class="mt-4 text-base leading-relaxed text-gray-200">
+                {{ login_static_cover_info.description }}
+            </p>
+        </div>
+    </div>
     {% endif %}
 
 <script>
@@ -148,6 +204,7 @@ function loginCycler() {
 
         // Background Type
         bgStyle: '{{ login_bg_style }}',
+        coverInfoOpen: false,
 
         // Background State
         images: [],
@@ -208,6 +265,14 @@ function loginCycler() {
         toggleFx() {
             this.fxEnabled = !this.fxEnabled;
             window.parker.storage.set('fx.enabled', this.fxEnabled);
+        },
+
+        openCoverInfo() {
+            this.coverInfoOpen = true;
+        },
+
+        closeCoverInfo() {
+            this.coverInfoOpen = false;
         },
 
         async login() {
