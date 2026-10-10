@@ -570,7 +570,7 @@ async def opds_root(request: Request, user: OPDSUser, db: SessionDep):
             "title": "Recently Added",
             "updated": format_opds_datetime(datetime.now(timezone.utc)),
             "link": str(request.url_for("opds_recently_added")),
-            "summary": "Series with newly imported comics.",
+            "summary": "Series newly added to Parker.",
         },
         {
             "id": "urn:parker:recently-updated",
@@ -709,6 +709,7 @@ def render_recent_opds_series_feed(
         timestamp_column,
         feed_id: str,
         feed_title: str,
+        order_by_series_created: bool = False,
 ):
     latest_event = (
         db.query(
@@ -731,7 +732,10 @@ def render_recent_opds_series_feed(
     total = query.count()
     series_list = (
         query
-        .order_by(desc(latest_event.c.event_at), Series.name.asc())
+        .order_by(
+            desc(Series.created_at) if order_by_series_created else desc(latest_event.c.event_at),
+            Series.name.asc(),
+        )
         .offset(params.skip)
         .limit(params.size)
         .all()
@@ -772,6 +776,7 @@ async def opds_recently_added(
         timestamp_column=Comic.created_at,
         feed_id="urn:parker:recently-added",
         feed_title="Recently Added",
+        order_by_series_created=True,
     )
 
 

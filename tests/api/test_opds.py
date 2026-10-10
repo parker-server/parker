@@ -378,36 +378,44 @@ def test_opds_continue_reading_feed_returns_started_unfinished_issues(client, db
     assert acquisition.get("href", "").startswith(f"http://testserver/opds/download/{started.id}/")
 
 
-def test_opds_recent_feeds_list_series_by_comic_activity(client, db, normal_user):
+def test_opds_recent_feeds_separate_new_series_from_comic_updates(client, db, normal_user):
     _enable_opds(db)
 
     now = datetime.now(timezone.utc)
     library = create_library_with_root(db, "Recent OPDS Library", "/tmp/opds-recent-library")
     root = library.active_root
 
-    older_added_series = Series(name="Old Import New Update", library=library)
+    older_added_series = Series(
+        name="Old Series New Update",
+        library=library,
+        created_at=now - timedelta(days=3),
+    )
     older_added_volume = Volume(series=older_added_series, volume_number=1)
     older_added_comic = Comic(
         volume=older_added_volume,
         number="1",
-        title="Older Import",
-        filename="old-import-new-update-001.cbz",
+        title="Newly Updated Issue",
+        filename="old-series-new-update-001.cbz",
         library_root_id=root.id,
-        relative_path="old-import-new-update-001.cbz",
-        created_at=now - timedelta(days=2),
+        relative_path="old-series-new-update-001.cbz",
+        created_at=now,
         updated_at=now,
     )
 
-    newer_added_series = Series(name="New Import Old Update", library=library)
+    newer_added_series = Series(
+        name="New Series Old Update",
+        library=library,
+        created_at=now,
+    )
     newer_added_volume = Volume(series=newer_added_series, volume_number=1)
     newer_added_comic = Comic(
         volume=newer_added_volume,
         number="1",
-        title="Newer Import",
-        filename="new-import-old-update-001.cbz",
+        title="Older Updated Issue",
+        filename="new-series-old-update-001.cbz",
         library_root_id=root.id,
-        relative_path="new-import-old-update-001.cbz",
-        created_at=now,
+        relative_path="new-series-old-update-001.cbz",
+        created_at=now - timedelta(days=2),
         updated_at=now - timedelta(days=2),
     )
 
@@ -430,8 +438,8 @@ def test_opds_recent_feeds_list_series_by_comic_activity(client, db, normal_user
 
     assert added_response.status_code == 200
     assert updated_response.status_code == 200
-    assert _opds_entry_titles(added_response.text) == ["New Import Old Update", "Old Import New Update"]
-    assert _opds_entry_titles(updated_response.text) == ["Old Import New Update", "New Import Old Update"]
+    assert _opds_entry_titles(added_response.text) == ["New Series Old Update", "Old Series New Update"]
+    assert _opds_entry_titles(updated_response.text) == ["Old Series New Update", "New Series Old Update"]
 
 
 def test_opds_collections_feed_and_detail_use_visible_collection_items(client, db, normal_user):

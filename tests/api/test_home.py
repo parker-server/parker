@@ -276,14 +276,25 @@ def test_home_random_empty_and_skips_series_without_comics(auth_client, db, norm
     assert no_comics_series.id not in [item["id"] for item in payload]
 
 
-def test_home_recently_added_series_uses_latest_added_volume_cover(auth_client, db, normal_user):
-    library, series, volume_one = _create_series_graph(
+def test_home_recently_added_series_orders_by_series_creation(auth_client, db, normal_user):
+    library, existing_series, existing_volume_one = _create_series_graph(
         db,
         lib_name="home-recent-added-volume-lib",
-        series_name="Home Recent Added Volume",
+        series_name="Home Existing Series New Issue",
     )
-    volume_two = Volume(series=series, volume_number=2)
-    db.add(volume_two)
+    existing_series.created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    existing_volume_two = Volume(series=existing_series, volume_number=2)
+    db.add(existing_volume_two)
+    db.flush()
+
+    new_series = Series(
+        name="Home Newly Added Series",
+        library=library,
+        created_at=datetime(2026, 7, 1, tzinfo=timezone.utc),
+    )
+    new_volume_one = Volume(series=new_series, volume_number=1)
+    new_volume_two = Volume(series=new_series, volume_number=2)
+    db.add_all([new_series, new_volume_one, new_volume_two])
     db.flush()
 
     _, hidden_series, hidden_volume = _create_series_graph(
@@ -291,36 +302,55 @@ def test_home_recently_added_series_uses_latest_added_volume_cover(auth_client, 
         lib_name="home-recent-added-hidden-lib",
         series_name="Home Recent Added Hidden",
     )
+    hidden_series.created_at = datetime(2026, 7, 2, tzinfo=timezone.utc)
 
     old_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
     new_at = datetime(2026, 7, 1, tzinfo=timezone.utc)
 
-    volume_one_cover = _add_comic(
+    _add_comic(
         db,
-        volume_one,
+        existing_volume_one,
         number="1",
-        title="Added Volume One Cover",
+        title="Existing Volume One Cover",
         year=1988,
         created_at=old_at,
         updated_at=old_at,
     )
-    volume_two_cover = _add_comic(
+    _add_comic(
         db,
-        volume_two,
+        existing_volume_two,
         number="1",
-        title="Added Volume Two Cover",
+        title="Existing Volume Two Cover",
         year=2026,
         created_at=new_at,
         updated_at=new_at,
     )
-    _add_comic(
+    new_volume_one_cover = _add_comic(
         db,
-        volume_two,
-        number="2",
-        title="Added Volume Two Latest",
+        new_volume_one,
+        number="1",
+        title="New Volume One Cover",
+        year=1988,
+        created_at=new_at,
+        updated_at=new_at,
+    )
+    new_volume_two_cover = _add_comic(
+        db,
+        new_volume_two,
+        number="1",
+        title="New Volume Two Cover",
         year=2026,
         created_at=new_at + timedelta(minutes=1),
         updated_at=new_at + timedelta(minutes=1),
+    )
+    _add_comic(
+        db,
+        new_volume_two,
+        number="2",
+        title="New Volume Two Latest",
+        year=2026,
+        created_at=new_at + timedelta(minutes=2),
+        updated_at=new_at + timedelta(minutes=2),
     )
     _add_comic(
         db,
@@ -338,10 +368,11 @@ def test_home_recently_added_series_uses_latest_added_volume_cover(auth_client, 
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload[0]["id"] == series.id
+    assert payload[0]["id"] == new_series.id
     assert payload[0]["start_year"] == 2026
-    assert payload[0]["thumbnail_path"].startswith(f"/api/comics/{volume_two_cover.id}/thumbnail?v=")
-    assert not payload[0]["thumbnail_path"].startswith(f"/api/comics/{volume_one_cover.id}/thumbnail")
+    assert payload[0]["thumbnail_path"].startswith(f"/api/comics/{new_volume_two_cover.id}/thumbnail?v=")
+    assert not payload[0]["thumbnail_path"].startswith(f"/api/comics/{new_volume_one_cover.id}/thumbnail")
+    assert payload[1]["id"] == existing_series.id
     assert hidden_series.id not in [item["id"] for item in payload]
 
 

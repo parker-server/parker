@@ -50,7 +50,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
   - Library Timeline for character and team histories generated from embedded metadata
   - Dedicated person pages for creators with role-specific series rails and search handoffs
   - Recommendations by creator or metadata
-  - Random gems, recently added/updated series with recency-aware volume covers
+  - Random gems, newly added series, and recently updated series with recency-aware volume covers
 
 - **Reports Dashboard**
   - Missing Issues
@@ -100,7 +100,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
 - **OPDS Support**
   - OPDS 1.2 compliant feeds
   - Paginated library and series feeds
-  - Root shortcuts for Continue Reading and recently added/updated series
+  - Root shortcuts for Continue Reading, newly added series, and recently updated series
   - Collection and reading list feeds
   - Optional volume browsing alongside the flat series issue feed
   - Dublin Core metadata

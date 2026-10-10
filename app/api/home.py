@@ -36,7 +36,7 @@ HOME_RAIL_DEFINITIONS = (
     {"key": "trending", "title": "Trending", "hint": "Recent anonymous reading activity."},
     {"key": "popular", "title": "Popular with Others", "hint": "Anonymous aggregate reader activity."},
     {"key": "random_gems", "title": "Random Gems", "hint": "A rotating discovery rail."},
-    {"key": "recently_added_series", "title": "Recently Added Series", "hint": "Series with newly imported comics."},
+    {"key": "recently_added_series", "title": "Recently Added Series", "hint": "Series newly added to Parker."},
     {"key": "recently_updated_series", "title": "Recently Updated Series", "hint": "Series with recently updated comics."},
 )
 HOME_RAIL_KEYS = tuple(definition["key"] for definition in HOME_RAIL_DEFINITIONS)
@@ -463,6 +463,60 @@ def _get_recent_series_by_comic_timestamp(
     )
 
 
+def _get_recent_series_by_series_created_at(
+        db: Session,
+        current_user: User,
+        *,
+        limit: int,
+):
+    limit = max(1, min(limit, 50))
+
+    latest_added_comic = (
+        db.query(
+            Volume.series_id.label("series_id"),
+            func.max(Comic.created_at).label("event_at"),
+        )
+        .select_from(Comic)
+        .join(Volume)
+        .group_by(Volume.series_id)
+        .subquery()
+    )
+
+    query = (
+        db.query(Series)
+        .join(latest_added_comic, latest_added_comic.c.series_id == Series.id)
+    )
+
+    if not current_user.is_superuser:
+        allowed_ids = [lib.id for lib in current_user.accessible_libraries]
+        if not allowed_ids:
+            return []
+        query = query.filter(Series.library_id.in_(allowed_ids))
+
+    age_filter = get_series_age_restriction(current_user)
+    if age_filter is not None:
+        query = query.filter(age_filter)
+
+    recent_series = (
+        query
+        .order_by(desc(Series.created_at), Series.name.asc())
+        .limit(limit)
+        .all()
+    )
+
+    cover_volumes = _latest_event_volume_by_series_id(
+        db,
+        [series.id for series in recent_series],
+        Comic.created_at,
+    )
+
+    return _serialize_series_rail_items(
+        db,
+        recent_series,
+        cover_volume_by_series_id=cover_volumes,
+    )
+
+
 @router.get("/recently-added-series", response_model=List[dict], name="recently_added_series")
 def get_recently_added_series(
         db: SessionDep,
@@ -470,13 +524,12 @@ def get_recently_added_series(
         limit: int = 10,
 ):
     """
-    Get series with recently imported comics, using the latest added volume as
-    the representative cover.
+    Get series recently added to Parker, using the latest added volume as the
+    representative cover.
     """
-    return _get_recent_series_by_comic_timestamp(
+    return _get_recent_series_by_series_created_at(
         db,
         current_user,
-        timestamp_column=Comic.created_at,
         limit=limit,
     )
 
