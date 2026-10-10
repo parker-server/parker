@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import logging
 import re
 from datetime import date, datetime, timedelta, timezone
@@ -14,7 +15,11 @@ from app.models.comic import Comic, Volume
 from app.models.credits import ComicCredit
 from app.models.external_review import ExternalReview, ExternalReviewLookup
 from app.schemas.external_review import ExternalReviewItem, ExternalReviewsResponse
-from app.services.comicbookroundup import ComicBookRoundupClient, ComicBookRoundupIssueQuery
+from app.services.comicbookroundup import (
+    ComicBookRoundupClient,
+    ComicBookRoundupIssueQuery,
+    ComicBookRoundupLookupResult,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -190,7 +195,8 @@ class ExternalReviewService:
         self.db.commit()
 
         try:
-            result = asyncio.run(self.client.lookup_issue(_build_query(comic), max_candidates=10))
+            query = _build_query(comic)
+            result = _lookup_issue_sync(self.client, query, max_candidates=10)
             now = _utcnow()
             lookup.last_checked_at = now
             lookup.updated_at = now
@@ -297,6 +303,30 @@ def _build_query(comic: Comic) -> ComicBookRoundupIssueQuery:
         writers=tuple(comic.get_credits_by_role("writer")),
         artists=tuple(comic.get_credits_by_role("penciller")),
     )
+
+
+def _lookup_issue_sync(
+    client: ComicBookRoundupClient,
+    query: ComicBookRoundupIssueQuery,
+    *,
+    max_candidates: int,
+) -> ComicBookRoundupLookupResult:
+    async def _lookup() -> ComicBookRoundupLookupResult:
+        return await client.lookup_issue(query, max_candidates=max_candidates)
+
+    if _has_running_event_loop():
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(lambda: asyncio.run(_lookup())).result()
+
+    return asyncio.run(_lookup())
+
+
+def _has_running_event_loop() -> bool:
+    try:
+        asyncio.get_running_loop()
+        return True
+    except RuntimeError:
+        return False
 
 
 def _issue_title_for_query(comic: Comic) -> str | None:

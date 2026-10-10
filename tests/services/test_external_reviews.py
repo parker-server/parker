@@ -14,6 +14,7 @@ from app.services.external_reviews import (
     STATUS_NO_REVIEWS,
     _build_query,
 )
+from tests.async_helpers import run_async
 from tests.factories import create_comic, create_library_with_root
 
 
@@ -112,6 +113,19 @@ def test_external_review_refresh_stores_critic_reviews_only(db, tmp_path):
     assert lookup.reviews[0].source_name == "Critic Site"
     assert lookup.reviews[0].author == "Casey Critic"
     assert lookup.reviews[0].score == 9.0
+
+
+def test_external_review_refresh_tolerates_existing_event_loop(db, tmp_path):
+    comic = _create_external_review_comic(db, tmp_path, "external-review-loop-lib")
+    service = ExternalReviewService(db, client=_FakeComicBookRoundupClient())
+
+    async def _refresh():
+        return service.refresh_comic(comic)
+
+    lookup = run_async(_refresh())
+
+    assert lookup.status == STATUS_MATCHED
+    assert lookup.reviews[0].source_name == "Critic Site"
 
 
 def test_external_review_refresh_rechecks_recent_matched_reviews_during_growth_window(db, tmp_path):
