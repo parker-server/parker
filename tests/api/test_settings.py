@@ -116,6 +116,7 @@ def test_appearance_settings_include_display_groups_and_definition_order(admin_c
     assert groups["ui.login_static_cover"] == "Login Page"
     assert groups["ui.background_style"] == "Library Presentation"
     assert groups["ui.pagination_mode"] == "Browsing Behavior"
+    assert groups["ui.series_issue_volume_dividers"] == "Browsing Behavior"
     assert groups["ui.auto_redirect_single_volume_series"] == "Browsing Behavior"
     assert groups["ui.on_deck.staleness_weeks"] == "Browsing Behavior"
 
@@ -300,6 +301,20 @@ def test_initialize_defaults_seeds_single_volume_redirect_setting(db):
     ).first()
     assert setting is not None
     assert service.get("ui.auto_redirect_single_volume_series") is False
+    assert setting.category == "appearance"
+    assert setting.data_type == "bool"
+
+
+def test_initialize_defaults_seeds_series_issue_volume_dividers_setting(db):
+    service = SettingsService(db)
+
+    service.initialize_defaults()
+
+    setting = db.query(SystemSetting).filter(
+        SystemSetting.key == "ui.series_issue_volume_dividers"
+    ).first()
+    assert setting is not None
+    assert service.get("ui.series_issue_volume_dividers") is True
     assert setting.category == "appearance"
     assert setting.data_type == "bool"
 

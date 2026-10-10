@@ -6,6 +6,7 @@
 
 {% from "partials/page_context.html" import page_context with context %}
 {% from "partials/lucide_icon.html" import lucide_icon %}
+{% set show_issue_volume_dividers = get_system_setting("ui.series_issue_volume_dividers", True) %}
 {{ page_context(cover.id, cover.color_palette) }}
 
 {% include "partials/dynamic_background.html" %}
@@ -299,7 +300,18 @@
 
                             <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
                                 <template x-for="comic in items" :key="comic.id">
-                                    {% include "partials/comic_card.html" %}
+                                    <div
+                                        class="relative"
+                                        :data-volume-divider="showVolumeDivider(comic) ? 'true' : 'false'"
+                                    >
+                                        <div
+                                            x-show="showVolumeDivider(comic)"
+                                            data-volume-divider-line
+                                            aria-hidden="true"
+                                            class="pointer-events-none absolute -left-2 top-0 bottom-0 z-10 w-0.5 rounded-full bg-blue-400/80"
+                                        ></div>
+                                        {% include "partials/comic_card.html" %}
+                                    </div>
                                 </template>
                             </div>
 
@@ -744,6 +756,7 @@ function seriesDetail() {
         storyArcScopeId: {{ series_id }},
 
         paginationMode: '{{ get_system_setting("ui.pagination_mode", "infinite") }}',
+        showIssueVolumeDividers: {{ 'true' if show_issue_volume_dividers else 'false' }},
         detailPageSize: 25,
         detailCategories: ['writers', 'pencillers', 'characters', 'teams', 'locations'],
         details: {
@@ -911,6 +924,12 @@ function seriesDetail() {
 
         get hasAnyDetails() {
             return Object.values(this.details).some((state) => state.items.length > 0);
+        },
+
+        showVolumeDivider(comic) {
+            return this.showIssueVolumeDividers
+                && this.activeTab === 'issues'
+                && comic.is_volume_start;
         },
 
         // Event Listener Handlers (Called via x-on in HTML)

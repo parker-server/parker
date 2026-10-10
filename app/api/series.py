@@ -540,10 +540,18 @@ async def get_series_issues(
         else:
             sort_order = "asc"
 
-    # Select Comic AND the completed status
+    sort_keys = [Volume.volume_number, func.cast(Comic.number, Float), Comic.number]
+    order_by_keys = [key.desc() for key in sort_keys] if sort_order == "desc" else [
+        key.asc() for key in sort_keys
+    ]
+    previous_volume_id = func.lag(Comic.volume_id).over(
+        order_by=order_by_keys
+    ).label("previous_volume_id")
+
+    # Select each comic, its completed status, and the prior volume in display order.
     # OPTIMIZATION: contains_eager(Comic.volume) reuses the Volume join below, so
     # comic_to_simple_dict doesn't lazy-load one Volume per distinct volume (N+1)
-    query = db.query(Comic, ReadingProgress.completed).outerjoin(
+    query = db.query(Comic, ReadingProgress.completed, previous_volume_id).outerjoin(
         ReadingProgress,
         (ReadingProgress.comic_id == Comic.id) & (ReadingProgress.user_id == current_user.id)
     ).join(Volume).join(Series).options(contains_eager(Comic.volume)).filter(Series.id == series.id)
@@ -576,18 +584,8 @@ async def get_series_issues(
     elif read_filter == "unread":
         query = query.filter((ReadingProgress.completed == None) | (ReadingProgress.completed == False))
 
-    # Smart Sorting Strategy
-    # We define the 3-stage sort keys:
-    # 1. Volume (Major)
-    # 2. Numeric Value (9 before 10)
-    # 3. String Value (10a before 10b)
-    sort_keys = [Volume.volume_number, func.cast(Comic.number, Float), Comic.number]
-    if sort_order == "desc":
-        # Reverse ALL keys to ensure "Vol 2 #10" comes before "Vol 1 #1"
-        query = query.order_by(*[k.desc() for k in sort_keys])
-    else:
-        # Default Ascending
-        query = query.order_by(*[k.asc() for k in sort_keys])
+    # Smart Sorting Strategy: volume first, then numeric and string issue numbers.
+    query = query.order_by(*order_by_keys)
 
     # Pagination & Execute
     total = query.count()
@@ -595,9 +593,12 @@ async def get_series_issues(
     comics = query.offset(params.skip).limit(params.size).all()
 
     items = []
-    for comic, is_completed in comics:
+    for comic, is_completed, prior_volume_id in comics:
         data = comic_to_simple_dict(comic)
         data['read'] = True if is_completed else False
+        data['is_volume_start'] = bool(
+            prior_volume_id is not None and prior_volume_id != comic.volume_id
+        )
         items.append(data)
 
     return {"total": total, "page": params.page, "size": params.size, "items": items}

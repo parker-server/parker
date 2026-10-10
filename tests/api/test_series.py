@@ -325,6 +325,24 @@ def test_series_issues_query_count_does_not_scale_with_volumes(auth_client, db, 
     assert issues_query_count(many_volumes_id, 5) == issues_query_count(one_volume_id, 1)
 
 
+def test_series_issues_marks_new_volume_start_across_pages(auth_client, db, normal_user):
+    data = _create_series_detail_fixture(db)
+    normal_user.accessible_libraries.append(data["library"])
+    db.commit()
+
+    first_page = auth_client.get(
+        f"/api/series/{data['series'].id}/issues?type=plain&page=1&size=2"
+    )
+    second_page = auth_client.get(
+        f"/api/series/{data['series'].id}/issues?type=plain&page=2&size=2"
+    )
+
+    assert first_page.status_code == 200
+    assert second_page.status_code == 200
+    assert [item["is_volume_start"] for item in first_page.json()["items"]] == [False, False]
+    assert [item["is_volume_start"] for item in second_page.json()["items"]] == [True]
+
+
 def test_series_issues_filters_annual_and_special(auth_client, db, normal_user):
     data = _create_series_with_volume(db, lib_name="issues-type-lib", series_name="Type Logic")
     normal_user.accessible_libraries.append(data["library"])
