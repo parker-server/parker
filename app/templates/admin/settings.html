@@ -177,6 +177,27 @@
                                                             </div>
                                                         </div>
                                                     </div>
+
+                                                    <div
+                                                        x-show="isColorPreviewVisible(setting)"
+                                                        x-transition.opacity.duration.200ms
+                                                        x-cloak
+                                                        class="rounded-xl border border-blue-500/30 bg-blue-500/10 p-3 shadow-lg shadow-blue-950/20"
+                                                    >
+                                                        <div class="flex items-center gap-3">
+                                                            <div
+                                                                class="h-16 w-28 flex-shrink-0 rounded-md shadow-lg ring-1 ring-white/10"
+                                                                :style="`background: ${colorPreview.gradient};`"
+                                                                role="img"
+                                                                :aria-label="`${colorPreview.label} color preview`"
+                                                            ></div>
+                                                            <div class="min-w-0">
+                                                                <div class="text-[10px] font-bold uppercase tracking-[0.22em] text-blue-200">Color Preview</div>
+                                                                <div class="mt-1 truncate text-sm font-semibold text-white" x-text="colorPreview.label"></div>
+                                                                <p class="mt-1 text-xs leading-relaxed text-blue-100/80">Previewing the selected login background color scheme.</p>
+                                                            </div>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             </template>
 
@@ -225,6 +246,13 @@ function settingsManager() {
         coverPreview: {
             key: null,
             url: '',
+            label: '',
+            visible: false,
+            timeoutId: null,
+        },
+        colorPreview: {
+            key: null,
+            gradient: '',
             label: '',
             visible: false,
             timeoutId: null,
@@ -366,6 +394,10 @@ function settingsManager() {
             return setting && setting.key === 'ui.login_static_cover';
         },
 
+        isLoginSolidColorSetting(setting) {
+            return setting && setting.key === 'ui.login_solid_color';
+        },
+
         findSettingOption(setting, value) {
             return (setting.options || [])
                 .find(opt => String(opt.value) === String(value));
@@ -380,6 +412,12 @@ function settingsManager() {
             return this.isLoginStaticCoverSetting(setting)
                 && this.coverPreview.visible
                 && this.coverPreview.key === setting.key;
+        },
+
+        isColorPreviewVisible(setting) {
+            return this.isLoginSolidColorSetting(setting)
+                && this.colorPreview.visible
+                && this.colorPreview.key === setting.key;
         },
 
         showCoverPreview(setting, value) {
@@ -406,8 +444,33 @@ function settingsManager() {
             }, 3500);
         },
 
+        showColorPreview(setting, value) {
+            if (!this.isLoginSolidColorSetting(setting)) return;
+
+            const option = this.findSettingOption(setting, value);
+            if (!option || !option.gradient) return;
+
+            if (this.colorPreview.timeoutId) {
+                clearTimeout(this.colorPreview.timeoutId);
+            }
+
+            this.colorPreview = {
+                key: setting.key,
+                gradient: option.gradient,
+                label: option.label,
+                visible: true,
+                timeoutId: null,
+            };
+
+            this.colorPreview.timeoutId = setTimeout(() => {
+                this.colorPreview.visible = false;
+                this.colorPreview.timeoutId = null;
+            }, 3500);
+        },
+
         handleSelectChange(setting, newValue) {
             this.showCoverPreview(setting, newValue);
+            this.showColorPreview(setting, newValue);
             this.update(setting, newValue);
         },
 

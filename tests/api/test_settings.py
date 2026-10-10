@@ -1,12 +1,13 @@
 from pathlib import Path
 from unittest.mock import patch
 
-from app.core.login_backgrounds import STATIC_COVERS
+from app.core.login_backgrounds import SOLID_COLORS, STATIC_COVERS
 from app.models.setting import SystemSetting
 from app.services.settings_service import (
     SCANNING_BATCH_WINDOW_MIN_SECONDS,
     SERVER_DISPLAY_NAME_MAX_LENGTH,
     SettingsService,
+    generate_color_options,
     generate_cover_options,
 )
 from app.api.deps import get_current_user_optional
@@ -145,6 +146,24 @@ def test_login_background_style_options_include_static_cover_cycling(admin_clien
     assert "random_covers" not in {option["value"] for option in login_style["options"]}
 
 
+def test_login_solid_color_options_include_gradient_metadata(db):
+    service = SettingsService(db)
+    service.initialize_defaults()
+
+    appearance_settings = service.get_all_grouped()["appearance"]
+    login_color = next(
+        setting
+        for setting in appearance_settings
+        if setting.key == "ui.login_solid_color"
+    )
+    superman = next(
+        option
+        for option in login_color.options
+        if option["value"] == "superman_classic"
+    )
+    assert superman["gradient"] == SOLID_COLORS["superman_classic"]["gradient"]
+
+
 def test_login_background_style_random_covers_is_normalized_to_static_cover_cycling(db):
     db.add(
         SystemSetting(
@@ -194,6 +213,12 @@ def test_login_static_cover_options_are_alphabetized_by_label():
     labels = [option["label"] for option in options]
 
     assert labels == sorted(labels, key=str.casefold)
+
+
+def test_login_solid_color_options_include_gradients():
+    options = generate_color_options()
+
+    assert all(option["gradient"] for option in options)
 
 
 def test_all_bundled_login_cover_assets_are_selectable():

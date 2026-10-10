@@ -42,7 +42,12 @@ def generate_color_options():
     """Generate color options from SOLID_COLORS dictionary"""
 
     return [
-        {"label": data["name"], "value": key, "group": data.get("group")}
+        {
+            "label": data["name"],
+            "value": key,
+            "group": data.get("group"),
+            "gradient": data["gradient"],
+        }
         for key, data in SOLID_COLORS.items()
     ]
 
