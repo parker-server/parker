@@ -10,6 +10,7 @@ from app.config import settings
 from app.core.build_info import get_build_commit_hash
 from app.core.templates import templates
 from app.services.startup_diagnostics import build_support_snapshot, collect_startup_diagnostics
+from app.models.promoted_rail import PromotedRail
 
 router = APIRouter()
 
@@ -92,6 +93,30 @@ async def admin_migration_page(request: Request, admin_user: AdminUser):
 async def admin_cbl_sources_page(request: Request, admin_user: AdminUser):
     """Serve the Admin CBL Reading Lists page"""
     return templates.TemplateResponse(request=request, name="admin/cbl_sources.html")
+
+
+@router.get("/promoted-rails", response_class=HTMLResponse, name="promoted_rails", tags=['admin'])
+async def admin_promoted_rails_page(request: Request, admin_user: AdminUser):
+    """Serve the administrator-managed, scheduled Home rail page."""
+    return templates.TemplateResponse(request=request, name="admin/promoted_rails.html")
+
+
+@router.get("/promoted-rails/{rail_id}/query", response_class=HTMLResponse, name="promoted_rail_query", tags=['admin'])
+async def admin_promoted_rail_query_page(
+        request: Request,
+        rail_id: int,
+        db: SessionDep,
+        admin_user: AdminUser,
+):
+    """Render the featured-rail editor with the shared search query builder."""
+    if db.get(PromotedRail, rail_id) is None:
+        raise HTTPException(status_code=404, detail="Promoted rail not found")
+
+    return templates.TemplateResponse(
+        request=request,
+        name="admin/promoted_rail_editor.html",
+        context={"promoted_rail_id": rail_id},
+    )
 
 
 @router.get("/about", response_class=HTMLResponse, name="about", tags=['admin'])

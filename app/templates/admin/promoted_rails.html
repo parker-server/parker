@@ -1,0 +1,261 @@
+{% extends "base.html" %}
+{% from "partials/lucide_icon.html" import lucide_icon %}
+
+{% block title %}Featured Rails - Parker{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto" x-data="promotedRailsManager()" x-init="load()">
+    {% from "partials/admin_header.html" import admin_header %}
+    {{ admin_header(
+        title="Featured Rails",
+        description="Schedule curated Home rails built with Advanced Search. Users can still hide a featured rail from Customize Home.",
+        action_label="+ New Featured Rail",
+        action_func="openCreateModal()",
+        refresh_func="load()"
+    ) }}
+
+    <div class="rounded-xl border border-gray-700 bg-gray-800 shadow-lg overflow-hidden">
+        <div x-show="loading" class="flex justify-center py-16">
+            <div class="h-9 w-9 animate-spin rounded-full border-2 border-blue-400 border-t-transparent"></div>
+        </div>
+
+        <div x-show="!loading && rails.length === 0" x-cloak class="px-6 py-16 text-center">
+            <div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-violet-500/15 text-violet-200">
+                {{ lucide_icon("sparkles", "h-6 w-6") }}
+            </div>
+            <h2 class="text-lg font-bold text-white">No featured rails yet</h2>
+            <p class="mx-auto mt-2 max-w-lg text-sm text-gray-400">Create a disabled draft, then use Advanced Search to define the comics it will feature before scheduling it for Home.</p>
+            <button type="button" x-on:click="openCreateModal()" class="mt-5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-500">Create Featured Rail</button>
+        </div>
+
+        <div x-show="!loading && rails.length > 0" x-cloak class="overflow-x-auto">
+            <table class="w-full min-w-[840px] text-left">
+                <thead class="border-b border-gray-700 bg-gray-900/70 text-xs uppercase tracking-wide text-gray-400">
+                    <tr>
+                        <th class="px-5 py-3">Rail</th>
+                        <th class="w-20 px-5 py-3">Order</th>
+                        <th class="px-5 py-3">Visibility window</th>
+                        <th class="px-5 py-3">Query</th>
+                        <th class="px-5 py-3">Status</th>
+                        <th class="px-5 py-3 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-700">
+                    <template x-for="rail in rails" :key="rail.id">
+                        <tr class="hover:bg-gray-750/70">
+                            <td class="px-5 py-4">
+                                <div class="font-semibold text-white" x-text="rail.title"></div>
+                            </td>
+                            <td class="px-5 py-4 text-sm tabular-nums text-gray-300" x-text="rail.display_order">
+                            </td>
+                            <td class="px-5 py-4 text-sm text-gray-300">
+                                <span x-text="formatDate(rail.starts_on)"></span>
+                                <span class="text-gray-500">to</span>
+                                <span x-text="rail.ends_on ? formatDate(rail.ends_on) : 'No end date'"></span>
+                            </td>
+                            <td class="px-5 py-4 text-sm text-gray-300">
+                                <span x-text="querySummary(rail)"></span>
+                            </td>
+                            <td class="px-5 py-4">
+                                <span x-show="rail.active" class="rounded-full border border-emerald-400/40 bg-emerald-500/10 px-2 py-1 text-xs font-semibold text-emerald-200">Live</span>
+                                <span x-show="!rail.active && rail.enabled && !hasEnded(rail)" class="rounded-full border border-amber-400/40 bg-amber-500/10 px-2 py-1 text-xs font-semibold text-amber-200">Scheduled</span>
+                                <span x-show="!rail.active && rail.enabled && hasEnded(rail)" class="rounded-full border border-gray-600 bg-gray-700/60 px-2 py-1 text-xs font-semibold text-gray-300">Ended</span>
+                                <span x-show="!rail.enabled" class="rounded-full border border-gray-600 bg-gray-700/60 px-2 py-1 text-xs font-semibold text-gray-300">Disabled</span>
+                            </td>
+                            <td class="px-5 py-4 text-right">
+                                <div class="flex justify-end gap-3 text-sm font-medium">
+                                    <button type="button" x-on:click="openQueryEditor(rail.id)" class="text-violet-300 hover:text-white">Edit query</button>
+                                    <button type="button" x-on:click="openEditModal(rail)" class="text-blue-300 hover:text-white">Edit</button>
+                                    <button type="button" x-on:click="deleteRail(rail)" class="text-red-300 hover:text-red-200">Delete</button>
+                                </div>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div x-show="modalOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" style="display: none;" x-transition.opacity>
+        <form x-on:submit.prevent="saveRail()" x-on:click.away="closeModal()" class="w-full max-w-md rounded-lg border border-gray-700 bg-gray-800 p-6 shadow-2xl">
+            <h2 class="mb-1 text-xl font-bold text-white" x-text="editingId ? 'Edit Featured Rail' : 'New Featured Rail'"></h2>
+            <p class="mb-6 text-sm text-gray-400" x-text="editingId ? 'Adjust when this rail is eligible to appear on Home.' : 'The next step will open Advanced Search to build its query.'"></p>
+
+            <div class="space-y-4">
+                <label class="block">
+                    <span class="mb-1 block text-sm text-gray-400">Title</span>
+                    <input required maxlength="120" x-model.trim="form.title" class="w-full rounded border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-blue-500" placeholder="Halloween Horrors">
+                </label>
+                <div class="grid gap-4 sm:grid-cols-2">
+                    <label class="block">
+                        <span class="mb-1 block text-sm text-gray-400">Start date</span>
+                        <input required type="date" x-model="form.starts_on" class="w-full rounded border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-blue-500">
+                    </label>
+                    <label class="block">
+                        <span class="mb-1 block text-sm text-gray-400">End date <span class="text-gray-500">optional</span></span>
+                        <input type="date" x-model="form.ends_on" class="w-full rounded border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-blue-500">
+                    </label>
+                </div>
+                <label class="block">
+                    <span class="mb-1 block text-sm text-gray-400">Featured order</span>
+                    <input required min="0" type="number" x-model.number="form.display_order" class="w-full rounded border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-blue-500">
+                    <span class="mt-1 block text-xs text-gray-500">Lower values appear first when more than one featured rail is active.</span>
+                </label>
+                <label x-show="editingId" class="flex cursor-pointer items-center gap-3 rounded border border-gray-700/50 bg-gray-900/50 p-3">
+                    <input type="checkbox" x-model="form.enabled" class="h-4 w-4 rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-500">
+                    <span>
+                        <span class="block text-sm font-medium text-white">Enabled</span>
+                        <span class="block text-xs text-gray-400">Eligible to appear during its scheduled dates.</span>
+                    </span>
+                </label>
+            </div>
+
+            <div class="mt-6 flex justify-end gap-2">
+                <button type="button" x-on:click="closeModal()" class="px-4 py-2 text-sm font-medium text-gray-400 transition-colors hover:text-white">Cancel</button>
+                <button type="submit" :disabled="saving" class="rounded bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-lg transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50">
+                    <span x-show="!saving" x-text="editingId ? 'Save changes' : 'Create and build query'"></span>
+                    <span x-show="saving">Saving...</span>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function promotedRailsManager() {
+    return {
+        rails: [],
+        loading: true,
+        saving: false,
+        modalOpen: false,
+        editingId: null,
+        form: {},
+
+        emptyForm() {
+            return {
+                title: '',
+                starts_on: new Date().toISOString().slice(0, 10),
+                ends_on: '',
+                enabled: false,
+                display_order: 0,
+            };
+        },
+
+        async load() {
+            this.loading = true;
+            try {
+                const res = await fetch(window.parker.route('promoted_rails.list'));
+                if (!res.ok) throw new Error('Could not load featured rails');
+                this.rails = await res.json();
+            } catch (error) {
+                console.error(error);
+                window.parker.showToast?.('Could not load featured rails.', 'error');
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        openCreateModal() {
+            this.editingId = null;
+            this.form = this.emptyForm();
+            this.modalOpen = true;
+        },
+
+        openEditModal(rail) {
+            this.editingId = rail.id;
+            this.form = {
+                title: rail.title,
+                starts_on: rail.starts_on,
+                ends_on: rail.ends_on || '',
+                enabled: rail.enabled,
+                display_order: rail.display_order,
+            };
+            this.modalOpen = true;
+        },
+
+        closeModal(force = false) {
+            if (this.saving && !force) return;
+            this.modalOpen = false;
+        },
+
+        async saveRail() {
+            this.saving = true;
+            const payload = {
+                ...this.form,
+                ends_on: this.form.ends_on || null,
+            };
+            try {
+                const route = this.editingId
+                    ? window.parker.route('promoted_rails.update', { rail_id: this.editingId })
+                    : window.parker.route('promoted_rails.create');
+                const res = await fetch(route, {
+                    method: this.editingId ? 'PATCH' : 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload),
+                });
+                if (!res.ok) {
+                    const error = await res.json().catch(() => ({}));
+                    throw new Error(error.detail || 'Could not save featured rail');
+                }
+
+                const rail = await res.json();
+                if (!this.editingId) {
+                    window.location.href = this.queryEditorUrl(rail.id);
+                    return;
+                }
+
+                this.closeModal(true);
+                await this.load();
+                window.parker.showToast?.('Featured rail updated.', 'success');
+            } catch (error) {
+                console.error(error);
+                window.parker.showToast?.(error.message || 'Could not save featured rail.', 'error');
+            } finally {
+                this.saving = false;
+            }
+        },
+
+        queryEditorUrl(railId) {
+            return window.parker.route('admin.promoted_rail_query', { rail_id: railId });
+        },
+
+        openQueryEditor(railId) {
+            window.location.href = this.queryEditorUrl(railId);
+        },
+
+        async deleteRail(rail) {
+            const confirmed = await window.parker.dialog.confirm(
+                'Delete featured rail?',
+                `Delete “${rail.title}”? Users will no longer see it on Home.`,
+                {isDestructive: true, confirmText: 'Delete'}
+            );
+            if (!confirmed) return;
+
+            try {
+                const res = await fetch(window.parker.route('promoted_rails.delete', { rail_id: rail.id }), {method: 'DELETE'});
+                if (!res.ok) throw new Error('Could not delete featured rail');
+                await this.load();
+                window.parker.showToast?.('Featured rail deleted.', 'success');
+            } catch (error) {
+                console.error(error);
+                window.parker.showToast?.('Could not delete featured rail.', 'error');
+            }
+        },
+
+        formatDate(value) {
+            if (!value) return '';
+            return new Intl.DateTimeFormat(undefined, {year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC'}).format(new Date(`${value}T00:00:00Z`));
+        },
+
+        querySummary(rail) {
+            const count = rail.query?.filters?.length || 0;
+            return count === 1 ? '1 search rule' : `${count} search rules`;
+        },
+
+        hasEnded(rail) {
+            return !!rail.ends_on && rail.ends_on < new Date().toISOString().slice(0, 10);
+        },
+    };
+}
+</script>
+{% endblock %}

@@ -56,6 +56,10 @@ def _seed_search_graph(db):
     }
 
 
+def _grant_library_access(user: User, *libraries):
+    user.accessible_libraries.extend(libraries)
+
+
 def _sql(expr):
     return str(expr.compile(compile_kwargs={"literal_binds": True}))
 
@@ -168,6 +172,8 @@ ADVANCED_SEARCH_UI_FIELD_OPERATOR_CASES = [
 
 def test_search_service_filters_by_context_and_title(db, normal_user):
     data = _seed_search_graph(db)
+    _grant_library_access(normal_user, data["library"])
+    db.commit()
     service = SearchService(db, normal_user)
 
     request = SearchRequest(
@@ -217,6 +223,8 @@ def test_search_service_filters_by_library_name_without_cross_join(db, normal_us
         filename="other.cbz",
     )
     db.commit()
+    _grant_library_access(normal_user, target_library)
+    db.commit()
 
     service = SearchService(db, normal_user)
     request = SearchRequest(
@@ -235,7 +243,9 @@ def test_search_service_filters_by_library_name_without_cross_join(db, normal_us
 
 
 def test_search_service_match_any_combines_conditions_with_or(db, normal_user):
-    _seed_search_graph(db)
+    data = _seed_search_graph(db)
+    _grant_library_access(normal_user, data["library"])
+    db.commit()
     service = SearchService(db, normal_user)
 
     request = SearchRequest(
@@ -299,7 +309,8 @@ def test_search_service_fts_condition_handles_positive_and_negative_paths(normal
 
 
 def test_search_service_applies_age_filter_and_skips_invalid_filters(db, normal_user):
-    _seed_search_graph(db)
+    data = _seed_search_graph(db)
+    _grant_library_access(normal_user, data["library"])
     normal_user.max_age_rating = "Teen"
     normal_user.allow_unknown_age_ratings = True
     db.commit()
@@ -322,6 +333,7 @@ def test_search_service_applies_age_filter_and_skips_invalid_filters(db, normal_
 
 def test_search_service_filters_and_sorts_by_parker_rating(db, normal_user):
     data = _seed_search_graph(db)
+    _grant_library_access(normal_user, data["library"])
     other_alpha_user = User(
         username="alpha-rater",
         email="alpha-rater@example.com",
@@ -390,6 +402,8 @@ def test_search_service_filters_missing_release_year(db, normal_user):
         year=2024,
         filename="with-year.cbz",
     )
+    db.commit()
+    _grant_library_access(normal_user, library)
     db.commit()
 
     service = SearchService(db, normal_user)
@@ -468,6 +482,8 @@ def test_search_service_applies_creator_not_equal_with_other_filters(db, normal_
         ComicCredit(comic_id=french_comic.id, person_id=other_artist.id, role="penciller"),
     ])
     db.commit()
+    _grant_library_access(normal_user, library)
+    db.commit()
 
     service = SearchService(db, normal_user)
     request = SearchRequest(
@@ -489,13 +505,23 @@ def test_search_service_applies_creator_not_equal_with_other_filters(db, normal_
 
 
 def test_advanced_search_operator_matrix_covers_template_fields():
-    template = Path("app/templates/search.html").read_text()
+    template = Path("app/templates/partials/search_query_builder.html").read_text()
     field_select_start = template.index('<select x-model="rule.field"')
     field_select_end = template.index("</select>", field_select_start)
     field_select = template[field_select_start:field_select_end]
     template_fields = set(re.findall(r'<option value="([^"]+)">', field_select))
 
     assert template_fields == set(ADVANCED_SEARCH_UI_FIELDS)
+
+
+def test_search_query_builder_is_shared_without_promoted_rail_state():
+    public_search = Path("app/templates/search.html").read_text()
+    promoted_rail_editor = Path("app/templates/admin/promoted_rail_editor.html").read_text()
+
+    assert '{% include "partials/search_query_builder.html" %}' in public_search
+    assert '{% include "partials/search_query_builder.html" %}' in promoted_rail_editor
+    assert "promotedRailEditor" not in public_search
+    assert "search_mode" not in public_search
 
 
 @pytest.mark.parametrize("field,operator", ADVANCED_SEARCH_UI_FIELD_OPERATOR_CASES)

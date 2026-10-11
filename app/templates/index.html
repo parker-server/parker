@@ -62,6 +62,23 @@
                         </section>
                     </template>
 
+                    <template x-if="rail.kind === 'promoted'">
+                        <section>
+                            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+                                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                                    {{ lucide_icon("sparkles", "h-5 w-5 flex-shrink-0 text-violet-300") }} <span x-text="rail.title"></span>
+                                </h2>
+                                <a :href="promotedRailSearchUrl(rail)" class="text-xs text-blue-400 hover:text-white transition-colors">View matching issues</a>
+                            </div>
+
+                            <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                                <template x-for="series in promotedRailItems[rail.key] || []" :key="series.id">
+                                    {% include "partials/series_card.html" %}
+                                </template>
+                            </div>
+                        </section>
+                    </template>
+
                     <template x-if="rail.key === 'up_next'">
                         <section>
                             <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
@@ -242,7 +259,7 @@
                                 <h2 class="text-xl font-bold text-white flex items-center gap-2">
                                     {{ lucide_icon("sparkles", "h-5 w-5 flex-shrink-0 text-cyan-300") }} Recently Added Series
                                 </h2>
-                                <a :href="window.parker.route('pages.search', {}, 'sort_by=created&sort_order=desc')" class="text-sm text-blue-400 hover:text-white transition-colors">View All</a>
+                                <a :href="window.parker.route('pages.recent_series', { kind: 'added' })" class="text-sm text-blue-400 hover:text-white transition-colors">View All</a>
                             </div>
 
                             <div class="flex space-x-6 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
@@ -259,7 +276,7 @@
                                 <h2 class="text-xl font-bold text-white flex items-center gap-2">
                                     {{ lucide_icon("refresh-cw", "h-5 w-5 flex-shrink-0 text-teal-300") }} Recently Updated Series
                                 </h2>
-                                <a :href="window.parker.route('pages.search', {}, 'sort_by=updated&sort_order=desc')" class="text-sm text-blue-400 hover:text-white transition-colors">View All</a>
+                                <a :href="window.parker.route('pages.recent_series', { kind: 'updated' })" class="text-sm text-blue-400 hover:text-white transition-colors">View All</a>
                             </div>
 
                             <div class="flex space-x-6 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
@@ -340,18 +357,19 @@
                     <template x-for="(rail, index) in draftRails" :key="rail.key">
                         <div
                             :data-home-rail-draft="rail.key"
-                            draggable="true"
-                            x-on:dragstart="startDraftDrag(index)"
-                            x-on:dragover.prevent
-                            x-on:drop="dropDraftRail(index)"
+                            :draggable="rail.reorderable"
+                            x-on:dragstart="rail.reorderable && startDraftDrag(index)"
+                            x-on:dragover.prevent="rail.reorderable"
+                            x-on:drop="rail.reorderable && dropDraftRail(index)"
                             class="grid grid-cols-[auto_1fr_auto_auto] items-center gap-3 rounded-lg border border-gray-800 bg-gray-950/70 px-3 py-3"
                             :class="rail.visible ? 'opacity-100' : 'opacity-60'"
                         >
                             <button
                                 type="button"
-                                class="cursor-grab rounded-md border border-gray-700 px-2 py-2 text-gray-400 hover:border-blue-400 hover:text-white"
+                                :disabled="!rail.reorderable"
+                                class="cursor-grab rounded-md border border-gray-700 px-2 py-2 text-gray-400 hover:border-blue-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
                                 :aria-label="`Drag ${rail.title}`"
-                                title="Drag to reorder"
+                                :title="rail.reorderable ? 'Drag to reorder' : 'Featured rails use the administrator order'"
                             >
                                 <span aria-hidden="true">::</span>
                             </button>
@@ -362,6 +380,7 @@
                                     <span class="rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider"
                                           :class="rail.visible ? 'border-green-500/40 text-green-300' : 'border-gray-600 text-gray-400'"
                                           x-text="rail.visible ? 'Visible' : 'Hidden'"></span>
+                                    <span x-show="rail.kind === 'promoted'" class="rounded-full border border-violet-400/30 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-violet-200">Featured</span>
                                 </div>
                                 <p class="mt-1 text-xs text-gray-500" x-text="rail.hint"></p>
                             </div>
@@ -370,7 +389,7 @@
                                 <button
                                     type="button"
                                     x-on:click="moveDraftRail(index, -1)"
-                                    :disabled="index === 0"
+                                    :disabled="!rail.reorderable || index === 0"
                                     :aria-label="`Move ${rail.title} up`"
                                     title="Move up"
                                     class="rounded-md border border-gray-700 px-2 py-1 text-sm text-gray-300 hover:border-blue-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
@@ -380,7 +399,7 @@
                                 <button
                                     type="button"
                                     x-on:click="moveDraftRail(index, 1)"
-                                    :disabled="index === draftRails.length - 1"
+                                    :disabled="!rail.reorderable || index === draftRails.length - 1"
                                     :aria-label="`Move ${rail.title} down`"
                                     title="Move down"
                                     class="rounded-md border border-gray-700 px-2 py-1 text-sm text-gray-300 hover:border-blue-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
@@ -517,6 +536,8 @@ function homePage(bootstrap = {}) {
         pinnedLibraryRails: [],
         smartLists: [],
         popularSeries: [],
+        promotedRailItems: {},
+        promotedRailLoading: {},
 
         layoutRails: [],
         draftRails: [],
@@ -542,7 +563,9 @@ function homePage(bootstrap = {}) {
         },
 
         get isLoading() {
-            return this.layoutLoading || Object.values(this.loading).some(Boolean);
+            return this.layoutLoading
+                || Object.values(this.loading).some(Boolean)
+                || Object.values(this.promotedRailLoading).some(Boolean);
         },
 
         get visibleHomeRails() {
@@ -623,11 +646,15 @@ function homePage(bootstrap = {}) {
         },
 
         isRailLoading(key) {
+            if (key.startsWith('promoted:')) return !!this.promotedRailLoading[key];
             const loadingKey = this.loadingKeyForRail(key);
             return loadingKey ? this.loading[loadingKey] : false;
         },
 
         railHasContent(key) {
+            if (key.startsWith('promoted:')) {
+                return (this.promotedRailItems[key] || []).length > 0;
+            }
             return {
                 resume: this.resumeComics.length > 0,
                 following_arrivals: this.followingArrivals.length > 0,
@@ -683,16 +710,27 @@ function homePage(bootstrap = {}) {
             };
 
             this.layoutRails
-                .filter((rail) => rail.visible && fetchers[rail.key])
-                .forEach((rail) => fetchers[rail.key]());
+                .filter((rail) => rail.visible)
+                .forEach((rail) => {
+                    if (rail.kind === 'promoted') {
+                        this.fetchPromotedRail(rail);
+                    } else if (fetchers[rail.key]) {
+                        fetchers[rail.key]();
+                    }
+                });
         },
 
         openCustomizeModal() {
-            this.draftRails = this.layoutRails.map((rail) => ({
+            const builtInRails = this.layoutRails.filter((rail) => rail.kind !== 'promoted');
+            const promotedRails = this.layoutRails.filter((rail) => rail.kind === 'promoted');
+            this.draftRails = [...builtInRails, ...promotedRails].map((rail) => ({
                 key: rail.key,
                 title: rail.title,
                 hint: rail.hint,
                 visible: rail.visible,
+                kind: rail.kind,
+                reorderable: rail.reorderable,
+                promoted_id: rail.promoted_id,
             }));
             this.showCustomizeModal = true;
         },
@@ -704,8 +742,9 @@ function homePage(bootstrap = {}) {
         },
 
         moveDraftRail(index, direction) {
+            if (!this.draftRails[index]?.reorderable) return;
             const targetIndex = index + direction;
-            if (targetIndex < 0 || targetIndex >= this.draftRails.length) return;
+            if (targetIndex < 0 || targetIndex >= this.draftRails.length || !this.draftRails[targetIndex]?.reorderable) return;
 
             const rails = [...this.draftRails];
             const [rail] = rails.splice(index, 1);
@@ -714,11 +753,12 @@ function homePage(bootstrap = {}) {
         },
 
         startDraftDrag(index) {
+            if (!this.draftRails[index]?.reorderable) return;
             this.dragIndex = index;
         },
 
         dropDraftRail(index) {
-            if (this.dragIndex === null || this.dragIndex === index) return;
+            if (this.dragIndex === null || this.dragIndex === index || !this.draftRails[index]?.reorderable) return;
 
             const rails = [...this.draftRails];
             const [rail] = rails.splice(this.dragIndex, 1);
@@ -742,8 +782,12 @@ function homePage(bootstrap = {}) {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        rails: this.draftRails.map((rail) => ({
+                        rails: this.draftRails.filter((rail) => rail.kind !== 'promoted').map((rail) => ({
                             key: rail.key,
+                            visible: rail.visible,
+                        })),
+                        promoted_rails: this.draftRails.filter((rail) => rail.kind === 'promoted').map((rail) => ({
+                            id: rail.promoted_id,
                             visible: rail.visible,
                         })),
                     }),
@@ -909,6 +953,36 @@ function homePage(bootstrap = {}) {
                 if (res.ok) this.popularSeries = await res.json();
             } catch(e) { console.error(e); }
             finally { this.loading.popular = false; }
+        },
+
+        async fetchPromotedRail(rail) {
+            const key = rail.key;
+            this.promotedRailLoading[key] = true;
+            try {
+                const res = await fetch(window.parker.route('home.promoted_items', { rail_id: rail.promoted_id }));
+                if (res.ok) {
+                    this.promotedRailItems[key] = await res.json();
+                }
+            } catch (e) {
+                console.error(e);
+            } finally {
+                this.promotedRailLoading[key] = false;
+            }
+        },
+
+        promotedRailSearchUrl(rail) {
+            const query = rail.query || {};
+            if (!window.parker.searchHandoff?.buildUrl) {
+                return window.parker.route('pages.search');
+            }
+
+            return window.parker.searchHandoff.buildUrl({
+                match: query.match,
+                filters: query.filters || [],
+                sortBy: query.sort_by,
+                sortOrder: query.sort_order,
+                libraryId: query.context_library_id || null,
+            });
         },
 
     }

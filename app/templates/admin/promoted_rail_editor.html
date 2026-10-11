@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Featured Rail Query - Parker{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto" x-data="promotedRailEditor({{ promoted_rail_id }})">
+    <div class="mb-6 flex flex-col gap-4 border-b border-gray-800 pb-6 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+            <div class="text-[11px] font-bold uppercase tracking-[0.22em] text-violet-300">Featured rail</div>
+            <h1 class="mt-1 text-3xl font-bold text-white">Edit Query: <span x-text="rail?.title"></span></h1>
+            <p class="mt-2 text-sm text-gray-400">Build the Home rail with the same Advanced Search rules readers can understand and refine.</p>
+        </div>
+        <div class="flex items-center gap-3">
+            <a :href="window.parker.route('admin.promoted_rails')" class="rounded-lg border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-300 hover:border-gray-500 hover:text-white">Back to Featured Rails</a>
+            <button type="button" x-on:click="saveQuery()" :disabled="saving || !rail" class="rounded-lg bg-violet-600 px-4 py-2 text-sm font-bold text-white hover:bg-violet-500 disabled:opacity-60">
+                <span x-show="!saving">Save featured query</span>
+                <span x-show="saving">Saving...</span>
+            </button>
+        </div>
+    </div>
+
+    <div x-data="searchBuilder()" x-ref="queryBuilder" data-search-builder>
+        {% include "partials/search_query_builder.html" %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url('/static/js/search_query_builder.js') }}?v={{ asset_version('static/js/search_query_builder.js') }}"></script>
+{% include "partials/promoted_rail_editor.html" %}
+{% endblock %}

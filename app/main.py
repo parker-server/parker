@@ -45,6 +45,7 @@ from app.api import home
 from app.api import insights
 from app.api import timelines
 from app.api import people
+from app.api import promoted_rails
 
 # Frontend Routes (HTML)
 from app.routers import pages, admin
@@ -345,6 +346,7 @@ app.include_router(smart_lists.router, prefix="/api/smart-lists", tags=["smart-l
 app.include_router(pull_lists.router, prefix="/api/pull-lists", tags=["pull-lists"])
 app.include_router(cover_murals.router, prefix="/api/cover-murals", tags=["cover-murals"])
 app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"])
+app.include_router(promoted_rails.router, prefix="/api/promoted-rails", tags=["promoted-rails", "admin"])
 
 # Pure admin routers
 app.include_router(tasks.router, prefix="/api/tasks", tags=["tasks", "admin"])

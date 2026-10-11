@@ -22,8 +22,8 @@ class SearchService:
         self._parker_rating_column = None
         self._parker_rating_count_column = None
 
-    def search(self, request: SearchRequest) -> Dict[str, Any]:
-        """Execute search based on request parameters"""
+    def _build_filtered_query(self, request: SearchRequest) -> tuple[Any, Any, bool]:
+        """Build the issue-level query shared by search result projections."""
         # Start with base query joining essential tables
         self._parker_rating_column = None
         self._parker_rating_count_column = None
@@ -40,6 +40,13 @@ class SearchService:
         # 1. Apply Library Context Scope
         if hasattr(request, 'context_library_id') and request.context_library_id:
             query = query.filter(Series.library_id == request.context_library_id)
+
+        # Keep query scoped to the requesting user's assigned libraries before any
+        # saved, promoted, or deep-linked filters are applied.
+        # This check was missing from here but is enforced in the quick search code.
+        if not self.user.is_superuser:
+            allowed_library_ids = [library.id for library in self.user.accessible_libraries]
+            query = query.filter(Series.library_id.in_(allowed_library_ids))
 
         # --- AGE RATING SECURITY ---
         # Switch from Comic Check (Row) to Series Check (Poison Pill).
@@ -68,6 +75,12 @@ class SearchService:
                 query = query.filter(and_(*conditions))
             else:  # 'any'
                 query = query.filter(or_(*conditions))
+
+        return query, parker_stats, prefer_parker_rating
+
+    def search(self, request: SearchRequest) -> Dict[str, Any]:
+        """Execute search based on request parameters."""
+        query, parker_stats, prefer_parker_rating = self._build_filtered_query(request)
 
         # Get total count before pagination
         # Optimization: Count distinct IDs to handle joins correctly
@@ -115,6 +128,41 @@ class SearchService:
             "offset": request.offset,
             "results": results
         }
+
+    def search_series(self, request: SearchRequest, *, limit: int) -> list[Series]:
+        """Return distinct matching series in the configured issue search order.
+
+        Advanced Search filters are defined against individual issues.  Featured
+        Rails use this projection so a series is shown once even when several of
+        its issues match.  Dedupe to one single series issue so the result set is collapsed.
+        Pagination is deliberately not applied before
+        deduplication, otherwise one long-running series could consume the entire featured rail.
+        """
+        if limit < 1:
+            return []
+
+        query, _, _ = self._build_filtered_query(request)
+        query = self._apply_sorting(
+            query,
+            request.sort_by,
+            request.sort_order,
+            parker_rating_column=self._parker_rating_column,
+            parker_rating_count_column=self._parker_rating_count_column,
+        ).options(joinedload(Comic.volume).joinedload(Volume.series))
+
+        matching_series: list[Series] = []
+        seen_series_ids: set[int] = set()
+        for comic in query.yield_per(100):
+            series = comic.volume.series
+            if series.id in seen_series_ids:
+                continue
+
+            matching_series.append(series)
+            seen_series_ids.add(series.id)
+            if len(matching_series) == limit:
+                break
+
+        return matching_series
 
     def _build_condition(self, filter: SearchFilter):
         """Build a SQLAlchemy condition from a filter"""

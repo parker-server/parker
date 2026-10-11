@@ -431,6 +431,94 @@ def test_home_recently_updated_series_uses_latest_updated_volume_cover(auth_clie
     assert not payload[0]["thumbnail_path"].startswith(f"/api/comics/{updated_issue.id}/thumbnail")
 
 
+def test_recent_added_series_browse_matches_home_rail_and_paginates(auth_client, db, normal_user):
+    library, first_series, first_volume = _create_series_graph(
+        db,
+        lib_name="home-recent-added-browse-lib",
+        series_name="Home Recent Added Browse First",
+    )
+    second_series = Series(name="Home Recent Added Browse Second", library=library)
+    third_series = Series(name="Home Recent Added Browse Third", library=library)
+    second_volume = Volume(series=second_series, volume_number=1)
+    third_volume = Volume(series=third_series, volume_number=1)
+    db.add_all([second_series, third_series, second_volume, third_volume])
+    db.flush()
+
+    first_series.created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    second_series.created_at = datetime(2026, 2, 1, tzinfo=timezone.utc)
+    third_series.created_at = datetime(2026, 3, 1, tzinfo=timezone.utc)
+    for volume, title in (
+        (first_volume, "Home Recent Added Browse First #1"),
+        (second_volume, "Home Recent Added Browse Second #1"),
+        (third_volume, "Home Recent Added Browse Third #1"),
+    ):
+        _add_comic(db, volume, number="1", title=title)
+
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    rail_response = auth_client.get("/api/home/recently-added-series?limit=10")
+    first_page_response = auth_client.get("/api/home/recent-series?kind=added&page=1&size=2")
+    second_page_response = auth_client.get("/api/home/recent-series?kind=added&page=2&size=2")
+
+    assert rail_response.status_code == 200
+    assert first_page_response.status_code == 200
+    assert second_page_response.status_code == 200
+    rail_ids = [item["id"] for item in rail_response.json()]
+    first_page = first_page_response.json()
+    second_page = second_page_response.json()
+    assert first_page["total"] == 3
+    assert first_page["page"] == 1
+    assert first_page["size"] == 2
+    assert [item["id"] for item in first_page["items"]] == rail_ids[:2]
+    assert [item["id"] for item in second_page["items"]] == rail_ids[2:]
+
+
+def test_recent_updated_series_browse_matches_home_rail_and_paginates(auth_client, db, normal_user):
+    library, first_series, first_volume = _create_series_graph(
+        db,
+        lib_name="home-recent-updated-browse-lib",
+        series_name="Home Recent Updated Browse First",
+    )
+    second_series = Series(name="Home Recent Updated Browse Second", library=library)
+    third_series = Series(name="Home Recent Updated Browse Third", library=library)
+    second_volume = Volume(series=second_series, volume_number=1)
+    third_volume = Volume(series=third_series, volume_number=1)
+    db.add_all([second_series, third_series, second_volume, third_volume])
+    db.flush()
+
+    for volume, title, updated_at in (
+        (first_volume, "Home Recent Updated Browse First #1", datetime(2026, 1, 1, tzinfo=timezone.utc)),
+        (second_volume, "Home Recent Updated Browse Second #1", datetime(2026, 2, 1, tzinfo=timezone.utc)),
+        (third_volume, "Home Recent Updated Browse Third #1", datetime(2026, 3, 1, tzinfo=timezone.utc)),
+    ):
+        _add_comic(
+            db,
+            volume,
+            number="1",
+            title=title,
+            created_at=updated_at,
+            updated_at=updated_at,
+        )
+
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    rail_response = auth_client.get("/api/home/recently-updated-series?limit=10")
+    first_page_response = auth_client.get("/api/home/recent-series?kind=updated&page=1&size=1")
+    second_page_response = auth_client.get("/api/home/recent-series?kind=updated&page=2&size=1")
+
+    assert rail_response.status_code == 200
+    assert first_page_response.status_code == 200
+    assert second_page_response.status_code == 200
+    rail_ids = [item["id"] for item in rail_response.json()]
+    first_page = first_page_response.json()
+    second_page = second_page_response.json()
+    assert first_page["total"] == 3
+    assert [item["id"] for item in first_page["items"]] == rail_ids[:1]
+    assert [item["id"] for item in second_page["items"]] == rail_ids[1:2]
+
+
 def test_home_rated_orders_by_rating(auth_client, db, normal_user):
     library, _, volume = _create_series_graph(db, lib_name="home-rated-lib", series_name="Home Rated")
 

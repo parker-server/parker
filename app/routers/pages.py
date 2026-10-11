@@ -1,4 +1,5 @@
 import random
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -149,6 +150,31 @@ async def library_view(request: Request, library: LibraryDep, user: CurrentUser)
     return templates.TemplateResponse(request=request, name="libraries/library.html", context={
         "library_id": library.id
     })
+
+
+@router.get("/series/recent/{kind}", response_class=HTMLResponse, name="recent_series")
+async def recent_series_page(
+        request: Request,
+        user: CurrentUser,
+        kind: Literal["added", "updated"],
+):
+    """Browse the same recently added or updated series shown on the home rails."""
+    page_details = {
+        "added": {
+            "title": "Recently Added Series",
+            "description": "Series most recently added to Parker.",
+        },
+        "updated": {
+            "title": "Recently Updated Series",
+            "description": "Series with the most recently updated issues.",
+        },
+    }
+    return templates.TemplateResponse(
+        request=request,
+        name="recent_series.html",
+        context={"recent_kind": kind, **page_details[kind]},
+    )
+
 
 @router.get("/series/{series_id}", response_class=HTMLResponse, name="series_detail")
 async def series_detail(

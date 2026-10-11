@@ -47,10 +47,11 @@ https://github.com/parker-server/parker/wiki/Getting-Started
   - `Continue Reading`, `Jump Back In`, `Trending`, and `New from Following`
   - Pinned library rails for recently updated series from favorite libraries
   - Per-user Home rail customization for reordering or hiding discovery rails
+  - Admin-scheduled Featured Rails backed by Advanced Search, shown as series discovery cards with matching-issue handoffs and per-user hide controls
   - Library Timeline for character and team histories generated from embedded metadata
   - Dedicated person pages for creators with role-specific series rails and search handoffs
   - Recommendations by creator or metadata
-  - Random gems, newly added series, and recently updated series with recency-aware volume covers
+  - Random gems, newly added series, and recently updated series with recency-aware volume covers and paginated series browsers
 
 - **Reports Dashboard**
   - Missing Issues
