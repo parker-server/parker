@@ -204,3 +204,31 @@ def test_featured_rail_view_all_hands_its_query_to_advanced_search(
     assert "filters=" in page.url
     assert "edit_promoted_rail" not in page.url
     assert page.locator('input[type="text"]:visible').first.input_value() == "Smoke"
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize(
+    ("rail_key", "heading", "kind"),
+    [
+        ("recently_added_series", "Recently Added Series", "added"),
+        ("recently_updated_series", "Recently Updated Series", "updated"),
+    ],
+)
+def test_recent_series_rail_view_all_opens_the_matching_series_browser(
+        page,
+        browser_server,
+        rail_key,
+        heading,
+        kind,
+):
+    seed = browser_server["seed"]
+    page.goto(f"{browser_server['base_url']}/", wait_until="networkidle")
+    rail = page.locator(f'[data-home-rail="{rail_key}"]')
+    rail.get_by_role("heading", name=heading).wait_for()
+
+    with page.expect_navigation(wait_until="networkidle"):
+        rail.get_by_role("link", name="View All", exact=True).click()
+
+    page.get_by_role("heading", name=heading, exact=True).wait_for()
+    assert page.url.endswith(f"/series/recent/{kind}")
+    page.locator(f'a[href="/series/{seed["series_id"]}"]').wait_for()

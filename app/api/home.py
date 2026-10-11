@@ -1,14 +1,14 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import Float, and_, or_
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.sql.expression import func, desc, cast
-from typing import Any, List
+from typing import Annotated, Any, List, Literal
 from datetime import datetime, timezone, timedelta
 from collections import defaultdict
 
 from app.core.settings_loader import get_cached_setting
-from app.api.deps import SessionDep, CurrentUser
+from app.api.deps import CurrentUser, PaginatedResponse, PaginationParams, SessionDep
 from app.core.comic_helpers import get_format_filters, get_smart_cover, get_series_age_restriction, get_thumbnail_url
 from app.models.comic import Comic, Volume
 from app.models.interactions import UserComicRating
@@ -545,15 +545,13 @@ def _serialize_series_rail_items(db: Session, series_list, cover_volume_by_serie
     return results
 
 
-def _get_recent_series_by_comic_timestamp(
+def _build_recent_series_query(
         db: Session,
         current_user: User,
         *,
-        timestamp_column,
-        limit: int,
-):
-    limit = max(1, min(limit, 50))
-
+        kind: Literal["added", "updated"],
+) -> tuple[Any, Any, tuple[Any, Any]]:
+    timestamp_column = Comic.created_at if kind == "added" else Comic.updated_at
     latest_event = (
         db.query(
             Volume.series_id.label("series_id"),
@@ -573,78 +571,40 @@ def _get_recent_series_by_comic_timestamp(
     if not current_user.is_superuser:
         allowed_ids = [lib.id for lib in current_user.accessible_libraries]
         if not allowed_ids:
-            return []
-        query = query.filter(Series.library_id.in_(allowed_ids))
+            query = query.filter(False)
+        else:
+            query = query.filter(Series.library_id.in_(allowed_ids))
 
     age_filter = get_series_age_restriction(current_user)
     if age_filter is not None:
         query = query.filter(age_filter)
 
-    recent_series = (
-        query
-        .order_by(desc(latest_event.c.event_at), Series.name.asc())
-        .limit(limit)
-        .all()
+    order_by = (
+        (desc(Series.created_at), Series.name.asc())
+        if kind == "added"
+        else (desc(latest_event.c.event_at), Series.name.asc())
     )
+    return query, timestamp_column, order_by
+
+
+def _get_recent_series(
+        db: Session,
+        current_user: User,
+        *,
+        kind: Literal["added", "updated"],
+        limit: int,
+):
+    query, timestamp_column, order_by = _build_recent_series_query(
+        db,
+        current_user,
+        kind=kind,
+    )
+    recent_series = query.order_by(*order_by).limit(max(1, min(limit, 50))).all()
 
     cover_volumes = _latest_event_volume_by_series_id(
         db,
         [series.id for series in recent_series],
         timestamp_column,
-    )
-
-    return _serialize_series_rail_items(
-        db,
-        recent_series,
-        cover_volume_by_series_id=cover_volumes,
-    )
-
-
-def _get_recent_series_by_series_created_at(
-        db: Session,
-        current_user: User,
-        *,
-        limit: int,
-):
-    limit = max(1, min(limit, 50))
-
-    latest_added_comic = (
-        db.query(
-            Volume.series_id.label("series_id"),
-            func.max(Comic.created_at).label("event_at"),
-        )
-        .select_from(Comic)
-        .join(Volume)
-        .group_by(Volume.series_id)
-        .subquery()
-    )
-
-    query = (
-        db.query(Series)
-        .join(latest_added_comic, latest_added_comic.c.series_id == Series.id)
-    )
-
-    if not current_user.is_superuser:
-        allowed_ids = [lib.id for lib in current_user.accessible_libraries]
-        if not allowed_ids:
-            return []
-        query = query.filter(Series.library_id.in_(allowed_ids))
-
-    age_filter = get_series_age_restriction(current_user)
-    if age_filter is not None:
-        query = query.filter(age_filter)
-
-    recent_series = (
-        query
-        .order_by(desc(Series.created_at), Series.name.asc())
-        .limit(limit)
-        .all()
-    )
-
-    cover_volumes = _latest_event_volume_by_series_id(
-        db,
-        [series.id for series in recent_series],
-        Comic.created_at,
     )
 
     return _serialize_series_rail_items(
@@ -664,9 +624,10 @@ def get_recently_added_series(
     Get series recently added to Parker, using the latest added volume as the
     representative cover.
     """
-    return _get_recent_series_by_series_created_at(
+    return _get_recent_series(
         db,
         current_user,
+        kind="added",
         limit=limit,
     )
 
@@ -681,12 +642,45 @@ def get_recently_updated_series(
     Get series with recently updated comics, using the latest updated volume as
     the representative cover.
     """
-    return _get_recent_series_by_comic_timestamp(
+    return _get_recent_series(
         db,
         current_user,
-        timestamp_column=Comic.updated_at,
+        kind="updated",
         limit=limit,
     )
+
+
+@router.get("/recent-series", response_model=PaginatedResponse, name="recent_series")
+def get_recent_series(
+        kind: Literal["added", "updated"],
+        params: Annotated[PaginationParams, Depends()],
+        db: SessionDep,
+        current_user: CurrentUser,
+):
+    """Return paginated series using the same definitions as the Home rails."""
+    query, timestamp_column, order_by = _build_recent_series_query(
+        db,
+        current_user,
+        kind=kind,
+    )
+    total = query.count()
+    series_list = query.order_by(*order_by).offset(params.skip).limit(params.size).all()
+    cover_volumes = _latest_event_volume_by_series_id(
+        db,
+        [series.id for series in series_list],
+        timestamp_column,
+    )
+
+    return {
+        "total": total,
+        "page": params.page,
+        "size": params.size,
+        "items": _serialize_series_rail_items(
+            db,
+            series_list,
+            cover_volume_by_series_id=cover_volumes,
+        ),
+    }
 
 
 

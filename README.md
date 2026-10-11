@@ -51,7 +51,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
   - Library Timeline for character and team histories generated from embedded metadata
   - Dedicated person pages for creators with role-specific series rails and search handoffs
   - Recommendations by creator or metadata
-  - Random gems, newly added series, and recently updated series with recency-aware volume covers
+  - Random gems, newly added series, and recently updated series with recency-aware volume covers and paginated series browsers
 
 - **Reports Dashboard**
   - Missing Issues

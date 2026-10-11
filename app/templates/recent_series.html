@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }} - Parker{% endblock %}
+
+{% block content %}
+<div class="space-y-6" x-data="recentSeriesView()">
+    <div>
+        <a :href="window.parker.route('pages.home')" class="text-blue-400 hover:text-blue-300">← Back to Home</a>
+        <h1 class="mt-4 text-3xl font-bold text-white">{{ title }}</h1>
+        <p class="mt-2 text-gray-400">{{ description }}</p>
+    </div>
+
+    <div class="min-h-[500px]">
+        <div x-show="loading && items.length === 0" class="flex justify-center py-20">
+            <div class="h-12 w-12 animate-spin rounded-full border-b-2 border-blue-500"></div>
+        </div>
+
+        <div x-show="items.length > 0">
+            <div class="grid grid-cols-2 gap-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+                <template x-for="series in items" :key="series.id">
+                    {% include "partials/series_card.html" %}
+                </template>
+            </div>
+
+            <div class="mt-12 border-t border-gray-700 pt-6">
+                <template x-if="mode === 'infinite'">
+                    <div x-ref="loadSentinel" class="py-8 text-center">
+                        <span x-show="loading" class="animate-pulse text-blue-400">Loading more series...</span>
+                        <span x-show="!loading && page >= maxPage()" class="text-sm text-gray-600">End of {{ title|lower }}</span>
+                    </div>
+                </template>
+
+                <template x-if="mode === 'classic'">
+                    <div class="flex items-center justify-center space-x-4">
+                        <button
+                            x-on:click="changePage(page - 1)"
+                            :disabled="page === 1"
+                            class="rounded border border-gray-600 bg-gray-800 px-4 py-2 text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            Previous
+                        </button>
+
+                        <span class="text-gray-400">
+                            Page <span class="font-bold text-white" x-text="page"></span> of <span x-text="maxPage()"></span>
+                        </span>
+
+                        <button
+                            x-on:click="changePage(page + 1)"
+                            :disabled="page >= maxPage()"
+                            class="rounded border border-gray-600 bg-gray-800 px-4 py-2 text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            Next
+                        </button>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <div x-show="!loading && items.length === 0" class="rounded-xl border border-dashed border-gray-700 bg-gray-800/50 py-20 text-center text-gray-500">
+            <p class="text-xl">No {{ title|lower }} are available.</p>
+        </div>
+    </div>
+</div>
+
+<script>
+function recentSeriesView() {
+    return {
+        ...window.parker.paginationMixin(
+            'home.recent_series',
+            function() { return { kind: '{{ recent_kind }}' }; },
+            {
+                pageSize: 50,
+                mode: '{{ get_system_setting("ui.pagination_mode", "infinite") }}',
+            },
+        ),
+        init() {
+            this.loadItems();
+        },
+    };
+}
+</script>
+{% endblock %}
