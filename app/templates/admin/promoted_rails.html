@@ -29,10 +29,11 @@
         </div>
 
         <div x-show="!loading && rails.length > 0" x-cloak class="overflow-x-auto">
-            <table class="w-full min-w-[760px] text-left">
+            <table class="w-full min-w-[840px] text-left">
                 <thead class="border-b border-gray-700 bg-gray-900/70 text-xs uppercase tracking-wide text-gray-400">
                     <tr>
                         <th class="px-5 py-3">Rail</th>
+                        <th class="w-20 px-5 py-3">Order</th>
                         <th class="px-5 py-3">Visibility window</th>
                         <th class="px-5 py-3">Query</th>
                         <th class="px-5 py-3">Status</th>
@@ -44,7 +45,8 @@
                         <tr class="hover:bg-gray-750/70">
                             <td class="px-5 py-4">
                                 <div class="font-semibold text-white" x-text="rail.title"></div>
-                                <div class="mt-1 text-xs text-gray-500">Home order <span x-text="rail.display_order"></span></div>
+                            </td>
+                            <td class="px-5 py-4 text-sm tabular-nums text-gray-300" x-text="rail.display_order">
                             </td>
                             <td class="px-5 py-4 text-sm text-gray-300">
                                 <span x-text="formatDate(rail.starts_on)"></span>
@@ -74,57 +76,49 @@
         </div>
     </div>
 
-    <template x-if="modalOpen">
-        <div class="fixed inset-0 z-[150] flex items-center justify-center p-4">
-            <div class="absolute inset-0 bg-black/70" x-on:click="closeModal()"></div>
-            <form x-on:submit.prevent="saveRail()" class="relative w-full max-w-lg rounded-xl border border-gray-700 bg-gray-900 p-6 shadow-2xl">
-                <div class="flex items-start justify-between gap-4">
-                    <div>
-                        <h2 class="text-xl font-bold text-white" x-text="editingId ? 'Edit Featured Rail' : 'New Featured Rail'"></h2>
-                        <p class="mt-1 text-sm text-gray-400" x-text="editingId ? 'Adjust when this rail is eligible to appear on Home.' : 'The next step will open Advanced Search to build its query.'"></p>
-                    </div>
-                    <button type="button" x-on:click="closeModal()" class="rounded-md p-2 text-gray-400 hover:bg-gray-800 hover:text-white" aria-label="Close">x</button>
-                </div>
+    <div x-show="modalOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" style="display: none;" x-transition.opacity>
+        <form x-on:submit.prevent="saveRail()" x-on:click.away="closeModal()" class="w-full max-w-md rounded-lg border border-gray-700 bg-gray-800 p-6 shadow-2xl">
+            <h2 class="mb-1 text-xl font-bold text-white" x-text="editingId ? 'Edit Featured Rail' : 'New Featured Rail'"></h2>
+            <p class="mb-6 text-sm text-gray-400" x-text="editingId ? 'Adjust when this rail is eligible to appear on Home.' : 'The next step will open Advanced Search to build its query.'"></p>
 
-                <div class="mt-6 space-y-4">
+            <div class="space-y-4">
+                <label class="block">
+                    <span class="mb-1 block text-sm text-gray-400">Title</span>
+                    <input required maxlength="120" x-model.trim="form.title" class="w-full rounded border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-blue-500" placeholder="Halloween Horrors">
+                </label>
+                <div class="grid gap-4 sm:grid-cols-2">
                     <label class="block">
-                        <span class="text-sm font-medium text-gray-300">Title</span>
-                        <input required maxlength="120" x-model.trim="form.title" class="mt-1 w-full rounded-lg border border-gray-600 bg-gray-800 px-3 py-2 text-white outline-none focus:border-blue-500" placeholder="Halloween Horrors">
+                        <span class="mb-1 block text-sm text-gray-400">Start date</span>
+                        <input required type="date" x-model="form.starts_on" class="w-full rounded border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-blue-500">
                     </label>
-                    <div class="grid gap-4 sm:grid-cols-2">
-                        <label class="block">
-                            <span class="text-sm font-medium text-gray-300">Start date</span>
-                            <input required type="date" x-model="form.starts_on" class="mt-1 w-full rounded-lg border border-gray-600 bg-gray-800 px-3 py-2 text-white outline-none focus:border-blue-500">
-                        </label>
-                        <label class="block">
-                            <span class="text-sm font-medium text-gray-300">End date <span class="font-normal text-gray-500">optional</span></span>
-                            <input type="date" x-model="form.ends_on" class="mt-1 w-full rounded-lg border border-gray-600 bg-gray-800 px-3 py-2 text-white outline-none focus:border-blue-500">
-                        </label>
-                    </div>
                     <label class="block">
-                        <span class="text-sm font-medium text-gray-300">Featured order</span>
-                        <input required min="0" type="number" x-model.number="form.display_order" class="mt-1 w-full rounded-lg border border-gray-600 bg-gray-800 px-3 py-2 text-white outline-none focus:border-blue-500">
-                        <span class="mt-1 block text-xs text-gray-500">Lower values appear first when more than one featured rail is active.</span>
-                    </label>
-                    <label x-show="editingId" class="flex cursor-pointer items-center gap-3 rounded-lg border border-gray-700 bg-gray-800/70 px-3 py-3">
-                        <input type="checkbox" x-model="form.enabled" class="h-4 w-4 rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-500">
-                        <span>
-                            <span class="block text-sm font-medium text-white">Enabled</span>
-                            <span class="block text-xs text-gray-400">Eligible to appear during its scheduled dates.</span>
-                        </span>
+                        <span class="mb-1 block text-sm text-gray-400">End date <span class="text-gray-500">optional</span></span>
+                        <input type="date" x-model="form.ends_on" class="w-full rounded border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-blue-500">
                     </label>
                 </div>
+                <label class="block">
+                    <span class="mb-1 block text-sm text-gray-400">Featured order</span>
+                    <input required min="0" type="number" x-model.number="form.display_order" class="w-full rounded border border-gray-700 bg-gray-900 px-3 py-2 text-white outline-none focus:border-blue-500">
+                    <span class="mt-1 block text-xs text-gray-500">Lower values appear first when more than one featured rail is active.</span>
+                </label>
+                <label x-show="editingId" class="flex cursor-pointer items-center gap-3 rounded border border-gray-700/50 bg-gray-900/50 p-3">
+                    <input type="checkbox" x-model="form.enabled" class="h-4 w-4 rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-500">
+                    <span>
+                        <span class="block text-sm font-medium text-white">Enabled</span>
+                        <span class="block text-xs text-gray-400">Eligible to appear during its scheduled dates.</span>
+                    </span>
+                </label>
+            </div>
 
-                <div class="mt-6 flex justify-end gap-3">
-                    <button type="button" x-on:click="closeModal()" class="rounded-lg border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-300 hover:text-white">Cancel</button>
-                    <button type="submit" :disabled="saving" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-500 disabled:opacity-60">
-                        <span x-show="!saving" x-text="editingId ? 'Save changes' : 'Create and build query'"></span>
-                        <span x-show="saving">Saving...</span>
-                    </button>
-                </div>
-            </form>
-        </div>
-    </template>
+            <div class="mt-6 flex justify-end gap-2">
+                <button type="button" x-on:click="closeModal()" class="px-4 py-2 text-sm font-medium text-gray-400 transition-colors hover:text-white">Cancel</button>
+                <button type="submit" :disabled="saving" class="rounded bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-lg transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50">
+                    <span x-show="!saving" x-text="editingId ? 'Save changes' : 'Create and build query'"></span>
+                    <span x-show="saving">Saving...</span>
+                </button>
+            </div>
+        </form>
+    </div>
 </div>
 
 <script>
@@ -179,8 +173,8 @@ function promotedRailsManager() {
             this.modalOpen = true;
         },
 
-        closeModal() {
-            if (this.saving) return;
+        closeModal(force = false) {
+            if (this.saving && !force) return;
             this.modalOpen = false;
         },
 
@@ -210,7 +204,7 @@ function promotedRailsManager() {
                     return;
                 }
 
-                this.closeModal();
+                this.closeModal(true);
                 await this.load();
                 window.parker.showToast?.('Featured rail updated.', 'success');
             } catch (error) {
