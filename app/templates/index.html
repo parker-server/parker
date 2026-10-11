@@ -68,14 +68,12 @@
                                 <h2 class="text-xl font-bold text-white flex items-center gap-2">
                                     {{ lucide_icon("sparkles", "h-5 w-5 flex-shrink-0 text-violet-300") }} <span x-text="rail.title"></span>
                                 </h2>
-                                <a :href="promotedRailSearchUrl(rail)" class="text-xs text-blue-400 hover:text-white transition-colors">View All</a>
+                                <a :href="promotedRailSearchUrl(rail)" class="text-xs text-blue-400 hover:text-white transition-colors">View matching issues</a>
                             </div>
 
                             <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-                                <template x-for="comic in promotedRailItems[rail.key] || []" :key="comic.id">
-                                    <div class="w-36 flex-shrink-0">
-                                        {% include "partials/comic_card.html" %}
-                                    </div>
+                                <template x-for="series in promotedRailItems[rail.key] || []" :key="series.id">
+                                    {% include "partials/series_card.html" %}
                                 </template>
                             </div>
                         </section>

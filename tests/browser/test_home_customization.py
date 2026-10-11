@@ -168,6 +168,7 @@ def test_featured_rail_view_all_hands_its_query_to_advanced_search(
         browser_server,
         browser_db_factory,
 ):
+    seed = browser_server["seed"]
     session = browser_db_factory()
     try:
         rail = PromotedRail(
@@ -193,9 +194,11 @@ def test_featured_rail_view_all_hands_its_query_to_advanced_search(
     page.goto(f"{browser_server['base_url']}/", wait_until="networkidle")
     featured_section = page.locator(f'[data-home-rail="promoted:{rail_id}"]')
     featured_section.get_by_role("heading", name="Search Handoff Rail").wait_for()
+    series_link = featured_section.locator(f'a[href="/series/{seed["series_id"]}"]')
+    assert series_link.count() == 1
 
     with page.expect_navigation(wait_until="networkidle"):
-        featured_section.get_by_role("link", name="View All").click()
+        featured_section.get_by_role("link", name="View matching issues").click()
 
     page.get_by_role("heading", name="Advanced Search").wait_for()
     assert "filters=" in page.url

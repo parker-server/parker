@@ -107,11 +107,43 @@ def test_promoted_rail_rejects_invalid_schedule_and_viewer_specific_stack_filter
 
 
 def test_home_injects_active_promoted_rail_and_runs_it_for_the_viewer(auth_client, db, normal_user):
-    allowed_library, allowed_comic = _add_comic(
+    allowed_library, debut_comic = _add_comic(
         db,
         library_name="promoted-allowed",
         series_name="Featured Series",
+        title="Series Debut",
+    )
+    create_comic(
+        db,
+        debut_comic.volume,
+        allowed_library.active_root,
+        "featured-series-halloween-80.cbz",
+        number="80",
         title="Halloween Special",
+        filename="featured-series-halloween-80.cbz",
+    )
+    create_comic(
+        db,
+        debut_comic.volume,
+        allowed_library.active_root,
+        "featured-series-halloween-81.cbz",
+        number="81",
+        title="Halloween Encore",
+        filename="featured-series-halloween-81.cbz",
+    )
+
+    second_series = Series(name="Second Featured Series", library=allowed_library)
+    second_volume = Volume(series=second_series, volume_number=1)
+    db.add_all([second_series, second_volume])
+    db.flush()
+    second_matching_comic = create_comic(
+        db,
+        second_volume,
+        allowed_library.active_root,
+        "second-featured-halloween-1.cbz",
+        number="1",
+        title="Halloween Second",
+        filename="second-featured-halloween-1.cbz",
     )
     _, hidden_comic = _add_comic(
         db,
@@ -162,8 +194,51 @@ def test_home_injects_active_promoted_rail_and_runs_it_for_the_viewer(auth_clien
 
     items_response = auth_client.get(f"/api/home/promoted/{rail.id}/items")
     assert items_response.status_code == 200
-    assert [item["id"] for item in items_response.json()] == [allowed_comic.id]
-    assert hidden_comic.id not in [item["id"] for item in items_response.json()]
+    items = items_response.json()
+    assert [item["id"] for item in items] == [
+        debut_comic.volume.series_id,
+        second_matching_comic.volume.series_id,
+    ]
+    assert items[0]["thumbnail_path"].startswith(f"/api/comics/{debut_comic.id}/thumbnail")
+    assert hidden_comic.volume.series_id not in [item["id"] for item in items]
+
+
+def test_promoted_rail_limits_home_results_to_twelve_distinct_series(auth_client, db, normal_user):
+    library = create_library_with_root(db, "promoted-limit", "/tmp/promoted-limit")
+    normal_user.accessible_libraries.append(library)
+
+    expected_series_ids = []
+    for index in range(13):
+        series = Series(name=f"Featured Series {index:02d}", library=library)
+        volume = Volume(series=series, volume_number=1)
+        db.add_all([series, volume])
+        db.flush()
+        create_comic(
+            db,
+            volume,
+            library.active_root,
+            f"featured-limit-{index}.cbz",
+            number="1",
+            title="Featured Limit",
+            filename=f"featured-limit-{index}.cbz",
+        )
+        expected_series_ids.append(series.id)
+
+    rail = _active_rail(
+        title="Limited Featured Series",
+        query_config={
+            "filters": [{"field": "title", "operator": "contains", "value": "Featured Limit"}],
+            "sort_by": "series",
+            "sort_order": "asc",
+        },
+    )
+    db.add(rail)
+    db.commit()
+
+    response = auth_client.get(f"/api/home/promoted/{rail.id}/items")
+
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()] == expected_series_ids[:12]
 
 
 def test_promoted_visibility_persists_while_a_rail_is_inactive(auth_client, db, normal_user):

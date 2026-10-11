@@ -357,26 +357,25 @@ def reset_home_layout(
     return resolve_home_rail_layout(None, get_active_promoted_rails(db))
 
 
-@router.get("/promoted/{rail_id}/items", response_model=List[ComicSearchItem], name="promoted_items")
+@router.get("/promoted/{rail_id}/items", response_model=List[dict], name="promoted_items")
 def get_promoted_rail_items(
         rail_id: int,
         db: SessionDep,
         current_user: CurrentUser,
 ):
-    """Run an active administrator-curated search as the current viewer."""
+    """Return matching series for an active administrator-curated search."""
     rail = db.get(PromotedRail, rail_id)
     if rail is None or not is_promoted_rail_active(rail):
         raise HTTPException(status_code=404, detail="Promoted rail not found")
 
     query_config = (rail.query_config or {}).copy()
-    query_config["limit"] = PROMOTED_RAIL_HOME_LIMIT
     query_config["offset"] = 0
     search_request = SearchRequest(**query_config)
-    results = SearchService(db, current_user).search(search_request)
-    return results["results"]
-
-# (Or define a simple one here if ComicSearchItem is too heavy,
-# but it should be fine as it matches what comic_card expects)
+    matching_series = SearchService(db, current_user).search_series(
+        search_request,
+        limit=PROMOTED_RAIL_HOME_LIMIT,
+    )
+    return _serialize_series_rail_items(db, matching_series)
 
 def format_home_item(
         comic: Comic,
