@@ -28,7 +28,7 @@ from app.models.pull_list import PullList, PullListItem
 from app.models.promoted_rail import PromotedRail
 from app.models.saved_search import SavedSearch
 from app.models.series import Series
-from app.models.tags import Character
+from app.models.tags import Character, Genre
 from app.models.user import User
 from app.routers import pages as pages_router
 
@@ -110,6 +110,7 @@ def browser_seed_data(browser_db_factory):
     )
     writer = Person(name="Casey Smoke")
     character = Character(name="Captain Smoke")
+    genre = Genre(name="Galaxy Mystery")
     user = User(
         username="browser-user",
         email="browser@example.com",
@@ -120,6 +121,7 @@ def browser_seed_data(browser_db_factory):
     user.accessible_libraries.append(library)
     in_progress_comic.credits.append(ComicCredit(person=writer, role="writer"))
     in_progress_comic.characters.append(character)
+    in_progress_comic.genres.append(genre)
     reading_list.items.extend(
         [
             ReadingListItem(comic=active_comic, position=1),
@@ -139,6 +141,7 @@ def browser_seed_data(browser_db_factory):
             reading_list,
             writer,
             character,
+            genre,
             user,
         ]
     )
@@ -177,6 +180,7 @@ def browser_seed_data(browser_db_factory):
         "in_progress_comic_title": in_progress_comic.title,
         "in_progress_comic_number": in_progress_comic.number,
         "writer_id": writer.id,
+        "genre_name": genre.name,
     }
 
     session.close()

@@ -171,6 +171,20 @@ def test_search_page_finds_matching_comic_by_title(page, browser_server):
 
 
 @pytest.mark.browser
+def test_search_page_suggests_genres_as_you_type(page, browser_server):
+    page.goto(f"{browser_server['base_url']}/search", wait_until="networkidle")
+
+    page.get_by_role("heading", name="Advanced Search").wait_for()
+    first_rule = page.locator(".space-y-4 > div").first
+    first_rule.locator("select").nth(0).select_option("genre")
+
+    tag_input = first_rule.locator("input[placeholder='Type to find...']")
+    tag_input.fill("Galaxy")
+
+    page.get_by_text(browser_server["seed"]["genre_name"], exact=True).wait_for()
+
+
+@pytest.mark.browser
 def test_search_operator_options_match_selected_field(page, browser_server):
     page.goto(f"{browser_server['base_url']}/search", wait_until="networkidle")
 

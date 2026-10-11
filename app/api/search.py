@@ -7,7 +7,7 @@ from app.api.deps import SessionDep, CurrentUser
 from app.models.comic import Comic, Volume
 from app.models.series import Series
 from app.models.library import Library
-from app.models.tags import Character, Team, Location
+from app.models.tags import Character, Team, Location, Genre
 from app.models.credits import Person, ComicCredit
 from app.models.collection import Collection, CollectionItem
 from app.models.reading_list import ReadingList, ReadingListItem
@@ -68,7 +68,7 @@ def _apply_security_scopes(query: SqlQuery, model, user: CurrentUser, allowed_id
         # 4. Tags/People (Many-to-Many via Comic)
         # We join the relationship to Comic, then up to Series
         # Note: This filters to "Entities appearing in at least one visible book"
-        elif model in [Character, Team, Location]:
+        elif model in [Character, Team, Location, Genre]:
             query = query.join(model.comics).join(Volume).join(Series).filter(Series.library_id.in_(allowed_ids))
 
         # Person -> ComicCredit -> Comic -> Volume -> Series
@@ -101,12 +101,12 @@ def _apply_security_scopes(query: SqlQuery, model, user: CurrentUser, allowed_id
             if age_filter is not None:
                 query = query.filter(age_filter)
 
-        # C. Indirect Filtering (Tags/People joined to Comic)
+        # C. Indirect Filtering (Tags/People/Location/Genre/Person joined to Comic)
         # We ensure they only appear if connected to an ALLOWED comic
-        elif model in [Character, Team, Location, Person]:
+        elif model in [Character, Team, Location, Genre, Person]:
 
             # Switch to Poison Pill.
-            # Don't suggest Characters/Creators that only exist in Banned Series.
+            # Don't suggest Characters/Creators/Other tags that only exist in Banned Series.
             # Since we joined Series above (in RLS block), this filter works automatically.
             age_filter = get_series_age_restriction(user)
             if age_filter is not None:
@@ -178,6 +178,9 @@ async def get_search_suggestions(
 
     elif field == 'location':
         results = build_query(Location, Location.name).distinct().limit(10).all()
+
+    elif field == 'genre':
+        results = build_query(Genre, Genre.name).distinct().limit(10).all()
 
     elif field == 'format':
         # Distinct query on Comic table
