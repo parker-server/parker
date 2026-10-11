@@ -1,0 +1,72 @@
+<script>
+document.addEventListener('alpine:init', () => {
+    Alpine.data('promotedRailEditor', (railId) => ({
+        rail: null,
+        queryBuilder: null,
+        saving: false,
+
+        async init() {
+            await this.$nextTick();
+            this.queryBuilder = Alpine.$data(this.$root.querySelector('[data-search-builder]'));
+
+            try {
+                const res = await fetch(window.parker.route('promoted_rails.detail', { rail_id: railId }));
+                if (!res.ok) throw new Error('Could not load featured rail');
+
+                this.rail = await res.json();
+                this.hydrateQuery(this.rail.query || {});
+            } catch (error) {
+                console.error(error);
+                window.parker.showToast?.('Could not load featured rail.', 'error');
+            }
+        },
+
+        hydrateQuery(query) {
+            this.queryBuilder.match = query.match || 'all';
+            this.queryBuilder.sortBy = query.sort_by || 'created';
+            this.queryBuilder.sortOrder = query.sort_order || 'desc';
+            this.queryBuilder.limit = query.limit || 50;
+            this.queryBuilder.contextLibraryId = query.context_library_id || null;
+            if (this.queryBuilder.contextLibraryId) {
+                this.queryBuilder.fetchLibraryName(this.queryBuilder.contextLibraryId);
+            }
+
+            if (!this.queryBuilder.applyHydratedFilters(query.filters || [])) {
+                this.queryBuilder.rules = [
+                    { id: Date.now() + Math.random(), field: 'series', operator: 'contains', value: [] },
+                ];
+            }
+
+            this.$nextTick(() => this.queryBuilder.performSearch());
+        },
+
+        async saveQuery() {
+            if (!this.rail || !this.queryBuilder.ensureValidRules()) return;
+
+            this.saving = true;
+            try {
+                const res = await fetch(
+                    window.parker.route('promoted_rails.update_query', { rail_id: this.rail.id }),
+                    {
+                        method: 'PATCH',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({query: this.queryBuilder.buildSearchPayload()}),
+                    },
+                );
+                if (!res.ok) {
+                    const error = await res.json().catch(() => ({}));
+                    throw new Error(error.detail || 'Could not save featured rail query');
+                }
+
+                this.rail = await res.json();
+                window.parker.showToast?.('Featured rail query saved.', 'success');
+            } catch (error) {
+                console.error(error);
+                window.parker.showToast?.(error.message || 'Could not save featured rail query.', 'error');
+            } finally {
+                this.saving = false;
+            }
+        },
+    }));
+});
+</script>

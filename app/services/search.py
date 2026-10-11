@@ -41,6 +41,13 @@ class SearchService:
         if hasattr(request, 'context_library_id') and request.context_library_id:
             query = query.filter(Series.library_id == request.context_library_id)
 
+        # Keep query scoped to the requesting user's assigned libraries before any
+        # saved, promoted, or deep-linked filters are applied.
+        # This check was missing from here but is enforced in the quick search code.
+        if not self.user.is_superuser:
+            allowed_library_ids = [library.id for library in self.user.accessible_libraries]
+            query = query.filter(Series.library_id.in_(allowed_library_ids))
+
         # --- AGE RATING SECURITY ---
         # Switch from Comic Check (Row) to Series Check (Poison Pill).
         # This ensures that if a Series is banned, ALL its issues (even safe ones) are hidden.

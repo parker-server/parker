@@ -25,6 +25,7 @@ from app.models.library import Library
 from app.models.reading_progress import ReadingProgress
 from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.pull_list import PullList, PullListItem
+from app.models.promoted_rail import PromotedRail
 from app.models.saved_search import SavedSearch
 from app.models.series import Series
 from app.models.tags import Character
@@ -190,6 +191,7 @@ def reset_browser_state(browser_db_factory, browser_seed_data):
         session.query(UserLibraryPin).delete()
         session.query(PullListItem).delete()
         session.query(PullList).delete()
+        session.query(PromotedRail).delete()
         session.query(SavedSearch).delete()
         session.query(Bookmark).delete()
         session.query(ReadingProgress).delete()
@@ -197,6 +199,7 @@ def reset_browser_state(browser_db_factory, browser_seed_data):
         if user is not None:
             user.social_insights_enabled = True
             user.home_rail_layout = None
+            user.is_superuser = False
         session.add_all(
             [
                 ReadingProgress(

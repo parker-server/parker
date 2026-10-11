@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import Float, and_, or_
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.sql.expression import func, desc, cast
@@ -19,11 +19,15 @@ from app.models.series import Series
 from app.models.user import User
 from app.models.reading_progress import ReadingProgress
 from app.schemas.search import ComicSearchItem
+from app.schemas.search import SearchRequest
 from app.core.comic_helpers import REVERSE_NUMBERING_SERIES, NON_PLAIN_FORMATS
+from app.api.promoted_rails import get_active_promoted_rails, is_promoted_rail_active
+from app.models.promoted_rail import PromotedRail
+from app.services.search import SearchService
 
 router = APIRouter()
 
-HOME_RAIL_LAYOUT_VERSION = 1
+HOME_RAIL_LAYOUT_VERSION = 2
 HOME_RAIL_DEFINITIONS = (
     {"key": "resume", "title": "Jump Back In", "hint": "Continue books already in progress."},
     {"key": "following_arrivals", "title": "New from Following", "hint": "New issues from followed volumes."},
@@ -42,6 +46,8 @@ HOME_RAIL_DEFINITIONS = (
 HOME_RAIL_KEYS = tuple(definition["key"] for definition in HOME_RAIL_DEFINITIONS)
 HOME_RAIL_DEFINITION_BY_KEY = {definition["key"]: definition for definition in HOME_RAIL_DEFINITIONS}
 HOME_RAIL_DEFAULT_INDEX = {key: index for index, key in enumerate(HOME_RAIL_KEYS)}
+PROMOTED_RAIL_INSERT_AFTER_KEY = "following_arrivals"
+PROMOTED_RAIL_HOME_LIMIT = 12
 
 
 class HomeRailLayoutEntry(BaseModel):
@@ -51,12 +57,22 @@ class HomeRailLayoutEntry(BaseModel):
 
 class HomeRailLayoutUpdate(BaseModel):
     rails: list[HomeRailLayoutEntry]
+    promoted_rails: list["PromotedRailVisibilityUpdate"] = Field(default_factory=list)
+
+
+class PromotedRailVisibilityUpdate(BaseModel):
+    id: int
+    visible: bool = True
 
 
 class HomeRailLayoutRail(HomeRailLayoutEntry):
     title: str
     hint: str | None = None
     customized: bool = False
+    kind: str = "built_in"
+    reorderable: bool = True
+    promoted_id: int | None = None
+    query: SearchRequest | None = None
 
 
 class HomeRailLayoutResponse(BaseModel):
@@ -108,6 +124,37 @@ def _normalize_submitted_home_rail_entries(rails: list[HomeRailLayoutEntry]) -> 
     return entries
 
 
+def _normalize_saved_promoted_rail_visibility(saved_layout: Any) -> dict[str, bool]:
+    if not isinstance(saved_layout, dict):
+        return {}
+
+    raw_visibility = saved_layout.get("promoted_visibility")
+    if not isinstance(raw_visibility, dict):
+        return {}
+
+    visibility = {}
+    for raw_id, raw_visible in raw_visibility.items():
+        try:
+            rail_id = int(raw_id)
+        except (TypeError, ValueError):
+            continue
+        if rail_id > 0:
+            visibility[str(rail_id)] = bool(raw_visible)
+    return visibility
+
+
+def _normalize_submitted_promoted_rail_visibility(
+        rails: list[PromotedRailVisibilityUpdate],
+) -> dict[str, bool]:
+    visibility = {}
+    for rail in rails:
+        key = str(rail.id)
+        if key in visibility:
+            raise HomeRailLayoutError(f"Duplicate promoted rail ID: {rail.id}")
+        visibility[key] = bool(rail.visible)
+    return visibility
+
+
 def _insert_missing_home_rail_entries(entries: list[dict]) -> list[dict]:
     resolved = [entry.copy() for entry in entries]
     present_keys = {entry["key"] for entry in resolved}
@@ -147,15 +194,54 @@ def _insert_missing_home_rail_entries(entries: list[dict]) -> list[dict]:
     return resolved
 
 
-def resolve_home_rail_layout(saved_layout: Any) -> dict:
+def _serialize_promoted_home_rails(
+        promoted_rails: list[PromotedRail],
+        saved_layout: Any,
+) -> list[dict]:
+    visibility = _normalize_saved_promoted_rail_visibility(saved_layout)
+    return [
+        {
+            "key": f"promoted:{rail.id}",
+            "title": rail.title,
+            "hint": "Featured by your administrator.",
+            "visible": visibility.get(str(rail.id), True),
+            "customized": str(rail.id) in visibility and visibility[str(rail.id)] is False,
+            "kind": "promoted",
+            "reorderable": False,
+            "promoted_id": rail.id,
+            "query": rail.query_config or {},
+        }
+        for rail in promoted_rails
+    ]
+
+
+def _insert_promoted_home_rails(rails: list[dict], promoted_rails: list[dict]) -> list[dict]:
+    if not promoted_rails:
+        return rails
+
+    insert_after_index = next(
+        (
+            index
+            for index, rail in enumerate(rails)
+            if rail["key"] == PROMOTED_RAIL_INSERT_AFTER_KEY
+        ),
+        -1,
+    )
+    insert_at = insert_after_index + 1
+    return rails[:insert_at] + promoted_rails + rails[insert_at:]
+
+
+def resolve_home_rail_layout(
+        saved_layout: Any,
+        promoted_rails: list[PromotedRail] | None = None,
+) -> dict:
     saved_entries = _normalize_saved_home_rail_entries(saved_layout)
     saved_positions = {entry["key"]: index for index, entry in enumerate(saved_entries)}
     saved_visibility = {entry["key"]: entry["visible"] for entry in saved_entries}
 
     resolved_entries = _insert_missing_home_rail_entries(saved_entries)
 
-    return {
-        "rails": [
+    built_in_rails = [
             {
                 "key": entry["key"],
                 "title": HOME_RAIL_DEFINITION_BY_KEY[entry["key"]]["title"],
@@ -168,21 +254,36 @@ def resolve_home_rail_layout(saved_layout: Any) -> dict:
                         or saved_visibility[entry["key"]] is False
                     )
                 ),
+                "kind": "built_in",
+                "reorderable": True,
+                "promoted_id": None,
+                "query": None,
             }
             for entry in resolved_entries
-        ],
+        ]
+    return {
+        "rails": _insert_promoted_home_rails(
+            built_in_rails,
+            _serialize_promoted_home_rails(promoted_rails or [], saved_layout),
+        ),
     }
 
 
-def _persistable_home_rail_layout(entries: list[dict]) -> dict:
+def _persistable_home_rail_layout(
+        entries: list[dict],
+        promoted_visibility: dict[str, bool],
+) -> dict:
     resolved_entries = _insert_missing_home_rail_entries(entries)
-    return {
+    layout = {
         "version": HOME_RAIL_LAYOUT_VERSION,
         "rails": [
             {"key": entry["key"], "visible": entry["visible"]}
             for entry in resolved_entries
         ],
     }
+    if promoted_visibility:
+        layout["promoted_visibility"] = promoted_visibility
+    return layout
 
 
 def _get_layout_user(db: Session, current_user: User) -> User:
@@ -201,8 +302,11 @@ def _filter_query_to_user_libraries(query, current_user: User):
 
 
 @router.get("/layout", response_model=HomeRailLayoutResponse, name="layout")
-def get_home_layout(current_user: CurrentUser):
-    return resolve_home_rail_layout(current_user.home_rail_layout)
+def get_home_layout(db: SessionDep, current_user: CurrentUser):
+    return resolve_home_rail_layout(
+        current_user.home_rail_layout,
+        get_active_promoted_rails(db),
+    )
 
 
 @router.put("/layout", response_model=HomeRailLayoutResponse, name="update_layout")
@@ -213,16 +317,31 @@ def update_home_layout(
 ):
     try:
         entries = _normalize_submitted_home_rail_entries(data.rails)
+        promoted_visibility = _normalize_submitted_promoted_rail_visibility(data.promoted_rails)
     except HomeRailLayoutError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     user = _get_layout_user(db, current_user)
-    user.home_rail_layout = _persistable_home_rail_layout(entries)
+    saved_promoted_visibility = _normalize_saved_promoted_rail_visibility(user.home_rail_layout)
+    existing_promoted_ids = {
+        str(rail_id)
+        for rail_id, in db.query(PromotedRail.id).all()
+    }
+    if not set(promoted_visibility).issubset(existing_promoted_ids):
+        raise HTTPException(status_code=422, detail="Unknown promoted rail ID")
+
+    saved_promoted_visibility = {
+        rail_id: visible
+        for rail_id, visible in saved_promoted_visibility.items()
+        if rail_id in existing_promoted_ids
+    }
+    saved_promoted_visibility.update(promoted_visibility)
+    user.home_rail_layout = _persistable_home_rail_layout(entries, saved_promoted_visibility)
     db.add(user)
     db.commit()
     db.refresh(user)
 
-    return resolve_home_rail_layout(user.home_rail_layout)
+    return resolve_home_rail_layout(user.home_rail_layout, get_active_promoted_rails(db))
 
 
 @router.post("/layout/reset", response_model=HomeRailLayoutResponse, name="reset_layout")
@@ -235,7 +354,26 @@ def reset_home_layout(
     db.add(user)
     db.commit()
 
-    return resolve_home_rail_layout(None)
+    return resolve_home_rail_layout(None, get_active_promoted_rails(db))
+
+
+@router.get("/promoted/{rail_id}/items", response_model=List[ComicSearchItem], name="promoted_items")
+def get_promoted_rail_items(
+        rail_id: int,
+        db: SessionDep,
+        current_user: CurrentUser,
+):
+    """Run an active administrator-curated search as the current viewer."""
+    rail = db.get(PromotedRail, rail_id)
+    if rail is None or not is_promoted_rail_active(rail):
+        raise HTTPException(status_code=404, detail="Promoted rail not found")
+
+    query_config = (rail.query_config or {}).copy()
+    query_config["limit"] = PROMOTED_RAIL_HOME_LIMIT
+    query_config["offset"] = 0
+    search_request = SearchRequest(**query_config)
+    results = SearchService(db, current_user).search(search_request)
+    return results["results"]
 
 # (Or define a simple one here if ComicSearchItem is too heavy,
 # but it should be fine as it matches what comic_card expects)
