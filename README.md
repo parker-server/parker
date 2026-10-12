@@ -62,6 +62,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
 
 - **Administration**
   - About and admin dashboard surfaces can flag when a newer tagged Parker version is available
+  - Kavita migration preview stages a database once in shared cache storage, summarizes new and matched users plus importable progress, requires review before migration runs, and cleans expired staging files at startup
 
 - **Scanning**
   - Background ScanManager with priority queues

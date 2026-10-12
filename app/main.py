@@ -24,6 +24,7 @@ from app.database import SessionLocal
 from app.logging import log_config
 from app.models.user import User
 from app.services.admin_bootstrap import AdminBootstrapError, ensure_initial_admin
+from app.services import kavita_migration_staging
 from app.services.settings_service import SettingsService
 from app.services.scheduler import scheduler_service
 from app.services.scan_manager import scan_manager
@@ -76,6 +77,7 @@ async def lifespan(app: FastAPI):
     settings.cover_dir.mkdir(parents=True, exist_ok=True)
     settings.avatar_dir.mkdir(parents=True, exist_ok=True)
     settings.cbl_dir.mkdir(parents=True, exist_ok=True)
+    kavita_migration_staging.cleanup_expired_staged_previews(nonblocking=True)
 
     # -- Init DB defaults when necessary (Safe, idempotent)
     db = SessionLocal()
