@@ -132,6 +132,77 @@ def test_migrate_users_creates_admin_and_syncs_library_permissions(db, tmp_path)
     assert [lib.name for lib in reader_user.accessible_libraries] == ["Main Library"]
 
 
+def test_preview_migration_summarizes_new_and_existing_users_with_progress(db, tmp_path, monkeypatch):
+    existing_user = User(
+        username="existing-reader",
+        email="existing-reader@example.com",
+        hashed_password="hash",
+        is_superuser=False,
+        is_active=True,
+    )
+    db.add(existing_user)
+    db.commit()
+
+    kavita_path = _create_kavita_db(tmp_path, include_mapping_tables=False)
+    conn = sqlite3.connect(kavita_path)
+    cur = conn.cursor()
+    cur.executemany(
+        "INSERT INTO AspNetUsers (Id, UserName, Email) VALUES (?, ?, ?)",
+        [
+            (1, "existing-reader", "existing-reader@example.com"),
+            (2, "new-reader", "new-reader@example.com"),
+            (3, None, "missing-username@example.com"),
+        ],
+    )
+    cur.executemany(
+        "INSERT INTO AppUserProgresses (AppUserId, ChapterId, PagesRead, LastModified) VALUES (?, ?, ?, ?)",
+        [
+            (1, 100, 3, "2026-01-01 10:00:00"),
+            (1, 200, 4, "2026-01-02 10:00:00"),
+            (2, 100, 5, "2026-01-03 10:00:00"),
+            (3, 100, 6, "2026-01-04 10:00:00"),
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+    service = KavitaMigrationService(db=db, kavita_db_path=str(kavita_path))
+
+    def fake_map_comics():
+        service.comic_map = {100: 1}
+        service.mapping_stats["total_kavita_chapters"] = 2
+        service.mapping_stats["mapped_total"] = 1
+        service.mapping_stats["unmapped_total"] = 1
+        return 1
+
+    monkeypatch.setattr(service, "map_comics", fake_map_comics)
+
+    try:
+        preview = service.preview_migration()
+    finally:
+        service.close()
+
+    assert preview["users"]["new"] == {
+        "count": 1,
+        "usernames": ["new-reader"],
+        "truncated": False,
+    }
+    assert preview["users"]["existing"] == {
+        "matched_count": 1,
+        "with_importable_progress": {
+            "count": 1,
+            "usernames": ["existing-reader"],
+            "truncated": False,
+        },
+    }
+    assert preview["progress"] == {
+        "source_records": 4,
+        "importable_records": 2,
+        "skipped_records": 2,
+    }
+    assert preview["mapping"]["mapped_total"] == 1
+
+
 def test_map_comics_uses_suffix_then_unique_metadata_and_skips_ambiguous(db, tmp_path):
     batman_lib, batman_series, batman_volume = _seed_parker_series(db, prefix="kmap-batman")
     batman_series.name = "Batman"

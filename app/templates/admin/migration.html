@@ -60,24 +60,77 @@
             </div>
         </div>
 
-        <button
-            @click="runMigration"
-            :disabled="!kavitaDbFile || loading"
-            class="w-full px-6 py-3 text-lg font-bold rounded-lg transition-all"
-            :class="{
-                'bg-orange-600 hover:bg-orange-700 text-white': kavitaDbFile && !loading,
-                'bg-gray-600 text-gray-400 cursor-not-allowed': !kavitaDbFile || loading,
-            }"
-        >
-            <span x-show="!loading" class="flex items-center justify-center gap-2">
-                {{ lucide_icon("circle-play", "h-5 w-5") }}
-                Start Migration
-            </span>
-            <span x-show="loading" class="flex items-center justify-center">
-                <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-3"></div>
-                Migrating... This may take a few minutes.
-            </span>
-        </button>
+        <div x-show="preview" class="rounded-lg border border-blue-800 bg-blue-950/30 p-4 text-sm" style="display: none;">
+            <div class="flex flex-wrap items-baseline justify-between gap-2">
+                <h3 class="font-bold text-blue-100">Import Preview</h3>
+                <p class="text-xs text-blue-200/70">
+                    Valid until <span x-text="window.parker.formatLocalDateTime(preview?.expires_at)"></span>
+                </p>
+            </div>
+            <div class="mt-3 grid gap-3 md:grid-cols-2">
+                <div>
+                    <p class="font-medium text-blue-100" x-text="`${preview?.users?.new?.count ?? 0} new user${(preview?.users?.new?.count ?? 0) === 1 ? '' : 's'} to create`"></p>
+                    <ul x-show="preview?.users?.new?.usernames?.length" class="mt-1 list-disc space-y-0.5 pl-5 text-blue-100/80">
+                        <template x-for="username in preview?.users?.new?.usernames || []" :key="username">
+                            <li x-text="username"></li>
+                        </template>
+                    </ul>
+                    <p x-show="preview?.users?.new?.truncated" class="mt-1 text-xs text-blue-200/70">Additional new users are not shown.</p>
+                </div>
+                <div>
+                    <p class="font-medium text-blue-100" x-text="`${preview?.users?.existing?.matched_count ?? 0} existing user match${(preview?.users?.existing?.matched_count ?? 0) === 1 ? '' : 'es'}`"></p>
+                    <p class="mt-1 text-blue-100/80" x-text="`${preview?.users?.existing?.with_importable_progress?.count ?? 0} existing user${(preview?.users?.existing?.with_importable_progress?.count ?? 0) === 1 ? '' : 's'} with importable progress`"></p>
+                    <ul x-show="preview?.users?.existing?.with_importable_progress?.usernames?.length" class="mt-1 list-disc space-y-0.5 pl-5 text-blue-100/80">
+                        <template x-for="username in preview?.users?.existing?.with_importable_progress?.usernames || []" :key="username">
+                            <li x-text="username"></li>
+                        </template>
+                    </ul>
+                    <p x-show="preview?.users?.existing?.with_importable_progress?.truncated" class="mt-1 text-xs text-blue-200/70">Additional matched users are not shown.</p>
+                </div>
+            </div>
+            <p class="mt-3 border-t border-blue-800/70 pt-3 text-blue-100/80" x-text="`${preview?.progress?.importable_records ?? 0} of ${preview?.progress?.source_records ?? 0} source progress records can be imported; ${preview?.progress?.skipped_records ?? 0} will be skipped.`"></p>
+            <p class="mt-1 text-xs text-blue-200/70">The migration will recheck Parker's current data before it commits changes.</p>
+        </div>
+
+        <div class="grid gap-3 sm:grid-cols-2">
+            <button
+                @click="previewMigration"
+                :disabled="!kavitaDbFile || previewing || loading"
+                class="px-6 py-3 text-lg font-bold rounded-lg transition-all"
+                :class="{
+                    'bg-blue-600 hover:bg-blue-700 text-white': kavitaDbFile && !previewing && !loading,
+                    'bg-gray-600 text-gray-400 cursor-not-allowed': !kavitaDbFile || previewing || loading,
+                }"
+            >
+                <span x-show="!previewing" class="flex items-center justify-center gap-2">
+                    {{ lucide_icon("eye", "h-5 w-5") }}
+                    <span x-text="preview ? 'Refresh Preview' : 'Preview Import'"></span>
+                </span>
+                <span x-show="previewing" class="flex items-center justify-center">
+                    <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-3"></div>
+                    Building Preview...
+                </span>
+            </button>
+
+            <button
+                @click="runMigration"
+                :disabled="!previewToken || loading || previewing"
+                class="px-6 py-3 text-lg font-bold rounded-lg transition-all"
+                :class="{
+                    'bg-orange-600 hover:bg-orange-700 text-white': previewToken && !loading && !previewing,
+                    'bg-gray-600 text-gray-400 cursor-not-allowed': !previewToken || loading || previewing,
+                }"
+            >
+                <span x-show="!loading" class="flex items-center justify-center gap-2">
+                    {{ lucide_icon("circle-play", "h-5 w-5") }}
+                    Start Migration
+                </span>
+                <span x-show="loading" class="flex items-center justify-center">
+                    <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-3"></div>
+                    Migrating... This may take a few minutes.
+                </span>
+            </button>
+        </div>
 
         <div x-show="message" class="mt-4 p-4 rounded-lg" :class="messageType === 'success' ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'" style="display: none;">
             <pre class="whitespace-pre-wrap font-mono text-sm" x-text="message"></pre>
@@ -93,19 +146,73 @@ function migrationTool() {
         kavitaDbFile: null,
         // We hardcode the strategy now since it's the only valid option
         userStrategy: 'temp-password',
+        previewToken: '',
+        preview: null,
+        previewing: false,
         loading: false,
         message: '',
         messageType: '',
 
         fileChange(event, prop) {
             this[prop] = event.target.files[0];
+            this.clearPreview();
+        },
+
+        clearPreview() {
+            const previewToken = this.previewToken;
+            this.previewToken = '';
+            this.preview = null;
+
+            if (!previewToken) { return; }
+
+            const formData = new FormData();
+            formData.append('preview_token', previewToken);
+            fetch(window.parker.route('migration.kavita_migration_discard_preview'), {
+                method: 'POST',
+                body: formData,
+            }).catch(() => {});
+        },
+
+        async previewMigration() {
+            if (!this.kavitaDbFile) { return; }
+
+            this.previewing = true;
+            this.message = '';
+            this.messageType = '';
+            this.clearPreview();
+
+            const formData = new FormData();
+            formData.append('kavita_db_file', this.kavitaDbFile);
+            formData.append('user_strategy', this.userStrategy);
+
+            try {
+                const res = await fetch(window.parker.route('migration.kavita_migration_preview'), {
+                    method: 'POST',
+                    body: formData,
+                });
+                const data = await res.json();
+
+                if (!res.ok) {
+                    throw new Error(data.detail || 'Unable to build the migration preview.');
+                }
+
+                this.previewToken = data.preview_token;
+                this.preview = data;
+            } catch (e) {
+                this.messageType = 'error';
+                this.message = `ERROR: ${e.message}`;
+            } finally {
+                this.previewing = false;
+            }
         },
 
         async runMigration() {
 
+            if (!this.previewToken) { return; }
+
             const confirmed = await window.parker.dialog.confirm(
                 "Migrate Kavita data?",
-                "Are you sure you want to proceed? Please ensure you have backed up your Parker database.",
+                "Are you sure you want to proceed with the previewed database? Please ensure you have backed up your Parker database.",
                 { isDestructive: true, confirmText: 'Migrate' }
             );
 
@@ -116,7 +223,7 @@ function migrationTool() {
             this.messageType = '';
 
             const formData = new FormData();
-            formData.append('kavita_db_file', this.kavitaDbFile);
+            formData.append('preview_token', this.previewToken);
             formData.append('user_strategy', this.userStrategy);
 
             try {
@@ -161,6 +268,7 @@ function migrationTool() {
                 this.message = `FATAL ERROR: ${e.message}`;
             } finally {
                 this.loading = false;
+                this.clearPreview();
             }
         }
     }
