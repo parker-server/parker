@@ -117,6 +117,7 @@ class KavitaMigrationService:
                     username=username,
                     email=email if email else None,
                     hashed_password=hashed_pw,
+                    must_change_password=True,
                     is_superuser=is_admin,
                     is_active=True,
                 )
@@ -431,6 +432,13 @@ class KavitaMigrationService:
             # Handle naive vs aware comparison mismatch conservatively.
             return True
 
+    def _get_progress_timestamp_expression(self) -> str:
+        """Return the best available Kavita progress timestamp expression."""
+        progress_columns = self.kavita_conn.execute("PRAGMA table_info(AppUserProgresses)").fetchall()
+        if any(column["name"] == "LastModifiedUtc" for column in progress_columns):
+            return "COALESCE(NULLIF(TRIM(LastModifiedUtc), ''), LastModified)"
+        return "LastModified"
+
     def migrate_progress(self) -> Dict[str, int]:
         """Migrate reading progress for mapped users and comics."""
         if not self.user_map:
@@ -440,8 +448,10 @@ class KavitaMigrationService:
 
         logger.info("Migrating reading progress")
 
+        progress_timestamp = self._get_progress_timestamp_expression()
         records = self.kavita_conn.execute(
-            "SELECT AppUserId, ChapterId, PagesRead, LastModified FROM AppUserProgresses WHERE PagesRead > 0"
+            f"SELECT AppUserId, ChapterId, PagesRead, {progress_timestamp} AS LastModified "
+            "FROM AppUserProgresses WHERE PagesRead > 0"
         ).fetchall()
 
         mapped_comic_ids = set(self.comic_map.values())

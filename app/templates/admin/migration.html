@@ -17,7 +17,7 @@
         <div class="flex items-start gap-3 text-sm text-yellow-400 bg-yellow-900/30 p-4 rounded-lg border border-yellow-800">
             {{ lucide_icon("triangle-alert", "h-5 w-5 flex-shrink-0 text-yellow-300") }}
             <p>
-                <strong>WARNING:</strong> This process is irreversible. <strong>BACKUP YOUR PARKER DATABASE BEFORE PROCEEDING!</strong> The tool handles user creation and reading progress transfer.
+                <strong>WARNING:</strong> This migration has no automatic undo. <strong>BACK UP YOUR PARKER DATABASE BEFORE PROCEEDING!</strong> Newly created imported accounts can be deleted later, but progress merged into existing accounts cannot be selectively reversed.
             </p>
         </div>
 
@@ -49,8 +49,11 @@
                         Since Parker uses different encryption than Kavita, user passwords cannot be migrated directly.
                     </p>
                     <ul class="mt-2 list-disc space-y-1 pl-5 text-sm font-medium text-orange-400">
-                        <li>Users will be created with random temporary passwords.</li>
-                        <li>A CSV file containing these credentials will automatically download.</li>
+                        <li>New users will be created with random temporary passwords.</li>
+                        <li>New users must set a new password the first time they log in.</li>
+                        <li>Re-imports match existing Parker users by username and keep their account and password unchanged.</li>
+                        <li>For matched comics, re-imports add new progress and only advance existing progress.</li>
+                        <li>If new users are created, a CSV file containing their credentials will automatically download.</li>
                         <li>You must securely distribute these passwords to your users.</li>
                     </ul>
                 </div>

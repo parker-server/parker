@@ -9,7 +9,14 @@ from app.services.kavita_migration import KavitaMigrationService
 from tests.factories import create_comic, create_library_with_root
 
 
-def _create_kavita_db(tmp_path, *, include_user_tables=True, include_mapping_tables=True, include_progress_table=True):
+def _create_kavita_db(
+    tmp_path,
+    *,
+    include_user_tables=True,
+    include_mapping_tables=True,
+    include_progress_table=True,
+    include_utc_progress_timestamp=False,
+):
     db_path = tmp_path / "kavita.db"
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
@@ -36,14 +43,15 @@ def _create_kavita_db(tmp_path, *, include_user_tables=True, include_mapping_tab
         )
 
     if include_progress_table:
+        utc_timestamp_column = ",\n                LastModifiedUtc TEXT" if include_utc_progress_timestamp else ""
         cur.executescript(
-            """
+            f"""
             CREATE TABLE AppUserProgresses (
                 Id INTEGER PRIMARY KEY,
                 AppUserId INTEGER,
                 ChapterId INTEGER,
                 PagesRead INTEGER,
-                LastModified TEXT
+                LastModified TEXT{utc_timestamp_column}
             );
             """
         )
@@ -117,8 +125,10 @@ def test_migrate_users_creates_admin_and_syncs_library_permissions(db, tmp_path)
 
     assert admin_user is not None
     assert admin_user.is_superuser is True
+    assert admin_user.must_change_password is True
     assert reader_user is not None
     assert reader_user.is_superuser is False
+    assert reader_user.must_change_password is True
     assert [lib.name for lib in reader_user.accessible_libraries] == ["Main Library"]
 
 
@@ -304,6 +314,105 @@ def test_migrate_progress_normalizes_zero_based_and_updates_existing(db, tmp_pat
     assert updated_progress.current_page == 5
     assert updated_progress.total_pages == 8
     assert updated_progress.completed is False
+
+
+def test_migrate_progress_prefers_utc_timestamp_and_falls_back_to_legacy_timestamp(db, tmp_path):
+    lib, _, volume = _seed_parker_series(db, prefix="kprog-timestamps")
+    user = User(
+        username="timestamp-user",
+        email="timestamp-user@example.com",
+        hashed_password="hash",
+        is_superuser=False,
+        is_active=True,
+    )
+    db.add(user)
+    db.flush()
+
+    utc_comic = create_comic(
+        db,
+        volume,
+        lib.active_root,
+        "utc.cbz",
+        number="1",
+        title="UTC",
+        filename="utc.cbz",
+        page_count=10,
+    )
+    null_fallback_comic = create_comic(
+        db,
+        volume,
+        lib.active_root,
+        "null-fallback.cbz",
+        number="2",
+        title="Null fallback",
+        filename="null-fallback.cbz",
+        page_count=10,
+    )
+    empty_fallback_comic = create_comic(
+        db,
+        volume,
+        lib.active_root,
+        "empty-fallback.cbz",
+        number="3",
+        title="Empty fallback",
+        filename="empty-fallback.cbz",
+        page_count=10,
+    )
+    db.commit()
+
+    kavita_path = _create_kavita_db(
+        tmp_path,
+        include_user_tables=False,
+        include_mapping_tables=False,
+        include_utc_progress_timestamp=True,
+    )
+    conn = sqlite3.connect(kavita_path)
+    cur = conn.cursor()
+    cur.executemany(
+        """
+        INSERT INTO AppUserProgresses (AppUserId, ChapterId, PagesRead, LastModified, LastModifiedUtc)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        [
+            (1, 100, 3, "2026-01-01 10:00:00", "2026-01-01 14:00:00"),
+            (1, 200, 4, "2026-01-02 11:00:00", None),
+            (1, 300, 5, "2026-01-03 12:00:00", "   "),
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+    service = KavitaMigrationService(db=db, kavita_db_path=str(kavita_path))
+    service.user_map = {1: user.id}
+    service.comic_map = {
+        100: utc_comic.id,
+        200: null_fallback_comic.id,
+        300: empty_fallback_comic.id,
+    }
+
+    try:
+        stats = service.migrate_progress()
+    finally:
+        service.close()
+
+    assert stats["inserted"] == 3
+
+    db.flush()
+    db.expire_all()
+    imported_progress = {
+        progress.comic_id: progress
+        for progress in db.query(ReadingProgress).filter_by(user_id=user.id).all()
+    }
+
+    assert imported_progress[utc_comic.id].last_read_at.replace(tzinfo=timezone.utc) == datetime(
+        2026, 1, 1, 14, tzinfo=timezone.utc
+    )
+    assert imported_progress[null_fallback_comic.id].last_read_at.replace(tzinfo=timezone.utc) == datetime(
+        2026, 1, 2, 11, tzinfo=timezone.utc
+    )
+    assert imported_progress[empty_fallback_comic.id].last_read_at.replace(tzinfo=timezone.utc) == datetime(
+        2026, 1, 3, 12, tzinfo=timezone.utc
+    )
 
 
 
