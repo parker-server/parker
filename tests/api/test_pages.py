@@ -740,7 +740,7 @@ def test_login_page_static_cover_exposes_cover_info_modal():
     assert 'title="About this cover"' in body
     assert 'aria-label="About this cover"' in body
     assert 'aria-modal="true"' in body
-    assert "sm:items-center" in body
+    assert "flex items-center justify-center" in body
     assert "Amazing Fantasy #15 (Spider-Man)" in body
     assert STATIC_COVERS[cover_filename]["description"] in body
 

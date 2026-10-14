@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="login-page">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -30,16 +30,38 @@
         }
 
         [x-cloak] { display: none !important; }
+
+        .login-page {
+            overflow: hidden;
+        }
+
+        /* Keep the login surface in sync with mobile browser chrome. */
+        .login-viewport {
+            height: 100vh;
+            height: 100dvh;
+        }
+
+        .cover-info-dialog {
+            max-height: calc(100vh - 2rem);
+            max-height: calc(100dvh - 2rem);
+        }
+
+        @media (min-width: 640px) {
+            .cover-info-dialog {
+                max-height: calc(100vh - 3rem);
+                max-height: calc(100dvh - 3rem);
+            }
+        }
     </style>
     {% if active_effect %}
         <link rel="stylesheet" href="{{ base_url }}/static/css/seasonal.css">
     {% endif %}
 
 </head>
-<body class="bg-gray-900 text-white h-screen w-screen overflow-hidden" x-data="loginCycler()">
+<body class="login-viewport relative w-full overflow-hidden bg-gray-900 text-white" x-data="loginCycler()">
 
     <!-- Background Images Layer (z-0) -->
-    <div class="absolute inset-0 z-0">
+    <div class="fixed inset-0 z-0" data-login-background>
 
         {% if login_bg_style == 'cycling_static_covers' %}
             <!-- Cycling Covers -->
@@ -68,15 +90,15 @@
     </div>
 
     <!-- Gradient Overlays (z-10) -->
-    <div class="absolute inset-0 z-10 bg-gradient-to-t from-gray-900 via-gray-900/80 to-transparent opacity-90"></div>
-    <div class="absolute inset-0 z-10 bg-gradient-to-r from-gray-900/90 via-transparent to-gray-900/90 mix-blend-multiply"></div>
+    <div class="fixed inset-0 z-10 bg-gradient-to-t from-gray-900 via-gray-900/80 to-transparent opacity-90" data-login-overlay></div>
+    <div class="fixed inset-0 z-10 bg-gradient-to-r from-gray-900/90 via-transparent to-gray-900/90 mix-blend-multiply" data-login-overlay></div>
 
     {% if active_effect %}
         {% include "partials/login_effects.html" %}
     {% endif %}
 
     <!-- Login Form Content (z-20) -->
-    <div class="relative z-20 h-full flex flex-col items-center justify-center px-4">
+    <div class="login-viewport relative z-20 flex flex-col items-center justify-center px-4">
 
         <div class="w-full max-w-md space-y-8 p-10 bg-black/40 backdrop-blur-md rounded-2xl border border-white/10 shadow-2xl">
 
@@ -159,14 +181,14 @@
         x-show="coverInfoOpen"
         x-transition.opacity.duration.200ms
         x-on:keydown.escape.window="closeCoverInfo()"
-        class="fixed inset-0 z-40 flex items-end justify-center bg-black/70 p-4 sm:items-center sm:p-6"
+        class="fixed inset-0 z-40 flex items-center justify-center bg-black/70 p-4 sm:p-6"
         role="dialog"
         aria-modal="true"
         aria-labelledby="cover-info-title"
         x-cloak
     >
         <div class="absolute inset-0" x-on:click="closeCoverInfo()" aria-hidden="true"></div>
-        <div class="relative z-10 max-h-[calc(100vh-2rem)] w-full max-w-lg overflow-y-auto rounded-2xl border border-white/10 bg-gray-950/95 p-5 shadow-2xl backdrop-blur sm:max-h-[calc(100vh-3rem)] sm:p-6">
+        <div class="cover-info-dialog relative z-10 w-full max-w-lg overflow-y-auto rounded-2xl border border-white/10 bg-gray-950/95 p-5 shadow-2xl backdrop-blur sm:p-6">
             <div class="flex items-start justify-between gap-4">
                 <div class="min-w-0">
                     <div class="text-[11px] font-bold uppercase tracking-[0.24em] text-blue-300">Cover Info</div>
