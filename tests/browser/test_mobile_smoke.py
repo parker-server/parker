@@ -1,5 +1,6 @@
 import pytest
 
+from app.models.user import User
 from app.services.settings_service import SettingsService
 
 
@@ -230,3 +231,59 @@ def test_tablet_login_page_does_not_overflow(page, browser_server):
     assert page_size["pageWidth"] == page_size["viewportWidth"], page_size
     assert page_size["pageHeight"] == page_size["viewportHeight"], page_size
     assert page_size["rootOverflow"] == "hidden"
+
+
+@pytest.mark.browser
+def test_mobile_admin_tables_scroll_to_actions(mobile_page, browser_server):
+    session = browser_server["db_factory"]()
+    try:
+        user = session.get(User, browser_server["seed"]["user_id"])
+        user.is_superuser = True
+        session.commit()
+    finally:
+        session.close()
+
+    try:
+        table_pages = [
+            ("/admin/libraries", "Libraries table", "Browser Test Library", "Delete"),
+            ("/admin/users", "Users table", "browser-user", "Edit"),
+        ]
+        for path, table_name, row_text, action_name in table_pages:
+            mobile_page.goto(f"{browser_server['base_url']}{path}", wait_until="networkidle")
+
+            scroll_region = mobile_page.get_by_role("region", name=table_name)
+            scroll_state = scroll_region.evaluate(
+                """
+                (element) => {
+                    element.scrollLeft = element.scrollWidth;
+                    return {
+                        clientWidth: element.clientWidth,
+                        scrollWidth: element.scrollWidth,
+                        scrollLeft: element.scrollLeft,
+                    };
+                }
+                """
+            )
+            assert scroll_state["scrollWidth"] > scroll_state["clientWidth"]
+            assert scroll_state["scrollLeft"] > 0
+
+            action = (
+                mobile_page.get_by_role("row")
+                .filter(has_text=row_text)
+                .first.get_by_role("button", name=action_name)
+            )
+            action_bounds = action.bounding_box()
+            region_bounds = scroll_region.bounding_box()
+            assert action_bounds["x"] >= region_bounds["x"]
+            assert action_bounds["x"] + action_bounds["width"] <= (
+                region_bounds["x"] + region_bounds["width"]
+            )
+    finally:
+        session = browser_server["db_factory"]()
+        try:
+            user = session.get(User, browser_server["seed"]["user_id"])
+            if user is not None:
+                user.is_superuser = False
+            session.commit()
+        finally:
+            session.close()

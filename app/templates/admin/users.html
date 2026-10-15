@@ -16,44 +16,46 @@
 
 
     <div class="bg-gray-800 rounded-lg overflow-hidden shadow-lg border border-gray-700">
-        <table class="w-full text-left">
-            <thead class="bg-gray-900 text-gray-400 uppercase text-xs">
-                <tr>
-                    <th class="px-6 py-3">ID</th>
-                    <th class="px-6 py-3">Username</th>
-                    <th class="px-6 py-3">Role</th>
-                    <th class="px-6 py-3">Access</th>
-                    <th class="px-6 py-3">Last Login</th>
-                    <th class="px-6 py-3 text-right">Actions</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-700">
-                <template x-for="user in users" :key="user.id">
-                    <tr class="hover:bg-gray-750">
-                        <td class="px-6 py-4 text-gray-500 font-mono text-sm" x-text="user.id"></td>
-                        <td class="px-6 py-4 font-bold text-white">
-                            <span x-text="user.username"></span>
-                            <div class="text-xs text-gray-500 font-normal" x-text="user.email"></div>
-                            <div x-show="!user.is_active" class="inline-block bg-red-900/50 text-red-200 text-[10px] px-1.5 rounded border border-red-800 mt-1">Inactive</div>
-                            <div x-show="user.must_change_password" class="inline-block bg-amber-900/50 text-amber-100 text-[10px] px-1.5 rounded border border-amber-800 mt-1">Password change required</div>
-                        </td>
-                        <td class="px-6 py-4">
-                            <span x-show="user.is_superuser" class="bg-purple-900/50 text-purple-200 text-xs px-2 py-1 rounded border border-purple-800">Admin</span>
-                            <span x-show="!user.is_superuser" class="bg-gray-700 text-gray-300 text-xs px-2 py-1 rounded">User</span>
-                        </td>
-                        <td class="px-6 py-4 text-sm text-gray-400">
-                            <span x-show="user.is_superuser">All Libraries</span>
-                            <span x-show="!user.is_superuser" x-text="formatLibraryCount(user)"></span>
-                        </td>
-                        <td class="px-6 py-4 text-sm text-gray-400" x-text="formatDate(user.last_login)"></td>
-                        <td class="px-6 py-4 text-right space-x-2">
-                            <button x-on:click="openEditModal(user)" class="text-blue-400 hover:text-white text-sm font-medium transition-colors">Edit</button>
-                            <button x-bind:disabled="user.id === 1" x-bind:title="user.id === 1 ? 'Cannot delete builtin admin user' : ''" x-on:click="deleteUser(user)" class="text-sm font-medium transition-colors" x-bind:class="user.id === 1 ? 'text-gray-600 cursor-not-allowed' : 'text-red-400 hover:text-white'">Delete</button>
-                        </td>
+        <div class="overflow-x-auto" role="region" aria-label="Users table" tabindex="0">
+            <table class="min-w-[900px] w-full text-left">
+                <thead class="bg-gray-900 text-gray-400 uppercase text-xs">
+                    <tr>
+                        <th class="px-6 py-3">ID</th>
+                        <th class="px-6 py-3">Username</th>
+                        <th class="px-6 py-3">Role</th>
+                        <th class="px-6 py-3">Access</th>
+                        <th class="px-6 py-3">Last Login</th>
+                        <th class="px-6 py-3 text-right">Actions</th>
                     </tr>
-                </template>
-            </tbody>
-        </table>
+                </thead>
+                <tbody class="divide-y divide-gray-700">
+                    <template x-for="user in users" :key="user.id">
+                        <tr class="hover:bg-gray-750">
+                            <td class="px-6 py-4 text-gray-500 font-mono text-sm" x-text="user.id"></td>
+                            <td class="px-6 py-4 font-bold text-white">
+                                <span x-text="user.username"></span>
+                                <div class="text-xs text-gray-500 font-normal" x-text="user.email"></div>
+                                <div x-show="!user.is_active" class="inline-block bg-red-900/50 text-red-200 text-[10px] px-1.5 rounded border border-red-800 mt-1">Inactive</div>
+                                <div x-show="user.must_change_password" class="inline-block bg-amber-900/50 text-amber-100 text-[10px] px-1.5 rounded border border-amber-800 mt-1">Password change required</div>
+                            </td>
+                            <td class="px-6 py-4">
+                                <span x-show="user.is_superuser" class="bg-purple-900/50 text-purple-200 text-xs px-2 py-1 rounded border border-purple-800">Admin</span>
+                                <span x-show="!user.is_superuser" class="bg-gray-700 text-gray-300 text-xs px-2 py-1 rounded">User</span>
+                            </td>
+                            <td class="px-6 py-4 text-sm text-gray-400">
+                                <span x-show="user.is_superuser">All Libraries</span>
+                                <span x-show="!user.is_superuser" x-text="formatLibraryCount(user)"></span>
+                            </td>
+                            <td class="px-6 py-4 text-sm text-gray-400" x-text="formatDate(user.last_login)"></td>
+                            <td class="px-6 py-4 text-right space-x-2">
+                                <button x-on:click="openEditModal(user)" class="text-blue-400 hover:text-white text-sm font-medium transition-colors">Edit</button>
+                                <button x-bind:disabled="user.id === 1" x-bind:title="user.id === 1 ? 'Cannot delete builtin admin user' : ''" x-on:click="deleteUser(user)" class="text-sm font-medium transition-colors" x-bind:class="user.id === 1 ? 'text-gray-600 cursor-not-allowed' : 'text-red-400 hover:text-white'">Delete</button>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
     </div>
 
     <div class="mt-12 flex justify-center items-center space-x-4 border-t border-gray-700 pt-6">
