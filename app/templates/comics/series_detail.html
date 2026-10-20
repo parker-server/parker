@@ -6,6 +6,7 @@
 
 {% from "partials/page_context.html" import page_context with context %}
 {% from "partials/lucide_icon.html" import lucide_icon %}
+{% from "partials/rail.html" import rail %}
 {% set show_issue_volume_dividers = get_system_setting("ui.series_issue_volume_dividers", True) %}
 {{ page_context(cover.id, cover.color_palette) }}
 
@@ -604,19 +605,11 @@
     <div x-data="recommendations({{ series_id }})" x-show="lanes.length > 0" x-cloak class="mt-12 space-y-12">
 
         <template x-for="lane in lanes" :key="lane.title">
-            <div>
-                <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-                    <h2 class="text-xl font-bold text-white" x-text="lane.title"></h2>
-                </div>
-
-                <div class="flex space-x-6 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-
-                    <template x-for="series in lane.items" :key="series.id">
+            {% call rail(title_expr="lane.title", scroller_class="flex space-x-6 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent") %}
+                <template x-for="series in lane.items" :key="series.id">
                     {% include "partials/series_card.html" %}
-                    </template>
-
-                </div>
-            </div>
+                </template>
+            {% endcall %}
         </template>
 
     </div>

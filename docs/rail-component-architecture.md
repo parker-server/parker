@@ -1,6 +1,6 @@
 # Rail Component Architecture
 
-Status: Proposed
+Status: In progress (UI shell extracted; backend steps deferred)
 
 This note captures a possible direction for organizing Parker's content rails. It is a reference for future work that includes a suggested incremental path, but it is not a commitment to schedule that work or to introduce a new frontend framework.
 
@@ -183,12 +183,12 @@ Provider code must continue to enforce existing library-access, age-rating, and 
 
 ## Suggested Incremental Path
 
-1. Record each existing visual variation and decide only which ones must be preserved for a no-appearance-change extraction. Do not normalize styles yet.
+1. ~~Record each existing visual variation and decide only which ones must be preserved for a no-appearance-change extraction. Do not normalize styles yet.~~ Done: all variations preserved as `scroller_class` / `action_class` overrides.
 2. ~~Add the general-purpose `template_error` global with a focused test.~~ Done: see `app/core/templates.py` and `tests/core/test_templates.py`.
-3. Extract a `partials/rail.html` Jinja macro with the majority scroller style as its default and `scroller_class` / `action_class` for preserved exceptions. Follow the existing macro conventions in `partials/admin_header.html`. Convert the series and volume recommendation lanes together with two or three standard Home rails (for example `trending` and `popular`), so the default is validated against the rails it was chosen for rather than only against the recommendation lanes, which use the minority spacing.
-4. Implement the inferred link/button action contract so links and buttons remain semantically correct, and convert a rail of each kind (for example `recently_added_series` and `random_gems`).
-5. Reuse the macro for the remaining matching Home rails while retaining existing card partials and Alpine fetch functions. Keep `data-home-rail` on the outer wrapper so existing Playwright selectors continue to work.
-6. Evaluate whether the Home-specific key-to-fetcher and key-to-template branching is still easy to maintain. Once each branch is a short macro call, an explicit `x-if` chain is likely still the clearest option; a JavaScript-side descriptor table is complicated by icons being rendered server-side through `lucide_icon()`.
+3. ~~Extract a `partials/rail.html` Jinja macro with the majority scroller style as its default and `scroller_class` / `action_class` for preserved exceptions. Follow the existing macro conventions in `partials/admin_header.html`. Convert the series and volume recommendation lanes together with two or three standard Home rails (for example `trending` and `popular`), so the default is validated against the rails it was chosen for rather than only against the recommendation lanes, which use the minority spacing.~~ Done: `app/templates/partials/rail.html`, used by the series and volume recommendation lanes and Home rails.
+4. ~~Implement the inferred link/button action contract so links and buttons remain semantically correct, and convert a rail of each kind (for example `recently_added_series` and `random_gems`).~~ Done.
+5. ~~Reuse the macro for the remaining matching Home rails while retaining existing card partials and Alpine fetch functions. Keep `data-home-rail` on the outer wrapper so existing Playwright selectors continue to work.~~ Done: every Home rail except `pinned_libraries` and `smart_lists` uses the macro.
+6. ~~Evaluate whether the Home-specific key-to-fetcher and key-to-template branching is still easy to maintain. Once each branch is a short macro call, an explicit `x-if` chain is likely still the clearest option; a JavaScript-side descriptor table is complicated by icons being rendered server-side through `lucide_icon()`.~~ Evaluated: the explicit `x-if` chain is kept.
 7. Promote repeated, intentional visual overrides to named semantic options only after the call sites establish a real pattern.
 8. If featured rails need to appear on series or volume pages, or multiple new rail types emerge, define the shared `RailDescriptor` and optional provider contract.
 9. Consider a consolidated feed endpoint only if the independent Home requests become a performance or coordination problem.
