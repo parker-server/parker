@@ -330,8 +330,10 @@ def test_admin_migration_page_uses_lucide_static_icons(admin_client):
     assert response.status_code == 200
     body = response.text
     assert "Kavita Migration Tool" in body
+    assert "Preview Import" in body
     for icon_name in [
         "circle-play",
+        "eye",
         "key-round",
         "triangle-alert",
     ]:

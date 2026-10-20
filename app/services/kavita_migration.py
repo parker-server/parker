@@ -4,6 +4,8 @@ import logging
 import secrets
 import sqlite3
 import string
+from collections import Counter
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional
@@ -22,6 +24,15 @@ from app.models.user import User
 
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class KavitaUserMigrationPlan:
+    kavita_user_id: int
+    username: str
+    email: Optional[str]
+    is_admin: bool
+    parker_user: Optional[User]
 
 
 class KavitaMigrationService:
@@ -74,6 +85,89 @@ class KavitaMigrationService:
     # PHASE 1: USER MIGRATION
     # ==========================================
 
+    def _build_user_migration_plan(self) -> list[KavitaUserMigrationPlan]:
+        kavita_users = self.kavita_conn.execute("SELECT Id, UserName, Email FROM AspNetUsers").fetchall()
+        admin_ids = self._get_admin_user_ids()
+
+        existing_users = self.db.query(User).all()
+        existing_map = {user.username.lower(): user for user in existing_users if user.username}
+
+        plan = []
+        for kavita_user in kavita_users:
+            username = kavita_user["UserName"]
+            if not username:
+                continue
+
+            kavita_user_id = kavita_user["Id"]
+            plan.append(
+                KavitaUserMigrationPlan(
+                    kavita_user_id=kavita_user_id,
+                    username=username,
+                    email=kavita_user["Email"],
+                    is_admin=kavita_user_id in admin_ids,
+                    parker_user=existing_map.get(username.lower()),
+                )
+            )
+
+        return plan
+
+    def preview_migration(self, username_limit: int = 25) -> dict[str, object]:
+        """Build a read-only summary of the changes a migration could make."""
+        if username_limit < 1:
+            raise ValueError("username_limit must be at least 1")
+
+        user_plan = self._build_user_migration_plan()
+        self.map_comics()
+
+        planned_user_ids = {entry.kavita_user_id for entry in user_plan}
+        progress_by_user: Counter[int] = Counter()
+        total_progress_records = 0
+        skipped_progress_records = 0
+
+        progress_records = self.kavita_conn.execute(
+            "SELECT AppUserId, ChapterId FROM AppUserProgresses WHERE PagesRead > 0"
+        ).fetchall()
+        for progress_record in progress_records:
+            total_progress_records += 1
+            kavita_user_id = progress_record["AppUserId"]
+            kavita_chapter_id = progress_record["ChapterId"]
+
+            if kavita_user_id not in planned_user_ids or kavita_chapter_id not in self.comic_map:
+                skipped_progress_records += 1
+                continue
+
+            progress_by_user[kavita_user_id] += 1
+
+        new_users = [entry for entry in user_plan if entry.parker_user is None]
+        matched_existing_users = [entry for entry in user_plan if entry.parker_user is not None]
+        existing_users_with_progress = [
+            entry for entry in matched_existing_users if progress_by_user[entry.kavita_user_id] > 0
+        ]
+
+        def username_summary(entries: list[KavitaUserMigrationPlan]) -> dict[str, object]:
+            usernames = sorted((entry.username for entry in entries), key=str.lower)
+            return {
+                "count": len(usernames),
+                "usernames": usernames[:username_limit],
+                "truncated": len(usernames) > username_limit,
+            }
+
+        return {
+            "users": {
+                "new": username_summary(new_users),
+                "existing": {
+                    "matched_count": len(matched_existing_users),
+                    "with_importable_progress": username_summary(existing_users_with_progress),
+                },
+            },
+            "progress": {
+                "source_records": total_progress_records,
+                "importable_records": total_progress_records - skipped_progress_records,
+                "skipped_records": skipped_progress_records,
+            },
+            "mapping": self.mapping_stats.copy(),
+        }
+
     def migrate_users(self, strategy: str = "temp-password") -> Optional[str]:
         """
         Migrate users from Kavita.
@@ -87,25 +181,16 @@ class KavitaMigrationService:
 
         logger.info("Starting user migration")
 
-        kavita_users = self.kavita_conn.execute("SELECT Id, UserName, Email FROM AspNetUsers").fetchall()
-        admin_ids = self._get_admin_user_ids()
-
-        existing_users = self.db.query(User).all()
-        existing_map = {u.username.lower(): u for u in existing_users if u.username}
-
         created_credentials = []
 
-        for k_user in kavita_users:
-            username = k_user["UserName"]
-            if not username:
-                continue
+        for user_plan in self._build_user_migration_plan():
+            username = user_plan.username
+            email = user_plan.email
+            k_id = user_plan.kavita_user_id
+            is_admin = user_plan.is_admin
 
-            email = k_user["Email"]
-            k_id = k_user["Id"]
-            is_admin = k_id in admin_ids
-
-            if username.lower() in existing_map:
-                p_user = existing_map[username.lower()]
+            if user_plan.parker_user is not None:
+                p_user = user_plan.parker_user
                 self.user_map[k_id] = p_user.id
                 logger.info("User match found: %s", username)
             else:
