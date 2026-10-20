@@ -20,7 +20,7 @@
         {% endif %}
     </div>
 
-    <div class="{{ scroller_class or 'flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent' }}">
+    <div class="{{ scroller_class or 'flex gap-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent' }}">
         {{ caller() }}
     </div>
 </section>

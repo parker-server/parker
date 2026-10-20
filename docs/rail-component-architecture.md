@@ -84,12 +84,18 @@ The copies contain variations that should be preserved during the first extracti
 
 | Element | Variant A | Variant B |
 | --- | --- | --- |
-| Scroller spacing | `space-x-4 pb-6` (most Home rails) | `space-x-6 pb-4` (`want_to_read`, `recently_added_series`, `recently_updated_series`, series/volume recommendations) |
-| Comic card wrapper width | `w-40` (`resume`, `following_arrivals`, `up_next`) | `w-36` (`smart_lists`, `top_rated`, `top_parker_rated`) |
+| Scroller spacing | **Resolved:** normalized to `gap-4 pb-6` for all rails (see below) | Previously `space-x-6 pb-4` (`want_to_read`, `recently_added_series`, `recently_updated_series`, series/volume recommendations) |
+| Comic card wrapper width | **Resolved:** normalized to `w-40` for all Home comic rails, matching series cards | Previously `w-36` (`smart_lists`, `top_rated`, `top_parker_rated`) |
 | Header action link size | `text-xs` (most rails) | `text-sm` (`recently_added_series`, `recently_updated_series`) |
 | Title icon treatment | Lucide icon on most Home rails; smart-list rails can use a user-selected icon | No icon on series/volume recommendation lanes |
 
 Before normalizing any of these differences, decide whether it is intentional. Repeated, intentional variations can become named macro options after the first extraction. Card widths should remain with the caller, alongside the chosen comic, series, or volume card partial, rather than becoming a rail-shell concern.
+
+Scroller spacing was evaluated after the first extraction and normalized. The `space-x-6 pb-4` variant was not a meaningful distinction: series-card rails were split evenly between the two spacings, and every comic-card rail used `space-x-4 pb-6`. All rail scrollers, including the hand-written `pinned_libraries` and `smart_lists` rows, now use `gap-4 pb-6`.
+
+Scrollers use flex `gap-*` rather than `space-x-*`. Tailwind's `space-x-*` adds a left margin to every child after the first, and in an Alpine rail the first child is the hidden `<template x-for>` element, so the first visible card was pushed in by the gap width and did not line up with the rail heading. `gap-*` only applies between rendered items, so the first card aligns with the heading. New rails should use `gap-*` for the same reason.
+
+Comic card widths were normalized the same way. `comic_card.html` has no intrinsic width and fills its caller's wrapper, and three Home rails used a `w-36` wrapper while the rest used `w-40`, with no apparent reason for the split. All Home comic rails now use `w-40`, the same width as `series_card.html`, so comic and series cards render at the same size. Card width remains a caller concern rather than a rail-shell option.
 
 ### Rails That Should Stay Hand-Written
 
@@ -114,7 +120,7 @@ When `title_expr` is used, the macro must bind `x-text` to an inner `<span>` rat
 
 Exactly one of `title` or `title_expr` must be supplied. Supplying both, or neither, is an invalid call and raises a template error (see [Enforcing Macro Invariants](#enforcing-macro-invariants)); a rail with no title would render a header with no accessible name. The template check cannot catch a `title_expr` that evaluates to an empty string in the browser; that is a data concern for the caller.
 
-The macro should have one agreed default scroller treatment that represents the current majority of rails (`space-x-4 pb-6`). `scroller_class` is a deliberately narrow escape hatch for a rail whose current spacing must be preserved, such as `space-x-6 pb-4`. `action_class` serves the same purpose for header actions, such as the `text-sm` links on the recently added and recently updated rails, and the Spin Again button, which currently lacks `transition-colors`.
+The macro has one agreed default scroller treatment (`gap-4 pb-6`), which every current rail uses. `scroller_class` is a deliberately narrow escape hatch for a future rail that genuinely needs different spacing; no current call site uses it. `action_class` serves the same purpose for header actions, such as the `text-sm` links on the recently added and recently updated rails, and the Spin Again button, which currently lacks `transition-colors`.
 
 Both overrides **replace** the corresponding default class string entirely; they are never appended to it. Appending would produce conflicting utilities (for example `text-xs text-sm`), and Tailwind resolves such conflicts by stylesheet order rather than by attribute order, so the result would be unpredictable to the call site. Replacement means an overriding call site repeats the full class string, including the scrollbar utilities, which is an acceptable cost for an escape hatch. If the same override recurs, introduce a narrow semantic option instead (for example `action_size="sm"`). This is preferable to introducing broad `home` or `detail` variants before the project has established that each surface has a stable, shared visual contract.
 
@@ -183,7 +189,7 @@ Provider code must continue to enforce existing library-access, age-rating, and 
 
 ## Suggested Incremental Path
 
-1. ~~Record each existing visual variation and decide only which ones must be preserved for a no-appearance-change extraction. Do not normalize styles yet.~~ Done: all variations preserved as `scroller_class` / `action_class` overrides.
+1. ~~Record each existing visual variation and decide only which ones must be preserved for a no-appearance-change extraction. Do not normalize styles yet.~~ Done: variations were first preserved as overrides; scroller spacing has since been normalized to `gap-4 pb-6`, leaving only `action_class` overrides.
 2. ~~Add the general-purpose `template_error` global with a focused test.~~ Done: see `app/core/templates.py` and `tests/core/test_templates.py`.
 3. ~~Extract a `partials/rail.html` Jinja macro with the majority scroller style as its default and `scroller_class` / `action_class` for preserved exceptions. Follow the existing macro conventions in `partials/admin_header.html`. Convert the series and volume recommendation lanes together with two or three standard Home rails (for example `trending` and `popular`), so the default is validated against the rails it was chosen for rather than only against the recommendation lanes, which use the minority spacing.~~ Done: `app/templates/partials/rail.html`, used by the series and volume recommendation lanes and Home rails.
 4. ~~Implement the inferred link/button action contract so links and buttons remain semantically correct, and convert a rail of each kind (for example `recently_added_series` and `random_gems`).~~ Done.

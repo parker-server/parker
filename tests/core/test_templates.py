@@ -48,7 +48,7 @@ def test_rail_renders_static_title_with_icon_and_default_scroller():
     assert "Trending" in html
     assert 'data-lucide-icon="zap"' in html
     assert "h-5 w-5 flex-shrink-0 text-amber-300" in html
-    assert 'class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin' in html
+    assert 'class="flex gap-4 overflow-x-auto pb-6 scrollbar-thin' in html
     assert "<i>items</i>" in html
     assert "<a " not in html
     assert "<button" not in html
@@ -80,13 +80,13 @@ def test_rail_renders_button_action():
 def test_rail_class_overrides_replace_defaults():
     html = _render_rail(
         'title="Recent", action_label="View All", action_href_expr="url()", '
-        'action_class="text-sm text-blue-400", scroller_class="flex space-x-6 pb-4"'
+        'action_class="text-sm text-blue-400", scroller_class="flex gap-6 pb-4"'
     )
 
     assert 'class="text-sm text-blue-400"' in html
-    assert 'class="flex space-x-6 pb-4"' in html
+    assert 'class="flex gap-6 pb-4"' in html
     assert "text-xs" not in html
-    assert "space-x-4" not in html
+    assert "gap-4" not in html
 
 
 @pytest.mark.parametrize(
