@@ -1,5 +1,8 @@
 import pytest
 
+from app.models.user import User
+from app.services.settings_service import SettingsService
+
 
 @pytest.mark.browser
 def test_mobile_menu_exposes_navigation_and_quick_search(mobile_page, browser_server):
@@ -118,3 +121,169 @@ def test_mobile_reader_uses_single_page_when_double_page_is_saved(mobile_page, b
         }
         """
     )
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize(
+    "background_style",
+    ["static_cover", "solid_color"],
+)
+def test_mobile_login_background_fills_the_viewport(
+    mobile_page, browser_server, background_style
+):
+    session = browser_server["db_factory"]()
+    try:
+        service = SettingsService(session)
+        service.initialize_defaults()
+        service.update("ui.login_background_style", background_style)
+    finally:
+        session.close()
+
+    mobile_page.goto(f"{browser_server['base_url']}/login", wait_until="networkidle")
+
+    background = mobile_page.locator("[data-login-background]")
+    assert background.evaluate("element => getComputedStyle(element).position") == "fixed"
+
+    bounds = background.bounding_box()
+    viewport = mobile_page.evaluate("() => ({ width: innerWidth, height: innerHeight })")
+    assert bounds == {
+        "x": 0,
+        "y": 0,
+        "width": viewport["width"],
+        "height": viewport["height"],
+    }
+
+    overlays = mobile_page.locator("[data-login-overlay]")
+    assert overlays.count() == 2
+    for index in range(overlays.count()):
+        overlay = overlays.nth(index)
+        assert overlay.evaluate("element => getComputedStyle(element).position") == "fixed"
+        assert overlay.bounding_box() == bounds
+
+    page_size = mobile_page.evaluate(
+        """
+        () => ({
+            viewportWidth: document.documentElement.clientWidth,
+            viewportHeight: document.documentElement.clientHeight,
+            pageWidth: document.documentElement.scrollWidth,
+            pageHeight: document.documentElement.scrollHeight,
+            rootOverflow: getComputedStyle(document.documentElement).overflow,
+        })
+        """
+    )
+    assert page_size["pageWidth"] == page_size["viewportWidth"], page_size
+    assert page_size["pageHeight"] == page_size["viewportHeight"], page_size
+    assert page_size["rootOverflow"] == "hidden"
+
+
+@pytest.mark.browser
+def test_mobile_login_cover_information_is_centered(mobile_page, browser_server):
+    session = browser_server["db_factory"]()
+    try:
+        service = SettingsService(session)
+        service.initialize_defaults()
+        service.update("ui.login_background_style", "static_cover")
+    finally:
+        session.close()
+
+    mobile_page.goto(f"{browser_server['base_url']}/login", wait_until="networkidle")
+    cover_info_button = mobile_page.get_by_role("button", name="About this cover")
+    assert cover_info_button.evaluate(
+        """
+        (button) => {
+            const bounds = button.getBoundingClientRect();
+            const target = document.elementFromPoint(
+                bounds.left + (bounds.width / 2),
+                bounds.top + (bounds.height / 2),
+            );
+            return target?.closest('button') === button;
+        }
+        """
+    )
+    cover_info_button.click()
+
+    dialog = mobile_page.get_by_role("dialog")
+    dialog.wait_for(state="visible")
+    bounds = dialog.bounding_box()
+    viewport = mobile_page.evaluate("() => ({ width: innerWidth, height: innerHeight })")
+
+    assert abs(bounds["x"] + (bounds["width"] / 2) - (viewport["width"] / 2)) < 1
+    assert abs(bounds["y"] + (bounds["height"] / 2) - (viewport["height"] / 2)) < 1
+
+
+@pytest.mark.browser
+def test_tablet_login_page_does_not_overflow(page, browser_server):
+    page.set_viewport_size({"width": 800, "height": 1280})
+    page.goto(f"{browser_server['base_url']}/login", wait_until="networkidle")
+
+    page_size = page.evaluate(
+        """
+        () => ({
+            viewportWidth: document.documentElement.clientWidth,
+            viewportHeight: document.documentElement.clientHeight,
+            pageWidth: document.documentElement.scrollWidth,
+            pageHeight: document.documentElement.scrollHeight,
+            rootOverflow: getComputedStyle(document.documentElement).overflow,
+        })
+        """
+    )
+
+    assert page_size["pageWidth"] == page_size["viewportWidth"], page_size
+    assert page_size["pageHeight"] == page_size["viewportHeight"], page_size
+    assert page_size["rootOverflow"] == "hidden"
+
+
+@pytest.mark.browser
+def test_mobile_admin_tables_scroll_to_actions(mobile_page, browser_server):
+    session = browser_server["db_factory"]()
+    try:
+        user = session.get(User, browser_server["seed"]["user_id"])
+        user.is_superuser = True
+        session.commit()
+    finally:
+        session.close()
+
+    try:
+        table_pages = [
+            ("/admin/libraries", "Libraries table", "Browser Test Library", "Delete"),
+            ("/admin/users", "Users table", "browser-user", "Edit"),
+        ]
+        for path, table_name, row_text, action_name in table_pages:
+            mobile_page.goto(f"{browser_server['base_url']}{path}", wait_until="networkidle")
+
+            scroll_region = mobile_page.get_by_role("region", name=table_name)
+            scroll_state = scroll_region.evaluate(
+                """
+                (element) => {
+                    element.scrollLeft = element.scrollWidth;
+                    return {
+                        clientWidth: element.clientWidth,
+                        scrollWidth: element.scrollWidth,
+                        scrollLeft: element.scrollLeft,
+                    };
+                }
+                """
+            )
+            assert scroll_state["scrollWidth"] > scroll_state["clientWidth"]
+            assert scroll_state["scrollLeft"] > 0
+
+            action = (
+                mobile_page.get_by_role("row")
+                .filter(has_text=row_text)
+                .first.get_by_role("button", name=action_name)
+            )
+            action_bounds = action.bounding_box()
+            region_bounds = scroll_region.bounding_box()
+            assert action_bounds["x"] >= region_bounds["x"]
+            assert action_bounds["x"] + action_bounds["width"] <= (
+                region_bounds["x"] + region_bounds["width"]
+            )
+    finally:
+        session = browser_server["db_factory"]()
+        try:
+            user = session.get(User, browser_server["seed"]["user_id"])
+            if user is not None:
+                user.is_superuser = False
+            session.commit()
+        finally:
+            session.close()

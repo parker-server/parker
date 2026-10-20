@@ -3,6 +3,7 @@
 {% block title %}Home - Parker{% endblock %}
 
 {% from "partials/lucide_icon.html" import lucide_icon %}
+{% from "partials/rail.html" import rail %}
 
 {% block content %}
 <div class="space-y-12" x-data='homePage({{ {"startupNotice": startup_notice}|tojson }})'>
@@ -24,76 +25,41 @@
             <template x-for="rail in visibleHomeRails" :key="rail.key">
                 <div :data-home-rail="rail.key" x-show="!isRailLoading(rail.key) && railHasContent(rail.key)" x-cloak>
                     <template x-if="rail.key === 'resume'">
-                        <section>
-                            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-                                <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                                    {{ lucide_icon("book-open", "h-5 w-5 flex-shrink-0 text-blue-300") }} Jump Back In
-                                </h2>
-                            </div>
-
-                            <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-                                <template x-for="comic in resumeComics" :key="comic.id">
-                                    <div class="w-40 flex-shrink-0">
-                                        {% include "partials/comic_card.html" %}
-                                    </div>
-                                </template>
-                            </div>
-                        </section>
+                        {% call rail(title="Jump Back In", icon="book-open", icon_class="text-blue-300") %}
+                            <template x-for="comic in resumeComics" :key="comic.id">
+                                <div class="w-40 flex-shrink-0">
+                                    {% include "partials/comic_card.html" %}
+                                </div>
+                            </template>
+                        {% endcall %}
                     </template>
 
                     <template x-if="rail.key === 'following_arrivals'">
-                        <section>
-                            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-                                <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                                    {{ lucide_icon("plus-circle", "h-5 w-5 flex-shrink-0 text-emerald-300") }} New from Following
-                                </h2>
-                                <a :href="window.parker.route('pages.user_following')" class="text-xs text-blue-400 hover:text-white transition-colors">
-                                    Manage Following
-                                </a>
-                            </div>
-
-                            <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-                                <template x-for="comic in followingArrivals" :key="comic.id">
-                                    <div class="w-40 flex-shrink-0">
-                                        {% include "partials/comic_card.html" %}
-                                    </div>
-                                </template>
-                            </div>
-                        </section>
+                        {% call rail(title="New from Following", icon="plus-circle", icon_class="text-emerald-300", action_label="Manage Following", action_href_expr="window.parker.route('pages.user_following')") %}
+                            <template x-for="comic in followingArrivals" :key="comic.id">
+                                <div class="w-40 flex-shrink-0">
+                                    {% include "partials/comic_card.html" %}
+                                </div>
+                            </template>
+                        {% endcall %}
                     </template>
 
                     <template x-if="rail.kind === 'promoted'">
-                        <section>
-                            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-                                <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                                    {{ lucide_icon("sparkles", "h-5 w-5 flex-shrink-0 text-violet-300") }} <span x-text="rail.title"></span>
-                                </h2>
-                                <a :href="promotedRailSearchUrl(rail)" class="text-xs text-blue-400 hover:text-white transition-colors">View matching issues</a>
-                            </div>
-
-                            <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-                                <template x-for="series in promotedRailItems[rail.key] || []" :key="series.id">
-                                    {% include "partials/series_card.html" %}
-                                </template>
-                            </div>
-                        </section>
+                        {% call rail(title_expr="rail.title", icon="sparkles", icon_class="text-violet-300", action_label="View matching issues", action_href_expr="promotedRailSearchUrl(rail)") %}
+                            <template x-for="series in promotedRailItems[rail.key] || []" :key="series.id">
+                                {% include "partials/series_card.html" %}
+                            </template>
+                        {% endcall %}
                     </template>
 
                     <template x-if="rail.key === 'up_next'">
-                        <section>
-                            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-                                <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                                    {{ lucide_icon("circle-play", "h-5 w-5 flex-shrink-0 text-sky-300") }} Up Next
-                                </h2>
-                            </div>
-                            <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-                                <template x-for="comic in onDeckSeries" :key="comic.id">
-                                    <div class="w-40 flex-shrink-0">
-                                        {% include "partials/comic_card.html" %}
-                                    </div>
-                                </template>
-                            </div>
-                        </section>
+                        {% call rail(title="Up Next", icon="circle-play", icon_class="text-sky-300") %}
+                            <template x-for="comic in onDeckSeries" :key="comic.id">
+                                <div class="w-40 flex-shrink-0">
+                                    {% include "partials/comic_card.html" %}
+                                </div>
+                            </template>
+                        {% endcall %}
                     </template>
 
                     <template x-if="rail.key === 'pinned_libraries'">
@@ -115,7 +81,7 @@
                                         <a :href="window.parker.route('pages.library_detail', { library_id: libraryRail.library_id })" class="text-xs text-blue-400 hover:text-white transition-colors">View Library</a>
                                     </div>
 
-                                    <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                                    <div class="flex gap-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
                                         <template x-for="series in libraryRail.items" :key="series.id">
                                             {% include "partials/series_card.html" %}
                                         </template>
@@ -140,9 +106,9 @@
                                         <a :href="window.parker.route('pages.search', {}, `smart_list_id=${listId}`)" class="text-xs text-blue-400 hover:text-white transition-colors">View All</a>
                                     </div>
 
-                                    <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                                    <div class="flex gap-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
                                         <template x-for="comic in items" :key="comic.id">
-                                            <div class="w-36 flex-shrink-0">
+                                            <div class="w-40 flex-shrink-0">
                                                 {% include "partials/comic_card.html" %}
                                             </div>
                                         </template>
@@ -153,138 +119,71 @@
                     </template>
 
                     <template x-if="rail.key === 'want_to_read'">
-                        <section>
-                            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-                                <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                                    {{ lucide_icon("star", "h-5 w-5 flex-shrink-0 text-yellow-400") }} Want to Read
-                                </h2>
-                            </div>
-
-                            <div class="flex space-x-6 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-                                <template x-for="series in starredSeries" :key="series.id">
-                                    {% include "partials/series_card.html" %}
-                                </template>
-                            </div>
-                        </section>
+                        {% call rail(title="Want to Read", icon="star", icon_class="text-yellow-400") %}
+                            <template x-for="series in starredSeries" :key="series.id">
+                                {% include "partials/series_card.html" %}
+                            </template>
+                        {% endcall %}
                     </template>
 
                     <template x-if="rail.key === 'top_rated'">
-                        <section>
-                            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-                                <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                                    {{ lucide_icon("award", "h-5 w-5 flex-shrink-0 text-yellow-400") }} Critically Acclaimed
-                                </h2>
-                            </div>
-
-                            <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-                                <template x-for="comic in topRatedComics" :key="comic.id">
-                                    <div class="w-36 flex-shrink-0">
-                                        {% include "partials/comic_card.html" %}
-                                    </div>
-                                </template>
-                            </div>
-                        </section>
+                        {% call rail(title="Critically Acclaimed", icon="award", icon_class="text-yellow-400") %}
+                            <template x-for="comic in topRatedComics" :key="comic.id">
+                                <div class="w-40 flex-shrink-0">
+                                    {% include "partials/comic_card.html" %}
+                                </div>
+                            </template>
+                        {% endcall %}
                     </template>
 
                     <template x-if="rail.key === 'top_parker_rated'">
-                        <section>
-                            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-                                <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                                    {{ lucide_icon("star", "h-5 w-5 flex-shrink-0 text-blue-400") }} Top Rated on Parker
-                                </h2>
-                            </div>
-
-                            <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-                                <template x-for="comic in parkerTopRatedComics" :key="comic.id">
-                                    <div class="w-36 flex-shrink-0">
-                                        {% include "partials/comic_card.html" %}
-                                    </div>
-                                </template>
-                            </div>
-                        </section>
+                        {% call rail(title="Top Rated on Parker", icon="star", icon_class="text-blue-400") %}
+                            <template x-for="comic in parkerTopRatedComics" :key="comic.id">
+                                <div class="w-40 flex-shrink-0">
+                                    {% include "partials/comic_card.html" %}
+                                </div>
+                            </template>
+                        {% endcall %}
                     </template>
 
                     <template x-if="rail.key === 'trending'">
-                        <section>
-                            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-                                <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                                    {{ lucide_icon("zap", "h-5 w-5 flex-shrink-0 text-amber-300") }} Trending
-                                </h2>
-                            </div>
-
-                            <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-                                <template x-for="series in trendingSeries" :key="series.id">
-                                    {% include "partials/series_card.html" %}
-                                </template>
-                            </div>
-                        </section>
+                        {% call rail(title="Trending", icon="zap", icon_class="text-amber-300") %}
+                            <template x-for="series in trendingSeries" :key="series.id">
+                                {% include "partials/series_card.html" %}
+                            </template>
+                        {% endcall %}
                     </template>
 
                     <template x-if="rail.key === 'popular'">
-                        <section>
-                            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-                                <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                                    {{ lucide_icon("flame", "h-5 w-5 flex-shrink-0 text-orange-300") }} Popular with Others
-                                </h2>
-                            </div>
-
-                            <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-                                <template x-for="series in popularSeries" :key="series.id">
-                                    {% include "partials/series_card.html" %}
-                                </template>
-                            </div>
-                        </section>
+                        {% call rail(title="Popular with Others", icon="flame", icon_class="text-orange-300") %}
+                            <template x-for="series in popularSeries" :key="series.id">
+                                {% include "partials/series_card.html" %}
+                            </template>
+                        {% endcall %}
                     </template>
 
                     <template x-if="rail.key === 'random_gems'">
-                        <section>
-                            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-                                <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                                    {{ lucide_icon("dice-5", "h-5 w-5 flex-shrink-0 text-violet-300") }} Random Gems
-                                </h2>
-                                <button x-on:click="fetchRandom(false)" class="text-xs text-blue-400 hover:text-white">Spin Again</button>
-                            </div>
-
-                            <div class="flex space-x-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-                                <template x-for="series in randomSeries" :key="series.id">
-                                    {% include "partials/series_card.html" %}
-                                </template>
-                            </div>
-                        </section>
+                        {% call rail(title="Random Gems", icon="dice-5", icon_class="text-violet-300", action_label="Spin Again", action_click="fetchRandom(false)", action_class="text-xs text-blue-400 hover:text-white") %}
+                            <template x-for="series in randomSeries" :key="series.id">
+                                {% include "partials/series_card.html" %}
+                            </template>
+                        {% endcall %}
                     </template>
 
                     <template x-if="rail.key === 'recently_added_series'">
-                        <section>
-                            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-                                <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                                    {{ lucide_icon("sparkles", "h-5 w-5 flex-shrink-0 text-cyan-300") }} Recently Added Series
-                                </h2>
-                                <a :href="window.parker.route('pages.recent_series', { kind: 'added' })" class="text-sm text-blue-400 hover:text-white transition-colors">View All</a>
-                            </div>
-
-                            <div class="flex space-x-6 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-                                <template x-for="series in recentSeries" :key="series.id">
-                                    {% include "partials/series_card.html" %}
-                                </template>
-                            </div>
-                        </section>
+                        {% call rail(title="Recently Added Series", icon="sparkles", icon_class="text-cyan-300", action_label="View All", action_href_expr="window.parker.route('pages.recent_series', { kind: 'added' })", action_class="text-sm text-blue-400 hover:text-white transition-colors") %}
+                            <template x-for="series in recentSeries" :key="series.id">
+                                {% include "partials/series_card.html" %}
+                            </template>
+                        {% endcall %}
                     </template>
 
                     <template x-if="rail.key === 'recently_updated_series'">
-                        <section>
-                            <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
-                                <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                                    {{ lucide_icon("refresh-cw", "h-5 w-5 flex-shrink-0 text-teal-300") }} Recently Updated Series
-                                </h2>
-                                <a :href="window.parker.route('pages.recent_series', { kind: 'updated' })" class="text-sm text-blue-400 hover:text-white transition-colors">View All</a>
-                            </div>
-
-                            <div class="flex space-x-6 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-                                <template x-for="series in updatedSeries" :key="series.id">
-                                    {% include "partials/series_card.html" %}
-                                </template>
-                            </div>
-                        </section>
+                        {% call rail(title="Recently Updated Series", icon="refresh-cw", icon_class="text-teal-300", action_label="View All", action_href_expr="window.parker.route('pages.recent_series', { kind: 'updated' })", action_class="text-sm text-blue-400 hover:text-white transition-colors") %}
+                            <template x-for="series in updatedSeries" :key="series.id">
+                                {% include "partials/series_card.html" %}
+                            </template>
+                        {% endcall %}
                     </template>
                 </div>
             </template>

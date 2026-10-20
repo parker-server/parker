@@ -1,0 +1,27 @@
+{% from "partials/lucide_icon.html" import lucide_icon %}
+
+{# Shared shell for horizontal content rails: a titled header with an optional action, and a horizontal scroller.
+   The caller supplies the item loop and card partial. See docs/rail-component-architecture.md. #}
+{% macro rail(title=None, title_expr=None, icon=None, icon_class=None, action_label=None, action_href_expr=None, action_click=None, action_class=None, scroller_class=None) %}
+{% if (title and title_expr) or not (title or title_expr) %}{{ template_error("rail(): pass exactly one of title or title_expr") }}{% endif %}
+{% if action_href_expr and action_click %}{{ template_error("rail(): pass action_href_expr or action_click, not both") }}{% endif %}
+{% if (action_href_expr or action_click) and not action_label %}{{ template_error("rail(): an action requires action_label") }}{% endif %}
+{% if action_label and not (action_href_expr or action_click) %}{{ template_error("rail(): action_label requires action_href_expr or action_click") }}{% endif %}
+<section>
+    <div class="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+        <h2 class="text-xl font-bold text-white flex items-center gap-2">
+            {% if icon %}{{ lucide_icon(icon, "h-5 w-5 flex-shrink-0 " ~ (icon_class or "")) }}{% endif %}
+            {% if title_expr %}<span x-text="{{ title_expr }}"></span>{% else %}{{ title }}{% endif %}
+        </h2>
+        {% if action_href_expr %}
+        <a :href="{{ action_href_expr }}" class="{{ action_class or 'text-xs text-blue-400 hover:text-white transition-colors' }}">{{ action_label }}</a>
+        {% elif action_click %}
+        <button type="button" x-on:click="{{ action_click }}" class="{{ action_class or 'text-xs text-blue-400 hover:text-white transition-colors' }}">{{ action_label }}</button>
+        {% endif %}
+    </div>
+
+    <div class="{{ scroller_class or 'flex gap-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent' }}">
+        {{ caller() }}
+    </div>
+</section>
+{% endmacro %}

@@ -1,7 +1,9 @@
 import re
 from datetime import datetime
 from pathlib import Path
+from typing import NoReturn
 from fastapi.templating import Jinja2Templates
+from jinja2 import TemplateRuntimeError
 from app.config import settings
 from app.core.settings_loader import get_cached_setting
 from app.core.utils import get_route_map
@@ -40,6 +42,14 @@ def asset_version(path: str) -> str:
         return settings.version
 
 
+def template_error(message: str) -> NoReturn:
+    """
+    Raises a render-time error so macros can enforce invariants on their arguments.
+    Usage: {% if a and b %}{{ template_error("macro(): pass a or b, not both") }}{% endif %}
+    """
+    raise TemplateRuntimeError(message)
+
+
 templates.env.globals["app_version"] = settings.version
 templates.env.globals["app_name"] = settings.app_name
 
@@ -49,6 +59,7 @@ templates.env.globals["asset_version"] = asset_version
 templates.env.globals["base_url"] = settings.clean_base_url
 templates.env.globals["routes"] = route_map_injector
 templates.env.globals["get_system_setting"] = get_cached_setting
+templates.env.globals["template_error"] = template_error
 
 # --- Context Processors (Dynamic Data) ---
 def inject_ui_settings(request):
