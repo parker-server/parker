@@ -43,6 +43,18 @@
                     <span class="text-xs text-gray-500 group-hover:text-gray-400">Progress won't be saved</span>
                 </div>
             </a>
+            {% if can_download %}
+            <a :href="window.parker.route('comics.download', { comic_id: comicId })"
+               download
+               data-download-comic
+               class="group flex items-center px-4 py-3 text-sm text-gray-300 hover:bg-gray-700 hover:text-white transition-colors">
+                {{ lucide_icon("download", "mr-3 h-5 w-5 flex-shrink-0 opacity-70 group-hover:opacity-100") }}
+                <div>
+                    <span class="font-bold block">Download</span>
+                    <span class="text-xs text-gray-500 group-hover:text-gray-400">Save the original comic file</span>
+                </div>
+            </a>
+            {% endif %}
         </div>
     </div>
 </div>

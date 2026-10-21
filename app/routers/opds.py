@@ -26,6 +26,7 @@ from app.core.comic_helpers import (
     get_comic_age_restriction,
     assert_user_can_view_comic,
     check_container_restriction,
+    user_can_download,
     get_banned_comic_condition,
     NON_PLAIN_FORMATS,
     get_thumbnail_hash,
@@ -434,6 +435,7 @@ def render_opds_books_feed(
         query,
         total: int,
         params: PaginationParams,
+        can_download: bool,
         entries: list[dict] | None = None,
         order_by: tuple = (),
 ):
@@ -456,6 +458,7 @@ def render_opds_books_feed(
         "feed_links": get_opds_pagination_links(request, total, params),
         "entries": entries or [],
         "books": comics,
+        "can_download": can_download,
     })
 
 
@@ -691,6 +694,7 @@ async def opds_continue_reading(
     total = query.count()
     return render_opds_books_feed(
         request,
+        can_download=user_can_download(user, db),
         feed_id="urn:parker:continue-reading",
         feed_title="Continue Reading",
         query=query,
@@ -874,6 +878,7 @@ async def opds_collection(
 
     return render_opds_books_feed(
         request,
+        can_download=user_can_download(user, db),
         feed_id=f"urn:parker:collection:{collection.id}",
         feed_title=collection.name,
         query=query,
@@ -959,6 +964,7 @@ async def opds_reading_list(
 
     return render_opds_books_feed(
         request,
+        can_download=user_can_download(user, db),
         feed_id=f"urn:parker:reading-list:{reading_list.id}",
         feed_title=reading_list.name,
         query=query,
@@ -998,6 +1004,7 @@ async def opds_series(
 
     return render_opds_books_feed(
         request,
+        can_download=user_can_download(user, db),
         feed_id=f"urn:parker:series:{series.id}",
         feed_title=series.name,
         query=query,
@@ -1060,6 +1067,7 @@ async def opds_volume(
     volume_number = volume.volume_number if volume.volume_number is not None else "Unknown"
     return render_opds_books_feed(
         request,
+        can_download=user_can_download(user, db),
         feed_id=f"urn:parker:volume:{volume.id}",
         feed_title=f"{volume.series.name} Volume {volume_number}",
         query=query,
@@ -1112,6 +1120,9 @@ async def opds_thumbnail(comic_id: int, user: OPDSUser, db: SessionDep):
 @router.get("/download/{comic_id}", name="download")
 async def opds_download(comic_id: int, user: OPDSUser, db: SessionDep, filename: str | None = None):
     comic = get_authorized_opds_comic(comic_id, user, db)
+
+    if not user_can_download(user, db):
+        raise HTTPException(status_code=403, detail="Downloads are not allowed for this account")
 
     export_name = get_opds_download_filename(comic)
 

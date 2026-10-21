@@ -108,6 +108,24 @@ def is_comic_age_restricted_for_user(comic: Comic, user) -> bool:
     return False
 
 
+DOWNLOADS_ENABLED_SETTING = "server.downloads_enabled"
+
+
+def user_can_download(user, db: SessionDep) -> bool:
+    """Return True if the user may download original comic files."""
+    if user.is_superuser:
+        return True
+
+    # Avoid a circular import: settings_service imports app.api.deps.
+    from app.services.settings_service import SettingsService
+
+    # A missing setting counts as enabled so older installs keep working.
+    if SettingsService(db).get(DOWNLOADS_ENABLED_SETTING) is False:
+        return False
+
+    return bool(user.can_download)
+
+
 def assert_user_can_view_comic(comic: Comic, user, *, hide_denied: bool = False) -> None:
     """
     Enforce library and comic-level age access for a loaded Comic.

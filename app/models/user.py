@@ -32,6 +32,7 @@ class User(Base):
     # Permissions
     is_active = Column(Boolean, default=True)
     is_superuser = Column(Boolean, default=False)
+    can_download = Column(Boolean, default=True, nullable=False)
 
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     last_login = Column(DateTime, nullable=True)

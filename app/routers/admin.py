@@ -7,8 +7,10 @@ from fastapi.responses import HTMLResponse, FileResponse
 
 from app.api.deps import AdminUser, SessionDep
 from app.config import settings
+from app.core.comic_helpers import DOWNLOADS_ENABLED_SETTING
 from app.core.build_info import get_build_commit_hash
 from app.core.templates import templates
+from app.services.settings_service import SettingsService
 from app.services.startup_diagnostics import build_support_snapshot, collect_startup_diagnostics
 from app.models.promoted_rail import PromotedRail
 
@@ -29,9 +31,13 @@ async def admin_jobs_page(request: Request, admin_user: AdminUser):
     return templates.TemplateResponse(request=request, name="admin/jobs.html")
 
 @router.get("/users", response_class=HTMLResponse, name="users", tags=['admin'])
-async def admin_users_page(request: Request, admin_user: AdminUser):
+async def admin_users_page(request: Request, admin_user: AdminUser, db: SessionDep):
     """Serve the Admin User Management page"""
-    return templates.TemplateResponse(request=request, name="admin/users.html")
+    # A missing setting counts as enabled, matching user_can_download().
+    downloads_enabled = SettingsService(db).get(DOWNLOADS_ENABLED_SETTING) is not False
+    return templates.TemplateResponse(request=request, name="admin/users.html", context={
+        "downloads_enabled": downloads_enabled,
+    })
 
 @router.get("/libraries", response_class=HTMLResponse, name="libraries", tags=['admin'])
 async def admin_libraries_page(request: Request, admin_user: AdminUser):

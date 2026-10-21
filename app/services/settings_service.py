@@ -323,6 +323,12 @@ class SettingsService:
             "description": "Allows external readers (Chunky, Panels) to access library via /opds using Basic Auth."
         },
         {
+            "key": "server.downloads_enabled", "value": "true",
+            "category": "server", "data_type": "bool",
+            "label": "Allow Comic Downloads",
+            "description": "Lets users download original comic files from the web UI and OPDS. Turn off per user in Users. OPDS readers need downloads to open comics. Admins can always download."
+        },
+        {
             "key": "integrations.external_reviews.enabled",
             "value": "false",
             "category": "server",

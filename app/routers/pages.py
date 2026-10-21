@@ -4,7 +4,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from app.core.comic_helpers import get_smart_cover
+from app.core.comic_helpers import get_smart_cover, user_can_download
 from app.api.deps import SessionDep, ComicDep, VolumeDep, SeriesDep, LibraryDep, CurrentUser
 from app.config import settings
 from app.core.settings_loader import get_cached_setting
@@ -223,7 +223,7 @@ async def volume_detail(request: Request, volume: VolumeDep, db: SessionDep, use
     })
 
 @router.get("/comics/{comic_id}", response_class=HTMLResponse, name="comic_detail")
-async def comic_detail(request: Request, comic: ComicDep, user: CurrentUser):
+async def comic_detail(request: Request, comic: ComicDep, db: SessionDep, user: CurrentUser):
     """
     Comic detail page.
     Fetches basic metadata server-side for Open Graph tags and Hero Backgrounds.
@@ -231,7 +231,8 @@ async def comic_detail(request: Request, comic: ComicDep, user: CurrentUser):
 
     return templates.TemplateResponse(request=request, name="comics/comic_detail.html", context={
         "comic_id": comic.id,
-        "comic": comic
+        "comic": comic,
+        "can_download": user_can_download(user, db),
     })
 
 @router.get("/login", response_class=HTMLResponse, name="login")
