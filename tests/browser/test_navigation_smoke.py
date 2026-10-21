@@ -4,6 +4,9 @@ from app.models.collection import Collection, CollectionItem
 from app.models.comic import Comic, Volume
 from app.models.series import Series
 from app.models.tags import Character
+from app.core.comic_helpers import DOWNLOADS_ENABLED_SETTING
+from app.models.setting import SystemSetting
+from app.models.user import User
 from tests.factories import create_comic
 
 
@@ -268,6 +271,70 @@ def test_comic_detail_cover_opens_series_cover_browser_at_current_cover_and_retu
     page.get_by_role("button", name="Close").click()
     page.wait_for_url(f"**/comics/{seed['active_comic_id']}")
     page.get_by_role("heading", name=f"{seed['series_name']} #{seed['active_comic_number']}").wait_for()
+
+
+@pytest.mark.browser
+def test_comic_detail_download_option_follows_user_permission(page, browser_server):
+    seed = browser_server["seed"]
+    detail_url = f"{browser_server['base_url']}/comics/{seed['active_comic_id']}"
+    heading_name = f"{seed['series_name']} #{seed['active_comic_number']}"
+
+    page.goto(detail_url, wait_until="networkidle")
+    page.get_by_role("heading", name=heading_name).wait_for()
+    page.get_by_role("button", name="More Options").click()
+
+    download_link = page.locator("[data-download-comic]")
+    download_link.wait_for()
+    assert download_link.get_attribute("href") == f"/api/comics/{seed['active_comic_id']}/download"
+
+    session = browser_server["db_factory"]()
+    try:
+        user = session.get(User, seed["user_id"])
+        user.can_download = False
+        session.commit()
+    finally:
+        session.close()
+
+    page.goto(detail_url, wait_until="networkidle")
+    page.get_by_role("heading", name=heading_name).wait_for()
+    page.get_by_role("button", name="More Options").click()
+    page.get_by_text("Read in Incognito").wait_for()
+    assert page.locator("[data-download-comic]").count() == 0
+
+
+def _set_downloads_enabled(browser_server, enabled: bool) -> None:
+    session = browser_server["db_factory"]()
+    try:
+        setting = session.query(SystemSetting).filter(SystemSetting.key == DOWNLOADS_ENABLED_SETTING).first()
+        if setting is None:
+            setting = SystemSetting(key=DOWNLOADS_ENABLED_SETTING, value="", category="server", data_type="bool")
+            session.add(setting)
+        setting.value = "true" if enabled else "false"
+        session.commit()
+    finally:
+        session.close()
+
+
+@pytest.mark.browser
+def test_admin_user_form_notes_when_downloads_are_off_site_wide(page, browser_server):
+    session = browser_server["db_factory"]()
+    try:
+        session.get(User, browser_server["seed"]["user_id"]).is_superuser = True
+        session.commit()
+    finally:
+        session.close()
+    _set_downloads_enabled(browser_server, False)
+
+    try:
+        page.goto(f"{browser_server['base_url']}/admin/users", wait_until="networkidle")
+        page.get_by_role("row").filter(has_text="browser-user").first.get_by_role("button", name="Edit").click()
+
+        note = page.locator("[data-downloads-disabled-note]:visible")
+        note.wait_for()
+        assert "turned off site-wide" in note.inner_text()
+        assert note.get_by_role("link", name="Settings").get_attribute("href") == "/admin/settings"
+    finally:
+        _set_downloads_enabled(browser_server, True)
 
 
 @pytest.mark.browser

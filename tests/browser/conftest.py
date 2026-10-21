@@ -204,6 +204,7 @@ def reset_browser_state(browser_db_factory, browser_seed_data):
             user.social_insights_enabled = True
             user.home_rail_layout = None
             user.is_superuser = False
+            user.can_download = True
         session.add_all(
             [
                 ReadingProgress(

@@ -83,18 +83,18 @@
 
                         <div class="bg-gray-900/50 p-3 rounded border border-gray-700/50">
                             <div class="flex items-center gap-2">
-                                <input type="checkbox" x-model="newUser.is_superuser" id="new_is_admin" class="rounded bg-gray-700 border-gray-600 text-blue-600 focus:ring-blue-500 h-4 w-4">
-                                <label for="new_is_admin" class="text-gray-300 select-none font-medium">Administrator</label>
-                            </div>
-                            <p class="text-xs text-gray-500 mt-1 ml-6">Grants full access to all libraries and settings.</p>
-                        </div>
-
-                        <div class="bg-gray-900/50 p-3 rounded border border-gray-700/50">
-                            <div class="flex items-center gap-2">
                                 <input type="checkbox" x-model="newUser.must_change_password" id="new_must_change_password" class="rounded bg-gray-700 border-gray-600 text-blue-600 focus:ring-blue-500 h-4 w-4">
                                 <label for="new_must_change_password" class="text-gray-300 select-none font-medium">Require password change on first login</label>
                             </div>
                             <p class="text-xs text-gray-500 mt-1 ml-6">Use this when assigning a temporary password.</p>
+                        </div>
+
+                        <div class="bg-gray-900/50 p-3 rounded border border-gray-700/50">
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" x-model="newUser.is_superuser" id="new_is_admin" class="rounded bg-gray-700 border-gray-600 text-blue-600 focus:ring-blue-500 h-4 w-4">
+                                <label for="new_is_admin" class="text-gray-300 select-none font-medium">Administrator</label>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-1 ml-6">Grants full access to all libraries and settings.</p>
                         </div>
                     </div>
 
@@ -102,13 +102,23 @@
                         <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-700 pb-2">Access Control</h3>
 
                         <div class="space-y-2 transition-opacity duration-200" :class="newUser.is_superuser ? 'opacity-50 pointer-events-none' : ''">
-                            <label class="block text-sm text-gray-400">Allowed Libraries</label>
+                            <div class="flex items-center justify-between gap-2">
+                                <span class="block text-sm text-gray-400">Allowed Libraries</span>
+                                <label x-show="allLibraries.length > 1" data-select-all-libraries class="flex items-center gap-2 text-xs text-gray-400 hover:text-gray-200 cursor-pointer select-none">
+                                    <input type="checkbox"
+                                           :checked="allLibrariesSelected(newUser)"
+                                           x-effect="$el.indeterminate = someLibrariesSelected(newUser)"
+                                           x-on:change="toggleAllLibraries(newUser, $event.target.checked)"
+                                           class="rounded bg-gray-700 border-gray-600 text-blue-600 focus:ring-blue-500">
+                                    Select all
+                                </label>
+                            </div>
                             <div class="bg-gray-900 border border-gray-700 rounded p-3 h-32 overflow-y-auto">
                                 <template x-for="lib in allLibraries" :key="lib.id">
-                                    <div class="flex items-center gap-2 mb-2 last:mb-0">
+                                    <label class="flex items-center gap-2 mb-2 last:mb-0 cursor-pointer">
                                         <input type="checkbox" :value="lib.id" x-model="newUser.library_ids" class="rounded bg-gray-700 border-gray-600 text-blue-600 focus:ring-blue-500">
-                                        <span class="text-gray-300 text-sm" x-text="lib.name"></span>
-                                    </div>
+                                        <span class="text-gray-300 text-sm select-none" x-text="lib.name"></span>
+                                    </label>
                                 </template>
                                 <div x-show="allLibraries.length === 0" class="text-gray-500 text-xs italic">No libraries found.</div>
                             </div>
@@ -129,6 +139,14 @@
                                 <input type="checkbox" x-model="newUser.allow_unknown_age_ratings" id="new_allow_unknown" class="mt-1 rounded bg-gray-700 border-gray-600 text-blue-600 focus:ring-blue-500">
                                 <label for="new_allow_unknown" class="text-gray-300 text-sm leading-tight select-none">Include content with missing/unknown age ratings</label>
                             </div>
+
+                            <div class="flex items-start gap-2" :class="newUser.is_superuser ? 'opacity-50 pointer-events-none' : ''">
+                                <input type="checkbox" x-model="newUser.can_download" id="new_can_download" class="mt-1 rounded bg-gray-700 border-gray-600 text-blue-600 focus:ring-blue-500">
+                                <label for="new_can_download" class="text-gray-300 text-sm leading-tight select-none">Allow downloading comic files (web and OPDS)</label>
+                            </div>
+                            {% if not downloads_enabled %}
+                            <p data-downloads-disabled-note class="text-xs text-amber-400 ml-6 -mt-1">Downloads are turned off site-wide in <a :href="window.parker.route('admin.settings')" class="underline hover:text-amber-300">Settings</a>, so this has no effect until they're turned back on.</p>
+                            {% endif %}
                         </div>
                     </div>
                 </div>
@@ -188,13 +206,23 @@
                         <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-700 pb-2">Access Control</h3>
 
                         <div class="space-y-2 transition-opacity duration-200" :class="editingUser.is_superuser ? 'opacity-50 pointer-events-none' : ''">
-                            <label class="block text-sm text-gray-400">Allowed Libraries</label>
+                            <div class="flex items-center justify-between gap-2">
+                                <span class="block text-sm text-gray-400">Allowed Libraries</span>
+                                <label x-show="allLibraries.length > 1" data-select-all-libraries class="flex items-center gap-2 text-xs text-gray-400 hover:text-gray-200 cursor-pointer select-none">
+                                    <input type="checkbox"
+                                           :checked="allLibrariesSelected(editingUser)"
+                                           x-effect="$el.indeterminate = someLibrariesSelected(editingUser)"
+                                           x-on:change="toggleAllLibraries(editingUser, $event.target.checked)"
+                                           class="rounded bg-gray-700 border-gray-600 text-blue-600 focus:ring-blue-500">
+                                    Select all
+                                </label>
+                            </div>
                             <div class="bg-gray-900 border border-gray-700 rounded p-3 h-32 overflow-y-auto">
                                 <template x-for="lib in allLibraries" :key="lib.id">
-                                    <div class="flex items-center gap-2 mb-2 last:mb-0">
+                                    <label class="flex items-center gap-2 mb-2 last:mb-0 cursor-pointer">
                                         <input type="checkbox" :value="lib.id" x-model="editingUser.library_ids" class="rounded bg-gray-700 border-gray-600 text-blue-600 focus:ring-blue-500">
-                                        <span class="text-gray-300 text-sm" x-text="lib.name"></span>
-                                    </div>
+                                        <span class="text-gray-300 text-sm select-none" x-text="lib.name"></span>
+                                    </label>
                                 </template>
                             </div>
                             <p x-show="editingUser.is_superuser" class="text-xs text-blue-400 mt-1">Admins have access to all libraries.</p>
@@ -216,7 +244,15 @@
                                 <label for="edit_allow_unknown" class="text-gray-300 text-sm leading-tight select-none">Include content with missing/unknown age ratings</label>
                             </div>
 
-                            <p x-show="editingUser.is_superuser" class="text-xs text-blue-400 mt-1">Admins are exempt from age restrictions.</p>
+                            <div class="flex items-start gap-2">
+                                <input type="checkbox" x-model="editingUser.can_download" id="edit_can_download" class="mt-1 rounded bg-gray-700 border-gray-600 text-blue-600 focus:ring-blue-500">
+                                <label for="edit_can_download" class="text-gray-300 text-sm leading-tight select-none">Allow downloading comic files (web and OPDS)</label>
+                            </div>
+                            {% if not downloads_enabled %}
+                            <p data-downloads-disabled-note class="text-xs text-amber-400 ml-6 -mt-1">Downloads are turned off site-wide in <a :href="window.parker.route('admin.settings')" class="underline hover:text-amber-300">Settings</a>, so this has no effect until they're turned back on.</p>
+                            {% endif %}
+
+                            <p x-show="editingUser.is_superuser" class="text-xs text-blue-400 mt-1">Admins are exempt from age and download restrictions.</p>
                         </div>
                     </div>
 
@@ -253,11 +289,11 @@ function userManager() {
         // Data Models
         newUser: {
             username: '', email: '', password: '', is_superuser: false, library_ids: [],
-            must_change_password: true, max_age_rating: '', allow_unknown_age_ratings: false
+            must_change_password: true, max_age_rating: '', allow_unknown_age_ratings: false, can_download: true
         },
         editingUser: {
             id: null, username: '', password: '', email: '', is_superuser: false, is_active: true, library_ids: [],
-            must_change_password: false, max_age_rating: '', allow_unknown_age_ratings: false
+            must_change_password: false, max_age_rating: '', allow_unknown_age_ratings: false, can_download: true
         },
 
         // Pagination State
@@ -291,7 +327,7 @@ function userManager() {
         openAddModal() {
             this.newUser = {
                 username: '', email: '', password: '', is_superuser: false, library_ids: [],
-                must_change_password: true, max_age_rating: '', allow_unknown_age_ratings: false
+                must_change_password: true, max_age_rating: '', allow_unknown_age_ratings: false, can_download: true
             };
             this.showAddModal = true;
         },
@@ -327,7 +363,8 @@ function userManager() {
                 // Ensure we handle the list of IDs from the API response
                 library_ids: user.accessible_library_ids ? [...user.accessible_library_ids] : [],
                 max_age_rating: user.max_age_rating || '',
-                allow_unknown_age_ratings: user.allow_unknown_age_ratings || false
+                allow_unknown_age_ratings: user.allow_unknown_age_ratings || false,
+                can_download: user.can_download !== false
             };
             this.showEditModal = true;
         },
@@ -341,7 +378,8 @@ function userManager() {
                 must_change_password: this.editingUser.must_change_password,
                 library_ids: this.editingUser.library_ids,
                 max_age_rating: this.editingUser.max_age_rating,
-                allow_unknown_age_ratings: this.editingUser.allow_unknown_age_ratings
+                allow_unknown_age_ratings: this.editingUser.allow_unknown_age_ratings,
+                can_download: this.editingUser.can_download
             };
 
             if (this.editingUser.password) {
@@ -393,6 +431,25 @@ function userManager() {
         formatDate(dateStr) {
             if (!dateStr) return 'Never';
             return window.parker.formatLocalDateTime(dateStr);
+        },
+
+        selectedLibraryCount(user) {
+            // Checkbox values arrive as strings, while API ids are numbers.
+            const selected = new Set(user.library_ids.map(Number));
+            return this.allLibraries.filter(lib => selected.has(lib.id)).length;
+        },
+
+        allLibrariesSelected(user) {
+            return this.allLibraries.length > 0 && this.selectedLibraryCount(user) === this.allLibraries.length;
+        },
+
+        someLibrariesSelected(user) {
+            const count = this.selectedLibraryCount(user);
+            return count > 0 && count < this.allLibraries.length;
+        },
+
+        toggleAllLibraries(user, checked) {
+            user.library_ids = checked ? this.allLibraries.map(lib => lib.id) : [];
         },
 
         formatLibraryCount(user) {

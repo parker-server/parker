@@ -11,7 +11,8 @@ from pydantic import BaseModel, Field
 from app.core.comic_helpers import (get_reading_time, get_format_sort_index, get_issue_number_sort_keys,
                                     REVERSE_NUMBERING_SERIES,
                                     assert_user_can_view_comic, get_comic_age_restriction,
-                                    get_series_age_restriction, get_thumbnail_url, get_thumbnail_hash)
+                                    get_series_age_restriction, get_thumbnail_url, get_thumbnail_hash,
+                                    user_can_download)
 from app.api.deps import SessionDep, CurrentUser, ComicDep
 
 from app.models.comic import Comic, Volume
@@ -23,6 +24,7 @@ from app.models.pull_list import PullList, PullListItem
 from app.models.bookmark import Bookmark
 from app.models.reading_progress import ReadingProgress
 from app.models.interactions import UserComicRating
+from app.routers.opds import get_opds_acquisition_type, get_opds_download_filename
 
 
 from app.schemas.search import SearchRequest, SearchResponse
@@ -412,6 +414,24 @@ async def get_comic_thumbnail(
     else:
         # Return a placeholder or 404
         raise HTTPException(status_code=404, detail="Could not find thumbnail")
+
+
+@router.get("/{comic_id}/download", name="download")
+async def download_comic(comic: ComicDep, db: SessionDep, current_user: CurrentUser):
+    """Download the original comic file when downloads are allowed for this user."""
+    assert_user_can_view_comic(comic, current_user, hide_denied=True)
+
+    if not user_can_download(current_user, db):
+        raise HTTPException(status_code=403, detail="Downloads are not allowed for this account")
+
+    if not comic.absolute_path or not Path(comic.absolute_path).is_file():
+        raise HTTPException(status_code=404, detail="Comic file not found")
+
+    return FileResponse(
+        path=comic.absolute_path,
+        filename=get_opds_download_filename(comic),
+        media_type=get_opds_acquisition_type(comic),
+    )
 
 
 @router.get("/random/backgrounds", name="random_backgrounds")

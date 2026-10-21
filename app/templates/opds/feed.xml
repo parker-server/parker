@@ -89,11 +89,13 @@
           type="image/jpeg"
           href="{{ get_opds_thumbnail_href(request, book) }}"/>
 
-    {# 5. Download Link with File Size #}
+    {# 5. Download Link with File Size (hidden when downloads are not allowed) #}
+    {% if can_download %}
     <link rel="http://opds-spec.org/acquisition"
           type="{{ get_opds_acquisition_type(book) }}"
           length="{{ book.file_size }}"
           href="{{ get_opds_download_href(request, book) }}"/>
+    {% endif %}
   </entry>
   {% endfor %}
 </feed>

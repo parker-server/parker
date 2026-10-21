@@ -58,6 +58,7 @@ class UserCreateRequest(UserBase):
     library_ids: List[int] = Field(default_factory=list)
     max_age_rating: Optional[str] = None
     allow_unknown_age_ratings: bool = False
+    can_download: bool = True
 
 class UserUpdateRequest(UserBase):
     password: str | None = None
@@ -68,6 +69,7 @@ class UserUpdateRequest(UserBase):
     library_ids: List[int] | None = None
     max_age_rating: Optional[str] = None
     allow_unknown_age_ratings: Optional[bool] = None
+    can_download: Optional[bool] = None
 
 class UserListResponse(BaseModel):
     id: int
@@ -83,6 +85,7 @@ class UserListResponse(BaseModel):
     accessible_library_ids: List[int] = []
     max_age_rating: Optional[str]
     allow_unknown_age_ratings: bool
+    can_download: bool = True
 
 class UserPasswordUpdateRequest(BaseModel):
     current_password: str
@@ -380,7 +383,8 @@ async def list_users(
             "last_login": u.last_login,
             "accessible_library_ids": [lib.id for lib in u.accessible_libraries],
             "max_age_rating": u.max_age_rating,
-            "allow_unknown_age_ratings": u.allow_unknown_age_ratings
+            "allow_unknown_age_ratings": u.allow_unknown_age_ratings,
+            "can_download": u.can_download,
         })
 
 
@@ -417,7 +421,8 @@ async def create_user(
         must_change_password=user_in.must_change_password,
         accessible_libraries = libraries,
         max_age_rating=None if user_in.is_superuser else user_in.max_age_rating,
-        allow_unknown_age_ratings=False if user_in.is_superuser else user_in.allow_unknown_age_ratings
+        allow_unknown_age_ratings=False if user_in.is_superuser else user_in.allow_unknown_age_ratings,
+        can_download=user_in.can_download,
     )
     db.add(user)
     db.commit()
@@ -451,6 +456,8 @@ async def update_user(
         user.is_active = updates.is_active
     if updates.must_change_password is not None:
         user.must_change_password = updates.must_change_password
+    if updates.can_download is not None:
+        user.can_download = updates.can_download
 
     # Update Libraries (with superuser checks)
     if user.is_superuser:

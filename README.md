@@ -24,6 +24,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
 - **User System**
   - Multi‑library access with row‑level security
   - Age-rating-aware access control
+  - Comic file downloads from the issue page and OPDS, controlled by a site-wide **Allow Comic Downloads** setting plus a per-user download permission (admins can always download)
   - Admin-enforced password changes for accounts created or reset with temporary passwords
   - Anonymous Social Insights participation is enabled for new users by default, with an account-level opt-out
   - Avatar uploads
@@ -233,6 +234,11 @@ without changing the main Parker password.
 Reader support varies by app: some Android readers can download a CBR but fail
 to open it if the archive uses RAR5 compression. In that case, use a reader with
 RAR5 support or convert the file to CBZ/RAR4 at the library owner's discretion.
+
+OPDS readers open comics by downloading them, so turning off **Allow Comic
+Downloads** in Settings, or a user's download permission in Users, also stops
+those users from reading through OPDS. Their feeds still list comics but leave
+out the download links.
 
 Known client behavior:
 
