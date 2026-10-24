@@ -24,7 +24,7 @@
 
     <div class="flex sm:flex-col gap-2 justify-center sm:border-l sm:border-gray-700 sm:pl-4">
         <a :href="window.parker.readerRoute(item.comic_id)" class="btn-primary text-sm text-center py-2 px-4 flex-1 sm:flex-none">
-            Continue
+            <span x-text="item.completed ? 'Read Again' : 'Continue'"></span>
         </a>
 
         <template x-if="!item.completed">

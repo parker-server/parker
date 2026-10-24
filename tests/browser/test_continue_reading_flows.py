@@ -54,6 +54,16 @@ def test_continue_reading_launch_returns_to_list_on_reader_close(page, browser_s
 
 
 @pytest.mark.browser
+def test_continue_reading_completed_items_offer_read_again(page, browser_server):
+    seed = browser_server["seed"]
+    page.goto(f"{browser_server['base_url']}/continue-reading", wait_until="networkidle")
+
+    page.get_by_role("button", name="Completed").click()
+    card = page.locator("div.border.border-gray-700").filter(has_text=seed["completed_comic_title"]).first
+    card.get_by_role("link", name="Read Again").wait_for()
+
+
+@pytest.mark.browser
 def test_continue_reading_mark_read_moves_issue_to_completed(page, browser_server):
     seed = browser_server["seed"]
     page.goto(f"{browser_server['base_url']}/continue-reading", wait_until="networkidle")
