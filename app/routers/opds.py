@@ -86,15 +86,26 @@ def sanitize_opds_filename(value: str) -> str:
 
 
 def get_opds_download_filename(comic: Comic) -> str:
-    """Return a stable export filename that keeps the comic's real extension."""
+    """Return a readable export filename like "Series v2 #7 - Title.cbz", keeping the real extension."""
     suffix = get_comic_archive_suffix(comic) or ".cbz"
+    file_stem = Path(comic.filename).stem if comic.filename else f"comic-{comic.id}"
+
+    volume = comic.volume
+    series_name = volume.series.name if volume and volume.series else None
+    if not series_name:
+        return sanitize_opds_filename(f"{file_stem}{suffix}")
+
+    name = series_name
+    if volume.volume_number and volume.volume_number > 1:
+        name += f" v{volume.volume_number}"
+    if comic.number:
+        name += f" #{comic.number}"
     if comic.title:
-        safe_title = comic.title
-    elif comic.filename:
-        safe_title = Path(comic.filename).stem or comic.filename
-    else:
-        safe_title = f"comic-{comic.id}"
-    return sanitize_opds_filename(f"{comic.series_group or 'Comic'} - {safe_title}{suffix}")
+        name += f" - {comic.title}"
+    elif not comic.number:
+        name += f" - {file_stem}"
+
+    return sanitize_opds_filename(f"{name}{suffix}")
 
 
 def get_opds_download_href(request: Request, comic: Comic) -> str:

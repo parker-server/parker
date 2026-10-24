@@ -2,6 +2,7 @@ import xml.etree.ElementTree as ET
 from unittest.mock import patch
 
 from app.core.comic_helpers import DOWNLOADS_ENABLED_SETTING, user_can_download
+from app.routers.opds import get_opds_download_filename
 from app.models.comic import Comic, Volume
 from app.models.series import Series
 from app.models.setting import SystemSetting
@@ -82,7 +83,7 @@ def test_web_download_returns_original_file(auth_client, db, normal_user, tmp_pa
     assert response.status_code == 200
     assert response.content == b"fake-zip"
     assert response.headers["content-type"].startswith("application/vnd.comicbook+zip")
-    assert "Comic%20-%20Grab%20It.cbz" in response.headers["content-disposition"]
+    assert "Download%20Test%20%231%20-%20Grab%20It.cbz" in response.headers["content-disposition"]
 
 
 def test_web_download_blocked_for_user_without_permission(auth_client, db, normal_user, tmp_path):
@@ -213,3 +214,29 @@ def test_admin_users_page_notes_when_downloads_are_off_site_wide(admin_client, d
     disabled = admin_client.get("/admin/users")
     assert disabled.status_code == 200
     assert disabled.text.count("data-downloads-disabled-note") == 2
+
+
+# --- Download filenames ---
+
+def _filename_for(series_name, volume_number=1, **comic_kwargs):
+    series = Series(name=series_name) if series_name else None
+    volume = Volume(series=series, volume_number=volume_number)
+    comic_kwargs.setdefault("filename", "source-file.cbz")
+    return get_opds_download_filename(Comic(id=42, volume=volume, **comic_kwargs))
+
+
+def test_download_filename_uses_series_number_and_title():
+    assert _filename_for("Amazing Spider-Man", number="15", title="Spider-Man!") == "Amazing Spider-Man #15 - Spider-Man!.cbz"
+
+
+def test_download_filename_adds_volume_after_the_first():
+    assert _filename_for("Batman", volume_number=2, number="1", title=None) == "Batman v2 #1.cbz"
+
+
+def test_download_filename_falls_back_to_file_name_without_number_or_title():
+    assert _filename_for("One Shots", number=None, title=None) == "One Shots - source-file.cbz"
+
+
+def test_download_filename_keeps_extension_and_removes_unsafe_characters():
+    filename = _filename_for("What If?", number="1", title="Who: Me/You", filename="what-if-001.cbr")
+    assert filename == "What If_ #1 - Who_ Me_You.cbr"
