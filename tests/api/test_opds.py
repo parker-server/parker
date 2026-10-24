@@ -729,7 +729,7 @@ def test_opds_series_feed_handles_missing_month_and_day(client, db, normal_user)
     assert len(acquisitions) == 1
     assert acquisition.get("type") == "application/vnd.comicbook+zip"
     assert acquisition.get("href", "").startswith("http://testserver/opds/download/")
-    assert acquisition.get("href", "").endswith("/Comic%20-%20Stormbreaker.cbz")
+    assert acquisition.get("href", "").endswith("/Beta%20Ray%20%237%20-%20Stormbreaker.cbz")
 
 
 def test_opds_series_feed_hides_inaccessible_library_series(client, db, normal_user):
@@ -1064,10 +1064,10 @@ def test_opds_download_uses_real_archive_type_and_extension(client, db, normal_u
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/vnd.comicbook-rar")
-    assert 'filename="Comic - First Blast.cbr"' in response.headers["content-disposition"]
+    assert 'filename="Gamma Ray #1 - First Blast.cbr"' in response.headers["content-disposition"]
 
 
-def test_opds_download_uses_filename_stem_when_title_missing(client, db, normal_user, tmp_path):
+def test_opds_download_uses_issue_number_when_title_missing(client, db, normal_user, tmp_path):
     _enable_opds(db)
 
     archive_path = tmp_path / "titleless-special.cbz"
@@ -1098,4 +1098,4 @@ def test_opds_download_uses_filename_stem_when_title_missing(client, db, normal_
         )
 
     assert response.status_code == 200
-    assert 'filename="Comic - titleless-special.cbz"' in response.headers["content-disposition"]
+    assert 'filename="Titleless Series #2.cbz"' in response.headers["content-disposition"]
