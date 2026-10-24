@@ -9,7 +9,7 @@ from sqlalchemy.exc import OperationalError
 from app.core.settings_loader import get_cached_setting
 from app.database import SessionLocal
 from app.models import ScanJob, Library
-from app.models.job import JobType, JobStatus
+from app.models.job import JobType, JobStatus, JOB_LANES, LIBRARY_LANE
 
 from app.services.scanner import LibraryScanner
 from app.services.maintenance import MaintenanceService
@@ -33,37 +33,43 @@ class ScanManager:
         self.logger = logging.getLogger(__name__)
 
         self._stop_event = threading.Event()
-        self.worker_thread = None
+        self.worker_threads: dict[str, threading.Thread] = {}
 
         self._initialized = True
 
     def start(self):
-        """Start the queue worker in the process that owns the manager lock."""
-        if self.worker_thread and self.worker_thread.is_alive():
-            self.logger.info("Scan manager worker already running")
+        """Start one queue worker per lane in the process that owns the manager lock."""
+        if any(thread.is_alive() for thread in self.worker_threads.values()):
+            self.logger.info("Scan manager workers already running")
             return
 
         self._stop_event.clear()
         self._recover_interrupted_jobs()
 
-        self.worker_thread = threading.Thread(target=self._process_queue, daemon=True)
-        self.worker_thread.start()
+        self.worker_threads = {}
+        for lane in JOB_LANES:
+            thread = threading.Thread(
+                target=self._process_lane,
+                args=(lane,),
+                name=f"job-worker-{lane}",
+                daemon=True,
+            )
+            thread.start()
+            self.worker_threads[lane] = thread
 
     def stop(self, timeout: float = 5.0):
-        """Ask the queue worker to stop and wait briefly for it to exit."""
+        """Ask the queue workers to stop and wait briefly for each to exit."""
         self._stop_event.set()
 
-        if not self.worker_thread:
-            return
+        for lane, thread in list(self.worker_threads.items()):
+            if thread.is_alive():
+                thread.join(timeout=timeout)
 
-        if self.worker_thread.is_alive():
-            self.worker_thread.join(timeout=timeout)
+            if thread.is_alive():
+                self.logger.warning(f"Scan manager '{lane}' worker did not stop before timeout")
+                continue
 
-        if self.worker_thread.is_alive():
-            self.logger.warning("Scan manager worker did not stop before timeout")
-            return
-
-        self.worker_thread = None
+            del self.worker_threads[lane]
 
     def _recover_interrupted_jobs(self):
         """Mark jobs that were 'RUNNING' during startup as FAILED"""
@@ -195,37 +201,24 @@ class ScanManager:
         finally:
             db.close()
 
-    def _process_queue(self):
-        """Poller loop"""
-        self.logger.info("Database Job Worker Started")
+    def _process_lane(self, lane: str):
+        """Poller loop for one lane. Claims that lane's job types in priority order."""
+        self.logger.info(f"Database Job Worker Started (lane: {lane})")
+        job_types = JOB_LANES[lane]
         loops = 0
 
         while not self._stop_event.is_set():
             db = SessionLocal()
             try:
-                # Priority: SCAN -> THUMBNAIL -> CLEANUP -> METADATA_REHYDRATE
-                job = db.query(ScanJob).filter(
-                    ScanJob.status == JobStatus.PENDING,
-                    ScanJob.job_type == JobType.SCAN
-                ).order_by(asc(ScanJob.created_at)).first()
-
-                if not job:
+                # Priority follows the lane's job type order
+                job = None
+                for job_type in job_types:
                     job = db.query(ScanJob).filter(
                         ScanJob.status == JobStatus.PENDING,
-                        ScanJob.job_type == JobType.THUMBNAIL
+                        ScanJob.job_type == job_type
                     ).order_by(asc(ScanJob.created_at)).first()
-
-                if not job:
-                    job = db.query(ScanJob).filter(
-                        ScanJob.status == JobStatus.PENDING,
-                        ScanJob.job_type == JobType.CLEANUP
-                    ).order_by(asc(ScanJob.created_at)).first()
-
-                if not job:
-                    job = db.query(ScanJob).filter(
-                        ScanJob.status == JobStatus.PENDING,
-                        ScanJob.job_type == JobType.METADATA_REHYDRATE
-                    ).order_by(asc(ScanJob.created_at)).first()
+                    if job:
+                        break
 
                 if job:
                     # ATOMIC CLAIM
@@ -265,11 +258,12 @@ class ScanManager:
 
                 else:
                     db.close()
-                    # Periodic integrity check
-                    loops += 1
-                    if loops >= 15:
-                        self._fix_stuck_libraries()
-                        loops = 0
+                    # Periodic integrity check (library flags belong to the library lane)
+                    if lane == LIBRARY_LANE:
+                        loops += 1
+                        if loops >= 15:
+                            self._fix_stuck_libraries()
+                            loops = 0
                     time.sleep(2)
 
             except Exception as e:

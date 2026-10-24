@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Boolean
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Boolean, Index, text
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 import enum
@@ -17,13 +17,39 @@ class JobStatus(str, enum.Enum):
     FAILED = "failed"
 
 
+# Each lane gets its own worker thread. Within a lane, job types are listed in
+# priority order: the worker always claims the first type that has pending work.
+LIBRARY_LANE = "library"
+
+JOB_LANES: dict[str, tuple[JobType, ...]] = {
+    LIBRARY_LANE: (JobType.SCAN, JobType.THUMBNAIL, JobType.CLEANUP, JobType.METADATA_REHYDRATE),
+}
+
+
 class ScanJob(Base):
     __tablename__ = "scan_jobs"
+    __table_args__ = (
+        # Only one active external review lookup per target. Enforced by the
+        # database so concurrent Uvicorn workers cannot enqueue duplicates.
+        Index(
+            "uq_scan_jobs_active_external_review",
+            "job_type",
+            "target_type",
+            "target_id",
+            unique=True,
+            sqlite_where=text("job_type = 'external_review_lookup' AND status IN ('pending', 'running')"),
+        ),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     library_id = Column(Integer, ForeignKey("libraries.id"), nullable=True)
 
     job_type = Column(String, default=JobType.SCAN, index=True)
+
+    # Generic target for jobs that are not scoped to a library (e.g. a comic).
+    target_type = Column(String, nullable=True)
+    target_id = Column(Integer, nullable=True)
+    payload_json = Column(Text, nullable=True)  # JSON string of job-specific options
 
     # Status tracking
     status = Column(String, default=JobStatus.PENDING, index=True)

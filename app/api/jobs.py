@@ -7,16 +7,17 @@ from sqlalchemy import asc, case, desc
 from sqlalchemy.orm import joinedload
 
 from app.api.deps import SessionDep, AdminUser
-from app.models.job import ScanJob, JobStatus, JobType
+from app.models.job import ScanJob, JobStatus, JobType, JOB_LANES
 from app.models.library import Library
 
 router = APIRouter()
 
+# Pending jobs are listed lane by lane, in each lane's claim order.
 JOB_TYPE_PRIORITY = {
-    JobType.SCAN.value: 0,
-    JobType.THUMBNAIL.value: 1,
-    JobType.CLEANUP.value: 2,
-    JobType.METADATA_REHYDRATE.value: 3,
+    job_type.value: index
+    for index, job_type in enumerate(
+        job_type for lane_job_types in JOB_LANES.values() for job_type in lane_job_types
+    )
 }
 
 
@@ -69,13 +70,7 @@ def serialize_job(job: ScanJob, queue_position: int | None = None) -> dict:
 
 def job_type_priority_expression():
     return case(
-        (ScanJob.job_type == JobType.SCAN.value, JOB_TYPE_PRIORITY[JobType.SCAN.value]),
-        (ScanJob.job_type == JobType.THUMBNAIL.value, JOB_TYPE_PRIORITY[JobType.THUMBNAIL.value]),
-        (ScanJob.job_type == JobType.CLEANUP.value, JOB_TYPE_PRIORITY[JobType.CLEANUP.value]),
-        (
-            ScanJob.job_type == JobType.METADATA_REHYDRATE.value,
-            JOB_TYPE_PRIORITY[JobType.METADATA_REHYDRATE.value],
-        ),
+        *[(ScanJob.job_type == job_type, priority) for job_type, priority in JOB_TYPE_PRIORITY.items()],
         else_=99,
     )
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-Design decided; implementation not started. Work is split into three PRs (see [Rollout](#rollout)).
+Design decided. PR 1 (groundwork) is implemented on the `background-job-lanes` branch; PR 2 and PR 3 are not started. See [Rollout](#rollout).
 
 ## Goal
 
@@ -82,19 +82,20 @@ For ComicBookRoundup jobs:
 
 ## Queue Lanes
 
-The current worker is a single serial loop with four copy-pasted priority queries. It becomes one manager with a worker thread per lane:
+The worker used to be a single serial loop with four copy-pasted priority queries. It is now one manager with a worker thread per lane. Lanes are defined next to `JobType` in `app/models/job.py`, so the admin jobs API can import them without loading the scanner:
 
 ```python
-LANES = {
-    "library": [JobType.SCAN, JobType.THUMBNAIL, JobType.CLEANUP, JobType.METADATA_REHYDRATE],
-    "enrichment": [JobType.EXTERNAL_REVIEW_LOOKUP],
+JOB_LANES = {
+    "library": (JobType.SCAN, JobType.THUMBNAIL, JobType.CLEANUP, JobType.METADATA_REHYDRATE),
+    "enrichment": (JobType.EXTERNAL_REVIEW_LOOKUP,),  # added in PR 2
 }
 ```
 
-- `_process_queue` becomes `_process_lane(lane)`. It walks the lane's job types in list order (which is the priority order), then does the same atomic claim as today.
-- `start()` and `stop()` manage one thread per lane.
-- `_fix_stuck_libraries` and the `is_scanning` flag handling run only for the library lane.
-- `JOB_TYPE_PRIORITY` in `app/api/jobs.py` should be derived from (or kept in sync with) the lane order.
+- `_process_lane(lane)` (formerly `_process_queue`) walks the lane's job types in tuple order (which is the priority order), then does the same atomic claim as before.
+- `start()` and `stop()` manage one thread per lane (`worker_threads`, keyed by lane). Interrupted-job recovery still runs once per `start()`.
+- `_fix_stuck_libraries` runs only in the library lane.
+- `JOB_TYPE_PRIORITY` in `app/api/jobs.py` is derived from `JOB_LANES`.
+- PR 1 defines only the library lane. Every lane gets a polling thread, so the enrichment entry is added in PR 2 together with its job type.
 
 External review lookups are short, network-bound, and usually triggered by a user viewing an issue. Their own lane means they never wait behind a scan pipeline, and scans never wait behind them.
 
@@ -208,7 +209,7 @@ No extra lock-retry wrapper is planned for enrichment writes. Add one only if lo
 
 - Migration: `target_type`, `target_id`, `payload_json`, and the partial unique index.
 - Model updates in `app/models/job.py`.
-- Lane refactor in `ScanManager` (`LANES`, `_process_lane`, multi-thread `start`/`stop`). The library lane behaves exactly as today; the enrichment lane has no job types to run yet.
+- Lane refactor in `ScanManager` (`JOB_LANES`, `_process_lane`, multi-thread `start`/`stop`). The library lane behaves exactly as before; only the library lane is defined.
 
 ### PR 2: external review jobs
 
@@ -225,6 +226,8 @@ No extra lock-retry wrapper is planned for enrichment writes. Add one only if lo
 - Update admin wording to "Background Jobs" where appropriate.
 
 ### Later / out of scope
+
+- After PR 2: a health check for lane worker threads, so a dead lane is logged or restarted without going through `start()` (tracked in `TODO.md`).
 
 - Renaming the `scan_jobs` table. Only if something forces it; it touches migrations, models, admin APIs, tests, and release notes.
 - Moving series thumbnail regeneration (`POST /api/series/{series_id}/thumbnails`, currently `BackgroundTasks`) onto the queue as a `THUMBNAIL` job with `target_type = "series"`.
