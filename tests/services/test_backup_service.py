@@ -1,8 +1,10 @@
 import logging
 import os
+import shutil
 import sqlite3
 import tarfile
 import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -23,6 +25,44 @@ def _create_sqlite_db(path):
 
 def _sqlite_url(path):
     return f"sqlite:///{path.as_posix()}"
+
+
+def _create_wal_db(path, rows=200, delete_rows=True):
+    """Create a WAL-mode database; deleting rows leaves most of the file unused."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(path)
+    try:
+        connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute("CREATE TABLE comics (id INTEGER PRIMARY KEY, title TEXT, metadata_json TEXT)")
+        connection.execute("INSERT INTO comics (title, metadata_json) VALUES ('Compact Canary', '{}')")
+        connection.executemany(
+            "INSERT INTO comics (title, metadata_json) VALUES (?, ?)",
+            [(f"Filler {index}", "x" * 20_000) for index in range(rows)],
+        )
+        if delete_rows:
+            connection.execute("DELETE FROM comics WHERE title LIKE 'Filler %'")
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def _read_canary(path):
+    connection = sqlite3.connect(path)
+    try:
+        title = connection.execute("SELECT title FROM comics").fetchone()[0]
+        journal_mode = connection.execute("PRAGMA journal_mode").fetchone()[0]
+    finally:
+        connection.close()
+    return title, journal_mode
+
+
+@pytest.fixture
+def compact_db(tmp_path, monkeypatch):
+    db_path = tmp_path / "database" / "comics.db"
+    monkeypatch.setattr(backup_module.settings, "database_url", _sqlite_url(db_path))
+    # Test databases are a few MB, so drop the 50 MB floor unless a test restores it.
+    monkeypatch.setattr(backup_module, "COMPACT_MIN_FREE_BYTES", 0)
+    return db_path
 
 
 def test_create_backup_archives_database_and_removes_temp_copy(tmp_path, monkeypatch):
@@ -115,3 +155,84 @@ def test_cleanup_old_backups_logs_delete_failures(tmp_path, monkeypatch, caplog)
 
     assert old_backup.exists()
     assert "Failed to delete comics_backup_locked.tar.gz: file is locked" in caplog.text
+
+
+def test_compact_database_if_needed_shrinks_file_with_lots_of_unused_space(compact_db, caplog):
+    _create_wal_db(compact_db)
+    size_before = compact_db.stat().st_size
+
+    with caplog.at_level(logging.INFO, logger="app.services.backup"):
+        result = BackupService.compact_database_if_needed()
+
+    assert result["status"] == "compacted"
+    assert result["size_before"] == size_before
+    assert result["size_after"] == compact_db.stat().st_size
+    assert compact_db.stat().st_size < size_before / 4
+    assert _read_canary(compact_db) == ("Compact Canary", "wal")
+    assert "Database compacted" in caplog.text
+
+
+def test_compact_database_if_needed_skips_when_little_space_is_unused(compact_db):
+    _create_wal_db(compact_db, delete_rows=False)
+    size_before = compact_db.stat().st_size
+
+    assert BackupService.compact_database_if_needed() == {"status": "not_needed"}
+    assert compact_db.stat().st_size == size_before
+
+
+def test_compact_database_if_needed_skips_below_minimum_unused_bytes(compact_db, monkeypatch):
+    _create_wal_db(compact_db)
+    size_before = compact_db.stat().st_size
+    monkeypatch.setattr(backup_module, "COMPACT_MIN_FREE_BYTES", 50 * 1024 * 1024)
+
+    assert BackupService.compact_database_if_needed() == {"status": "not_needed"}
+    assert compact_db.stat().st_size == size_before
+
+
+def test_compact_database_if_needed_retries_after_low_disk_space(compact_db, monkeypatch, caplog):
+    _create_wal_db(compact_db)
+    size_before = compact_db.stat().st_size
+
+    with monkeypatch.context() as low_disk:
+        low_disk.setattr(shutil, "disk_usage", lambda _path: SimpleNamespace(free=0))
+        with caplog.at_level(logging.WARNING, logger="app.services.backup"):
+            assert BackupService.compact_database_if_needed() == {"status": "skipped"}
+
+    assert compact_db.stat().st_size == size_before
+    assert "Skipped compacting the database: needs about" in caplog.text
+    assert "It will try again on the next start." in caplog.text
+
+    # Next start, with room on disk: the unused space is still there, so it compacts.
+    assert BackupService.compact_database_if_needed()["status"] == "compacted"
+    assert compact_db.stat().st_size < size_before / 4
+
+
+def test_compact_database_if_needed_warns_instead_of_raising_when_vacuum_fails(compact_db, monkeypatch, caplog):
+    _create_wal_db(compact_db)
+    real_connect = sqlite3.connect
+
+    class VacuumFailsConnection:
+        def __init__(self, connection):
+            self._connection = connection
+
+        def execute(self, sql, *args):
+            if sql == "VACUUM":
+                raise sqlite3.OperationalError("database or disk is full")
+            return self._connection.execute(sql, *args)
+
+        def close(self):
+            self._connection.close()
+
+    monkeypatch.setattr(backup_module.sqlite3, "connect", lambda *args, **kwargs: VacuumFailsConnection(real_connect(*args, **kwargs)))
+
+    with caplog.at_level(logging.WARNING, logger="app.services.backup"):
+        result = BackupService.compact_database_if_needed()
+
+    assert result == {"status": "failed"}
+    assert "Skipped compacting the database: database or disk is full" in caplog.text
+    assert _read_canary(compact_db) == ("Compact Canary", "wal")
+
+
+def test_compact_database_if_needed_ignores_missing_database_file(compact_db):
+    assert BackupService.compact_database_if_needed() == {"status": "not_needed"}
+    assert not compact_db.exists()

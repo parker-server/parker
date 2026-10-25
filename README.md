@@ -64,6 +64,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
 - **Administration**
   - About and admin dashboard surfaces can flag when a newer tagged Parker version is available
   - Kavita migration preview stages a database once in shared cache storage, summarizes new and matched users plus importable progress, requires review before migration runs, and cleans expired staging files at startup
+  - Docker startup compacts the SQLite database when at least a quarter of the file (and at least 50 MB) is unused, skipping with a log warning and retrying next start if disk space is short
 
 - **Scanning**
   - Background ScanManager with priority queues and separate lanes, so short enrichment jobs (like review lookups) never wait behind library scans

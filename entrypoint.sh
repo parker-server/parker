@@ -11,12 +11,20 @@ mkdir -p /app/storage/database \
 # Run migrations
 alembic upgrade head
 
-# Initialize default settings
+# Compact the database if needed, then initialize default settings
 python - << 'EOF'
+import logging
+
 from app.config import settings
 from app.database import SessionLocal
 from app.services.admin_bootstrap import ensure_initial_admin
+from app.services.backup import BackupService
 from app.services.settings_service import SettingsService
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)-5.5s [%(name)s] %(message)s")
+
+# Runs before the server starts, so nothing else is using the database.
+BackupService.compact_database_if_needed()
 
 db = SessionLocal()
 try:

@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, ForeignKey, Text, DateTime, Float, JSON, Index, Boolean
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, deferred
 from datetime import datetime, timezone
 from app.core.path_utils import resolve_absolute_path
 from app.database import Base
@@ -88,8 +88,9 @@ class Comic(Base):
     color_secondary = Column(String, nullable=True)
     color_palette = Column(JSON, nullable=True)  # Full color palette for advanced features
 
-    # Store full metadata as JSON for anything we missed
-    metadata_json = Column(Text)
+    # Parsed ComicInfo fields as JSON, used by metadata rehydrate.
+    # Deferred so normal comic queries don't load it.
+    metadata_json = deferred(Column(Text))
 
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
