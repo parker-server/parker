@@ -40,3 +40,8 @@ This file captures follow-up work that should not get lost between releases.
   Context: Full pytest coverage currently emits `DeprecationWarning` from `colorthief==0.2.1` because it calls Pillow's deprecated `Image.Image.getdata`, which is scheduled for removal in Pillow 14 on 2027-10-15.
   Follow-up goal: Decide whether to replace ColorThief, patch/vendor the small palette extraction path, or move Parker's palette generation to a maintained Pillow-based quantization approach before upgrading to Pillow 14.
   Guardrail: This is not a `0.1.24` release blocker while Parker remains pinned to Pillow 12.x and tests pass.
+
+- Add a health check for background job worker threads (after external review jobs land).
+  Context: `ScanManager.start()` runs once at startup and starts one worker thread per lane (`JOB_LANES`). Each lane's loop catches `Exception`, but a thread can still die in rare cases (for example, `db.close()` raising inside the loop's `except` block, or a `BaseException` escaping). Nothing notices or restarts a dead lane today; this was equally true of the old single worker thread. See `docs/background-job-manager-scope.md`.
+  Follow-up goal: Periodically check `scan_manager.worker_threads` from the scheduler (same lock-owning process) and log loudly when a lane's thread is dead, and/or restart just that lane.
+  Guardrail: Do not restart lanes through `start()`. Its `_recover_interrupted_jobs()` marks every `RUNNING` job failed, which would fail jobs that a healthy lane is still running. A per-lane restart must skip recovery or limit it to that lane's job types.

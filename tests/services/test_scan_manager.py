@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, ANY
 
 import pytest
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import sessionmaker
 
 from app.models.job import JobStatus, JobType, ScanJob
@@ -16,15 +16,17 @@ def _manager():
     manager = object.__new__(sm.ScanManager)
     manager.logger = MagicMock()
     manager._stop_event = threading.Event()
-    manager.worker_thread = None
+    manager.worker_threads = {}
     return manager
 
 
 class _FakeThread:
     instances = []
 
-    def __init__(self, target=None, daemon=False):
+    def __init__(self, target=None, args=(), name=None, daemon=False):
         self.target = target
+        self.args = args
+        self.name = name
         self.daemon = daemon
         self.started = False
         self.join_timeout = None
@@ -57,7 +59,7 @@ def test_scan_manager_init_short_circuits_when_initialized():
 
     sm.ScanManager.__init__(manager)
 
-    assert not hasattr(manager, "worker_thread")
+    assert not hasattr(manager, "worker_threads")
 
 
 def test_scan_manager_init_does_not_start_worker(monkeypatch):
@@ -68,7 +70,7 @@ def test_scan_manager_init_does_not_start_worker(monkeypatch):
 
     sm.ScanManager.__init__(manager)
 
-    assert manager.worker_thread is None
+    assert manager.worker_threads == {}
     thread_factory.assert_not_called()
 
 
@@ -84,17 +86,38 @@ def test_scan_manager_start_recovers_and_starts_worker(monkeypatch):
     manager._recover_interrupted_jobs.assert_called_once()
     assert len(_FakeThread.instances) == 1
     thread = _FakeThread.instances[0]
-    assert thread.target == manager._process_queue
+    assert thread.target == manager._process_lane
+    assert thread.args == (sm.LIBRARY_LANE,)
     assert thread.daemon is True
     assert thread.started is True
-    assert manager.worker_thread is thread
+    assert manager.worker_threads == {sm.LIBRARY_LANE: thread}
+
+
+def test_scan_manager_start_launches_one_worker_per_lane(monkeypatch):
+    manager = _manager()
+    manager._recover_interrupted_jobs = MagicMock()
+
+    monkeypatch.setattr(sm, "JOB_LANES", {
+        sm.LIBRARY_LANE: (JobType.SCAN,),
+        "other": (JobType.CLEANUP,),
+    })
+    _FakeThread.instances.clear()
+    monkeypatch.setattr(sm.threading, "Thread", _FakeThread)
+
+    manager.start()
+
+    # Recovery runs once for the whole manager, not once per lane
+    manager._recover_interrupted_jobs.assert_called_once()
+    assert [thread.args for thread in _FakeThread.instances] == [(sm.LIBRARY_LANE,), ("other",)]
+    assert all(thread.started and thread.daemon for thread in _FakeThread.instances)
+    assert set(manager.worker_threads) == {sm.LIBRARY_LANE, "other"}
 
 
 def test_scan_manager_start_ignores_already_running_worker(monkeypatch):
     manager = _manager()
     running_thread = _FakeThread()
     running_thread.alive = True
-    manager.worker_thread = running_thread
+    manager.worker_threads = {sm.LIBRARY_LANE: running_thread}
     manager._recover_interrupted_jobs = MagicMock()
 
     thread_factory = MagicMock()
@@ -110,13 +133,32 @@ def test_scan_manager_stop_joins_worker():
     manager = _manager()
     thread = _FakeThread()
     thread.alive = True
-    manager.worker_thread = thread
+    manager.worker_threads = {sm.LIBRARY_LANE: thread}
 
     manager.stop(timeout=2.5)
 
     assert manager._stop_event.is_set()
     assert thread.join_timeout == 2.5
-    assert manager.worker_thread is None
+    assert manager.worker_threads == {}
+
+
+def test_scan_manager_stop_keeps_worker_that_does_not_exit():
+    manager = _manager()
+
+    stopped = _FakeThread()
+    stopped.alive = True
+
+    stuck = _FakeThread()
+    stuck.alive = True
+    stuck.join = MagicMock()  # join returns but the thread stays alive
+
+    manager.worker_threads = {sm.LIBRARY_LANE: stopped, "other": stuck}
+
+    manager.stop(timeout=1.0)
+
+    stuck.join.assert_called_once_with(timeout=1.0)
+    assert manager.worker_threads == {"other": stuck}
+    manager.logger.warning.assert_called_once()
 
 
 def test_recover_interrupted_jobs_marks_running_as_failed(monkeypatch, db):
@@ -651,7 +693,7 @@ def test_run_metadata_rehydrate_job_failure_marks_failed(monkeypatch, db):
     manager._set_library_scanning_status.assert_called_once_with(lib.id, False)
 
 
-def test_process_queue_dispatches_scan_job(monkeypatch):
+def test_process_lane_dispatches_scan_job(monkeypatch):
     manager = _manager()
 
     job = SimpleNamespace(id=5, library_id=9, job_type=JobType.SCAN, force_scan=True)
@@ -679,7 +721,7 @@ def test_process_queue_dispatches_scan_job(monkeypatch):
     manager._run_thumbnail_job = MagicMock()
     manager._run_cleanup_job = MagicMock()
 
-    manager._process_queue()
+    manager._process_lane(sm.LIBRARY_LANE)
 
     manager._set_library_scanning_status.assert_called_once_with(9, True)
     manager._run_scan_job.assert_called_once_with({"id": 5, "library_id": 9, "type": JobType.SCAN, "force": True})
@@ -694,7 +736,7 @@ def test_process_queue_dispatches_scan_job(monkeypatch):
         (JobType.CLEANUP, "_run_cleanup_job"),
     ],
 )
-def test_process_queue_dispatches_non_scan_jobs(monkeypatch, job_type, runner_name):
+def test_process_lane_dispatches_non_scan_jobs(monkeypatch, job_type, runner_name):
     manager = _manager()
 
     job = SimpleNamespace(id=6, library_id=None, job_type=job_type, force_scan=False)
@@ -735,13 +777,13 @@ def test_process_queue_dispatches_non_scan_jobs(monkeypatch, job_type, runner_na
     manager._run_cleanup_job = MagicMock()
     manager._run_metadata_rehydrate_job = MagicMock()
 
-    manager._process_queue()
+    manager._process_lane(sm.LIBRARY_LANE)
 
     getattr(manager, runner_name).assert_called_once()
     manager._run_metadata_rehydrate_job.assert_not_called()
 
 
-def test_process_queue_dispatches_metadata_rehydrate_job(monkeypatch):
+def test_process_lane_dispatches_metadata_rehydrate_job(monkeypatch):
     manager = _manager()
 
     job = SimpleNamespace(id=7, library_id=12, job_type=JobType.METADATA_REHYDRATE, force_scan=False)
@@ -785,7 +827,7 @@ def test_process_queue_dispatches_metadata_rehydrate_job(monkeypatch):
     manager._run_cleanup_job = MagicMock()
     manager._run_metadata_rehydrate_job = MagicMock()
 
-    manager._process_queue()
+    manager._process_lane(sm.LIBRARY_LANE)
 
     manager._set_library_scanning_status.assert_called_once_with(12, True)
     manager._run_metadata_rehydrate_job.assert_called_once_with(
@@ -793,7 +835,7 @@ def test_process_queue_dispatches_metadata_rehydrate_job(monkeypatch):
     )
 
 
-def test_process_queue_no_job_triggers_integrity_check(monkeypatch):
+def test_process_lane_no_job_triggers_integrity_check(monkeypatch):
     manager = _manager()
 
     class NoJobDB:
@@ -823,13 +865,13 @@ def test_process_queue_no_job_triggers_integrity_check(monkeypatch):
 
     manager._fix_stuck_libraries = MagicMock()
 
-    manager._process_queue()
+    manager._process_lane(sm.LIBRARY_LANE)
 
     manager._fix_stuck_libraries.assert_called_once()
     assert sleep_mock.call_count == 15
 
 
-def test_process_queue_handles_worker_exception(monkeypatch):
+def test_process_lane_handles_worker_exception(monkeypatch):
     manager = _manager()
 
     db = MagicMock()
@@ -842,13 +884,13 @@ def test_process_queue_handles_worker_exception(monkeypatch):
     sleep_mock = MagicMock()
     monkeypatch.setattr(sm.time, "sleep", sleep_mock)
 
-    manager._process_queue()
+    manager._process_lane(sm.LIBRARY_LANE)
 
     manager.logger.error.assert_called()
     sleep_mock.assert_called_with(5)
 
 
-def test_process_queue_skips_when_atomic_claim_lost(monkeypatch):
+def test_process_lane_skips_when_atomic_claim_lost(monkeypatch):
     manager = _manager()
 
     job = SimpleNamespace(id=3, library_id=10, job_type=JobType.THUMBNAIL, force_scan=False)
@@ -873,7 +915,7 @@ def test_process_queue_skips_when_atomic_claim_lost(monkeypatch):
 
     manager._run_thumbnail_job = MagicMock()
 
-    manager._process_queue()
+    manager._process_lane(sm.LIBRARY_LANE)
 
     manager._run_thumbnail_job.assert_not_called()
 
@@ -906,3 +948,98 @@ def test_safe_job_update_logs_non_locked_operational_error(monkeypatch):
     manager._safe_job_update(77, JobStatus.COMPLETED)
 
     manager.logger.error.assert_called()
+
+
+def test_library_lane_keeps_original_job_type_priority():
+    assert sm.JOB_LANES[sm.LIBRARY_LANE] == (
+        JobType.SCAN,
+        JobType.THUMBNAIL,
+        JobType.CLEANUP,
+        JobType.METADATA_REHYDRATE,
+    )
+
+
+def test_process_lane_only_claims_its_own_job_types(monkeypatch, db):
+    manager = _manager()
+
+    scan_job = ScanJob(library_id=None, job_type=JobType.SCAN, status=JobStatus.PENDING)
+    cleanup_job = ScanJob(library_id=None, job_type=JobType.CLEANUP, status=JobStatus.PENDING)
+    db.add_all([scan_job, cleanup_job])
+    db.commit()
+
+    monkeypatch.setattr(sm, "JOB_LANES", {
+        sm.LIBRARY_LANE: (JobType.SCAN,),
+        "other": (JobType.CLEANUP,),
+    })
+    monkeypatch.setattr(sm, "SessionLocal", _session_local_factory(db))
+    monkeypatch.setattr(sm.time, "sleep", MagicMock())
+
+    manager._stop_event = MagicMock()
+    manager._stop_event.is_set.side_effect = [False, True]
+    manager._run_scan_job = MagicMock()
+    manager._run_cleanup_job = MagicMock()
+
+    # The higher-priority SCAN job belongs to another lane, so it must be left alone
+    manager._process_lane("other")
+
+    manager._run_scan_job.assert_not_called()
+    manager._run_cleanup_job.assert_called_once()
+    assert manager._run_cleanup_job.call_args.args[0]["id"] == cleanup_job.id
+
+    db.expire_all()
+    assert db.get(ScanJob, scan_job.id).status == JobStatus.PENDING
+    assert db.get(ScanJob, cleanup_job.id).status == JobStatus.RUNNING
+
+
+def test_process_lane_skips_integrity_check_outside_library_lane(monkeypatch):
+    manager = _manager()
+
+    db = MagicMock()
+    query = db.query.return_value
+    query.filter.return_value = query
+    query.order_by.return_value = query
+    query.first.return_value = None
+
+    monkeypatch.setattr(sm, "JOB_LANES", {"other": (JobType.CLEANUP,)})
+    monkeypatch.setattr(sm, "SessionLocal", lambda: db)
+    monkeypatch.setattr(sm.time, "sleep", MagicMock())
+
+    manager._stop_event = MagicMock()
+    manager._stop_event.is_set.side_effect = [False] * 15 + [True]
+    manager._fix_stuck_libraries = MagicMock()
+
+    manager._process_lane("other")
+
+    manager._fix_stuck_libraries.assert_not_called()
+
+
+def test_active_external_review_job_index_rejects_duplicates(db):
+    def lookup_job(comic_id, status=JobStatus.PENDING):
+        return ScanJob(
+            job_type="external_review_lookup",
+            target_type="comic",
+            target_id=comic_id,
+            payload_json=json.dumps({"provider": "comicbookroundup"}),
+            status=status,
+        )
+
+    # Finished jobs and other targets don't count as duplicates
+    db.add_all([
+        lookup_job(1, status=JobStatus.COMPLETED),
+        lookup_job(1, status=JobStatus.FAILED),
+        lookup_job(1),
+        lookup_job(2, status=JobStatus.RUNNING),
+    ])
+    db.commit()
+
+    db.add(lookup_job(1, status=JobStatus.RUNNING))
+    with pytest.raises(IntegrityError):
+        db.commit()
+    db.rollback()
+
+    # Library jobs are not constrained by the index
+    db.add_all([
+        ScanJob(library_id=None, job_type=JobType.CLEANUP, status=JobStatus.PENDING),
+        ScanJob(library_id=None, job_type=JobType.CLEANUP, status=JobStatus.PENDING),
+    ])
+    db.commit()
