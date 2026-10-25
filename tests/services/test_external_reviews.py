@@ -1,5 +1,10 @@
+import sqlite3
 from datetime import date, datetime, timedelta, timezone
 
+from sqlalchemy import event
+from sqlalchemy.orm import sessionmaker
+
+import app.services.external_reviews as external_reviews
 from app.models.comic import Volume
 from app.models.series import Series
 from app.services.comicbookroundup import (
@@ -10,9 +15,11 @@ from app.services.comicbookroundup import (
 )
 from app.services.external_reviews import (
     ExternalReviewService,
+    STATUS_FAILED,
     STATUS_MATCHED,
     STATUS_NO_REVIEWS,
     _build_query,
+    refresh_external_reviews_for_comic,
 )
 from tests.async_helpers import run_async
 from tests.factories import create_comic, create_library_with_root
@@ -243,3 +250,71 @@ def test_external_review_query_extracts_subtitle_from_series_prefixed_title(db, 
     assert query.series_title == "Avengers"
     assert query.issue_title == "Armageddon"
     assert query.issue_number == "4"
+
+
+# --- Write-safety guardrails (see docs/background-job-manager-scope.md, SQLite Contention) ---
+
+def test_external_review_refresh_holds_no_write_open_during_network_lookup(db, tmp_path):
+    # A write held open across the network call would block the scan's metadata
+    # writer, which fails the whole scan after a 60-second lock wait.
+    comic = _create_external_review_comic(db, tmp_path, "external-review-no-write-lib")
+    transaction_open_during_lookup = []
+
+    class _CheckingClient(_FakeComicBookRoundupClient):
+        async def lookup_issue(self, query, *, max_candidates=10):
+            dbapi_connection = db.connection().connection.driver_connection
+            transaction_open_during_lookup.append(dbapi_connection.in_transaction)
+            return await super().lookup_issue(query, max_candidates=max_candidates)
+
+    lookup = ExternalReviewService(db, client=_CheckingClient()).refresh_comic(comic)
+
+    assert lookup.status == STATUS_MATCHED
+    assert transaction_open_during_lookup == [False]
+
+
+def test_external_review_refresh_rolls_back_failed_save_and_records_failure(db, tmp_path):
+    comic = _create_external_review_comic(db, tmp_path, "external-review-rollback-lib")
+    engine = db.get_bind()
+    raised = []
+
+    def _lock_review_insert(conn, cursor, statement, parameters, context, executemany):
+        if statement.startswith("INSERT INTO external_reviews") and not raised:
+            raised.append(statement)
+            raise sqlite3.OperationalError("database is locked")
+
+    event.listen(engine, "before_cursor_execute", _lock_review_insert)
+    try:
+        lookup = ExternalReviewService(db, client=_FakeComicBookRoundupClient()).refresh_comic(comic)
+    finally:
+        event.remove(engine, "before_cursor_execute", _lock_review_insert)
+
+    assert raised
+    assert lookup.status == STATUS_FAILED
+    assert "database is locked" in lookup.error_message
+    assert lookup.next_retry_at is not None
+    # The half-saved result was discarded, not stored alongside the failure
+    assert lookup.reviews == []
+
+
+def test_refresh_external_reviews_for_comic_returns_job_summary(db, tmp_path, monkeypatch):
+    comic = _create_external_review_comic(db, tmp_path, "external-review-summary-lib")
+    monkeypatch.setattr(
+        external_reviews,
+        "SessionLocal",
+        sessionmaker(bind=db.get_bind(), autocommit=False, autoflush=False),
+    )
+    monkeypatch.setattr(external_reviews, "ComicBookRoundupClient", _FakeComicBookRoundupClient)
+
+    summary = refresh_external_reviews_for_comic(comic.id)
+
+    assert summary == {
+        "provider": "comicbookroundup",
+        "comic_id": comic.id,
+        "issue_title": "Test Series #1",
+        "match_status": STATUS_MATCHED,
+        "confidence_score": 92.0,
+        "review_count": 1,
+        "source_issue_url": "https://comicbookroundup.com/comic-books/reviews/test-publisher/test-series/1",
+        "error": None,
+    }
+    assert refresh_external_reviews_for_comic(999999) is None

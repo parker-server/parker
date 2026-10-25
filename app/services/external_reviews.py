@@ -257,6 +257,10 @@ class ExternalReviewService:
             self.db.refresh(lookup)
             return lookup
         except Exception as exc:
+            # A failed commit leaves the session unusable until it is rolled back
+            # (even reading comic.id would fail). Rolling back also discards any
+            # half-applied result for this lookup.
+            self.db.rollback()
             logger.warning("ComicBookRoundup refresh failed for comic %s: %s", comic.id, exc)
             now = _utcnow()
             lookup.status = STATUS_FAILED
@@ -273,7 +277,11 @@ class ExternalReviewService:
         return bool(next_retry_at and next_retry_at <= _utcnow())
 
 
-def refresh_external_reviews_for_comic(comic_id: int) -> None:
+def refresh_external_reviews_for_comic(comic_id: int) -> dict | None:
+    """
+    Run one lookup for a comic in its own session.
+    Returns a job summary, or None when the comic no longer exists.
+    """
     db = SessionLocal()
     try:
         comic = (
@@ -286,11 +294,26 @@ def refresh_external_reviews_for_comic(comic_id: int) -> None:
             .first()
         )
         if not comic:
-            return
+            return None
 
-        ExternalReviewService(db).refresh_comic(comic)
+        lookup = ExternalReviewService(db).refresh_comic(comic)
+        return {
+            "provider": lookup.provider,
+            "comic_id": comic.id,
+            "issue_title": issue_display_title(comic.volume.series.name, comic.number),
+            "match_status": lookup.status,
+            "confidence_score": lookup.confidence_score,
+            "review_count": len(lookup.reviews),
+            "source_issue_url": lookup.source_issue_url,
+            "error": lookup.error_message,
+        }
     finally:
         db.close()
+
+
+def issue_display_title(series_name: str | None, issue_number: str | None) -> str:
+    title = series_name or "Unknown Series"
+    return f"{title} #{issue_number}" if issue_number else title
 
 
 def _build_query(comic: Comic) -> ComicBookRoundupIssueQuery:

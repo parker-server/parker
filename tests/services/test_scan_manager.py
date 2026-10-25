@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import sessionmaker
 
-from app.models.job import JobStatus, JobType, ScanJob
+from app.models.job import ENRICHMENT_LANE, JobStatus, JobType, ScanJob
 import app.services.scan_manager as sm
 from tests.factories import create_library_with_root
 
@@ -17,6 +17,7 @@ def _manager():
     manager.logger = MagicMock()
     manager._stop_event = threading.Event()
     manager.worker_threads = {}
+    manager._last_external_review_at = None
     return manager
 
 
@@ -84,13 +85,12 @@ def test_scan_manager_start_recovers_and_starts_worker(monkeypatch):
     manager.start()
 
     manager._recover_interrupted_jobs.assert_called_once()
-    assert len(_FakeThread.instances) == 1
-    thread = _FakeThread.instances[0]
-    assert thread.target == manager._process_lane
-    assert thread.args == (sm.LIBRARY_LANE,)
-    assert thread.daemon is True
-    assert thread.started is True
-    assert manager.worker_threads == {sm.LIBRARY_LANE: thread}
+    library_thread, enrichment_thread = _FakeThread.instances
+    assert library_thread.target == manager._process_lane
+    assert library_thread.args == (sm.LIBRARY_LANE,)
+    assert enrichment_thread.args == (ENRICHMENT_LANE,)
+    assert all(thread.daemon and thread.started for thread in _FakeThread.instances)
+    assert manager.worker_threads == {sm.LIBRARY_LANE: library_thread, ENRICHMENT_LANE: enrichment_thread}
 
 
 def test_scan_manager_start_launches_one_worker_per_lane(monkeypatch):
@@ -696,7 +696,7 @@ def test_run_metadata_rehydrate_job_failure_marks_failed(monkeypatch, db):
 def test_process_lane_dispatches_scan_job(monkeypatch):
     manager = _manager()
 
-    job = SimpleNamespace(id=5, library_id=9, job_type=JobType.SCAN, force_scan=True)
+    job = SimpleNamespace(id=5, library_id=9, job_type=JobType.SCAN, force_scan=True, target_id=None, payload_json=None)
 
     pick = MagicMock()
     pick.filter.return_value = pick
@@ -724,7 +724,7 @@ def test_process_lane_dispatches_scan_job(monkeypatch):
     manager._process_lane(sm.LIBRARY_LANE)
 
     manager._set_library_scanning_status.assert_called_once_with(9, True)
-    manager._run_scan_job.assert_called_once_with({"id": 5, "library_id": 9, "type": JobType.SCAN, "force": True})
+    manager._run_scan_job.assert_called_once_with({"id": 5, "library_id": 9, "type": JobType.SCAN, "force": True, "target_id": None, "payload": None})
     manager._run_thumbnail_job.assert_not_called()
     manager._run_cleanup_job.assert_not_called()
 
@@ -739,7 +739,7 @@ def test_process_lane_dispatches_scan_job(monkeypatch):
 def test_process_lane_dispatches_non_scan_jobs(monkeypatch, job_type, runner_name):
     manager = _manager()
 
-    job = SimpleNamespace(id=6, library_id=None, job_type=job_type, force_scan=False)
+    job = SimpleNamespace(id=6, library_id=None, job_type=job_type, force_scan=False, target_id=None, payload_json=None)
 
     scan_q = MagicMock()
     scan_q.filter.return_value = scan_q
@@ -786,7 +786,7 @@ def test_process_lane_dispatches_non_scan_jobs(monkeypatch, job_type, runner_nam
 def test_process_lane_dispatches_metadata_rehydrate_job(monkeypatch):
     manager = _manager()
 
-    job = SimpleNamespace(id=7, library_id=12, job_type=JobType.METADATA_REHYDRATE, force_scan=False)
+    job = SimpleNamespace(id=7, library_id=12, job_type=JobType.METADATA_REHYDRATE, force_scan=False, target_id=None, payload_json=None)
 
     scan_q = MagicMock()
     scan_q.filter.return_value = scan_q
@@ -831,7 +831,7 @@ def test_process_lane_dispatches_metadata_rehydrate_job(monkeypatch):
 
     manager._set_library_scanning_status.assert_called_once_with(12, True)
     manager._run_metadata_rehydrate_job.assert_called_once_with(
-        {"id": 7, "library_id": 12, "type": JobType.METADATA_REHYDRATE, "force": False}
+        {"id": 7, "library_id": 12, "type": JobType.METADATA_REHYDRATE, "force": False, "target_id": None, "payload": None}
     )
 
 
@@ -893,7 +893,7 @@ def test_process_lane_handles_worker_exception(monkeypatch):
 def test_process_lane_skips_when_atomic_claim_lost(monkeypatch):
     manager = _manager()
 
-    job = SimpleNamespace(id=3, library_id=10, job_type=JobType.THUMBNAIL, force_scan=False)
+    job = SimpleNamespace(id=3, library_id=10, job_type=JobType.THUMBNAIL, force_scan=False, target_id=None, payload_json=None)
 
     pick = MagicMock()
     pick.filter.return_value = pick
@@ -1043,3 +1043,250 @@ def test_active_external_review_job_index_rejects_duplicates(db):
         ScanJob(library_id=None, job_type=JobType.CLEANUP, status=JobStatus.PENDING),
     ])
     db.commit()
+
+
+# --- External review lookup jobs (enrichment lane) ---
+
+def _review_job_data(job_id=40, comic_id=123):
+    return {
+        "id": job_id,
+        "library_id": None,
+        "type": JobType.EXTERNAL_REVIEW_LOOKUP,
+        "force": False,
+        "target_id": comic_id,
+        "payload": json.dumps({"provider": "comicbookroundup"}),
+    }
+
+
+def test_review_lookups_run_in_their_own_lane():
+    assert sm.JOB_LANES[ENRICHMENT_LANE] == (JobType.EXTERNAL_REVIEW_LOOKUP,)
+    assert JobType.EXTERNAL_REVIEW_LOOKUP not in sm.JOB_LANES[sm.LIBRARY_LANE]
+
+
+def test_add_external_review_task_queues_one_active_job_per_comic(monkeypatch, db):
+    manager = _manager()
+    monkeypatch.setattr(sm, "SessionLocal", _session_local_factory(db))
+
+    first = manager.add_external_review_task(123)
+    assert first["status"] == "queued"
+
+    # A repeat request while the first is active gets the existing job back
+    repeat = manager.add_external_review_task(123)
+    assert repeat == {
+        "status": "ignored",
+        "job_id": first["job_id"],
+        "message": "External review lookup already active",
+    }
+
+    other_comic = manager.add_external_review_task(456)
+    assert other_comic["status"] == "queued"
+
+    db.expire_all()
+    job = db.get(ScanJob, first["job_id"])
+    assert job.job_type == JobType.EXTERNAL_REVIEW_LOOKUP
+    assert job.target_type == "comic"
+    assert job.target_id == 123
+    assert job.library_id is None
+    assert json.loads(job.payload_json) == {"provider": "comicbookroundup"}
+
+    # Once the lookup finishes, a new one can be queued
+    job.status = JobStatus.COMPLETED
+    db.commit()
+    assert manager.add_external_review_task(123)["status"] == "queued"
+
+
+def test_review_lookups_and_library_jobs_do_not_block_each_other(monkeypatch, db):
+    manager = _manager()
+
+    scan_job = ScanJob(library_id=None, job_type=JobType.SCAN, status=JobStatus.PENDING)
+    review_job = ScanJob(
+        job_type=JobType.EXTERNAL_REVIEW_LOOKUP,
+        target_type="comic",
+        target_id=123,
+        payload_json=json.dumps({"provider": "comicbookroundup"}),
+        status=JobStatus.PENDING,
+    )
+    db.add_all([scan_job, review_job])
+    db.commit()
+
+    monkeypatch.setattr(sm, "SessionLocal", _session_local_factory(db))
+    monkeypatch.setattr(sm.time, "sleep", MagicMock())
+    manager._set_library_scanning_status = MagicMock()
+    manager._run_scan_job = MagicMock()
+    manager._run_external_review_job = MagicMock()
+
+    # The enrichment lane claims the review lookup even though a scan is waiting
+    manager._stop_event = MagicMock()
+    manager._stop_event.is_set.side_effect = [False, True]
+    manager._process_lane(ENRICHMENT_LANE)
+
+    manager._run_scan_job.assert_not_called()
+    manager._run_external_review_job.assert_called_once()
+    job_data = manager._run_external_review_job.call_args.args[0]
+    assert job_data["id"] == review_job.id
+    assert job_data["target_id"] == 123
+    assert json.loads(job_data["payload"]) == {"provider": "comicbookroundup"}
+    manager._set_library_scanning_status.assert_not_called()
+
+    # The library lane claims the scan and ignores review lookups
+    manager._run_external_review_job.reset_mock()
+    manager._stop_event.is_set.side_effect = [False, True]
+    manager._process_lane(sm.LIBRARY_LANE)
+
+    manager._run_scan_job.assert_called_once()
+    manager._run_external_review_job.assert_not_called()
+
+
+def test_run_external_review_job_completes_with_lookup_summary(monkeypatch):
+    manager = _manager()
+    result = {
+        "provider": "comicbookroundup",
+        "comic_id": 123,
+        "issue_title": "Saga #1",
+        "match_status": "matched",
+        "confidence_score": 92.0,
+        "review_count": 3,
+        "source_issue_url": "https://comicbookroundup.com/comic-books/reviews/image-comics/saga/1",
+        "error": None,
+    }
+    refresh = MagicMock(return_value=result)
+    monkeypatch.setattr(sm, "refresh_external_reviews_for_comic", refresh)
+    monkeypatch.setattr(sm, "get_cached_setting", lambda key, default: True)
+    manager._safe_job_update = MagicMock()
+
+    manager._run_external_review_job(_review_job_data())
+
+    refresh.assert_called_once_with(123)
+    manager._safe_job_update.assert_called_once_with(40, JobStatus.COMPLETED, summary=result, error=None)
+    assert manager._last_external_review_at is not None
+
+
+@pytest.mark.parametrize("match_status", ["no_match", "no_reviews", "ambiguous"])
+def test_run_external_review_job_treats_negative_results_as_completed(monkeypatch, match_status):
+    manager = _manager()
+    monkeypatch.setattr(
+        sm,
+        "refresh_external_reviews_for_comic",
+        MagicMock(return_value={"comic_id": 123, "match_status": match_status, "error": None}),
+    )
+    monkeypatch.setattr(sm, "get_cached_setting", lambda key, default: True)
+    manager._safe_job_update = MagicMock()
+
+    manager._run_external_review_job(_review_job_data())
+
+    call = manager._safe_job_update.call_args
+    assert call.args[1] == JobStatus.COMPLETED
+    assert call.kwargs["error"] is None
+
+
+def test_run_external_review_job_marks_failed_lookup_as_failed_job(monkeypatch):
+    manager = _manager()
+    monkeypatch.setattr(
+        sm,
+        "refresh_external_reviews_for_comic",
+        MagicMock(return_value={"comic_id": 123, "match_status": "failed", "error": "timed out"}),
+    )
+    monkeypatch.setattr(sm, "get_cached_setting", lambda key, default: True)
+    manager._safe_job_update = MagicMock()
+
+    manager._run_external_review_job(_review_job_data())
+
+    call = manager._safe_job_update.call_args
+    assert call.args[1] == JobStatus.FAILED
+    assert call.kwargs["error"] == "timed out"
+    assert call.kwargs["summary"]["match_status"] == "failed"
+
+
+def test_run_external_review_job_skips_without_lookup_when_disabled(monkeypatch):
+    manager = _manager()
+    refresh = MagicMock()
+    monkeypatch.setattr(sm, "refresh_external_reviews_for_comic", refresh)
+    monkeypatch.setattr(sm, "get_cached_setting", lambda key, default: False)
+    manager._safe_job_update = MagicMock()
+
+    manager._run_external_review_job(_review_job_data())
+
+    refresh.assert_not_called()
+    manager._safe_job_update.assert_called_once_with(
+        40,
+        JobStatus.COMPLETED,
+        summary={"provider": "comicbookroundup", "comic_id": 123, "skipped": "External reviews are disabled"},
+        error=None,
+    )
+    # No request was made, so the rate limit clock is untouched
+    assert manager._last_external_review_at is None
+
+
+def test_run_external_review_job_skips_deleted_comic(monkeypatch):
+    manager = _manager()
+    monkeypatch.setattr(sm, "refresh_external_reviews_for_comic", MagicMock(return_value=None))
+    monkeypatch.setattr(sm, "get_cached_setting", lambda key, default: True)
+    manager._safe_job_update = MagicMock()
+
+    manager._run_external_review_job(_review_job_data())
+
+    call = manager._safe_job_update.call_args
+    assert call.args[1] == JobStatus.COMPLETED
+    assert call.kwargs["summary"]["skipped"] == "Comic not found"
+
+
+def test_run_external_review_job_marks_unexpected_error_failed(monkeypatch):
+    manager = _manager()
+    monkeypatch.setattr(
+        sm,
+        "refresh_external_reviews_for_comic",
+        MagicMock(side_effect=RuntimeError("database is locked")),
+    )
+    monkeypatch.setattr(sm, "get_cached_setting", lambda key, default: True)
+    manager._safe_job_update = MagicMock()
+
+    manager._run_external_review_job(_review_job_data())
+
+    call = manager._safe_job_update.call_args
+    assert call.args[1] == JobStatus.FAILED
+    assert call.kwargs["error"] == "database is locked"
+    # An attempted request still counts toward the rate limit
+    assert manager._last_external_review_at is not None
+
+
+def test_wait_for_external_review_interval_spaces_out_lookups(monkeypatch):
+    manager = _manager()
+    manager._stop_event = MagicMock()
+
+    # First lookup: nothing to wait for
+    manager._wait_for_external_review_interval()
+    manager._stop_event.wait.assert_not_called()
+
+    # Back-to-back lookup waits out the rest of the interval on the stop event
+    monkeypatch.setattr(sm.time, "monotonic", lambda: 101.0)
+    manager._last_external_review_at = 100.0
+    manager._wait_for_external_review_interval()
+    manager._stop_event.wait.assert_called_once_with(
+        pytest.approx(manager.EXTERNAL_REVIEW_MIN_INTERVAL_SECONDS - 1.0)
+    )
+
+    # Enough time has passed: no wait
+    manager._stop_event.wait.reset_mock()
+    monkeypatch.setattr(sm.time, "monotonic", lambda: 200.0)
+    manager._wait_for_external_review_interval()
+    manager._stop_event.wait.assert_not_called()
+
+
+def test_recover_interrupted_jobs_uses_review_lookup_message(monkeypatch, db):
+    manager = _manager()
+
+    review_job = ScanJob(
+        job_type=JobType.EXTERNAL_REVIEW_LOOKUP,
+        target_type="comic",
+        target_id=123,
+        status=JobStatus.RUNNING,
+    )
+    db.add(review_job)
+    db.commit()
+
+    monkeypatch.setattr(sm, "SessionLocal", _session_local_factory(db))
+    manager._recover_interrupted_jobs()
+
+    db.refresh(review_job)
+    assert review_job.status == JobStatus.FAILED
+    assert review_job.error_message == "External review lookup interrupted by server restart"

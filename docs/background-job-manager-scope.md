@@ -2,7 +2,7 @@
 
 ## Status
 
-Design decided. PR 1 (groundwork) is implemented on the `background-job-lanes` branch; PR 2 and PR 3 are not started. See [Rollout](#rollout).
+Design decided. PR 1 (groundwork) is pushed on the `background-job-lanes` branch. PR 2 (external review jobs) is implemented on the `external-review-jobs` branch, built on PR 1. PR 3 is not started. See [Rollout](#rollout).
 
 ## Goal
 
@@ -87,7 +87,7 @@ The worker used to be a single serial loop with four copy-pasted priority querie
 ```python
 JOB_LANES = {
     "library": (JobType.SCAN, JobType.THUMBNAIL, JobType.CLEANUP, JobType.METADATA_REHYDRATE),
-    "enrichment": (JobType.EXTERNAL_REVIEW_LOOKUP,),  # added in PR 2
+    "enrichment": (JobType.EXTERNAL_REVIEW_LOOKUP,),
 }
 ```
 
@@ -95,7 +95,7 @@ JOB_LANES = {
 - `start()` and `stop()` manage one thread per lane (`worker_threads`, keyed by lane). Interrupted-job recovery still runs once per `start()`.
 - `_fix_stuck_libraries` runs only in the library lane.
 - `JOB_TYPE_PRIORITY` in `app/api/jobs.py` is derived from `JOB_LANES`.
-- PR 1 defines only the library lane. Every lane gets a polling thread, so the enrichment entry is added in PR 2 together with its job type.
+- PR 1 defined only the library lane, because every lane gets a polling thread. PR 2 added the enrichment lane together with its job type.
 
 External review lookups are short, network-bound, and usually triggered by a user viewing an issue. Their own lane means they never wait behind a scan pipeline, and scans never wait behind them.
 
@@ -151,10 +151,10 @@ The comic detail page already polls the endpoint while status is `pending`, so n
 
 ### Rate limiting and site courtesy
 
-- The enrichment lane enforces a minimum interval between ComicBookRoundup lookups (in-memory timestamp; a few seconds by default).
+- The enrichment lane enforces a minimum interval between lookups (`ScanManager.EXTERNAL_REVIEW_MIN_INTERVAL_SECONDS`, 3 seconds). It waits on the stop event, so shutdown is not delayed. Skipped jobs (feature disabled) do not count toward the interval.
 - Never enqueue during library scans.
 - Only enqueue from explicit user navigation or refresh.
-- One active job per comic/provider (partial unique index).
+- One active job per comic (partial unique index on job type + target). The provider lives in `payload_json` and is not part of the index; that is equivalent while ComicBookRoundup is the only provider. A second provider would need the index widened.
 - Cache windows stay in `app/services/external_reviews.py` (30 days matched, 14 days negative, 1 day failed).
 
 The worker treats external lookups as best-effort enrichment, not required metadata.
@@ -165,9 +165,11 @@ The worker treats external lookups as best-effort enrichment, not required metad
 
 ## Admin Visibility
 
-- `serialize_job` shows `-` in the library column for enrichment jobs and uses the summary's comic title as the target.
+- `serialize_job` adds `lane`, `target_type`, `target_id` and `target_label`. Enrichment jobs show `-` as their library. `target_label` is the issue title ("Series #N"), loaded for all listed jobs in one query, falling back to the title saved in the job summary, then "Deleted Comic".
+- The admin page's "Library" column is now "Target": it shows the issue for review lookups and the library for everything else.
+- `/api/jobs/active`, which drives the "scanning" indicator on every page, only reports library-lane jobs. Otherwise a running review lookup would show as a scan.
 - Admin labels make clear these are enrichment jobs, not scan jobs.
-- The live queue shows all lanes.
+- The live queue shows all lanes. Queue positions are numbered per lane, since each lane has its own worker, and non-library jobs are labelled with their lane.
 - Job history hides external review jobs by default. A job-type filter shows them, including failures. Every comic view that needs a refresh creates a row, so without this the 30-day history could be mostly review lookups.
 - Existing `jobs.retention_days` cleanup applies to these rows unchanged.
 
@@ -217,6 +219,8 @@ No extra lock-retry wrapper is planned for enrichment writes. Add one only if lo
 - Worker handler, rate limiting, per-type recovery messages.
 - Rollback fix in `refresh_comic`'s failure path (see [SQLite Contention](#sqlite-contention)).
 - Endpoint switches from `BackgroundTasks` to the queue.
+- `/api/jobs/active` limited to library-lane jobs.
+- Deleting a comic now deletes its cached reviews (`Comic.external_review_lookups`, cascading to `external_reviews`). Before this, they were left behind, and because SQLite can reuse the ID of the most recently deleted comic, a newly imported comic could show the deleted comic's reviews. Global cleanup also removes any leftovers from earlier deletions (`MaintenanceService.cleanup_orphaned_external_reviews`, reported as `external_review_lookups` in the cleanup summary).
 - Admin job display and the history job-type filter.
 
 ### PR 3: rename
@@ -253,7 +257,8 @@ PR 2:
 - No write is open on the session's connection when the ComicBookRoundup client is called (fake client asserts `in_transaction` is false).
 - A failed final commit in `refresh_comic` (forced `OperationalError`) is rolled back and leaves the lookup `failed` with the error recorded, instead of raising `PendingRollbackError`.
 - Admin queue API includes external review jobs; history excludes them by default and includes them with the filter.
-- Browser test: the comic detail page moves from pending to loaded reviews without a reload.
+- Browser test: the admin jobs page shows a queued review lookup in its own lane, hides finished lookups from history until the toggle is on, and shows lookup details.
+- Not added: a browser test of the comic detail page moving from pending to loaded reviews. PR 2 does not change that page's polling, and the browser test server runs without the job worker.
 
 PR 3:
 

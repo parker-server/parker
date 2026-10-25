@@ -9,6 +9,7 @@ from app.models.activity_log import ActivityLog
 from app.models.collection import Collection, CollectionItem
 from app.models.comic import Comic, Volume
 from app.models.credits import ComicCredit, Person
+from app.models.external_review import ExternalReview, ExternalReviewLookup
 from app.models.interactions import UserComicRating
 from app.models.job import JobStatus, JobType, ScanJob
 from app.models.library import Library
@@ -152,6 +153,7 @@ def test_cleanup_orphans_global_removes_only_orphans(db, tmp_path):
         "people": 1,
         "empty_lists": 1,
         "empty_collections": 1,
+        "external_review_lookups": 0,
     }
 
     assert db.query(Series).filter(Series.name == "keep-series").count() == 1
@@ -644,3 +646,71 @@ def test_refresh_reading_list_descriptions_no_updates(db, monkeypatch):
 
     assert result == {"updated": 0, "total_scanned": 3}
     assert commit_spy.call_count == 0
+
+
+def _add_review_lookup(db, comic_id: int) -> ExternalReviewLookup:
+    lookup = ExternalReviewLookup(comic_id=comic_id, provider="comicbookroundup", status="matched")
+    lookup.reviews.append(ExternalReview(review_type="critic", source_name="Critic Site", sort_order=0))
+    db.add(lookup)
+    db.flush()
+    return lookup
+
+
+def test_cleanup_orphans_removes_cached_reviews_for_missing_comics(db, tmp_path):
+    lib = _create_library(db, "maint-reviews", tmp_path)
+    series = Series(name="review-series", library_id=lib.id)
+    volume = Volume(series=series, volume_number=1)
+    comic = Comic(
+        volume=volume,
+        number="1",
+        filename="review.cbz",
+        library_root_id=lib.active_root.id,
+        relative_path="review.cbz",
+    )
+    db.add_all([series, volume, comic])
+    db.flush()
+
+    keep_lookup = _add_review_lookup(db, comic.id)
+    # Left behind by a comic deleted before deletes cascaded to the review cache
+    orphan_lookup = _add_review_lookup(db, 999999)
+    db.commit()
+    keep_lookup_id, orphan_lookup_id = keep_lookup.id, orphan_lookup.id
+
+    service = MaintenanceService(db)
+
+    # Scoped (per-library) cleanup leaves the review cache alone
+    scoped_stats = service.cleanup_orphans(library_id=lib.id)
+    assert scoped_stats["external_review_lookups"] == 0
+    assert db.query(ExternalReviewLookup).count() == 2
+
+    stats = service.cleanup_orphans(library_id=None)
+
+    assert stats["external_review_lookups"] == 1
+    db.expire_all()
+    assert db.get(ExternalReviewLookup, orphan_lookup_id) is None
+    assert db.query(ExternalReview).filter(ExternalReview.lookup_id == orphan_lookup_id).count() == 0
+    assert db.get(ExternalReviewLookup, keep_lookup_id) is not None
+    assert db.query(ExternalReview).filter(ExternalReview.lookup_id == keep_lookup_id).count() == 1
+
+
+def test_deleting_comic_removes_its_cached_reviews(db, tmp_path):
+    lib = _create_library(db, "maint-review-cascade", tmp_path)
+    series = Series(name="cascade-series", library_id=lib.id)
+    volume = Volume(series=series, volume_number=1)
+    comic = Comic(
+        volume=volume,
+        number="1",
+        filename="cascade.cbz",
+        library_root_id=lib.active_root.id,
+        relative_path="cascade.cbz",
+    )
+    db.add_all([series, volume, comic])
+    db.flush()
+    lookup_id = _add_review_lookup(db, comic.id).id
+    db.commit()
+
+    db.delete(comic)
+    db.commit()
+
+    assert db.get(ExternalReviewLookup, lookup_id) is None
+    assert db.query(ExternalReview).filter(ExternalReview.lookup_id == lookup_id).count() == 0

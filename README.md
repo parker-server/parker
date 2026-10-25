@@ -66,8 +66,8 @@ https://github.com/parker-server/parker/wiki/Getting-Started
   - Kavita migration preview stages a database once in shared cache storage, summarizes new and matched users plus importable progress, requires review before migration runs, and cleans expired staging files at startup
 
 - **Scanning**
-  - Background ScanManager with priority queues
-  - Admin job history includes a live active queue for running and pending work
+  - Background ScanManager with priority queues and separate lanes, so short enrichment jobs (like review lookups) never wait behind library scans
+  - Admin job history includes a live active queue for running and pending work, with review lookups shown on request
   - Configurable job history retention for completed and failed background jobs
   - Global cleanup repairs case-only duplicate character, team, location, and genre tags
   - Timestamp bubbling for updated series
@@ -93,7 +93,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
 - **Enrichment**
   - Auto‑populated event descriptions
   - Reading time estimates
-  - Opt-in external critic review summaries from ComicBookRoundup, cached lazily when an issue is viewed
+  - Opt-in external critic review summaries from ComicBookRoundup, cached lazily when an issue is viewed and fetched through the persisted job queue with rate limiting
 
 - **Search**
   - Advanced rule‑based search builder
