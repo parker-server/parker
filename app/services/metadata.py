@@ -3,7 +3,7 @@ from lxml import etree
 from typing import Optional, Dict, Any
 import json
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, undefer
 
 from app.models import Comic, Volume, Series
 from app.services.reading_list import ReadingListService
@@ -89,9 +89,6 @@ def parse_comicinfo(xml_content: bytes) -> Dict[str, Any]:
 
             # Web link
             'web': get_text('Web'),
-
-            # Store full XML for future use
-            'raw_xml': xml_content.decode('utf-8')
         }
     except Exception as e:
         logger.error(f"Error parsing ComicInfo.xml: {e}")
@@ -127,6 +124,7 @@ def rehydrate_library_metadata_from_cache(
         .join(Volume, Comic.volume_id == Volume.id)
         .join(Series, Volume.series_id == Series.id)
         .filter(Series.library_id == library_id)
+        .options(undefer(Comic.metadata_json))
         .all()
     )
 

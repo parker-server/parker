@@ -1,6 +1,8 @@
 import logging
+import shutil
 import sqlite3
 import tarfile
+import tempfile
 import os
 import time
 from datetime import datetime
@@ -8,8 +10,15 @@ from pathlib import Path
 
 from app.config import settings
 from app.core.settings_loader import get_system_setting
+from app.services.startup_diagnostics import resolve_sqlite_db_path
 
 logger = logging.getLogger(__name__)
+
+# VACUUM rewrites the whole file, so only compact when enough of it is unused.
+COMPACT_MIN_FREE_RATIO = 0.25
+COMPACT_MIN_FREE_BYTES = 50 * 1024 * 1024
+UNCOMPACTED_NOTE = "Parker works normally; SQLite reuses the unused space for new data."
+
 
 class BackupService:
 
@@ -101,3 +110,75 @@ class BackupService:
 
         if count > 0:
             logger.info(f"Cleaned up {count} old backup(s).")
+
+    @staticmethod
+    def compact_database_if_needed() -> dict:
+        """
+        Shrink the database file (SQLite VACUUM) when a large share of it is unused,
+        for example after a migration or cleanup that removed a lot of data.
+
+        Runs at container start, before the server takes requests. Compaction is
+        optional, so a skip or failure only logs a warning and never raises.
+        It retries on every start until it succeeds, then stops triggering.
+        """
+        db_path = resolve_sqlite_db_path(settings.database_url)
+        if db_path is None or not db_path.exists():
+            return {"status": "not_needed"}
+
+        try:
+            # Autocommit mode: VACUUM can't run inside a transaction.
+            connection = sqlite3.connect(db_path, isolation_level=None)
+            try:
+                page_size = connection.execute("PRAGMA page_size").fetchone()[0]
+                page_count = connection.execute("PRAGMA page_count").fetchone()[0]
+                free_pages = connection.execute("PRAGMA freelist_count").fetchone()[0]
+                free_bytes = free_pages * page_size
+                if free_bytes < COMPACT_MIN_FREE_BYTES or free_pages < page_count * COMPACT_MIN_FREE_RATIO:
+                    return {"status": "not_needed"}
+
+                if not BackupService._has_room_to_vacuum(db_path, (page_count - free_pages) * page_size):
+                    return {"status": "skipped"}
+
+                size_before = db_path.stat().st_size
+                logger.info(
+                    "Compacting database: %.0f MB of %.0f MB is unused...",
+                    free_bytes / 1e6,
+                    page_count * page_size / 1e6,
+                )
+                connection.execute("VACUUM")
+                connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            finally:
+                connection.close()
+        except Exception as exc:
+            logger.warning(
+                "Skipped compacting the database: %s. It will try again on the next start. %s",
+                exc,
+                UNCOMPACTED_NOTE,
+            )
+            return {"status": "failed"}
+
+        size_after = db_path.stat().st_size
+        logger.info("Database compacted: %.1f MB -> %.1f MB", size_before / 1e6, size_after / 1e6)
+        return {"status": "compacted", "size_before": size_before, "size_after": size_after}
+
+    @staticmethod
+    def _has_room_to_vacuum(db_path: Path, used_bytes: int) -> bool:
+        # VACUUM writes a compacted copy to the temp folder, then writes it back
+        # through the WAL file next to the database. Each is about the used size.
+        checks = [
+            (db_path.parent, 2 * used_bytes),
+            (Path(tempfile.gettempdir()), used_bytes),
+        ]
+        for folder, needed in checks:
+            free = shutil.disk_usage(folder).free
+            if free < needed:
+                logger.warning(
+                    "Skipped compacting the database: needs about %.0f MB free in %s, but only %.0f MB is free. "
+                    "It will try again on the next start. %s",
+                    needed / 1e6,
+                    folder,
+                    free / 1e6,
+                    UNCOMPACTED_NOTE,
+                )
+                return False
+        return True
