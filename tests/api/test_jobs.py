@@ -1,7 +1,10 @@
+import json
 from datetime import datetime, timedelta, timezone
 
+from app.models.comic import Volume
 from app.models.job import JobStatus, JobType, ScanJob
-from tests.factories import create_library_with_root
+from app.models.series import Series
+from tests.factories import create_comic, create_library_with_root
 
 
 def test_active_job_returns_inactive_when_none(client):
@@ -187,3 +190,149 @@ def test_get_job_details_success_and_not_found(admin_client, db):
     missing = admin_client.get("/api/jobs/999999")
     assert missing.status_code == 404
     assert missing.json() == {"detail": "Job not found"}
+
+
+# --- External review lookup jobs (enrichment lane) ---
+
+def _create_review_comic(db, *, lib_name: str = "Review-Lib", series_name: str = "Saga", number: str = "1"):
+    library = create_library_with_root(db, lib_name, f"/tmp/{lib_name.lower()}")
+    series = Series(name=series_name, library=library)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
+    db.flush()
+    filename = f"{series_name}-{number}.cbz"
+    comic = create_comic(db, volume, library.active_root, filename, number=number, filename=filename)
+    return library, comic
+
+
+def _review_job(comic_id: int, status: JobStatus, **kwargs) -> ScanJob:
+    return ScanJob(
+        job_type=JobType.EXTERNAL_REVIEW_LOOKUP,
+        target_type="comic",
+        target_id=comic_id,
+        payload_json=json.dumps({"provider": "comicbookroundup"}),
+        status=status,
+        **kwargs,
+    )
+
+
+def test_active_job_ignores_running_review_lookups(client, db):
+    library, comic = _create_review_comic(db)
+    now = datetime.now(timezone.utc)
+    review = _review_job(comic.id, JobStatus.RUNNING, started_at=now - timedelta(minutes=5))
+    db.add(review)
+    db.commit()
+
+    # A review lookup alone must not light up the "scanning" indicator
+    assert client.get("/api/jobs/active").json() == {"active": False}
+
+    scan = ScanJob(
+        library_id=library.id,
+        job_type=JobType.SCAN,
+        status=JobStatus.RUNNING,
+        started_at=now - timedelta(minutes=1),
+    )
+    db.add(scan)
+    db.commit()
+
+    payload = client.get("/api/jobs/active").json()
+    assert payload["active"] is True
+    assert payload["job_id"] == scan.id
+    assert payload["library_name"] == "Review-Lib"
+
+
+def test_list_jobs_hides_review_lookups_unless_requested(admin_client, db):
+    library, comic = _create_review_comic(db)
+    base_time = datetime.now(timezone.utc)
+    scan = ScanJob(
+        library_id=library.id,
+        job_type=JobType.SCAN,
+        status=JobStatus.COMPLETED,
+        created_at=base_time - timedelta(minutes=10),
+    )
+    review = _review_job(
+        comic.id,
+        JobStatus.FAILED,
+        created_at=base_time - timedelta(minutes=1),
+        result_summary=json.dumps({"match_status": "failed", "issue_title": "Saga #1"}),
+        error_message="timed out",
+    )
+    db.add_all([scan, review])
+    db.commit()
+
+    default_ids = [job["id"] for job in admin_client.get("/api/jobs?limit=10").json()]
+    assert default_ids == [scan.id]
+
+    payload = admin_client.get("/api/jobs?limit=10&include_enrichment=true").json()
+    assert [job["id"] for job in payload] == [review.id, scan.id]
+
+    review_payload = payload[0]
+    assert review_payload["job_type"] == "external_review_lookup"
+    assert review_payload["lane"] == "enrichment"
+    assert review_payload["library_name"] == "-"
+    assert review_payload["target_type"] == "comic"
+    assert review_payload["target_id"] == comic.id
+    assert review_payload["target_label"] == "Saga #1"
+    assert review_payload["error"] == "timed out"
+
+    scan_payload = payload[1]
+    assert scan_payload["lane"] == "library"
+    assert scan_payload["target_label"] is None
+    assert scan_payload["library_name"] == "Review-Lib"
+
+
+def test_job_queue_numbers_positions_per_lane(admin_client, db):
+    library, comic = _create_review_comic(db)
+    _, other_comic = _create_review_comic(db, lib_name="Review-Lib-2", series_name="Paper Girls", number="3")
+    base_time = datetime.now(timezone.utc)
+    pending_review = _review_job(comic.id, JobStatus.PENDING, created_at=base_time - timedelta(minutes=30))
+    running_review = _review_job(
+        other_comic.id,
+        JobStatus.RUNNING,
+        created_at=base_time - timedelta(minutes=40),
+        started_at=base_time - timedelta(minutes=1),
+    )
+    pending_scan = ScanJob(
+        library_id=library.id,
+        job_type=JobType.SCAN,
+        status=JobStatus.PENDING,
+        created_at=base_time - timedelta(minutes=5),
+    )
+    pending_thumbnail = ScanJob(
+        library_id=library.id,
+        job_type=JobType.THUMBNAIL,
+        status=JobStatus.PENDING,
+        created_at=base_time - timedelta(minutes=4),
+    )
+    db.add_all([pending_review, running_review, pending_scan, pending_thumbnail])
+    db.commit()
+
+    payload = admin_client.get("/api/jobs/queue").json()
+
+    assert payload["counts"] == {"running": 1, "pending": 3}
+    assert payload["running"][0]["target_label"] == "Paper Girls #3"
+
+    pending = {job["id"]: job for job in payload["pending"]}
+    # Library jobs and review lookups each have their own worker, so each lane starts at #1
+    assert pending[pending_scan.id]["queue_position"] == 1
+    assert pending[pending_thumbnail.id]["queue_position"] == 2
+    assert pending[pending_review.id]["queue_position"] == 1
+    assert pending[pending_review.id]["lane"] == "enrichment"
+    assert pending[pending_review.id]["target_label"] == "Saga #1"
+
+
+def test_review_lookup_label_falls_back_when_comic_is_deleted(admin_client, db):
+    review = _review_job(
+        999999,
+        JobStatus.COMPLETED,
+        result_summary=json.dumps({"match_status": "no_match", "issue_title": "Old Series #2"}),
+    )
+    unknown = _review_job(999998, JobStatus.FAILED)
+    db.add_all([review, unknown])
+    db.commit()
+
+    payload = admin_client.get("/api/jobs?include_enrichment=true").json()
+    labels = {job["id"]: job["target_label"] for job in payload}
+
+    assert labels[review.id] == "Old Series #2"
+    assert labels[unknown.id] == "Deleted Comic"

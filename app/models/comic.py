@@ -107,6 +107,9 @@ class Comic(Base):
     cover_mural_items = relationship("CoverMuralItem", back_populates="comic", cascade="all, delete-orphan")
     user_ratings = relationship("UserComicRating", back_populates="comic", cascade="all, delete-orphan")
     activity_logs = relationship("ActivityLog", back_populates="comic", cascade="all, delete-orphan")
+    # Cached critic reviews belong to this comic. Comic IDs can be reused by
+    # SQLite, so leftovers could show up on a newly imported comic.
+    external_review_lookups = relationship("ExternalReviewLookup", back_populates="comic", cascade="all, delete-orphan")
 
     @property
     def absolute_path(self) -> str:

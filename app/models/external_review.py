@@ -41,7 +41,7 @@ class ExternalReviewLookup(Base):
         onupdate=lambda: datetime.now(timezone.utc),
     )
 
-    comic = relationship("Comic")
+    comic = relationship("Comic", back_populates="external_review_lookups")
     reviews = relationship(
         "ExternalReview",
         back_populates="lookup",

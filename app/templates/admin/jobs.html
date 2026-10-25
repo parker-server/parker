@@ -45,7 +45,7 @@
                         <th class="px-6 py-4">Position</th>
                         <th class="px-6 py-4">Status</th>
                         <th class="px-6 py-4">Type</th>
-                        <th class="px-6 py-4">Library</th>
+                        <th class="px-6 py-4">Target</th>
                         <th class="px-6 py-4">Queued</th>
                         <th class="px-6 py-4">Started</th>
                         <th class="px-6 py-4">Time</th>
@@ -54,7 +54,10 @@
                 <tbody class="divide-y divide-gray-700">
                     <template x-for="job in activeJobs" :key="job.id">
                         <tr data-testid="active-job-row" class="transition-colors" :class="job.status === 'running' ? 'bg-blue-950/20' : 'hover:bg-gray-750'">
-                            <td class="px-6 py-4 font-mono text-sm text-gray-100" x-text="formatQueuePosition(job)"></td>
+                            <td class="px-6 py-4 font-mono text-sm text-gray-100">
+                                <span x-text="formatQueuePosition(job)"></span>
+                                <span x-show="job.lane && job.lane !== 'library'" class="block font-sans text-xs text-gray-500" x-text="`${job.lane} lane`"></span>
+                            </td>
 
                             <td class="px-6 py-4">
                                 <span
@@ -74,13 +77,14 @@
                                         'bg-blue-900/30 text-blue-200 border-blue-800': job.job_type === 'scan',
                                         'bg-purple-900/30 text-purple-200 border-purple-800': job.job_type === 'thumbnail',
                                         'bg-orange-900/30 text-orange-200 border-orange-800': job.job_type === 'cleanup',
-                                        'bg-cyan-900/30 text-cyan-200 border-cyan-800': job.job_type === 'metadata_rehydrate'
+                                        'bg-cyan-900/30 text-cyan-200 border-cyan-800': job.job_type === 'metadata_rehydrate',
+                                        'bg-emerald-900/30 text-emerald-200 border-emerald-800': job.job_type === 'external_review_lookup'
                                     }"
                                     x-text="formatJobType(job.job_type)"
                                 ></span>
                             </td>
 
-                            <td class="px-6 py-4 font-medium text-white" x-text="job.library_name"></td>
+                            <td class="px-6 py-4 font-medium text-white" x-text="job.target_label || job.library_name"></td>
                             <td class="px-6 py-4 text-sm" x-text="formatDate(job.created_at)"></td>
                             <td class="px-6 py-4 text-sm" x-text="job.started_at ? formatDate(job.started_at) : '--'"></td>
                             <td class="px-6 py-4 text-sm font-mono text-gray-100" x-text="formatActiveTime(job)"></td>
@@ -100,9 +104,15 @@
         </div>
     </div>
 
-    <div class="mb-3 flex items-center justify-between">
+    <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 class="text-xl font-bold text-white">Recent History</h2>
-        <span class="text-xs uppercase tracking-wide text-gray-500">Latest 50 jobs</span>
+        <div class="flex items-center gap-4">
+            <label class="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+                <input type="checkbox" data-testid="show-enrichment-jobs" x-model="showEnrichment" x-on:change="loadJobs()" class="rounded border-gray-600 bg-gray-700 text-blue-500">
+                Show review lookups
+            </label>
+            <span class="text-xs uppercase tracking-wide text-gray-500">Latest 50 jobs</span>
+        </div>
     </div>
 
     <div class="bg-gray-800 rounded-xl overflow-hidden shadow-lg border border-gray-700">
@@ -111,7 +121,7 @@
                 <thead class="bg-gray-900 text-gray-400 uppercase text-xs font-semibold">
                     <tr>
                         <th class="px-6 py-4">ID</th>
-                        <th class="px-6 py-4">Type</th> <th class="px-6 py-4">Library</th>
+                        <th class="px-6 py-4">Type</th> <th class="px-6 py-4">Target</th>
                         <th class="px-6 py-4">Status</th>
                         <th class="px-6 py-4">Duration</th>
                         <th class="px-6 py-4">Result</th>
@@ -131,13 +141,14 @@
                                         'bg-blue-900/30 text-blue-200 border-blue-800': job.job_type === 'scan',
                                         'bg-purple-900/30 text-purple-200 border-purple-800': job.job_type === 'thumbnail',
                                         'bg-orange-900/30 text-orange-200 border-orange-800': job.job_type === 'cleanup',
-                                        'bg-cyan-900/30 text-cyan-200 border-cyan-800': job.job_type === 'metadata_rehydrate'
+                                        'bg-cyan-900/30 text-cyan-200 border-cyan-800': job.job_type === 'metadata_rehydrate',
+                                        'bg-emerald-900/30 text-emerald-200 border-emerald-800': job.job_type === 'external_review_lookup'
                                     }"
                                     x-text="formatJobType(job.job_type)"
                                 ></span>
                             </td>
 
-                            <td class="px-6 py-4 font-medium text-white" x-text="job.library_name"></td>
+                            <td class="px-6 py-4 font-medium text-white" x-text="job.target_label || job.library_name"></td>
 
                             <td class="px-6 py-4">
                                 <span
@@ -183,6 +194,10 @@
                                             </span>
                                         </template>
 
+                                        <template x-if="job.job_type === 'external_review_lookup'">
+                                            <span class="text-emerald-300" x-text="formatReviewResult(job.summary)"></span>
+                                        </template>
+
                                         <span x-show="job.summary.errors > 0" class="text-red-400 ml-1" x-text="`(${job.summary.errors} err)`"></span>
                                         <span x-show="(job.summary.warnings || 0) > 0" class="text-amber-300 ml-1" x-text="`(${job.summary.warnings} warn)`"></span>
                                     </span>
@@ -207,7 +222,7 @@
         <div class="bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full mx-4 border border-gray-700" x-on:click.away="selectedJob = null">
             <div class="px-6 py-4 border-b border-gray-700 flex justify-between items-center">
                 <h3 class="text-xl font-bold text-white">
-                    <span class="uppercase text-gray-500 text-base mr-2" x-text="selectedJob?.job_type"></span>
+                    <span class="uppercase text-gray-500 text-base mr-2" x-text="formatJobType(selectedJob?.job_type)"></span>
                     Job <span x-text="`#${selectedJob?.id}`"></span>
                 </h3>
                 <button x-on:click="selectedJob = null" class="text-gray-400 hover:text-white">✕</button>
@@ -313,6 +328,48 @@
                                     <div class="text-xl font-bold text-gray-300" x-text="selectedJob.summary.force_scan_recommended ? 'Yes' : 'No'"></div>
                                     <div class="text-[10px] text-gray-500 uppercase">Force Scan Recommended</div>
                                 </div>
+                            </div>
+                        </template>
+
+                        <template x-if="selectedJob.job_type === 'external_review_lookup'">
+                            <div data-testid="review-lookup-details">
+                                <p class="mb-3 text-sm text-gray-400">
+                                    Enrichment job: fetches critic reviews for one issue. It runs in its own lane and never delays library scans.
+                                </p>
+                                <div class="grid grid-cols-3 gap-3">
+                                    <div data-testid="review-stat" class="min-w-0 bg-gray-700/30 p-3 rounded border border-gray-700">
+                                        <div class="text-base font-bold leading-snug break-words text-emerald-300" x-text="formatReviewResult(selectedJob.summary)"></div>
+                                        <div class="text-[10px] text-gray-500 uppercase">Result</div>
+                                    </div>
+                                    <div data-testid="review-stat" class="min-w-0 bg-gray-700/30 p-3 rounded border border-gray-700">
+                                        <div class="text-base font-bold leading-snug break-words text-gray-300" x-text="selectedJob.summary.review_count ?? '--'"></div>
+                                        <div class="text-[10px] text-gray-500 uppercase">Reviews Stored</div>
+                                    </div>
+                                    <div data-testid="review-stat" class="min-w-0 bg-gray-700/30 p-3 rounded border border-gray-700">
+                                        <div class="text-base font-bold leading-snug break-words text-gray-300" x-text="selectedJob.summary.confidence_score != null ? Math.round(selectedJob.summary.confidence_score) : '--'"></div>
+                                        <div class="text-[10px] text-gray-500 uppercase">Match Confidence</div>
+                                    </div>
+                                </div>
+                                <div class="mt-3 text-sm text-gray-300">
+                                    <span class="text-gray-500">Issue:</span>
+                                    <span x-text="selectedJob.target_label || selectedJob.summary.issue_title || `Comic #${selectedJob.target_id}`"></span>
+                                </div>
+                                <div class="mt-1 text-sm text-gray-300">
+                                    <span class="text-gray-500">Provider:</span>
+                                    <span x-text="formatProvider(selectedJob.summary.provider)"></span>
+                                </div>
+                                <template x-if="selectedJob.summary.skipped">
+                                    <div class="mt-1 text-sm text-gray-300">
+                                        <span class="text-gray-500">Skipped:</span>
+                                        <span x-text="selectedJob.summary.skipped"></span>
+                                    </div>
+                                </template>
+                                <template x-if="selectedJob.summary.source_issue_url">
+                                    <div class="mt-1 text-sm break-all">
+                                        <span class="text-gray-500">Source:</span>
+                                        <a :href="selectedJob.summary.source_issue_url" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300" x-text="selectedJob.summary.source_issue_url"></a>
+                                    </div>
+                                </template>
                             </div>
                         </template>
 
@@ -442,6 +499,7 @@
             activeQueueError: null,
             activeQueueSignature: '',
             loading: false,
+            showEnrichment: false,
             selectedJob: null,
             queuePollTimeout: null,
             queuePollActiveMs: 5000,
@@ -526,7 +584,8 @@
             async loadJobs() {
                 this.loading = true;
                 try {
-                    const response = await fetch(window.parker.route('jobs.list', {}, 'limit=50'));
+                    const query = this.showEnrichment ? 'limit=50&include_enrichment=true' : 'limit=50';
+                    const response = await fetch(window.parker.route('jobs.list', {}, query));
                     if(response.ok) this.jobs = await response.json();
                 } catch (e) { console.error(e); }
                 finally { this.loading = false; }
@@ -542,7 +601,9 @@
                         status: job.status,
                         queue_position: job.queue_position,
                         job_type: job.job_type,
+                        lane: job.lane,
                         library_name: job.library_name,
+                        target_label: job.target_label,
                         created_at: job.created_at,
                         started_at: job.started_at,
                         completed_at: job.completed_at,
@@ -552,7 +613,26 @@
             },
 
             formatJobType(type) {
+                if (type === 'external_review_lookup') return 'review lookup';
                 return (type || 'scan').replace(/_/g, ' ');
+            },
+
+            formatProvider(provider) {
+                const names = { comicbookroundup: 'ComicBookRoundup' };
+                return names[provider] || provider || '--';
+            },
+
+            formatReviewResult(summary) {
+                if (!summary) return '--';
+                if (summary.skipped) return 'skipped';
+                const labels = {
+                    matched: `${summary.review_count || 0} reviews`,
+                    no_reviews: 'no critic reviews',
+                    no_match: 'no match',
+                    ambiguous: 'ambiguous match',
+                    failed: 'lookup failed'
+                };
+                return labels[summary.match_status] || summary.match_status || '--';
             },
 
             formatQueuePosition(job) {

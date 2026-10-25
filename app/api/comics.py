@@ -1,4 +1,4 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response, FileResponse
 from sqlalchemy import Float, func, case, or_
 from sqlalchemy.orm import Session, joinedload, selectinload
@@ -35,8 +35,8 @@ from app.services.comic_ratings import build_parker_rating_state
 from app.services.external_reviews import (
     EXTERNAL_REVIEWS_ENABLED_SETTING,
     ExternalReviewService,
-    refresh_external_reviews_for_comic,
 )
+from app.services.scan_manager import scan_manager
 from app.services.settings_service import SettingsService
 from app.services.social_insights import get_visible_comic_reader_count
 
@@ -334,7 +334,6 @@ async def get_external_reviews(
         comic: ComicDep,
         db: SessionDep,
         current_user: CurrentUser,
-        background_tasks: BackgroundTasks,
 ):
     _ensure_user_can_view_comic(current_user, comic)
 
@@ -353,7 +352,8 @@ async def get_external_reviews(
         refresh_claimed = False
 
     if refresh_claimed:
-        background_tasks.add_task(refresh_external_reviews_for_comic, comic.id)
+        # Runs in the background job queue's enrichment lane, not in this worker
+        scan_manager.add_external_review_task(comic.id)
 
     return service.response_for_lookup(lookup, enabled=True)
 

@@ -11,6 +11,7 @@ from app.core.path_utils import resolve_absolute_path
 from app.models.tags import Character, Team, Location, Genre
 from app.models.credits import Person
 from app.models.comic import Comic, Volume
+from app.models.external_review import ExternalReview, ExternalReviewLookup
 from app.models.job import JobStatus, ScanJob
 from app.models.library_root import LibraryRoot
 from app.models.series import Series
@@ -62,7 +63,8 @@ class MaintenanceService:
             "duplicate_genres": 0,
             "people": 0,
             "empty_lists": 0,
-            "empty_collections": 0
+            "empty_collections": 0,
+            "external_review_lookups": 0
         }
 
         # 1. Clean Empty Volumes (No comics linked)
@@ -132,10 +134,30 @@ class MaintenanceService:
                 Collection.auto_generated == True).delete(synchronize_session=False)
             self.db.commit()  # Yield Lock
 
+            # Clean cached critic reviews whose comic is gone. Deleting a comic
+            # now removes them, but older deletions could leave them behind.
+            stats["external_review_lookups"] = self.cleanup_orphaned_external_reviews()
+
         else:
             self.logger.info(f"Skipping deep tag cleanup for scoped scan (Library {library_id})")
 
         return stats
+
+    def cleanup_orphaned_external_reviews(self) -> int:
+        """Delete cached review lookups (and their reviews) whose comic no longer exists."""
+        orphaned_lookup_ids = self.db.query(ExternalReviewLookup.id).filter(~ExternalReviewLookup.comic.has())
+
+        self.db.query(ExternalReview).filter(
+            ExternalReview.lookup_id.in_(orphaned_lookup_ids)
+        ).delete(synchronize_session=False)
+        removed = self.db.query(ExternalReviewLookup).filter(
+            ~ExternalReviewLookup.comic.has()
+        ).delete(synchronize_session=False)
+        self.db.commit()  # Yield Lock
+
+        if removed:
+            self.logger.info(f"Janitor: Removed {removed} orphaned external review lookup(s).")
+        return removed
 
     def cleanup_duplicate_tags(self) -> dict:
         """Merge case-insensitive duplicate tags while preserving comic links."""

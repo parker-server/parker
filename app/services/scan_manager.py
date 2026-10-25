@@ -4,7 +4,7 @@ import json
 import logging
 from datetime import datetime, timezone
 from sqlalchemy import asc
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app.core.settings_loader import get_cached_setting
 from app.database import SessionLocal
@@ -15,10 +15,25 @@ from app.services.scanner import LibraryScanner
 from app.services.maintenance import MaintenanceService
 from app.services.thumbnailer import ThumbnailService
 from app.services.metadata import rehydrate_library_metadata_from_cache
+from app.services.external_reviews import (
+    COMICBOOKROUNDUP_PROVIDER,
+    EXTERNAL_REVIEWS_ENABLED_SETTING,
+    STATUS_FAILED as LOOKUP_STATUS_FAILED,
+    refresh_external_reviews_for_comic,
+)
+
+DEFAULT_INTERRUPTED_MESSAGE = "Scan interrupted by server restart"
+INTERRUPTED_MESSAGES = {
+    JobType.EXTERNAL_REVIEW_LOOKUP.value: "External review lookup interrupted by server restart",
+}
 
 
 class ScanManager:
     _instance = None
+
+    # Minimum gap between outbound external review lookups. Only the
+    # lock-owning process runs the enrichment lane, so this is global.
+    EXTERNAL_REVIEW_MIN_INTERVAL_SECONDS = 3.0
 
     def __new__(cls):
         if cls._instance is None:
@@ -34,6 +49,7 @@ class ScanManager:
 
         self._stop_event = threading.Event()
         self.worker_threads: dict[str, threading.Thread] = {}
+        self._last_external_review_at: float | None = None
 
         self._initialized = True
 
@@ -81,7 +97,8 @@ class ScanManager:
 
                 for job in stuck_jobs:
                     job.status = JobStatus.FAILED
-                    job.error_message = "Scan interrupted by server restart"
+                    job_type = getattr(job.job_type, "value", job.job_type)
+                    job.error_message = INTERRUPTED_MESSAGES.get(job_type, DEFAULT_INTERRUPTED_MESSAGE)
                     job.completed_at = datetime.now(timezone.utc)
                     # Reset library flag directly here
                     if job.library:
@@ -201,6 +218,44 @@ class ScanManager:
         finally:
             db.close()
 
+    def add_external_review_task(self, comic_id: int, provider: str = COMICBOOKROUNDUP_PROVIDER) -> dict:
+        """
+        Queue an external review lookup for a comic.
+        A partial unique index allows only one active lookup per comic, so a
+        concurrent request from another Uvicorn worker gets the existing job.
+        """
+        self.logger.debug(f"Adding EXTERNAL_REVIEW_LOOKUP job for comic {comic_id} to queue ({provider})")
+
+        db = SessionLocal()
+        try:
+            job = ScanJob(
+                job_type=JobType.EXTERNAL_REVIEW_LOOKUP,
+                target_type="comic",
+                target_id=comic_id,
+                payload_json=json.dumps({"provider": provider}),
+                status=JobStatus.PENDING,
+            )
+            db.add(job)
+            try:
+                db.commit()
+            except IntegrityError:
+                db.rollback()
+                existing = db.query(ScanJob).filter(
+                    ScanJob.job_type == JobType.EXTERNAL_REVIEW_LOOKUP,
+                    ScanJob.target_type == "comic",
+                    ScanJob.target_id == comic_id,
+                    ScanJob.status.in_([JobStatus.PENDING, JobStatus.RUNNING])
+                ).first()
+                return {
+                    "status": "ignored",
+                    "job_id": existing.id if existing else None,
+                    "message": "External review lookup already active",
+                }
+
+            return {"status": "queued", "job_id": job.id, "message": "External review lookup queued"}
+        finally:
+            db.close()
+
     def _process_lane(self, lane: str):
         """Poller loop for one lane. Claims that lane's job types in priority order."""
         self.logger.info(f"Database Job Worker Started (lane: {lane})")
@@ -238,7 +293,9 @@ class ScanManager:
                         "id": job.id,
                         "library_id": job.library_id,
                         "type": job.job_type,
-                        "force": job.force_scan
+                        "force": job.force_scan,
+                        "target_id": job.target_id,
+                        "payload": job.payload_json,
                     }
                     db.close()  # Close immediately
 
@@ -255,6 +312,8 @@ class ScanManager:
                         self._run_cleanup_job(job_data)
                     elif job_data['type'] == JobType.METADATA_REHYDRATE:
                         self._run_metadata_rehydrate_job(job_data)
+                    elif job_data['type'] == JobType.EXTERNAL_REVIEW_LOOKUP:
+                        self._run_external_review_job(job_data)
 
                 else:
                     db.close()
@@ -515,6 +574,55 @@ class ScanManager:
 
         if library_id:
             self._set_library_scanning_status(library_id, False)
+
+    def _run_external_review_job(self, job_data):
+        job_id = job_data['id']
+        comic_id = job_data['target_id']
+        payload = json.loads(job_data['payload']) if job_data.get('payload') else {}
+
+        summary = {"provider": payload.get("provider", COMICBOOKROUNDUP_PROVIDER), "comic_id": comic_id}
+        error = None
+
+        try:
+            if not get_cached_setting(EXTERNAL_REVIEWS_ENABLED_SETTING, False):
+                summary["skipped"] = "External reviews are disabled"
+            else:
+                self._wait_for_external_review_interval()
+                self.logger.info(f"Starting EXTERNAL_REVIEW_LOOKUP job {job_id} (comic {comic_id})")
+                try:
+                    result = refresh_external_reviews_for_comic(comic_id)
+                finally:
+                    self._last_external_review_at = time.monotonic()
+
+                if result is None:
+                    summary["skipped"] = "Comic not found"
+                else:
+                    summary.update(result)
+                    # Lookup outcomes like no_match are normal results; only a
+                    # network or parsing failure marks the job itself as failed.
+                    if result["match_status"] == LOOKUP_STATUS_FAILED:
+                        error = result.get("error") or "External review lookup failed"
+        except Exception as e:
+            error = str(e)
+            self.logger.error(f"External review lookup failed: {e}", exc_info=True)
+
+        self._safe_job_update(
+            job_id,
+            JobStatus.FAILED if error else JobStatus.COMPLETED,
+            summary=summary,
+            error=error,
+        )
+
+    def _wait_for_external_review_interval(self):
+        """Keep outbound lookups at least EXTERNAL_REVIEW_MIN_INTERVAL_SECONDS apart."""
+        if self._last_external_review_at is None:
+            return
+
+        elapsed = time.monotonic() - self._last_external_review_at
+        remaining = self.EXTERNAL_REVIEW_MIN_INTERVAL_SECONDS - elapsed
+        if remaining > 0:
+            # Waits on the stop event so shutdown is not held up.
+            self._stop_event.wait(remaining)
 
     def add_cleanup_task(self) -> dict:
         """Queue a global cleanup task"""

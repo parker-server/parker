@@ -490,7 +490,7 @@ def test_external_reviews_endpoint_queues_lazy_lookup_when_enabled(auth_client, 
     ))
     db.commit()
 
-    with patch("app.api.comics.refresh_external_reviews_for_comic") as refresh_task:
+    with patch("app.api.comics.scan_manager.add_external_review_task") as enqueue_lookup:
         response = auth_client.get(f"/api/comics/{comic.id}/external-reviews")
 
     assert response.status_code == 200
@@ -498,21 +498,21 @@ def test_external_reviews_endpoint_queues_lazy_lookup_when_enabled(auth_client, 
     assert payload["enabled"] is True
     assert payload["status"] == "pending"
     assert payload["reviews"] == []
-    refresh_task.assert_called_once_with(comic.id)
+    enqueue_lookup.assert_called_once_with(comic.id)
 
-    with patch("app.api.comics.refresh_external_reviews_for_comic") as refresh_task:
+    with patch("app.api.comics.scan_manager.add_external_review_task") as enqueue_lookup:
         response = auth_client.get(f"/api/comics/{comic.id}/external-reviews")
 
     assert response.status_code == 200
     assert response.json()["status"] == "pending"
-    refresh_task.assert_not_called()
+    enqueue_lookup.assert_not_called()
 
-    with patch("app.api.comics.refresh_external_reviews_for_comic") as refresh_task:
+    with patch("app.api.comics.scan_manager.add_external_review_task") as enqueue_lookup:
         response = auth_client.get(f"/api/comics/{comic.id}/external-reviews?refresh=true")
 
     assert response.status_code == 200
     assert response.json()["status"] == "pending"
-    refresh_task.assert_not_called()
+    enqueue_lookup.assert_not_called()
 
     lookup = db.query(ExternalReviewLookup).filter_by(
         comic_id=comic.id,
@@ -522,12 +522,12 @@ def test_external_reviews_endpoint_queues_lazy_lookup_when_enabled(auth_client, 
     lookup.next_retry_at = datetime.now(timezone.utc) + timedelta(days=14)
     db.commit()
 
-    with patch("app.api.comics.refresh_external_reviews_for_comic") as refresh_task:
+    with patch("app.api.comics.scan_manager.add_external_review_task") as enqueue_lookup:
         response = auth_client.get(f"/api/comics/{comic.id}/external-reviews?refresh=true")
 
     assert response.status_code == 200
     assert response.json()["status"] == STATUS_NO_MATCH
-    refresh_task.assert_not_called()
+    enqueue_lookup.assert_not_called()
 
 
 def test_external_reviews_endpoint_normalizes_old_matched_retry_without_refresh(auth_client, db, normal_user):
@@ -562,13 +562,13 @@ def test_external_reviews_endpoint_normalizes_old_matched_retry_without_refresh(
     db.add(lookup)
     db.commit()
 
-    with patch("app.api.comics.refresh_external_reviews_for_comic") as refresh_task:
+    with patch("app.api.comics.scan_manager.add_external_review_task") as enqueue_lookup:
         response = auth_client.get(f"/api/comics/{comic.id}/external-reviews")
 
     assert response.status_code == 200
     assert response.json()["status"] == STATUS_MATCHED
     assert response.json()["next_retry_at"] is None
-    refresh_task.assert_not_called()
+    enqueue_lookup.assert_not_called()
 
     db.refresh(lookup)
     assert lookup.next_retry_at is None

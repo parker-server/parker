@@ -9,6 +9,7 @@ class JobType(str, enum.Enum):
     THUMBNAIL = "thumbnail"
     CLEANUP = "cleanup"
     METADATA_REHYDRATE = "metadata_rehydrate"
+    EXTERNAL_REVIEW_LOOKUP = "external_review_lookup"
 
 class JobStatus(str, enum.Enum):
     PENDING = "pending"
@@ -20,9 +21,17 @@ class JobStatus(str, enum.Enum):
 # Each lane gets its own worker thread. Within a lane, job types are listed in
 # priority order: the worker always claims the first type that has pending work.
 LIBRARY_LANE = "library"
+ENRICHMENT_LANE = "enrichment"
 
 JOB_LANES: dict[str, tuple[JobType, ...]] = {
     LIBRARY_LANE: (JobType.SCAN, JobType.THUMBNAIL, JobType.CLEANUP, JobType.METADATA_REHYDRATE),
+    ENRICHMENT_LANE: (JobType.EXTERNAL_REVIEW_LOOKUP,),
+}
+
+JOB_TYPE_LANES: dict[str, str] = {
+    job_type.value: lane
+    for lane, lane_job_types in JOB_LANES.items()
+    for job_type in lane_job_types
 }
 
 
