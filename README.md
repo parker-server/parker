@@ -248,6 +248,42 @@ Known client behavior:
 - Librera can browse Parker OPDS catalogs, but may not acquire/open issues when
   tapping comic entries.
 
+### Cover Audit Tool
+
+Parker picks each comic's cover from its archive's page filenames. To find
+archives where that pick could be wrong and deserves a manual look, run the cover audit inside the
+container:
+
+```bash
+docker compose exec parker python -m app.services.cover_audit
+```
+
+It reads every `.cbz`/`.cbr` under `COMICS_PATH` (or the folders you pass as
+arguments) without changing anything, and writes the flagged archives to
+`storage/cover_audit.csv` (`./data/cover_audit.csv` on the Docker host). Each row
+lists the chosen cover, the first page by plain filename order, why the cover
+was chosen, and one or more flags:
+
+- `reordered`: the cover is not the first page by plain filename order
+- `multiple_cover_candidates`: more than one page looks like a cover
+- `cover_in_stray_folder`: the cover sits in a tiny folder apart from the rest of the pages
+- `no_pages` / `unreadable`: the archive has no images or could not be opened
+
+To check which covers an update changes, save a snapshot of every cover
+before updating Parker, then compare against it afterwards:
+
+```bash
+docker compose exec parker python -m app.services.cover_audit --snapshot storage/covers_before.csv
+```
+
+```bash
+docker compose exec parker python -m app.services.cover_audit --compare storage/covers_before.csv
+```
+
+The compare run writes `storage/cover_changes.csv` with each archive whose cover
+changed, showing the cover before and after. Archives added or removed between
+the two runs are not listed.
+
 
 ## 📌 Roadmap
 - Improve Documentation

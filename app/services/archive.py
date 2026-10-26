@@ -11,7 +11,7 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-ARCHIVE_PAGE_ORDER_VERSION = 7
+ARCHIVE_PAGE_ORDER_VERSION = 8
 IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff', '.jxl', '.avif'}
 IGNORE_FILENAMES = {'thumbs.db', '.ds_store', 'comicinfo.xml', '__macosx'}
 IGNORE_EXTENSIONS = {'.nfo', '.sfv', '.txt', '.xml', '.db', '.ini'}
@@ -223,7 +223,8 @@ def _cover_signal(filename: str, text: str, page_stems: set[str] | None, penalty
 
 
 def _page_role(cover_signal: str | None, text: str, penalty_signals: tuple[str, ...]) -> PageRole:
-    if EXPLICIT_END_PAGE_RE.match(text) or "back_cover" in penalty_signals:
+    _, basename = _split_archive_path(text)
+    if EXPLICIT_END_PAGE_RE.match(basename) or "back_cover" in penalty_signals:
         return PageRole.BACK_MATTER
     if cover_signal == "explicit_cover_token":
         return PageRole.COVER

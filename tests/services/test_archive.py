@@ -290,6 +290,26 @@ def test_comic_archive_sort_pages_prefers_leading_underscore_twin_cover():
         ]
 
 
+def test_comic_archive_sort_pages_sends_z_prefixed_scan_page_to_end_inside_folder():
+    with patch("app.services.archive.zipfile.is_zipfile", return_value=True), \
+         patch("app.services.archive.zipfile.ZipFile"):
+        archive = ComicArchive(Path("dummy.cbz"))
+
+        archive.get_file_list = MagicMock(return_value=[
+            "Fantastic Four Unplugged #1/zzz A Comixbear Scan.jpg",
+            "Fantastic Four Unplugged #1/Fantastic Four Unplugged #1 {Comixbear}-02.jpg",
+            "Fantastic Four Unplugged #1/Fantastic Four Unplugged #1 {Comixbear}-01.jpg",
+        ])
+
+        pages = archive.get_pages()
+
+        assert pages == [
+            "Fantastic Four Unplugged #1/Fantastic Four Unplugged #1 {Comixbear}-01.jpg",
+            "Fantastic Four Unplugged #1/Fantastic Four Unplugged #1 {Comixbear}-02.jpg",
+            "Fantastic Four Unplugged #1/zzz A Comixbear Scan.jpg",
+        ]
+
+
 def test_comic_archive_sort_pages_prefers_bare_zero_page_before_zero_letter_join():
     with patch("app.services.archive.zipfile.is_zipfile", return_value=True), \
          patch("app.services.archive.zipfile.ZipFile"):
