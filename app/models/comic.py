@@ -94,7 +94,7 @@ class Comic(Base):
 
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-    is_dirty = Column(Boolean, default=False, index=True)  # Add index for faster polling
+    is_dirty = Column(Boolean, default=False, nullable=False, index=True)  # Add index for faster polling
 
 
     # Relationships

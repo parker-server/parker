@@ -32,12 +32,25 @@ if config.config_file_name is not None:
 # 3. Set the Metadata target
 target_metadata = Base.metadata
 
+
+def include_name(name, type_, parent_names) -> bool:
+    """Keep tables that have no model out of autogenerate and `alembic check`.
+
+    comics_fts is an FTS5 virtual table (plus its comics_fts_* shadow tables) that
+    migrations create with raw SQL. Without this, autogenerate would drop it.
+    """
+    if type_ == "table":
+        return not name.startswith("comics_fts")
+    return True
+
+
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url,
         target_metadata=target_metadata,
+        include_name=include_name,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         # IMPORTANT for SQLite:
@@ -59,6 +72,7 @@ def run_migrations_online() -> None:
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
+            include_name=include_name,
             # IMPORTANT for SQLite:
             render_as_batch=True
         )
