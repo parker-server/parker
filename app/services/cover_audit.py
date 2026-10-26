@@ -12,14 +12,23 @@ To see which covers a sorting change moves, save a snapshot before updating
 Parker and compare against it afterwards:
     python -m app.services.cover_audit --snapshot storage/covers_before.csv
     python -m app.services.cover_audit --compare storage/covers_before.csv
+
+To check flagged covers by eye, build a contact sheet from a finished report.
+It shows each flagged archive's chosen cover next to the pages it might have
+picked instead, and writes storage/cover_audit_sheet/index.html:
+    python -m app.services.cover_audit --contact-sheet storage/cover_audit.csv
 """
 import argparse
 import csv
+import html
 import logging
 import os
 import sys
 from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path
+
+from PIL import Image
 
 from app.config import settings
 from app.services.archive import (
@@ -30,6 +39,7 @@ from app.services.archive import (
     _page_stem_key,
     _split_archive_path,
 )
+from app.services.images import _allow_truncated_image_loads
 
 SUPPORTED_EXTENSIONS = {".cbz", ".cbr"}
 COVER_ROLES = {PageRole.COVER, PageRole.LIKELY_COVER}
@@ -41,6 +51,12 @@ REPORT_COLUMNS = ["path", "flags", "chosen_cover", "plain_first_page", "reason",
 SNAPSHOT_COLUMNS = ["path", "cover"]
 CHANGES_COLUMNS = ["path", "before_cover", "after_cover"]
 CHANGES_FILENAME = "cover_changes.csv"
+SHEET_DIRNAME = "cover_audit_sheet"
+SHEET_PROGRESS_EVERY = 100
+SHEET_THUMB_SIZE = (200, 300)
+SHEET_MAX_ALTERNATIVES = 3
+# Most likely to hold a wrong cover first
+SHEET_FLAG_ORDER = ["reordered", "cover_in_stray_folder", "multiple_cover_candidates"]
 
 
 @dataclass(frozen=True)
@@ -193,6 +209,230 @@ def run_audit(
     return flagged
 
 
+def alternative_pages(pages: list[str]) -> list[tuple[str, str]]:
+    """
+    Pages worth showing next to the chosen cover (pages[0]), as (label, page):
+    the first page by plain filename order, other pages that look like covers,
+    then the next page as a fallback.
+    """
+    if len(pages) < 2:
+        return []
+
+    page_stems = {_page_stem_key(page) for page in pages}
+    candidates = [("Plain first page", min(pages, key=lambda page: _natural_sort_tuple(page.lower())))]
+    candidates += [
+        ("Cover candidate", page)
+        for page in pages[1:]
+        if _page_sort_score(page, page_stems).role in COVER_ROLES
+    ]
+    candidates.append(("Next page", pages[1]))
+
+    alternatives = []
+    seen = {pages[0]}
+    for label, page in candidates:
+        if page not in seen:
+            seen.add(page)
+            alternatives.append((label, page))
+    return alternatives[:SHEET_MAX_ALTERNATIVES]
+
+
+def write_sheet_thumbnail(image_bytes: bytes, output: Path) -> bool:
+    try:
+        with _allow_truncated_image_loads():
+            img = Image.open(BytesIO(image_bytes))
+            # Lets JPEG decode at a reduced size, which is much faster for full-size scans
+            img.draft("RGB", (SHEET_THUMB_SIZE[0] * 2, SHEET_THUMB_SIZE[1] * 2))
+            if img.mode != "RGB":
+                img = img.convert("RGB")
+            img.thumbnail(SHEET_THUMB_SIZE, Image.Resampling.LANCZOS)
+            img.save(output, format="JPEG", quality=75)
+        return True
+    except Exception:
+        return False
+
+
+def _sheet_sort_key(row: dict[str, str]) -> tuple[int, str]:
+    flags = row["flags"].split()
+    ranks = [SHEET_FLAG_ORDER.index(flag) for flag in flags if flag in SHEET_FLAG_ORDER]
+    return (min(ranks) if ranks else len(SHEET_FLAG_ORDER), row["path"])
+
+
+def _sheet_card(index: int, row: dict[str, str], images: list[tuple[str, str, str | None]]) -> str:
+    path = Path(row["path"])
+    figures = []
+    for label, page, image_name in images:
+        preview = (
+            f'<img src="img/{html.escape(image_name)}" alt="" loading="lazy">'
+            if image_name
+            else '<div class="missing">No preview</div>'
+        )
+        figures.append(
+            f'<figure class="{"chosen" if label == "Chosen cover" else ""}">{preview}'
+            f'<figcaption><strong>{html.escape(label)}</strong>'
+            f'<span title="{html.escape(page)}">{html.escape(_split_archive_path(page)[1])}</span></figcaption></figure>'
+        )
+    chips = "".join(f'<span class="chip">{html.escape(flag)}</span>' for flag in row["flags"].split())
+    return (
+        f'<article class="card" data-flags="{html.escape(row["flags"])}" '
+        f'data-path="{html.escape(row["path"])}" data-cover="{html.escape(images[0][1])}">'
+        f'<header><h2 title="{html.escape(row["path"])}">{index}. {html.escape(path.name)}</h2>'
+        f'<p class="folder">{html.escape(str(path.parent))}</p>'
+        f'<p>{chips}<span class="reason">{html.escape(row["reason"])}</span></p></header>'
+        f'<div class="pages">{"".join(figures)}</div>'
+        f'<label class="wrong"><input type="checkbox"> Wrong cover</label></article>'
+    )
+
+
+def _sheet_html(cards: list[str], flag_names: list[str]) -> str:
+    options = "".join(f'<option value="{html.escape(flag)}">{html.escape(flag)}</option>' for flag in flag_names)
+    return SHEET_TEMPLATE.replace("{{count}}", str(len(cards))).replace("{{options}}", options).replace(
+        "{{cards}}", "\n".join(cards)
+    )
+
+
+def make_contact_sheet(report: Path, sheet_dir: Path) -> int:
+    with report.open(newline="", encoding="utf-8-sig") as file:
+        rows = [row for row in csv.DictReader(file) if row["chosen_cover"]]
+    rows.sort(key=_sheet_sort_key)
+    print(f"Building contact sheet for {len(rows)} archives...", file=sys.stderr)
+
+    image_dir = sheet_dir / "img"
+    image_dir.mkdir(parents=True, exist_ok=True)
+    for old_image in image_dir.glob("*.jpg"):
+        old_image.unlink()
+
+    cards = []
+    skipped = 0
+    flag_names: set[str] = set()
+    for index, row in enumerate(rows, start=1):
+        try:
+            with ComicArchive(Path(row["path"])) as archive:
+                pages = archive.get_pages()
+                if not pages:
+                    raise ValueError("archive has no pages")
+                shown = [("Chosen cover", pages[0])] + alternative_pages(pages)
+                images = []
+                for position, (label, page) in enumerate(shown):
+                    image_name = f"{index}_{position}.jpg"
+                    if not write_sheet_thumbnail(archive.read_file(page), image_dir / image_name):
+                        image_name = None
+                    images.append((label, page, image_name))
+        except Exception as exc:
+            skipped += 1
+            print(f"  Skipped {row['path']}: {exc}", file=sys.stderr)
+            continue
+
+        flag_names.update(row["flags"].split())
+        cards.append(_sheet_card(index, row, images))
+        if index % SHEET_PROGRESS_EVERY == 0:
+            print(f"  {index}/{len(rows)} done", file=sys.stderr)
+
+    ordered_flags = [flag for flag in SHEET_FLAG_ORDER if flag in flag_names]
+    ordered_flags += sorted(flag_names - set(SHEET_FLAG_ORDER))
+    sheet = sheet_dir / "index.html"
+    sheet.write_text(_sheet_html(cards, ordered_flags), encoding="utf-8")
+    print(f"Done. {len(cards)} archives on the sheet, {skipped} skipped.", file=sys.stderr)
+    print(f"Contact sheet written to {sheet.resolve()}", file=sys.stderr)
+    return len(cards)
+
+
+SHEET_TEMPLATE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cover Audit Sheet</title>
+<style>
+  :root { --bg: #f6f6f4; --card: #fff; --text: #1d1d1b; --muted: #6b6b66; --line: #deded9; --accent: #2f6fde; --chip: #ecebe6; --wrong: #fdecea; --wrong-line: #d93025; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #161615; --card: #20201f; --text: #ececea; --muted: #a0a09a; --line: #34342f; --accent: #7aa7f5; --chip: #2d2d2a; --wrong: #3a1f1d; --wrong-line: #f28b82; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, sans-serif; }
+  .bar { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 12px 16px; background: var(--card); border-bottom: 1px solid var(--line); }
+  .bar h1 { margin: 0; font-size: 16px; }
+  .bar .count { color: var(--muted); }
+  .bar select, .bar button { font: inherit; padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); }
+  .bar button { background: var(--accent); border-color: var(--accent); color: #fff; cursor: pointer; }
+  #copied { width: 100%; height: 6em; display: none; font: 12px monospace; }
+  main { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 460px), 1fr)); gap: 12px; padding: 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; min-width: 0; }
+  .card.is-wrong { background: var(--wrong); border-color: var(--wrong-line); }
+  .card h2 { margin: 0; font-size: 14px; overflow-wrap: anywhere; }
+  .card p { margin: 2px 0; }
+  .folder { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+  .chip { display: inline-block; margin-right: 4px; padding: 0 6px; border-radius: 4px; background: var(--chip); font-size: 12px; }
+  .reason { color: var(--muted); font-size: 12px; }
+  .pages { display: flex; gap: 8px; margin: 8px 0; overflow-x: auto; }
+  figure { margin: 0; width: 120px; flex: none; }
+  figure img, .missing { display: block; width: 120px; height: 180px; object-fit: contain; background: var(--chip); border-radius: 4px; }
+  .missing { display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 12px; }
+  figure.chosen img { outline: 3px solid var(--accent); }
+  figcaption { font-size: 11px; overflow-wrap: anywhere; }
+  figcaption strong, figcaption span { display: block; }
+  figcaption span { color: var(--muted); }
+  .wrong { cursor: pointer; user-select: none; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="bar">
+  <h1>Cover audit</h1>
+  <span class="count">{{count}} archives, chosen cover outlined</span>
+  <select id="filter"><option value="">All flags</option>{{options}}</select>
+  <button id="copy" type="button">Copy wrong covers (0)</button>
+  <textarea id="copied" readonly></textarea>
+</div>
+<main>
+{{cards}}
+</main>
+<script>
+  const KEY = "parker-cover-audit-wrong";
+  const cards = [...document.querySelectorAll(".card")];
+  let wrong = new Set();
+  try { wrong = new Set(JSON.parse(localStorage.getItem(KEY) || "[]")); } catch (e) {}
+
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify([...wrong])); } catch (e) {}
+    document.getElementById("copy").textContent = `Copy wrong covers (${wrong.size})`;
+  }
+
+  for (const card of cards) {
+    const box = card.querySelector("input");
+    box.checked = wrong.has(card.dataset.path);
+    card.classList.toggle("is-wrong", box.checked);
+    box.addEventListener("change", () => {
+      box.checked ? wrong.add(card.dataset.path) : wrong.delete(card.dataset.path);
+      card.classList.toggle("is-wrong", box.checked);
+      save();
+    });
+  }
+  save();
+
+  document.getElementById("filter").addEventListener("change", (event) => {
+    const flag = event.target.value;
+    for (const card of cards) {
+      card.classList.toggle("hidden", flag !== "" && !card.dataset.flags.split(" ").includes(flag));
+    }
+  });
+
+  document.getElementById("copy").addEventListener("click", () => {
+    const text = cards
+      .filter((card) => wrong.has(card.dataset.path))
+      .map((card) => `${card.dataset.path}\\t${card.dataset.cover}`)
+      .join("\\n");
+    const output = document.getElementById("copied");
+    output.value = text;
+    output.style.display = "block";
+    output.select();
+    if (navigator.clipboard) { navigator.clipboard.writeText(text).catch(() => {}); }
+  });
+</script>
+</body>
+</html>
+"""
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Flag comic archives whose cover pick deserves a manual look.")
     parser.add_argument(
@@ -218,10 +458,19 @@ def main(argv: list[str] | None = None) -> None:
         type=Path,
         help=f"List archives whose cover changed since this snapshot (written to {CHANGES_FILENAME} next to the report)",
     )
+    parser.add_argument(
+        "--contact-sheet",
+        type=Path,
+        metavar="REPORT",
+        help=f"Instead of auditing, build a visual contact sheet from this finished report (written to {SHEET_DIRNAME}/ next to it)",
+    )
     args = parser.parse_args(argv)
 
     # Mislabeled-archive warnings would drown out the progress output
     logging.basicConfig(level=logging.ERROR)
+    if args.contact_sheet:
+        make_contact_sheet(args.contact_sheet, args.contact_sheet.with_name(SHEET_DIRNAME))
+        return
     run_audit(args.paths, args.output, args.snapshot, args.compare)
 
 

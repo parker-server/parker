@@ -1,8 +1,18 @@
 import csv
+from io import BytesIO
 import zipfile
 from pathlib import Path
 
-from app.services.cover_audit import audit_pages, changed_covers, run_audit
+from PIL import Image
+
+from app.services.cover_audit import (
+    alternative_pages,
+    audit_pages,
+    changed_covers,
+    make_contact_sheet,
+    run_audit,
+    write_sheet_thumbnail,
+)
 
 
 def test_audit_pages_does_not_flag_plain_first_page_cover():
@@ -114,3 +124,62 @@ def test_run_audit_compares_covers_against_snapshot(tmp_path):
     assert [Path(row["path"]).name for row in changes] == ["moved.cbz"]
     assert changes[0]["before_cover"] == "01.jpg"
     assert changes[0]["after_cover"] == "cover.jpg"
+
+
+def test_alternative_pages_shows_plain_first_page_then_cover_candidates():
+    pages = ["cover.jpg", "01.jpg", "fc.jpg", "02.jpg"]
+
+    assert alternative_pages(pages) == [
+        ("Plain first page", "01.jpg"),
+        ("Cover candidate", "fc.jpg"),
+    ]
+
+
+def test_alternative_pages_falls_back_to_next_page():
+    assert alternative_pages(["01.jpg", "02.jpg", "03.jpg"]) == [("Next page", "02.jpg")]
+    assert alternative_pages(["01.jpg"]) == []
+
+
+def test_alternative_pages_shows_at_most_three():
+    pages = ["00a.jpg", "00b.jpg", "00c.jpg", "00d.jpg", "00e.jpg", "01.jpg"]
+
+    assert len(alternative_pages(pages)) == 3
+
+
+def _jpeg_bytes(size: tuple[int, int] = (600, 900)) -> bytes:
+    buffer = BytesIO()
+    Image.new("RGB", size, (200, 30, 30)).save(buffer, format="JPEG")
+    return buffer.getvalue()
+
+
+def test_write_sheet_thumbnail_shrinks_image_and_rejects_bad_data(tmp_path):
+    thumbnail = tmp_path / "thumb.jpg"
+
+    assert write_sheet_thumbnail(_jpeg_bytes(), thumbnail) is True
+    with Image.open(thumbnail) as image:
+        assert image.size == (200, 300)
+    assert write_sheet_thumbnail(b"not an image", tmp_path / "bad.jpg") is False
+
+
+def test_make_contact_sheet_shows_flagged_covers_most_suspect_first(tmp_path):
+    library = tmp_path / "library"
+    library.mkdir()
+    with zipfile.ZipFile(library / "variants.cbz", "w") as archive:
+        for name in ["00a.jpg", "00b.jpg", "01.jpg"]:
+            archive.writestr(name, _jpeg_bytes())
+    with zipfile.ZipFile(library / "reordered.cbz", "w") as archive:
+        archive.writestr("01.jpg", _jpeg_bytes())
+        archive.writestr("scan.jpg", b"not an image")
+    output = tmp_path / "cover_audit.csv"
+    run_audit([library], output)
+    sheet_dir = tmp_path / "cover_audit_sheet"
+
+    cards = make_contact_sheet(output, sheet_dir)
+
+    sheet = (sheet_dir / "index.html").read_text(encoding="utf-8")
+    assert cards == 2
+    assert sheet.index("reordered.cbz") < sheet.index("variants.cbz")
+    assert "No preview" in sheet
+    assert sheet.count('type="checkbox"') == 2
+    assert '<option value="reordered">' in sheet
+    assert sorted(path.name for path in (sheet_dir / "img").iterdir()) == ["1_1.jpg", "2_0.jpg", "2_1.jpg"]

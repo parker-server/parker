@@ -284,6 +284,19 @@ The compare run writes `storage/cover_changes.csv` with each archive whose cover
 changed, showing the cover before and after. Archives added or removed between
 the two runs are not listed.
 
+To check flagged covers by eye, build a contact sheet from a finished report.
+This doesn't rerun the audit; it only reads a few pages from each flagged archive:
+
+```bash
+docker compose exec parker python -m app.services.cover_audit --contact-sheet storage/cover_audit.csv
+```
+
+Open `./data/cover_audit_sheet/index.html` on the Docker host in a browser. Each
+flagged archive shows its chosen cover (outlined) next to the pages it might
+have picked instead, with the most likely wrong picks first. Filter by flag,
+tick **Wrong cover** on bad picks (ticks are remembered in that browser), then
+use **Copy wrong covers** to get the list of archives and covers to report.
+
 
 ## 📌 Roadmap
 - Improve Documentation
