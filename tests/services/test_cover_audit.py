@@ -183,3 +183,25 @@ def test_make_contact_sheet_shows_flagged_covers_most_suspect_first(tmp_path):
     assert sheet.count('type="checkbox"') == 2
     assert '<option value="reordered">' in sheet
     assert sorted(path.name for path in (sheet_dir / "img").iterdir()) == ["1_1.jpg", "2_0.jpg", "2_1.jpg"]
+
+
+def test_replay_of_saved_page_lists_matches_archive_audit(tmp_path):
+    library = tmp_path / "library"
+    library.mkdir()
+    _write_cbz(library / "clean.cbz", ["01.jpg", "02.jpg", "ComicInfo.xml"])
+    _write_cbz(library / "reordered.cbz", ["01.jpg", "cover.jpg"])
+    pages = tmp_path / "pages.jsonl.gz"
+    snapshot = tmp_path / "covers.csv"
+
+    run_audit([library], tmp_path / "live.csv", snapshot=snapshot, save_pages=pages)
+    # The library is gone: the replay must work from the saved file lists alone
+    for archive in library.iterdir():
+        archive.unlink()
+    flagged = run_audit([], tmp_path / "replay.csv", compare=snapshot, replay=pages)
+
+    assert flagged == 1
+    assert (tmp_path / "replay.csv").read_text(encoding="utf-8-sig") == (tmp_path / "live.csv").read_text(
+        encoding="utf-8-sig"
+    )
+    with (tmp_path / "cover_changes.csv").open(newline="", encoding="utf-8-sig") as changes_file:
+        assert list(csv.DictReader(changes_file)) == []

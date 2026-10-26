@@ -13,6 +13,11 @@ Parker and compare against it afterwards:
     python -m app.services.cover_audit --snapshot storage/covers_before.csv
     python -m app.services.cover_audit --compare storage/covers_before.csv
 
+To test sorting changes without the archives, save every archive's file list
+once and replay it later (with --compare to list the covers a change moves):
+    python -m app.services.cover_audit --save-pages storage/pages.jsonl.gz
+    python -m app.services.cover_audit --replay storage/pages.jsonl.gz --compare storage/covers.csv
+
 To check flagged covers by eye, build a contact sheet from a finished report.
 It shows each flagged archive's chosen cover next to the pages it might have
 picked instead, and writes storage/cover_audit_sheet/index.html:
@@ -20,7 +25,9 @@ picked instead, and writes storage/cover_audit_sheet/index.html:
 """
 import argparse
 import csv
+import gzip
 import html
+import json
 import logging
 import os
 import sys
@@ -38,6 +45,7 @@ from app.services.archive import (
     _page_sort_score,
     _page_stem_key,
     _split_archive_path,
+    sort_pages,
 )
 from app.services.images import _allow_truncated_image_loads
 
@@ -110,10 +118,15 @@ def find_archives(roots: list[Path]) -> list[Path]:
     return sorted(archives)
 
 
-def audit_archive(path: Path) -> tuple[CoverAudit, int]:
+def read_archive_files(path: Path) -> list[str]:
     with ComicArchive(path) as archive:
-        pages = archive.get_pages()
-    return audit_pages(pages), len(pages)
+        return archive.get_file_list()
+
+
+def read_page_lists(pages_file: Path) -> list[tuple[str, list[str]]]:
+    """Archive paths and raw file lists saved by --save-pages."""
+    with gzip.open(pages_file, "rt", encoding="utf-8") as file:
+        return [(record["path"], record["files"]) for record in map(json.loads, file)]
 
 
 def write_snapshot(snapshot: Path, covers: dict[str, str]) -> None:
@@ -150,9 +163,17 @@ def run_audit(
     output: Path,
     snapshot: Path | None = None,
     compare: Path | None = None,
+    save_pages: Path | None = None,
+    replay: Path | None = None,
 ) -> int:
-    archives = find_archives(roots)
-    print(f"Auditing {len(archives)} archives...", file=sys.stderr)
+    # Each entry is (archive path, file list), with the file list read lazily unless replaying
+    entries: list[tuple[str, list[str] | None]]
+    if replay:
+        entries = list(read_page_lists(replay))
+        print(f"Replaying {len(entries)} saved page lists...", file=sys.stderr)
+    else:
+        entries = [(str(path), None) for path in find_archives(roots)]
+        print(f"Auditing {len(entries)} archives...", file=sys.stderr)
 
     # Read before writing so --compare and --snapshot can point at the same file
     before = read_snapshot(compare) if compare else None
@@ -161,25 +182,34 @@ def run_audit(
     flag_counts: dict[str, int] = {}
     flagged = 0
     covers: dict[str, str] = {}
+    pages_file = None
+    if save_pages:
+        save_pages.parent.mkdir(parents=True, exist_ok=True)
+        pages_file = gzip.open(save_pages, "wt", encoding="utf-8")
 
     # utf-8-sig so spreadsheet apps read non-ASCII filenames correctly
     with output.open("w", newline="", encoding="utf-8-sig") as report:
         writer = csv.writer(report)
         writer.writerow(REPORT_COLUMNS)
 
-        for count, path in enumerate(archives, start=1):
+        for count, (path, files) in enumerate(entries, start=1):
             try:
-                audit, page_count = audit_archive(path)
+                if files is None:
+                    files = read_archive_files(Path(path))
+                pages = sort_pages(files)
+                audit, page_count = audit_pages(pages), len(pages)
+                if pages_file:
+                    pages_file.write(json.dumps({"path": path, "files": files}) + "\n")
             except Exception as exc:
                 audit, page_count = CoverAudit("", "", f"{type(exc).__name__}: {exc}", ("unreadable",)), 0
 
-            covers[str(path)] = audit.chosen_cover
+            covers[path] = audit.chosen_cover
             if audit.flags:
                 flagged += 1
                 for flag in audit.flags:
                     flag_counts[flag] = flag_counts.get(flag, 0) + 1
                 writer.writerow([
-                    str(path),
+                    path,
                     " ".join(audit.flags),
                     audit.chosen_cover,
                     audit.plain_first_page,
@@ -187,10 +217,14 @@ def run_audit(
                     page_count,
                 ])
 
-            if count % PROGRESS_EVERY == 0:
-                print(f"  {count}/{len(archives)} checked, {flagged} flagged", file=sys.stderr)
+            if count % PROGRESS_EVERY == 0 and not replay:
+                print(f"  {count}/{len(entries)} checked, {flagged} flagged", file=sys.stderr)
 
-    print(f"Done. {flagged} of {len(archives)} archives flagged.", file=sys.stderr)
+    if pages_file:
+        pages_file.close()
+        print(f"Page lists written to {save_pages.resolve()}", file=sys.stderr)
+
+    print(f"Done. {flagged} of {len(entries)} archives flagged.", file=sys.stderr)
     for flag, total in sorted(flag_counts.items()):
         print(f"  {flag}: {total}", file=sys.stderr)
     print(f"Report written to {output.resolve()}", file=sys.stderr)
@@ -464,6 +498,18 @@ def main(argv: list[str] | None = None) -> None:
         metavar="REPORT",
         help=f"Instead of auditing, build a visual contact sheet from this finished report (written to {SHEET_DIRNAME}/ next to it)",
     )
+    parser.add_argument(
+        "--save-pages",
+        type=Path,
+        metavar="PAGES",
+        help="Also save every archive's file list to this gzipped file, for a later --replay",
+    )
+    parser.add_argument(
+        "--replay",
+        type=Path,
+        metavar="PAGES",
+        help="Audit file lists saved by --save-pages instead of opening archives",
+    )
     args = parser.parse_args(argv)
 
     # Mislabeled-archive warnings would drown out the progress output
@@ -471,7 +517,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.contact_sheet:
         make_contact_sheet(args.contact_sheet, args.contact_sheet.with_name(SHEET_DIRNAME))
         return
-    run_audit(args.paths, args.output, args.snapshot, args.compare)
+    run_audit(args.paths, args.output, args.snapshot, args.compare, args.save_pages, args.replay)
 
 
 if __name__ == "__main__":

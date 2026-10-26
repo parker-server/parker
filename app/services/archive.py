@@ -307,6 +307,32 @@ def _page_sort_key(filename: str, page_stems: set[str] | None = None, archive_in
     return _page_sort_score(filename, page_stems, archive_index).sort_key()
 
 
+def sort_pages(files: List[str]) -> List[str]:
+    """Filter an archive's file list to image pages and sort them, cover first."""
+    pages = []
+    for f in files:
+        file_path = Path(f)
+        filename_lower = file_path.name.lower()
+
+        # Skip ignored files
+        if filename_lower in IGNORE_FILENAMES:
+            continue
+
+        # Skip ignored extensions
+        if file_path.suffix.lower() in IGNORE_EXTENSIONS:
+            continue
+
+        # Only include valid image files
+        if file_path.suffix.lower() in IMAGE_EXTENSIONS:
+            pages.append(f)
+
+    page_stems = {_page_stem_key(page) for page in pages}
+    indexed_pages = list(enumerate(pages))
+    indexed_pages.sort(key=lambda item: _page_sort_key(item[1], page_stems, item[0]))
+
+    return [page for _, page in indexed_pages]
+
+
 # Import the rarfile configuration
 import rarfile
 try:
@@ -368,31 +394,7 @@ class ComicArchive:
 
     def get_pages(self) -> List[str]:
         """Get sorted list of image files (pages) - filter out non-images"""
-        files = self.get_file_list()
-
-        # Filter to valid images only
-        pages = []
-        for f in files:
-            file_path = Path(f)
-            filename_lower = file_path.name.lower()
-
-            # Skip ignored files
-            if filename_lower in IGNORE_FILENAMES:
-                continue
-
-            # Skip ignored extensions
-            if file_path.suffix.lower() in IGNORE_EXTENSIONS:
-                continue
-
-            # Only include valid image files
-            if file_path.suffix.lower() in IMAGE_EXTENSIONS:
-                pages.append(f)
-
-        page_stems = {_page_stem_key(page) for page in pages}
-        indexed_pages = list(enumerate(pages))
-        indexed_pages.sort(key=lambda item: _page_sort_key(item[1], page_stems, item[0]))
-
-        return [page for _, page in indexed_pages]
+        return sort_pages(self.get_file_list())
 
     def read_file(self, filename: str) -> bytes:
         """Read a specific file from the archive"""

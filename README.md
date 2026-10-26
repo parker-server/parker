@@ -284,6 +284,21 @@ The compare run writes `storage/cover_changes.csv` with each archive whose cover
 changed, showing the cover before and after. Archives added or removed between
 the two runs are not listed.
 
+To test cover sorting changes without access to the library, save every
+archive's file list once (filenames only, about 110 bytes per archive, gzipped):
+
+```bash
+docker compose exec parker python -m app.services.cover_audit --save-pages storage/pages.jsonl.gz --snapshot storage/covers.csv
+```
+
+On any machine with the code, `--replay` then runs the audit on those saved
+file lists in seconds, without opening archives. Add `--compare` to list every
+archive whose cover a change would move:
+
+```bash
+python -m app.services.cover_audit --replay storage/pages.jsonl.gz --compare storage/covers.csv
+```
+
 To check flagged covers by eye, build a contact sheet from a finished report.
 This doesn't rerun the audit; it only reads a few pages from each flagged archive:
 
