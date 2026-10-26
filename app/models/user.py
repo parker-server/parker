@@ -21,11 +21,11 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     must_change_password = Column(Boolean, default=False, nullable=False)
     avatar_path = Column(String, nullable=True)
-    social_insights_enabled = Column("share_progress_enabled", Boolean, default=True)
+    social_insights_enabled = Column("share_progress_enabled", Boolean, default=True, nullable=False)
 
     max_age_rating = Column(String, nullable=True, default=None)
-    allow_unknown_age_ratings = Column(Boolean, default=False)
-    monthly_reading_goal = Column(Integer, default=10)
+    allow_unknown_age_ratings = Column(Boolean, default=False, nullable=False)
+    monthly_reading_goal = Column(Integer, default=10, nullable=False)
     home_rail_layout = Column(JSON, nullable=True)
 
 

@@ -8,7 +8,7 @@ class ActivityLog(Base):
     """Stores granular reading session data for velocity and heatmaps"""
     __tablename__ = "activity_log"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)  # Primary key is already indexed; the migration never added ix_activity_log_id
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     comic_id = Column(Integer, ForeignKey("comics.id", ondelete="CASCADE"), nullable=False, index=True)
 
