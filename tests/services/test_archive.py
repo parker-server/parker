@@ -49,14 +49,15 @@ def test_comic_archive_sort_pages_priority():
         
         pages = archive.get_pages()
         
+        # "scan" is a scanner tag, not a cover word, so scan.jpg is an ordinary page
         expected_pages = [
             "cover.jpg",
             "fc.jpg",
             "front.jpg",
-            "scan.jpg",
             "00.jpg",
             "01.jpg",
             "02.jpg",
+            "scan.jpg",
             "z.sig.fÆRiE-scan.jpg",
             "zz_promo.jpg",
             "z_credit.jpg"
@@ -90,21 +91,21 @@ def test_comic_archive_sort_pages_complex_names():
             "00_cover.jpg",  # Explicit cover
             "01.jpg",
             "scan02.jpg",    # Not explicit
-            "_scan.jpg",     # Explicit
+            "_scan.jpg",     # Not explicit: scan is a scanner tag word
             "my_front_page.jpg" # Explicit
         ])
         
         pages = archive.get_pages()
         
-        # Explicit covers: 00_cover.jpg, _scan.jpg, my_front_page.jpg
+        # Explicit covers: 00_cover.jpg, my_front_page.jpg
         # The rest are standard priority
         expected = [
             "00_cover.jpg", 
             "my_front_page.jpg", 
-            "_scan.jpg", 
             "01.jpg", 
+            "_scan.jpg",
             "cover01.jpg", 
-            "scan02.jpg"
+            "scan02.jpg",
         ]
         
         assert pages == expected
@@ -527,3 +528,181 @@ def test_page_sort_score_exposes_named_cover_signals():
     assert "joined_cover" in joined_cover.penalty_signals
     assert preview_header.role == PageRole.INTERIOR
     assert "preview_or_header" in preview_header.penalty_signals
+
+
+def test_comic_archive_sort_pages_sends_xx_wrapped_scanner_tags_to_end():
+    archives = [
+        ["Xx-MegaXMan-xX.JPG", "X-Man_31_0001.jpg", "X-Man_31_0000.jpg"],
+        ["X-Factor v1 084/XX-Empire-Meganubis-XX.JPG", "X-Factor v1 084/X-Factor v1 084-000.jpg"],
+        ["XX-Logo-XX.JPG", "X-men forever 1_0001.jpg"],
+    ]
+    with patch("app.services.archive.zipfile.is_zipfile", return_value=True),          patch("app.services.archive.zipfile.ZipFile"):
+        archive = ComicArchive(Path("dummy.cbz"))
+
+        for files in archives:
+            archive.get_file_list = MagicMock(return_value=files)
+
+            pages = archive.get_pages()
+
+            assert Path(pages[-1]).stem.lower().startswith("xx")
+            assert not Path(pages[0]).stem.lower().startswith("xx")
+
+
+def test_comic_archive_sort_pages_keeps_x_titles_that_are_not_tags():
+    with patch("app.services.archive.zipfile.is_zipfile", return_value=True), \
+         patch("app.services.archive.zipfile.ZipFile"):
+        archive = ComicArchive(Path("dummy.cbz"))
+
+        archive.get_file_list = MagicMock(return_value=["Xx-Factor 01.jpg", "Xx-Factor 02.jpg"])
+
+        assert archive.get_pages() == ["Xx-Factor 01.jpg", "Xx-Factor 02.jpg"]
+
+
+def test_comic_archive_sort_pages_prefers_bare_zero_page_over_lettered_variant_with_other_text():
+    archives = [
+        ["Batman 678-000b (Tony Daniel variant).jpg", "Batman 678-001.jpg", "Batman 678-000.jpg"],
+        ["action388-00a horse murals.jpg", "action388-01.jpg", "action388-00 puzzle of the wild world.jpg"],
+        ["Elektra_#1_pg00a_anthony.jpg", "Elektra_#1_pg01_anthony.jpg", "Elektra_#1_pg00_anthony.jpg"],
+        ["n-MisterX-10-00a-01.jpg", "n-MisterX-10-01.jpg", "n-MisterX-10-00.jpg"],
+        ["rex_mundi_06_pg_00b_summary_(sd).jpg", "rex_mundi_06_pg_01_(sd).jpg", "rex_mundi_06_pg_00_fc_(sd).jpg"],
+    ]
+    with patch("app.services.archive.zipfile.is_zipfile", return_value=True), \
+         patch("app.services.archive.zipfile.ZipFile"):
+        archive = ComicArchive(Path("dummy.cbz"))
+
+        for files in archives:
+            archive.get_file_list = MagicMock(return_value=files)
+
+            assert archive.get_pages()[0] == files[2]
+
+
+def test_comic_archive_sort_pages_sends_glued_z_tags_and_scan_tags_to_end():
+    archives = [
+        ["zzmm.jpg", "GA & BC 011 Page 001.jpg", "GA & BC 011 Page 002.jpg"],
+        ["zzZdizzylocke.jpg", "GA & BC 013 Page 001.jpg"],
+        ["zWraithOfSpectre02_00a.jpg", "WraithOfSpectre02_00.jpg", "WraithOfSpectre02_01.jpg"],
+        ["Showcase 032/zzztitansfan scan.jpg", "Showcase 032/Showcase-032_01.jpg"],
+        ["Zombie Golfer Scan 09.jpg", "House of Mystery 298 0001.jpg"],
+        ["scan.jpg", "Kamandi053-00.jpg", "Kamandi053-01.jpg"],
+    ]
+    with patch("app.services.archive.zipfile.is_zipfile", return_value=True), \
+         patch("app.services.archive.zipfile.ZipFile"):
+        archive = ComicArchive(Path("dummy.cbz"))
+
+        for files in archives:
+            archive.get_file_list = MagicMock(return_value=files)
+
+            assert archive.get_pages()[-1] == files[0]
+
+
+def test_comic_archive_sort_pages_keeps_z_titles_that_are_not_tags():
+    with patch("app.services.archive.zipfile.is_zipfile", return_value=True), \
+         patch("app.services.archive.zipfile.ZipFile"):
+        archive = ComicArchive(Path("dummy.cbz"))
+
+        archive.get_file_list = MagicMock(return_value=["Zatanna 01.jpg", "Zatanna 02.jpg", "zatanna 03.jpg"])
+
+        assert archive.get_pages() == ["Zatanna 01.jpg", "Zatanna 02.jpg", "zatanna 03.jpg"]
+
+
+def test_comic_archive_sort_pages_puts_leading_underscore_page_first():
+    archives = [
+        ["wizard 18 c2c MS/IMG_0001.jpg", "wizard 18 c2c MS/IMG_0002.jpg", "wizard 18 c2c MS/_IMG.jpg"],
+        ["Hawkworld - New Edition-009.jpg", "Hawkworld - New Edition-010.jpg", "_hawkworld book 01 - 00 ocd horus.jpg"],
+    ]
+    with patch("app.services.archive.zipfile.is_zipfile", return_value=True), \
+         patch("app.services.archive.zipfile.ZipFile"):
+        archive = ComicArchive(Path("dummy.cbz"))
+
+        for files in archives:
+            archive.get_file_list = MagicMock(return_value=files)
+
+            assert archive.get_pages()[0] == files[2]
+
+
+def test_comic_archive_sort_pages_recognizes_wraparound_glued_and_underscored_covers():
+    archives = [
+        # Wraparound covers that name both sides are covers, not back covers
+        ["The Maze Agency v1 012 - 00 ifc.jpg", "The Maze Agency v1 012 - 01.jpg", "_The Maze Agency v1 012 - 00 fc+bc.jpg"],
+        ["Adventure_416_01.jpg", "Adventure_416_02.jpg", "Adventure_416_00_FC-BC.jpg"],
+        # A back cover glued to its page number goes to the end
+        ["Fathom 1 of 3 p00bc.jpg", "Fathom 1 of 3 p00ifc.jpg", "Fathom 1 of 3 p00_fc.jpg"],
+        # Cover words joined by underscores
+        ["batman_233_00a_inside_front_cover.jpg", "batman_233_66_back_cover.jpg", "batman_233_00_front_cover.jpg"],
+    ]
+    with patch("app.services.archive.zipfile.is_zipfile", return_value=True), \
+         patch("app.services.archive.zipfile.ZipFile"):
+        archive = ComicArchive(Path("dummy.cbz"))
+
+        for files in archives:
+            archive.get_file_list = MagicMock(return_value=files)
+
+            assert archive.get_pages()[0] == files[2]
+
+        archive.get_file_list = MagicMock(return_value=["Fathom 1 of 3 p00bc.jpg", "Fathom 1 of 3 p01.jpg"])
+        assert archive.get_pages()[-1] == "Fathom 1 of 3 p00bc.jpg"
+
+
+def test_comic_archive_sort_pages_ignores_cover_words_in_folder_names():
+    with patch("app.services.archive.zipfile.is_zipfile", return_value=True), \
+         patch("app.services.archive.zipfile.ZipFile"):
+        archive = ComicArchive(Path("dummy.cbz"))
+
+        # "0f" in the folder name looks like a zero-letter cover token
+        archive.get_file_list = MagicMock(return_value=[
+            "Fathom [Comico] 1 0f 3/Fathom 1 of 3 p00ifc.jpg",
+            "Fathom [Comico] 1 0f 3/Fathom 1 of 3 p01.jpg",
+            "Fathom [Comico] 1 0f 3/Fathom 1 of 3 p00_fc & bc.jpg",
+            "Fathom [Comico] 1 0f 3/Fathom 1 of 3 p00bc.jpg",
+            "Fathom [Comico] 1 0f 3/Fathom 1 of 3 p00_fc.jpg",
+        ])
+
+        pages = archive.get_pages()
+
+        assert pages[0] == "Fathom [Comico] 1 0f 3/Fathom 1 of 3 p00_fc.jpg"
+        assert pages[-1] == "Fathom [Comico] 1 0f 3/Fathom 1 of 3 p00bc.jpg"
+
+
+def test_comic_archive_sort_pages_prefers_front_cover_over_wraparound():
+    archives = [
+        # Front cover beats the wraparound
+        (["Power Factor_000- FC-BC.0.jpg", "Power Factor_001-02.jpg", "Power Factor_001-01FC.jpg"], "Power Factor_001-01FC.jpg"),
+        (["NT_Showcase_01pg00FCBC.jpg", "NT_Showcase_01pg01.jpg", "NT_Showcase_01pg00FC.jpg"], "NT_Showcase_01pg00FC.jpg"),
+        # The back cover's page number glued on ("fc29bc") is still a wraparound, not a back cover
+        (["Robotech Macross Saga 03-01.jpg", "Robotech Macross Saga 03-00ifc.jpg", "_Robotech Macross Saga 03-00fc29bc.jpg"], "_Robotech Macross Saga 03-00fc29bc.jpg"),
+        # "fc" glued to the page number is a cover
+        (["scan-37card_front_Bullseye_Gird.jpg", "scan-02_Bullseye_Gird.jpg", "scan-01fc_Bullseye_Gird.jpg"], "scan-01fc_Bullseye_Gird.jpg"),
+    ]
+    with patch("app.services.archive.zipfile.is_zipfile", return_value=True), \
+         patch("app.services.archive.zipfile.ZipFile"):
+        archive = ComicArchive(Path("dummy.cbz"))
+
+        for files, cover in archives:
+            archive.get_file_list = MagicMock(return_value=files)
+
+            assert archive.get_pages()[0] == cover
+
+
+def test_comic_archive_get_pages_skips_macos_resource_forks():
+    with patch("app.services.archive.zipfile.is_zipfile", return_value=True), \
+         patch("app.services.archive.zipfile.ZipFile"):
+        archive = ComicArchive(Path("dummy.cbz"))
+
+        archive.get_file_list = MagicMock(return_value=[
+            "The Flash (2018) 054-000.jpg",
+            "__MACOSX/._The Flash (2018) 054-000.jpg",
+            "._The Flash (2018) 054-001.jpg",
+            "The Flash (2018) 054-001.jpg",
+        ])
+
+        assert archive.get_pages() == ["The Flash (2018) 054-000.jpg", "The Flash (2018) 054-001.jpg"]
+
+
+def test_comic_archive_sort_pages_compares_names_after_leading_markers():
+    with patch("app.services.archive.zipfile.is_zipfile", return_value=True), \
+         patch("app.services.archive.zipfile.ZipFile"):
+        archive = ComicArchive(Path("dummy.cbz"))
+
+        archive.get_file_list = MagicMock(return_value=["__hr_Page 01.jpg", "__0xhy1coverx.jpg"])
+
+        assert archive.get_pages()[0] == "__0xhy1coverx.jpg"

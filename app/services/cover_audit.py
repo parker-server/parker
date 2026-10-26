@@ -59,7 +59,6 @@ REPORT_COLUMNS = ["path", "flags", "chosen_cover", "plain_first_page", "reason",
 SNAPSHOT_COLUMNS = ["path", "cover"]
 CHANGES_COLUMNS = ["path", "before_cover", "after_cover"]
 CHANGES_FILENAME = "cover_changes.csv"
-SHEET_DIRNAME = "cover_audit_sheet"
 SHEET_PROGRESS_EVERY = 100
 SHEET_THUMB_SIZE = (200, 300)
 SHEET_MAX_ALTERNATIVES = 3
@@ -326,7 +325,12 @@ def _sheet_html(cards: list[str], flag_names: list[str]) -> str:
 
 def make_contact_sheet(report: Path, sheet_dir: Path) -> int:
     with report.open(newline="", encoding="utf-8-sig") as file:
-        rows = [row for row in csv.DictReader(file) if row["chosen_cover"]]
+        rows = list(csv.DictReader(file))
+    # A cover_changes.csv from --compare shows each new cover next to the previous one
+    for row in rows:
+        if "after_cover" in row:
+            row.update(chosen_cover=row["after_cover"], flags="changed", reason="cover changed")
+    rows = [row for row in rows if row["chosen_cover"]]
     rows.sort(key=_sheet_sort_key)
     print(f"Building contact sheet for {len(rows)} archives...", file=sys.stderr)
 
@@ -344,7 +348,13 @@ def make_contact_sheet(report: Path, sheet_dir: Path) -> int:
                 pages = archive.get_pages()
                 if not pages:
                     raise ValueError("archive has no pages")
-                shown = [("Chosen cover", pages[0])] + alternative_pages(pages)
+                shown = [("Chosen cover", pages[0])]
+                previous = row.get("before_cover")
+                if previous and previous != pages[0] and previous in pages:
+                    shown.append(("Previous cover", previous))
+                shown_pages = {page for _, page in shown}
+                shown += [alt for alt in alternative_pages(pages) if alt[1] not in shown_pages]
+                shown = shown[:1 + SHEET_MAX_ALTERNATIVES]
                 images = []
                 for position, (label, page) in enumerate(shown):
                     image_name = f"{index}_{position}.jpg"
@@ -496,7 +506,7 @@ def main(argv: list[str] | None = None) -> None:
         "--contact-sheet",
         type=Path,
         metavar="REPORT",
-        help=f"Instead of auditing, build a visual contact sheet from this finished report (written to {SHEET_DIRNAME}/ next to it)",
+        help="Instead of auditing, build a visual contact sheet from a finished report or cover_changes.csv (written to <name>_sheet/ next to it)",
     )
     parser.add_argument(
         "--save-pages",
@@ -515,7 +525,7 @@ def main(argv: list[str] | None = None) -> None:
     # Mislabeled-archive warnings would drown out the progress output
     logging.basicConfig(level=logging.ERROR)
     if args.contact_sheet:
-        make_contact_sheet(args.contact_sheet, args.contact_sheet.with_name(SHEET_DIRNAME))
+        make_contact_sheet(args.contact_sheet, args.contact_sheet.with_name(f"{args.contact_sheet.stem}_sheet"))
         return
     run_audit(args.paths, args.output, args.snapshot, args.compare, args.save_pages, args.replay)
 

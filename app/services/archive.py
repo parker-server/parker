@@ -3,6 +3,7 @@ import zipfile
 import rarfile
 from dataclasses import dataclass
 from enum import Enum
+from functools import lru_cache
 from pathlib import Path
 from typing import List, Optional
 import io
@@ -11,24 +12,36 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-ARCHIVE_PAGE_ORDER_VERSION = 8
+ARCHIVE_PAGE_ORDER_VERSION = 9
 IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff', '.jxl', '.avif'}
 IGNORE_FILENAMES = {'thumbs.db', '.ds_store', 'comicinfo.xml', '__macosx'}
 IGNORE_EXTENSIONS = {'.nfo', '.sfv', '.txt', '.xml', '.db', '.ini'}
-EXPLICIT_END_PAGE_RE = re.compile(r'^z+[\W_]')
+# Pages that sort last: "z_credits", "zzz scan", or tags glued to their z like "zzmm"
+# and camelCase "zWraithOfSpectre". The camelCase check is case-sensitive so "Zatanna" is safe.
+EXPLICIT_END_PAGE_RE = re.compile(r'^(?:(?i:z+[\W_]|zz)|z(?=[A-Z]))')
+# Scanner tags wrapped in xx, like "XX-Empire-Meganubis-XX"
+SCANNER_TAG_RE = re.compile(r'^xx[\W_].*[\W_]xx$', re.IGNORECASE)
 EXPLICIT_COVER_RE = re.compile(
-    r'(?:^|[\W_])(?:0+(?:[a-z]|[\W_]+\d+|fc|fcover|cover|cvr|front|scan)|fc|fcover|cover|cvr|front|scan)(?:$|[\W_])'
+    r'(?:^|[\W_])(?:0+(?:[a-z]|[\W_]+\d+|fc|fcover|cover|cvr|front)|fc|fcover|cover|cvr|front)(?:$|[\W_])'
+    # "fc" glued to a short page number, as in "scan-01fc"
+    r'|[\W_]\d{1,3}(?:fc|fcover)(?:$|[\W_])'
 )
-INSIDE_COVER_RE = re.compile(r'(?:^|[\W_])(?:0+)?(?:ifc|ifcover|inside\s+front\s+cover)(?:$|[\W_])')
+INSIDE_COVER_RE = re.compile(r'(?:^|[\W_])(?:0+)?(?:ifc|ifcover|inside[\W_]+front[\W_]+cover)(?:$|[\W_])')
 JOINED_COVER_RE = re.compile(r'(?:^|[\W_])(?:\d+\s*page\s+cover|joined\s+(?:cover|cvr))(?:$|[\W_])')
 PREVIEW_HEADER_RE = re.compile(r'(?:preview|header)')
-BACK_COVER_RE = re.compile(r'(?:^|[\W_])(?:bc|bcover|back\s+cover)(?:$|[\W_])')
+# "bc" may be glued to a page number, as in "p00bc"
+BACK_COVER_RE = re.compile(r'(?:^|[\W_]|\d)(?:bc|bcover|back[\W_]+cover)(?:$|[\W_])')
+# A wraparound cover names both sides, like "00 fc+bc", "00_FC-BC" or "00fc29bc". It is not
+# a back cover, but it is not treated as a front cover either, so a separate front cover wins.
+WRAPAROUND_COVER_RE = re.compile(r'(?:^|[\W_]|\d)fc[\W_\d]*(?:and[\W_]*)?bc(?:$|[\W_])')
 TRAILING_PAGE_NUMBER_RE = re.compile(r'^(.*?)(?:[\s._-]+)?(\d+)\s*$')
-LEADING_TILDE_SORT_PREFIX_RE = re.compile(r'(^|[\\/])~+')
+# A leading ~ or _ is a "sort me first" marker, like "~max0019.jpg" or "_IMG.jpg"
+LEADING_TILDE_SORT_PREFIX_RE = re.compile(r'(^|[\\/])[~_]+')
 ZERO_PAGE_STEM_RE = re.compile(r'(?:^|[\W_])0+$')
-ZERO_PAGE_WITH_SUFFIX_RE = re.compile(r'^(?P<prefix>.*(?:^|[\W_])0+)(?P<suffix>$|[\W_].*)$')
-ZERO_LETTER_PAGE_WITH_SUFFIX_RE = re.compile(
-    r'^(?P<prefix>.*(?:^|[\W_])0+)[a-z](?P<suffix>$|[\W_].*)$',
+# A run of zeros (not part of a larger number), an optional single letter, then the
+# end or a separator: "000", "Batman 678-000b (variant)", "pg00a_anthony"
+ZERO_PAGE_RE = re.compile(
+    r'^(?P<prefix>.*(?:^|\D)0+)(?P<letter>[a-z]?)(?P<suffix>$|[\W_].*)$',
     re.IGNORECASE,
 )
 APPENDED_ZERO_PAGE_SUFFIX_RE = re.compile(r'^[\W_]+\d+$')
@@ -84,8 +97,8 @@ def _split_archive_path(filename: str) -> tuple[str, str]:
 
 
 def _normalize_page_sort_text(text: str) -> str:
-    text = re.sub(r'[-_](?=\d)', '!', text.lower())
-    text = LEADING_TILDE_SORT_PREFIX_RE.sub(_normalize_leading_tilde_sort_prefix, text)
+    text = LEADING_TILDE_SORT_PREFIX_RE.sub(_normalize_leading_tilde_sort_prefix, text.lower())
+    text = re.sub(r'[-_](?=\d)', '!', text)
     return text.replace('-', '~').replace('_', '~')
 
 
@@ -119,45 +132,51 @@ def _has_unprefixed_twin(filename: str, page_stems: set[str] | None) -> bool:
     return f"{directory}{stem[1:]}" in page_stems
 
 
+def _zero_page_parts(stem_key: str) -> tuple[str, bool] | None:
+    """
+    For a zero page like "Batman 678-000" or "Batman 678-000b (variant)", return
+    the text up to and including the zeros, and whether a single letter follows them.
+    """
+    directory, stem = _split_archive_path(stem_key)
+    match = ZERO_PAGE_RE.match(stem.strip())
+    if not match:
+        return None
+    return f"{directory}{match.group('prefix')}".lower(), bool(match.group("letter"))
+
+
+@lru_cache(maxsize=64)
+def _zero_page_prefixes(page_stems: frozenset[str]) -> tuple[frozenset[str], frozenset[str]]:
+    """Prefixes of the bare zero pages and of the zero-letter pages in one archive."""
+    bare = set()
+    lettered = set()
+    for stem_key in page_stems:
+        parts = _zero_page_parts(stem_key)
+        if parts:
+            prefix, has_letter = parts
+            (lettered if has_letter else bare).add(prefix)
+    return frozenset(bare), frozenset(lettered)
+
+
 def _has_zero_letter_twin(filename: str, page_stems: set[str] | None) -> bool:
+    """A bare zero page ("-000") next to a lettered one ("-000b (variant)") with the same prefix."""
     if page_stems is None:
         return False
 
-    directory, basename = _split_archive_path(filename)
-    stem = Path(basename).stem.strip()
-    match = ZERO_PAGE_WITH_SUFFIX_RE.match(stem)
-    if not match:
+    parts = _zero_page_parts(_page_stem_key(filename))
+    if not parts or parts[1]:
         return False
-
-    prefix = f"{directory}{match.group('prefix')}".lower()
-    suffix = match.group("suffix").lower()
-    return any(
-        _has_letter_between(page_stem.lower(), prefix, suffix)
-        for page_stem in page_stems
-    )
-
-
-def _has_letter_between(text: str, prefix: str, suffix: str) -> bool:
-    if not text.startswith(prefix) or (suffix and not text.endswith(suffix)):
-        return False
-
-    suffix_start = len(text) - len(suffix) if suffix else len(text)
-    middle = text[len(prefix):suffix_start]
-    return len(middle) == 1 and middle.isalpha()
+    return parts[0] in _zero_page_prefixes(frozenset(page_stems))[1]
 
 
 def _has_bare_zero_page_twin(filename: str, page_stems: set[str] | None) -> bool:
+    """A lettered zero page ("-000b (variant)") next to a bare one ("-000") with the same prefix."""
     if page_stems is None:
         return False
 
-    directory, basename = _split_archive_path(filename)
-    stem = Path(basename).stem.strip()
-    match = ZERO_LETTER_PAGE_WITH_SUFFIX_RE.match(stem)
-    if not match:
+    parts = _zero_page_parts(_page_stem_key(filename))
+    if not parts or not parts[1]:
         return False
-
-    bare_stem = f"{directory}{match.group('prefix')}{match.group('suffix')}".lower()
-    return bare_stem in {page_stem.lower() for page_stem in page_stems}
+    return parts[0] in _zero_page_prefixes(frozenset(page_stems))[0]
 
 
 def _has_appended_zero_page_twin(filename: str, page_stems: set[str] | None) -> bool:
@@ -190,7 +209,9 @@ def _page_penalty_signals(
         penalties.append("joined_cover")
     if PREVIEW_HEADER_RE.search(text):
         penalties.append("preview_or_header")
-    if BACK_COVER_RE.search(text):
+    if WRAPAROUND_COVER_RE.search(text):
+        penalties.append("wraparound_cover")
+    elif BACK_COVER_RE.search(text):
         penalties.append("back_cover")
     if appended_page_number_variant:
         penalties.append("appended_page_number_variant")
@@ -209,6 +230,7 @@ def _cover_signal(filename: str, text: str, page_stems: set[str] | None, penalty
         "appended_page_number_variant",
         "appended_page_zero_variant",
         "joined_cover",
+        "wraparound_cover",
         "zero_letter_page_variant",
     }
     if EXPLICIT_COVER_RE.search(text) and not explicit_cover_blockers.intersection(penalty_signals):
@@ -222,9 +244,13 @@ def _cover_signal(filename: str, text: str, page_stems: set[str] | None, penalty
     return None
 
 
-def _page_role(cover_signal: str | None, text: str, penalty_signals: tuple[str, ...]) -> PageRole:
-    _, basename = _split_archive_path(text)
-    if EXPLICIT_END_PAGE_RE.match(basename) or "back_cover" in penalty_signals:
+def _is_end_page(filename: str) -> bool:
+    _, basename = _split_archive_path(filename)
+    return bool(EXPLICIT_END_PAGE_RE.match(basename) or SCANNER_TAG_RE.match(Path(basename).stem))
+
+
+def _page_role(cover_signal: str | None, filename: str, penalty_signals: tuple[str, ...]) -> PageRole:
+    if _is_end_page(filename) or "back_cover" in penalty_signals:
         return PageRole.BACK_MATTER
     if cover_signal == "explicit_cover_token":
         return PageRole.COVER
@@ -252,8 +278,9 @@ def _page_sort_score(filename: str, page_stems: set[str] | None = None, archive_
     back matter. Natural filename fields remain the final tie breakers so the
     sorter still follows archive naming conventions whenever role signals tie.
     """
-    text = filename.lower()
     directory, basename = _split_archive_path(filename)
+    # Cover words in folder names (like "Fathom 1 0f 3/") would mark every page
+    text = basename.lower()
     stem = Path(basename).stem
     base_stem, trailing_number = _split_trailing_page_number(stem)
     appended_page_number_variant = False
@@ -279,7 +306,7 @@ def _page_sort_score(filename: str, page_stems: set[str] | None = None, archive_
     cover_signal = _cover_signal(filename, text, page_stems, penalty_signals)
 
     return PageSortScore(
-        role=_page_role(cover_signal, text, penalty_signals),
+        role=_page_role(cover_signal, filename, penalty_signals),
         page_index=_detect_page_index(stem, trailing_number),
         cover_signal=cover_signal,
         penalty_signals=penalty_signals,
@@ -316,6 +343,10 @@ def sort_pages(files: List[str]) -> List[str]:
 
         # Skip ignored files
         if filename_lower in IGNORE_FILENAMES:
+            continue
+
+        # Skip macOS resource forks ("._page.jpg", often under "__MACOSX/"): they are not images
+        if filename_lower.startswith("._") or "__macosx" in (part.lower() for part in file_path.parts):
             continue
 
         # Skip ignored extensions

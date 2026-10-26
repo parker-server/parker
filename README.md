@@ -312,6 +312,16 @@ have picked instead, with the most likely wrong picks first. Filter by flag,
 tick **Wrong cover** on bad picks (ticks are remembered in that browser), then
 use **Copy wrong covers** to get the list of archives and covers to report.
 
+The contact sheet can also show a `cover_changes.csv` from `--compare`, with each
+new cover next to the previous one, so you can check what a sorting change moved
+before regenerating thumbnails:
+
+```bash
+docker compose exec parker python -m app.services.cover_audit --contact-sheet storage/cover_changes.csv
+```
+
+That sheet is written to `storage/cover_changes_sheet/`.
+
 
 ## 📌 Roadmap
 - Improve Documentation

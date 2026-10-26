@@ -169,7 +169,7 @@ def test_make_contact_sheet_shows_flagged_covers_most_suspect_first(tmp_path):
             archive.writestr(name, _jpeg_bytes())
     with zipfile.ZipFile(library / "reordered.cbz", "w") as archive:
         archive.writestr("01.jpg", _jpeg_bytes())
-        archive.writestr("scan.jpg", b"not an image")
+        archive.writestr("cover.jpg", b"not an image")
     output = tmp_path / "cover_audit.csv"
     run_audit([library], output)
     sheet_dir = tmp_path / "cover_audit_sheet"
@@ -205,3 +205,25 @@ def test_replay_of_saved_page_lists_matches_archive_audit(tmp_path):
     )
     with (tmp_path / "cover_changes.csv").open(newline="", encoding="utf-8-sig") as changes_file:
         assert list(csv.DictReader(changes_file)) == []
+
+
+def test_make_contact_sheet_from_changes_shows_previous_cover(tmp_path):
+    library = tmp_path / "library"
+    library.mkdir()
+    with zipfile.ZipFile(library / "variant.cbz", "w") as archive:
+        for name in ["Batman 678-000.jpg", "Batman 678-000b (Tony Daniel variant).jpg", "Batman 678-001.jpg"]:
+            archive.writestr(name, _jpeg_bytes())
+    changes = tmp_path / "cover_changes.csv"
+    with changes.open("w", newline="", encoding="utf-8-sig") as file:
+        writer = csv.writer(file)
+        writer.writerow(["path", "before_cover", "after_cover"])
+        writer.writerow([str(library / "variant.cbz"), "Batman 678-000b (Tony Daniel variant).jpg", "Batman 678-000.jpg"])
+    sheet_dir = tmp_path / "cover_changes_sheet"
+
+    cards = make_contact_sheet(changes, sheet_dir)
+
+    sheet = (sheet_dir / "index.html").read_text(encoding="utf-8")
+    assert cards == 1
+    assert sheet.index("Chosen cover") < sheet.index("Previous cover")
+    assert "Tony Daniel variant" in sheet
+    assert '<option value="changed">' in sheet
