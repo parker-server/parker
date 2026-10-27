@@ -9,10 +9,10 @@ from pathlib import Path
 from sqlalchemy import func, not_, and_
 
 
-from app.api.deps import SessionDep, AdminUser, CurrentUser, PaginatedResponse, PaginationParams
+from app.api.deps import SessionDep, AdminUser, CurrentUser, PaginatedResponse, PaginationParams, release_db_connection
 from app.config import settings
 from app.core.comic_helpers import get_thumbnail_url, get_banned_comic_condition, get_series_age_restriction
-from app.core.security import verify_password, get_password_hash
+from app.core.security import verify_password, get_password_hash, forget_password_change_status
 from app.models.comic import Comic, Volume
 from app.models.user import User
 from app.models.library import Library
@@ -258,7 +258,7 @@ async def upload_avatar(
 
 # Helper to serve avatar (add to users router or generic image router)
 @router.get("/{user_id}/avatar", name="avatar")
-async def get_avatar(user_id: int, db: SessionDep):
+def get_avatar(user_id: int, db: SessionDep):
     """Serve user avatar"""
     user = db.query(User).filter(User.id == user_id).first()
 
@@ -272,6 +272,7 @@ async def get_avatar(user_id: int, db: SessionDep):
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Avatar file missing")
 
+    release_db_connection(db)
     return FileResponse(file_path)
 
 @router.get("/me/preferences", name="preferences")
@@ -427,6 +428,8 @@ async def create_user(
     db.add(user)
     db.commit()
     db.refresh(user)
+    # A deleted user's name can be reused; drop anything remembered for it
+    forget_password_change_status(user.username)
 
     return {
         **user.__dict__,
@@ -456,6 +459,7 @@ async def update_user(
         user.is_active = updates.is_active
     if updates.must_change_password is not None:
         user.must_change_password = updates.must_change_password
+        forget_password_change_status(user.username)
     if updates.can_download is not None:
         user.can_download = updates.can_download
 

@@ -448,6 +448,8 @@ def test_upload_avatar_success_and_get_avatar_flows(auth_client, db, normal_user
     db.refresh(normal_user)
     get_ok = auth_client.get(f"/api/users/{normal_user.id}/avatar")
     assert get_ok.status_code == 200
+    # The avatar response must not keep the request's pool connection open
+    assert not db.in_transaction()
 
     Path(normal_user.avatar_path).unlink(missing_ok=True)
 

@@ -86,6 +86,20 @@ def test_web_download_returns_original_file(auth_client, db, normal_user, tmp_pa
     assert "Download%20Test%20%231%20-%20Grab%20It.cbz" in response.headers["content-disposition"]
 
 
+def test_downloads_release_db_connection_before_sending_file(auth_client, client, db, normal_user, tmp_path):
+    _set_bool_setting(db, "server.opds_enabled", True)
+    comic = _create_downloadable_comic(db, normal_user, tmp_path)
+    comic_id = comic.id
+
+    # An open transaction means the request still holds its pool connection
+    # while the file streams.
+    assert auth_client.get(f"/api/comics/{comic_id}/download").status_code == 200
+    assert not db.in_transaction()
+
+    assert _opds_get(client, normal_user, f"/opds/download/{comic_id}").status_code == 200
+    assert not db.in_transaction()
+
+
 def test_web_download_blocked_for_user_without_permission(auth_client, db, normal_user, tmp_path):
     comic = _create_downloadable_comic(db, normal_user, tmp_path)
     normal_user.can_download = False

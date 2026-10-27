@@ -167,6 +167,88 @@ def test_required_password_change_blocks_regular_api_calls(client, db, normal_us
     assert response.json()["detail"] == "Password change required"
 
 
+def test_required_password_change_lookup_runs_off_the_event_loop(client, normal_user, monkeypatch):
+    import asyncio
+
+    calls = []
+
+    def fake_lookup(username):
+        try:
+            asyncio.get_running_loop()
+            calls.append((username, "event loop"))
+        except RuntimeError:
+            calls.append((username, "threadpool"))
+        return False
+
+    monkeypatch.setattr("app.main._user_must_change_password", fake_lookup)
+    token = create_access_token(subject=normal_user.username)
+
+    client.get("/api/users/me/preferences", headers={"Authorization": f"Bearer {token}"})
+
+    assert calls == [(normal_user.username, "threadpool")]
+
+
+def _count_password_change_lookups(monkeypatch, must_change: bool) -> list[str]:
+    calls = []
+
+    def fake_lookup(username):
+        calls.append(username)
+        return must_change
+
+    monkeypatch.setattr("app.main._user_must_change_password", fake_lookup)
+    return calls
+
+
+def test_required_password_change_check_remembers_users_who_dont_need_it(client, normal_user, monkeypatch):
+    calls = _count_password_change_lookups(monkeypatch, must_change=False)
+    headers = {"Authorization": f"Bearer {create_access_token(subject=normal_user.username)}"}
+
+    for _ in range(3):
+        assert client.get("/api/users/me/preferences", headers=headers).status_code != 403
+
+    assert calls == [normal_user.username]
+
+
+def test_required_password_change_check_always_rechecks_users_who_must_change(client, normal_user, monkeypatch):
+    # Caching "must change" would keep redirecting a user after they changed it
+    calls = _count_password_change_lookups(monkeypatch, must_change=True)
+    headers = {"Authorization": f"Bearer {create_access_token(subject=normal_user.username)}"}
+
+    for _ in range(2):
+        assert client.get("/api/users/me/preferences", headers=headers).status_code == 403
+
+    assert calls == [normal_user.username, normal_user.username]
+
+
+def test_required_password_change_check_rechecks_after_cache_expires(client, normal_user, monkeypatch):
+    monkeypatch.setattr("app.core.security.PASSWORD_CHANGE_CACHE_SECONDS", 0)
+    calls = _count_password_change_lookups(monkeypatch, must_change=False)
+    headers = {"Authorization": f"Bearer {create_access_token(subject=normal_user.username)}"}
+
+    client.get("/api/users/me/preferences", headers=headers)
+    client.get("/api/users/me/preferences", headers=headers)
+
+    assert calls == [normal_user.username, normal_user.username]
+
+
+def test_admin_forcing_password_change_applies_at_once_in_the_same_worker(
+        admin_client, db, normal_user, monkeypatch
+):
+    _use_test_db_for_password_change_middleware(monkeypatch, db)
+    user_headers = {"Authorization": f"Bearer {create_access_token(subject=normal_user.username)}"}
+    assert admin_client.get("/api/users/me/preferences", headers=user_headers).status_code == 200
+
+    response = admin_client.patch(
+        f"/api/users/{normal_user.id}",
+        json={"email": normal_user.email, "must_change_password": True},
+    )
+    assert response.status_code == 200
+
+    blocked = admin_client.get("/api/users/me/preferences", headers=user_headers)
+    assert blocked.status_code == 403
+    assert blocked.json()["detail"] == "Password change required"
+
+
 def test_required_password_change_page_and_password_update_are_allowed(client, db, normal_user, monkeypatch):
     _use_test_db_for_password_change_middleware(monkeypatch, db)
     normal_user.must_change_password = True

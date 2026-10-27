@@ -26,6 +26,17 @@ def get_db() -> Generator:
         db.close()
 
 
+def release_db_connection(db: Session) -> None:
+    """
+    End the read transaction so the session's connection goes back to the pool.
+
+    get_db only closes the session after the response is fully sent, so a
+    FileResponse would otherwise hold a pool connection for the whole transfer.
+    Call this from read-only endpoints right before returning a file.
+    """
+    db.rollback()
+
+
 # 2. PAGINATION DEPENDENCY
 T = TypeVar("T")
 
@@ -96,7 +107,7 @@ async def get_token_optional(
     return None
 
 
-async def get_current_user(
+def get_current_user(
         db: Annotated[Session, Depends(get_db)],
         token: Annotated[str, Depends(get_token_hybrid)]
 ) -> User:
@@ -127,7 +138,7 @@ async def get_current_user(
 
     return user
 
-async def get_current_user_optional(
+def get_current_user_optional(
         db: Annotated[Session, Depends(get_db)],
         token: Annotated[Optional[str], Depends(get_token_optional)]
 ) -> Optional[User]:
@@ -167,7 +178,7 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 AdminUser = Annotated[User, Depends(get_current_active_superuser)]
 
 # --- LIBRARY DEPENDENCY ---
-async def get_secure_library(
+def get_secure_library(
         library_id: Annotated[int, Path(title="The ID of the library")],
         db: SessionDep,
         user: CurrentUser
@@ -188,7 +199,7 @@ async def get_secure_library(
 
 
 # --- SERIES DEPENDENCY ---
-async def get_secure_series(
+def get_secure_series(
         series_id: Annotated[int, Path(title="The ID of the series")],
         db: SessionDep,
         user: CurrentUser
@@ -212,7 +223,7 @@ async def get_secure_series(
 
 
 # --- VOLUME DEPENDENCY ---
-async def get_secure_volume(
+def get_secure_volume(
         volume_id: Annotated[int, Path(title="The ID of the volume")],
         db: SessionDep,
         user: CurrentUser
@@ -236,7 +247,7 @@ async def get_secure_volume(
     return volume
 
 
-async def get_secure_comic(
+def get_secure_comic(
         comic_id: Annotated[int, Path(title="The ID of the comic to get")],
         db: SessionDep,
         user: CurrentUser

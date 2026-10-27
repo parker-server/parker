@@ -997,6 +997,8 @@ def test_opds_thumbnail_links_use_jpeg_endpoint(client, db, normal_user, tmp_pat
         assert thumbnail_response.status_code == 200
         assert thumbnail_response.headers["content-type"].startswith("image/jpeg")
         assert thumbnail_response.content.startswith(b"\xff\xd8")
+        # The thumbnail response must not keep the request's pool connection open
+        assert not db.in_transaction()
 
 
 def test_opds_thumbnail_hides_inaccessible_library_comics(client, db, normal_user, tmp_path):

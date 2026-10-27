@@ -10,7 +10,7 @@ from typing import Annotated
 from urllib.parse import quote
 from PIL import Image
 
-from app.api.deps import PaginationParams
+from app.api.deps import PaginationParams, release_db_connection
 from app.api.opds_deps import OPDSUser, SessionDep
 from app.core.settings_loader import get_cached_setting
 from app.models import ComicCredit
@@ -1097,7 +1097,7 @@ templates.env.globals["get_opds_thumbnail_href"] = get_opds_thumbnail_href
 
 # 4. DOWNLOAD: Serve the file
 @router.get("/images/{comic_id}/thumbnail.jpg", name="opds_thumbnail")
-async def opds_thumbnail(comic_id: int, user: OPDSUser, db: SessionDep):
+def opds_thumbnail(comic_id: int, user: OPDSUser, db: SessionDep):
     comic = get_authorized_opds_comic(comic_id, user, db, hide_denied=True)
 
     thumbnail_path = get_opds_thumbnail_path(comic)
@@ -1116,6 +1116,7 @@ async def opds_thumbnail(comic_id: int, user: OPDSUser, db: SessionDep):
         raise HTTPException(status_code=404, detail="Could not read thumbnail")
 
     last_mod = int(comic.updated_at.timestamp()) if comic.updated_at else 0
+    release_db_connection(db)
     return Response(
         content=output.getvalue(),
         media_type="image/jpeg",
@@ -1129,7 +1130,7 @@ async def opds_thumbnail(comic_id: int, user: OPDSUser, db: SessionDep):
 
 @router.get("/download/{comic_id}/{filename}", name="opds_download_named")
 @router.get("/download/{comic_id}", name="download")
-async def opds_download(comic_id: int, user: OPDSUser, db: SessionDep, filename: str | None = None):
+def opds_download(comic_id: int, user: OPDSUser, db: SessionDep, filename: str | None = None):
     comic = get_authorized_opds_comic(comic_id, user, db)
 
     if not user_can_download(user, db):
@@ -1137,9 +1138,11 @@ async def opds_download(comic_id: int, user: OPDSUser, db: SessionDep, filename:
 
     export_name = get_opds_download_filename(comic)
 
-    return FileResponse(
+    response = FileResponse(
         path=comic.absolute_path,
         filename=export_name,
         media_type=get_opds_acquisition_type(comic),
         headers={"Content-Disposition": f'attachment; filename="{export_name}"'}
     )
+    release_db_connection(db)
+    return response

@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 
 import pytest
 from fastapi import HTTPException
@@ -117,35 +118,35 @@ def test_get_current_user_valid_and_error_paths(db):
     user = _create_user(db, username="deps-user", email="deps-user@example.com")
 
     token = _make_token(user.username)
-    resolved = asyncio.run(deps.get_current_user(db=db, token=token))
+    resolved = deps.get_current_user(db=db, token=token)
     assert resolved.id == user.id
 
     bad_payload = jwt.encode({"foo": "bar"}, settings.secret_key, algorithm=settings.algorithm)
     with pytest.raises(HTTPException) as missing_sub:
-        asyncio.run(deps.get_current_user(db=db, token=bad_payload))
+        deps.get_current_user(db=db, token=bad_payload)
     assert missing_sub.value.status_code == 401
 
     with pytest.raises(HTTPException) as invalid_token:
-        asyncio.run(deps.get_current_user(db=db, token="not-a-jwt"))
+        deps.get_current_user(db=db, token="not-a-jwt")
     assert invalid_token.value.status_code == 401
 
     ghost_token = _make_token("missing-user")
     with pytest.raises(HTTPException) as missing_user:
-        asyncio.run(deps.get_current_user(db=db, token=ghost_token))
+        deps.get_current_user(db=db, token=ghost_token)
     assert missing_user.value.status_code == 401
 
 
 def test_get_current_user_optional_paths(db):
     user = _create_user(db, username="deps-optional", email="deps-optional@example.com")
 
-    assert asyncio.run(deps.get_current_user_optional(db=db, token=None)) is None
-    assert asyncio.run(deps.get_current_user_optional(db=db, token="not-a-jwt")) is None
+    assert deps.get_current_user_optional(db=db, token=None) is None
+    assert deps.get_current_user_optional(db=db, token="not-a-jwt") is None
 
     no_sub = jwt.encode({"foo": "bar"}, settings.secret_key, algorithm=settings.algorithm)
-    assert asyncio.run(deps.get_current_user_optional(db=db, token=no_sub)) is None
+    assert deps.get_current_user_optional(db=db, token=no_sub) is None
 
     token = _make_token(user.username)
-    resolved = asyncio.run(deps.get_current_user_optional(db=db, token=token))
+    resolved = deps.get_current_user_optional(db=db, token=token)
     assert resolved.id == user.id
 
 
@@ -168,20 +169,20 @@ def test_get_secure_library_paths(db):
     user = _create_user(db, username="deps-lib-user", email="deps-lib-user@example.com")
 
     with pytest.raises(HTTPException) as missing_for_user:
-        asyncio.run(deps.get_secure_library(library_id=library.id, db=db, user=user))
+        deps.get_secure_library(library_id=library.id, db=db, user=user)
     assert missing_for_user.value.status_code == 404
 
     user.accessible_libraries.append(library)
     db.commit()
 
-    allowed = asyncio.run(deps.get_secure_library(library_id=library.id, db=db, user=user))
+    allowed = deps.get_secure_library(library_id=library.id, db=db, user=user)
     assert allowed.id == library.id
 
-    admin_allowed = asyncio.run(deps.get_secure_library(library_id=library.id, db=db, user=admin))
+    admin_allowed = deps.get_secure_library(library_id=library.id, db=db, user=admin)
     assert admin_allowed.id == library.id
 
     with pytest.raises(HTTPException) as missing_library:
-        asyncio.run(deps.get_secure_library(library_id=999999, db=db, user=admin))
+        deps.get_secure_library(library_id=999999, db=db, user=admin)
     assert missing_library.value.status_code == 404
 
 
@@ -190,31 +191,67 @@ def test_get_secure_series_volume_and_comic_paths(db):
     user = _create_user(db, username="deps-sec-user", email="deps-sec-user@example.com")
 
     with pytest.raises(HTTPException):
-        asyncio.run(deps.get_secure_series(series_id=series.id, db=db, user=user))
+        deps.get_secure_series(series_id=series.id, db=db, user=user)
     with pytest.raises(HTTPException):
-        asyncio.run(deps.get_secure_volume(volume_id=volume.id, db=db, user=user))
+        deps.get_secure_volume(volume_id=volume.id, db=db, user=user)
     with pytest.raises(HTTPException):
-        asyncio.run(deps.get_secure_comic(comic_id=comic.id, db=db, user=user))
+        deps.get_secure_comic(comic_id=comic.id, db=db, user=user)
 
     user.accessible_libraries.append(library)
     db.commit()
 
-    resolved_series = asyncio.run(deps.get_secure_series(series_id=series.id, db=db, user=user))
-    resolved_volume = asyncio.run(deps.get_secure_volume(volume_id=volume.id, db=db, user=user))
-    resolved_comic = asyncio.run(deps.get_secure_comic(comic_id=comic.id, db=db, user=user))
+    resolved_series = deps.get_secure_series(series_id=series.id, db=db, user=user)
+    resolved_volume = deps.get_secure_volume(volume_id=volume.id, db=db, user=user)
+    resolved_comic = deps.get_secure_comic(comic_id=comic.id, db=db, user=user)
 
     assert resolved_series.id == series.id
     assert resolved_volume.id == volume.id
     assert resolved_comic.id == comic.id
 
     with pytest.raises(HTTPException) as missing_series:
-        asyncio.run(deps.get_secure_series(series_id=999999, db=db, user=user))
+        deps.get_secure_series(series_id=999999, db=db, user=user)
     assert missing_series.value.status_code == 404
 
     with pytest.raises(HTTPException) as missing_volume:
-        asyncio.run(deps.get_secure_volume(volume_id=999999, db=db, user=user))
+        deps.get_secure_volume(volume_id=999999, db=db, user=user)
     assert missing_volume.value.status_code == 404
 
     with pytest.raises(HTTPException) as missing_comic:
-        asyncio.run(deps.get_secure_comic(comic_id=999999, db=db, user=user))
+        deps.get_secure_comic(comic_id=999999, db=db, user=user)
     assert missing_comic.value.status_code == 404
+
+
+def test_release_db_connection_returns_connection_to_pool(tmp_path):
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.orm import sessionmaker
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'pool.db'}")
+    session = sessionmaker(bind=engine)()
+    try:
+        session.execute(text("select 1")).all()
+        assert engine.pool.checkedout() == 1
+
+        deps.release_db_connection(session)
+
+        assert engine.pool.checkedout() == 0
+        assert session.execute(text("select 1")).scalar() == 1
+    finally:
+        session.close()
+        engine.dispose()
+
+
+@pytest.mark.parametrize(
+    "dependency",
+    [
+        deps.get_current_user,
+        deps.get_current_user_optional,
+        deps.get_secure_library,
+        deps.get_secure_series,
+        deps.get_secure_volume,
+        deps.get_secure_comic,
+    ],
+)
+def test_db_dependencies_are_sync_so_they_run_in_the_threadpool(dependency):
+    # An async dependency would run its blocking query on the event loop and
+    # freeze the whole worker while it waits for a pool connection.
+    assert not inspect.iscoroutinefunction(dependency)

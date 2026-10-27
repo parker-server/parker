@@ -57,6 +57,16 @@ engine = create_engine(
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
+@pytest.fixture(autouse=True)
+def clear_password_change_cache():
+    """Each test gets a fresh database, so forget users remembered by an earlier test."""
+    from app.core import security
+
+    security._password_change_not_required_until.clear()
+    yield
+    security._password_change_not_required_until.clear()
+
+
 # 2. DB SESSION FIXTURE
 @pytest.fixture(scope="function")
 def db():

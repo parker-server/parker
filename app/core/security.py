@@ -3,11 +3,38 @@ from typing import Optional, Any, Union
 from jose import jwt
 from passlib.context import CryptContext
 import hashlib
+import time
 from urllib.parse import quote
 from app.config import settings
 
 # Setup password hashing context (bcrypt)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# The required password change check runs on every request. Remember users who
+# don't need to change their password for a short time so most requests skip
+# the database. Only that answer is cached, so a user who changes their password
+# is let through at once in every worker. Each worker has its own cache, so an
+# admin forcing a change on a signed-in user applies within this many seconds.
+PASSWORD_CHANGE_CACHE_SECONDS = 30
+_password_change_not_required_until: dict[str, float] = {}
+
+
+def is_password_change_known_not_required(username: str) -> bool:
+    until = _password_change_not_required_until.get(username)
+    if until is None:
+        return False
+    if time.monotonic() < until:
+        return True
+    _password_change_not_required_until.pop(username, None)
+    return False
+
+
+def remember_password_change_not_required(username: str) -> None:
+    _password_change_not_required_until[username] = time.monotonic() + PASSWORD_CHANGE_CACHE_SECONDS
+
+
+def forget_password_change_status(username: str) -> None:
+    _password_change_not_required_until.pop(username, None)
 
 
 def create_access_token(subject: Union[str, Any], expires_delta: Optional[timedelta] = None) -> str:

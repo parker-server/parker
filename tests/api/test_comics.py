@@ -824,6 +824,28 @@ def test_get_comic_thumbnail_db_path_and_fallback_and_missing(auth_client, db, n
             missing_standard_path.write_bytes(missing_backup)
 
 
+def test_get_comic_thumbnail_releases_db_connection_before_sending_file(auth_client, db, normal_user, tmp_path):
+    library, _, volume = _create_graph(db, lib_name="comic-thumb-release", series_name="Thumb Release")
+    thumb = tmp_path / "thumb.webp"
+    thumb.write_bytes(b"thumb")
+    comic = create_comic(
+        db, volume, library.active_root, "thumb-release.cbz",
+        number="1",
+        thumbnail_path=str(thumb),
+        filename="thumb-release.cbz",
+    )
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+    comic_id = comic.id
+
+    response = auth_client.get(f"/api/comics/{comic_id}/thumbnail")
+
+    assert response.status_code == 200
+    # An open transaction means the request still holds its pool connection
+    # while the file streams.
+    assert not db.in_transaction()
+
+
 def test_random_backgrounds_requires_authentication(client):
     response = client.get("/api/comics/random/backgrounds?limit=3")
 

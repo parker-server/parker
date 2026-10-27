@@ -3,6 +3,7 @@ import multiprocessing
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from fastapi.templating import Jinja2Templates
@@ -16,7 +17,11 @@ from pathlib import Path
 import portalocker
 
 from app.core.settings_loader import get_system_setting
-from app.core.security import get_redirect_url
+from app.core.security import (
+    get_redirect_url,
+    is_password_change_known_not_required,
+    remember_password_change_not_required,
+)
 from app.core.templates import templates
 from app.database import engine, Base
 from app.config import settings, debug_print_settings
@@ -222,6 +227,15 @@ def _request_access_token(request: Request) -> str | None:
     return request.cookies.get("access_token")
 
 
+def _user_must_change_password(username: str) -> bool:
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.username == username).first()
+        return bool(user and user.must_change_password)
+    finally:
+        db.close()
+
+
 @app.middleware("http")
 async def enforce_required_password_change(request: Request, call_next):
     path = _normalized_request_path(request)
@@ -241,14 +255,15 @@ async def enforce_required_password_change(request: Request, call_next):
     if not username:
         return await call_next(request)
 
-    db = SessionLocal()
-    try:
-        user = db.query(User).filter(User.username == username).first()
-        must_change_password = bool(user and user.must_change_password)
-    finally:
-        db.close()
+    if is_password_change_known_not_required(username):
+        return await call_next(request)
+
+    # Run the blocking query in the threadpool. Waiting for a pool connection
+    # on the event loop would freeze every request in this worker.
+    must_change_password = await run_in_threadpool(_user_must_change_password, username)
 
     if not must_change_password:
+        remember_password_change_not_required(username)
         return await call_next(request)
 
     if path.startswith(("/api", "/opds")):
