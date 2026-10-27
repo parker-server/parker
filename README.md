@@ -322,6 +322,14 @@ docker compose exec parker python -m app.services.cover_audit --contact-sheet st
 
 That sheet is written to `storage/cover_changes_sheet/`.
 
+Parker's thumbnail task only redoes comics marked as needing new thumbnails. To
+regenerate just the comics whose cover changed, not the whole library, mark them
+and then run the thumbnail task from **Admin > Tasks**:
+
+```bash
+docker compose exec parker python -m app.services.cover_audit --mark-thumbnails storage/cover_changes.csv
+```
+
 
 ## 📌 Roadmap
 - Improve Documentation

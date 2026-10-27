@@ -5,14 +5,18 @@ from pathlib import Path
 
 from PIL import Image
 
+from app.models.comic import Volume
+from app.models.series import Series
 from app.services.cover_audit import (
     alternative_pages,
     audit_pages,
     changed_covers,
     make_contact_sheet,
+    mark_changed_for_thumbnails,
     run_audit,
     write_sheet_thumbnail,
 )
+from tests.factories import create_comic, create_library_with_root
 
 
 def test_audit_pages_does_not_flag_plain_first_page_cover():
@@ -227,3 +231,29 @@ def test_make_contact_sheet_from_changes_shows_previous_cover(tmp_path):
     assert sheet.index("Chosen cover") < sheet.index("Previous cover")
     assert "Tony Daniel variant" in sheet
     assert '<option value="changed">' in sheet
+
+
+def test_mark_changed_for_thumbnails_flags_only_listed_comics(db, tmp_path):
+    root_path = tmp_path / "comics"
+    library = create_library_with_root(db, "marvel", str(root_path))
+    series = Series(name="Civil War", library_id=library.id)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
+    db.flush()
+    changed = create_comic(db, volume, library.active_root, "Civil War/Civil War #001.cbz", filename="Civil War #001.cbz", is_dirty=False)
+    unchanged = create_comic(db, volume, library.active_root, "Civil War/Civil War #002.cbz", filename="Civil War #002.cbz", is_dirty=False)
+    db.commit()
+    changes = tmp_path / "cover_changes.csv"
+    with changes.open("w", newline="", encoding="utf-8-sig") as file:
+        writer = csv.writer(file)
+        writer.writerow(["path", "before_cover", "after_cover"])
+        writer.writerow([changed.absolute_path, "Civil War 01-000b (Wraparound).jpg", "Civil War 01-000.jpg"])
+        writer.writerow([str(root_path / "Gone" / "Removed #001.cbz"), "a.jpg", "b.jpg"])
+
+    marked, not_found = mark_changed_for_thumbnails(db, changes)
+
+    db.refresh(changed)
+    db.refresh(unchanged)
+    assert (marked, not_found) == (1, 1)
+    assert changed.is_dirty is True
+    assert unchanged.is_dirty is False

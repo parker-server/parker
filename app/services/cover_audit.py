@@ -22,6 +22,10 @@ To check flagged covers by eye, build a contact sheet from a finished report.
 It shows each flagged archive's chosen cover next to the pages it might have
 picked instead, and writes storage/cover_audit_sheet/index.html:
     python -m app.services.cover_audit --contact-sheet storage/cover_audit.csv
+
+After a sorting change, mark only the comics whose cover changed so the thumbnail
+task (Admin > Tasks) regenerates them instead of the whole library:
+    python -m app.services.cover_audit --mark-thumbnails storage/cover_changes.csv
 """
 import argparse
 import csv
@@ -36,8 +40,13 @@ from io import BytesIO
 from pathlib import Path
 
 from PIL import Image
+from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.core.path_utils import resolve_absolute_path
+from app.database import SessionLocal
+from app.models.comic import Comic
+from app.models.library_root import LibraryRoot
 from app.services.archive import (
     ComicArchive,
     PageRole,
@@ -59,6 +68,8 @@ REPORT_COLUMNS = ["path", "flags", "chosen_cover", "plain_first_page", "reason",
 SNAPSHOT_COLUMNS = ["path", "cover"]
 CHANGES_COLUMNS = ["path", "before_cover", "after_cover"]
 CHANGES_FILENAME = "cover_changes.csv"
+# Stay well under SQLite's limit on query parameters
+MARK_BATCH_SIZE = 500
 SHEET_PROGRESS_EVERY = 100
 SHEET_THUMB_SIZE = (200, 300)
 SHEET_MAX_ALTERNATIVES = 3
@@ -240,6 +251,31 @@ def run_audit(
         print(f"Snapshot of {len(covers)} covers written to {snapshot.resolve()}", file=sys.stderr)
 
     return flagged
+
+
+def mark_changed_for_thumbnails(db: Session, changes: Path) -> tuple[int, int]:
+    """
+    Flag the comics listed in a cover_changes.csv as needing new thumbnails, so the
+    regular thumbnail task regenerates just them. Returns (marked, not found).
+    """
+    with changes.open(newline="", encoding="utf-8-sig") as file:
+        wanted = {os.path.normpath(row["path"]) for row in csv.DictReader(file)}
+
+    rows = (
+        db.query(Comic.id, LibraryRoot.path, Comic.relative_path)
+        .join(LibraryRoot, Comic.library_root_id == LibraryRoot.id)
+        .all()
+    )
+    comic_ids = [
+        comic_id
+        for comic_id, root_path, relative_path in rows
+        if os.path.normpath(resolve_absolute_path(root_path, relative_path)) in wanted
+    ]
+    for start in range(0, len(comic_ids), MARK_BATCH_SIZE):
+        batch = comic_ids[start:start + MARK_BATCH_SIZE]
+        db.query(Comic).filter(Comic.id.in_(batch)).update({Comic.is_dirty: True}, synchronize_session=False)
+    db.commit()
+    return len(comic_ids), len(wanted) - len(comic_ids)
 
 
 def alternative_pages(pages: list[str]) -> list[tuple[str, str]]:
@@ -521,10 +557,22 @@ def main(argv: list[str] | None = None) -> None:
         metavar="PAGES",
         help="Audit file lists saved by --save-pages instead of opening archives",
     )
+    parser.add_argument(
+        "--mark-thumbnails",
+        type=Path,
+        metavar="CHANGES",
+        help="Instead of auditing, flag the comics in this cover_changes.csv for the thumbnail task (Admin > Tasks)",
+    )
     args = parser.parse_args(argv)
 
     # Mislabeled-archive warnings would drown out the progress output
     logging.basicConfig(level=logging.ERROR)
+    if args.mark_thumbnails:
+        with SessionLocal() as db:
+            marked, not_found = mark_changed_for_thumbnails(db, args.mark_thumbnails)
+        print(f"Marked {marked} comics for new thumbnails ({not_found} paths not found in the library).", file=sys.stderr)
+        print("Run the thumbnail task from Admin > Tasks to regenerate them.", file=sys.stderr)
+        return
     if args.contact_sheet:
         make_contact_sheet(args.contact_sheet, args.contact_sheet.with_name(f"{args.contact_sheet.stem}_sheet"))
         return
