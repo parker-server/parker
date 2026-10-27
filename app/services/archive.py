@@ -22,9 +22,10 @@ EXPLICIT_END_PAGE_RE = re.compile(r'^(?:(?i:z+[\W_]|zz)|z(?=[A-Z]))')
 # Scanner tags wrapped in xx, like "XX-Empire-Meganubis-XX"
 SCANNER_TAG_RE = re.compile(r'^xx[\W_].*[\W_]xx$', re.IGNORECASE)
 EXPLICIT_COVER_RE = re.compile(
-    r'(?:^|[\W_])(?:0+(?:[a-z]|[\W_]+\d+|fc|fcover|cover|cvr|front)|fc|fcover|cover|cvr|front)(?:$|[\W_])'
-    # "fc" glued to a short page number, as in "scan-01fc"
-    r'|[\W_]\d{1,3}(?:fc|fcover)(?:$|[\W_])'
+    # A lettered zero page needs two zeros ("00a"), so "2 0f 3" (a typo for "of") is not a cover
+    r'(?:^|[\W_])(?:0{2,}[a-z]|0+(?:[\W_]+\d+|fc|fcover|cover|cvr|front)|fc|fcover|cover|cvr|front)(?:$|[\W_])'
+    # "fc" glued to a page number starting with 0, as in "scan-01fc" (not hex names like "17_42fc")
+    r'|[\W_]0\d{0,2}(?:fc|fcover)(?:$|[\W_])'
 )
 INSIDE_COVER_RE = re.compile(r'(?:^|[\W_])(?:0+)?(?:ifc|ifcover|inside[\W_]+front[\W_]+cover)(?:$|[\W_])')
 JOINED_COVER_RE = re.compile(r'(?:^|[\W_])(?:\d+\s*page\s+cover|joined\s+(?:cover|cvr))(?:$|[\W_])')

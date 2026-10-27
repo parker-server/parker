@@ -706,3 +706,20 @@ def test_comic_archive_sort_pages_compares_names_after_leading_markers():
         archive.get_file_list = MagicMock(return_value=["__hr_Page 01.jpg", "__0xhy1coverx.jpg"])
 
         assert archive.get_pages()[0] == "__0xhy1coverx.jpg"
+
+
+def test_comic_archive_sort_pages_ignores_lookalike_cover_tokens():
+    archives = [
+        # "0f" here is a typo for "of", on every page
+        (["Fathom [Comico] 2 0f 3 p00ifc.jpg", "Fathom [Comico] 2 0f 3 p01.jpg", "Fathom [Comico] 2 0f 3 p00_fc.jpg"], "Fathom [Comico] 2 0f 3 p00_fc.jpg"),
+        # Random hex names that happen to end in "fc"
+        (["17_42fc.jpg", "1_4fda.jpg", "0_a9eb.jpg"], "0_a9eb.jpg"),
+    ]
+    with patch("app.services.archive.zipfile.is_zipfile", return_value=True), \
+         patch("app.services.archive.zipfile.ZipFile"):
+        archive = ComicArchive(Path("dummy.cbz"))
+
+        for files, cover in archives:
+            archive.get_file_list = MagicMock(return_value=files)
+
+            assert archive.get_pages()[0] == cover

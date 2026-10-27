@@ -431,7 +431,8 @@ SHEET_TEMPLATE = """<!doctype html>
 {{cards}}
 </main>
 <script>
-  const KEY = "parker-cover-audit-wrong";
+  // Each sheet keeps its own ticks, so a changes sheet does not inherit the audit sheet's
+  const KEY = "parker-cover-audit-wrong:" + location.pathname;
   const cards = [...document.querySelectorAll(".card")];
   let wrong = new Set();
   try { wrong = new Set(JSON.parse(localStorage.getItem(KEY) || "[]")); } catch (e) {}
