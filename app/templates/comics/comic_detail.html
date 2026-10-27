@@ -53,7 +53,7 @@
                     title="Browse covers"
                     aria-label="Browse covers starting with this comic">
                     <img
-                        :src="window.parker.route('comics.thumbnail', { comic_id: comicId }, `v=${comic?.thumbnail_hash}&width=400&height=600`)"
+                        :src="window.parker.route('comics.thumbnail', { comic_id: comicId }, `v=${coverVersion()}&width=400&height=600`)"
                         :alt="comic?.title"
                         class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                     >
@@ -95,6 +95,24 @@
                             {{ lucide_icon("circle-x", "h-4 w-4 flex-shrink-0") }} Mark Unread
                         </button>
                     </div>
+
+                    <template x-if="comic?.is_admin">
+                        <button
+                            type="button"
+                            x-on:click="openCoverPicker()"
+                            data-change-cover
+                            title="Admin: choose this comic's cover"
+                            class="relative inline-flex items-center justify-center gap-2 bg-amber-950/30 hover:bg-amber-500/20 text-amber-200 py-2 px-4 rounded-lg transition-colors border border-amber-500/30">
+                            {{ lucide_icon("image", "h-4 w-4 flex-shrink-0") }} Change Cover
+                            {# Same Admin marker as the admin cluster on the series page #}
+                            <span class="absolute right-3 inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-amber-200/90">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                    <path fill-rule="evenodd" d="M10 1.944L3 4.744v4.89c0 4.42 2.824 8.35 7 9.756 4.176-1.406 7-5.336 7-9.756v-4.89l-7-2.8zM9 6a1 1 0 112 0v4a1 1 0 11-2 0V6zm1 8a1.25 1.25 0 100-2.5A1.25 1.25 0 0010 14z" clip-rule="evenodd" />
+                                </svg>
+                                Admin
+                            </span>
+                        </button>
+                    </template>
                 </div>
 
                 <template x-if="comic?.bookmarks?.length">
@@ -476,6 +494,105 @@
 
             </div>
         </div>
+
+        {# Teleported to <body> so the page wrapper's z-10 stacking context can't put it under the nav bar #}
+        <template x-teleport="body">
+            <div x-show="coverPicker.open"
+                 x-on:keydown.escape.window="closeCoverPicker()"
+                 class="fixed inset-0 bg-black/80 flex items-center justify-center z-[200] p-4"
+                 style="display: none;"
+                 x-transition.opacity>
+                <div class="bg-gray-800 rounded-lg w-full max-w-3xl max-h-[90vh] flex flex-col border border-gray-700 shadow-2xl"
+                     role="dialog"
+                     aria-modal="true"
+                     aria-labelledby="cover-picker-title"
+                     data-cover-picker
+                     x-on:click.outside="closeCoverPicker()">
+                    <div class="flex items-start justify-between gap-4 border-b border-gray-700 px-6 py-4">
+                        <div class="flex items-center gap-4 min-w-0">
+                            <img :src="window.parker.route('comics.thumbnail', { comic_id: comicId }, `v=${coverVersion()}`)"
+                                 alt="Current cover"
+                                 class="h-16 w-11 shrink-0 rounded object-cover border border-gray-600 bg-gray-900">
+                            <div class="min-w-0">
+                                <h2 id="cover-picker-title" class="text-xl font-bold text-white">Change Cover</h2>
+                                <p class="mt-1 text-sm text-gray-400 break-words" data-cover-mode x-text="coverModeLabel()"></p>
+                            </div>
+                        </div>
+                        <button type="button" x-on:click="closeCoverPicker()" class="text-gray-400 hover:text-white" aria-label="Close">✕</button>
+                    </div>
+
+                    <div class="overflow-y-auto px-6 py-4 space-y-5">
+                        <div x-show="coverPicker.loading" class="flex justify-center py-10">
+                            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                        </div>
+
+                        <div x-show="coverPicker.error" class="rounded-lg border border-red-500/30 bg-red-900/20 px-3 py-2 text-sm text-red-200" x-text="coverPicker.error"></div>
+
+                        <template x-if="coverPicker.options">
+                            <div class="space-y-5">
+                                <div>
+                                    <div class="flex items-baseline justify-between gap-3 mb-2">
+                                        <h3 class="text-sm font-semibold text-gray-200">Pick a page</h3>
+                                        <span x-show="coverPicker.options.total_pages > coverPicker.options.pages.length"
+                                              class="text-xs text-gray-500"
+                                              x-text="`First ${coverPicker.options.pages.length} of ${coverPicker.options.total_pages} pages`"></span>
+                                    </div>
+                                    <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
+                                        <template x-for="page in coverPicker.options.pages" :key="page.filename">
+                                            <button type="button"
+                                                    x-on:click="chooseCoverPage(page)"
+                                                    :disabled="coverPicker.saving"
+                                                    :aria-pressed="isActiveCoverPage(page).toString()"
+                                                    :aria-label="`Use page ${page.index + 1} as the cover`"
+                                                    :title="page.filename"
+                                                    data-cover-page
+                                                    class="group relative aspect-[2/3] overflow-hidden rounded border-2 bg-gray-900 transition-colors disabled:opacity-60"
+                                                    :class="isActiveCoverPage(page) ? 'border-blue-500 ring-2 ring-blue-500/50' : 'border-gray-700 hover:border-gray-400'">
+                                                <img :src="window.parker.route('reader.comic_page', { comic_id: comicId, page_index: page.index }, 'webp=true')"
+                                                     :alt="`Page ${page.index + 1}`"
+                                                     loading="lazy"
+                                                     class="h-full w-full object-cover">
+                                                <span class="absolute bottom-0 inset-x-0 bg-black/70 px-1 py-0.5 text-[11px] text-gray-200"
+                                                      x-text="page.index === 0 && coverPicker.options.mode === 'auto' ? 'Page 1 (auto)' : `Page ${page.index + 1}`"></span>
+                                            </button>
+                                        </template>
+                                    </div>
+                                </div>
+
+                                <div class="rounded-lg border border-gray-700 bg-gray-900/50 p-4">
+                                    <h3 class="text-sm font-semibold text-gray-200">Upload an image</h3>
+                                    <p class="mt-1 text-xs text-gray-400">JPEG, PNG or WebP, up to 10MB.</p>
+                                    <div class="mt-3 flex flex-col sm:flex-row sm:items-center gap-3">
+                                        <input type="file"
+                                               accept="image/jpeg,image/png,image/webp"
+                                               data-cover-upload
+                                               aria-label="Cover image file"
+                                               x-on:change="coverPicker.file = $event.target.files[0] || null"
+                                               class="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-500/20 file:text-blue-400 hover:file:bg-blue-500/30">
+                                        <button type="button"
+                                                x-on:click="uploadCover()"
+                                                :disabled="!coverPicker.file || coverPicker.saving"
+                                                class="shrink-0 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                                            Upload
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+
+                    <div class="flex items-center justify-between gap-3 border-t border-gray-700 px-6 py-4">
+                        <button type="button"
+                                x-on:click="resetCover()"
+                                :disabled="coverPicker.saving || !coverPicker.options || coverPicker.options.mode === 'auto'"
+                                class="text-sm text-red-300 hover:text-white border border-red-500/30 hover:border-red-400/60 px-3 py-1.5 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                            Reset to Automatic
+                        </button>
+                        <button type="button" x-on:click="closeCoverPicker()" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded transition-colors shadow-lg">Done</button>
+                    </div>
+                </div>
+            </div>
+        </template>
     </div>
 </div>
 
@@ -495,6 +612,8 @@ function comicDetail() {
         externalReviewVisiblePolls: 5,
         externalReviewMaxPolls: 24,
         externalReviewPollTimer: null,
+        coverRevision: 0,
+        coverPicker: { open: false, loading: false, saving: false, error: '', options: null, file: null },
 
         get activeRating() {
             return this.hoverRating || this.comic?.user_rating || 0;
@@ -564,6 +683,119 @@ function comicDetail() {
             }
 
             return window.parker.readerRoute(this.comicId, params.toString());
+        },
+
+        coverVersion() {
+            // The revision busts the browser cache when the cover changes twice in one second
+            const hash = this.comic?.thumbnail_hash;
+            return this.coverRevision ? `${hash}-${this.coverRevision}` : hash;
+        },
+
+        async openCoverPicker() {
+            this.coverPicker = { open: true, loading: true, saving: false, error: '', options: null, file: null };
+
+            try {
+                const res = await fetch(window.parker.route('comics.cover_options', { comic_id: this.comicId }));
+                const data = await res.json();
+                if (!res.ok) throw new Error(data?.detail || 'Failed to load pages');
+                this.coverPicker.options = data;
+            } catch (e) {
+                console.error(e);
+                this.coverPicker.error = e.message || 'Failed to load pages';
+            } finally {
+                this.coverPicker.loading = false;
+            }
+        },
+
+        closeCoverPicker() {
+            if (this.coverPicker.saving) return;
+            this.coverPicker.open = false;
+        },
+
+        isActiveCoverPage(page) {
+            const options = this.coverPicker.options;
+            if (!options) return false;
+            if (options.mode === 'page') return options.selected_page_index === page.index;
+            return options.mode === 'auto' && page.index === 0;
+        },
+
+        coverModeLabel() {
+            const options = this.coverPicker.options;
+            if (!options) return 'Choose a page from the comic, or upload an image.';
+            if (options.mode === 'image') return 'Using an uploaded image.';
+            if (options.mode === 'page') {
+                if (options.selected_page_index === null) {
+                    return `Chosen page "${options.selected_page}" is no longer in the archive, so the automatic cover is used.`;
+                }
+                return `Using page ${options.selected_page_index + 1} (${options.selected_page}).`;
+            }
+            return 'Using the automatic cover.';
+        },
+
+        async saveCover(request, successMessage) {
+            if (this.coverPicker.saving) return false;
+            this.coverPicker.saving = true;
+            this.coverPicker.error = '';
+
+            try {
+                const res = await request();
+                const data = await res.json();
+                if (!res.ok) {
+                    throw new Error(typeof data?.detail === 'string' ? data.detail : 'Failed to change cover');
+                }
+
+                this.coverPicker.options = data;
+                this.coverRevision += 1;
+                this.comic = { ...this.comic, thumbnail_hash: data.thumbnail_hash };
+                if (window.parker) window.parker.showToast(successMessage, 'success');
+                return true;
+            } catch (e) {
+                console.error(e);
+                this.coverPicker.error = e.message || 'Failed to change cover';
+                return false;
+            } finally {
+                this.coverPicker.saving = false;
+            }
+        },
+
+        chooseCoverPage(page) {
+            return this.saveCover(
+                () => fetch(window.parker.route('comics.set_cover_page', { comic_id: this.comicId }), {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename: page.filename })
+                }),
+                `Cover set to page ${page.index + 1}`
+            );
+        },
+
+        async uploadCover() {
+            const file = this.coverPicker.file;
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+            const saved = await this.saveCover(
+                () => fetch(window.parker.route('comics.upload_cover', { comic_id: this.comicId }), {
+                    method: 'POST',
+                    body: formData
+                }),
+                'Cover image uploaded'
+            );
+
+            if (saved) {
+                this.coverPicker.file = null;
+                // $refs can't reach the dialog once it is teleported to <body>
+                const input = document.querySelector('[data-cover-upload]');
+                if (input) input.value = '';
+            }
+        },
+
+        resetCover() {
+            return this.saveCover(
+                () => fetch(window.parker.route('comics.reset_cover', { comic_id: this.comicId }), { method: 'DELETE' }),
+                'Cover reset to automatic'
+            );
         },
 
         coverBrowserHref() {

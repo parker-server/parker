@@ -1222,3 +1222,159 @@ def test_cover_manifest_hides_items_outside_user_library(auth_client, db):
     assert payload["total"] == 0
     assert payload["items"] == []
 
+
+
+def _png_bytes(color) -> bytes:
+    from io import BytesIO
+    from PIL import Image, ImageDraw
+
+    image = Image.new("RGB", (40, 60), color)
+    ImageDraw.Draw(image).rectangle((0, 50, 39, 59), fill=(245, 245, 245))
+    output = BytesIO()
+    image.save(output, format="PNG")
+    return output.getvalue()
+
+
+def _create_cover_comic(db, tmp_path, monkeypatch, page_count: int = 14):
+    import zipfile
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "cover_dir", tmp_path / "cover")
+    monkeypatch.setattr(settings, "cover_override_dir", tmp_path / "cover_overrides")
+
+    root_path = tmp_path / "cover-lib"
+    root_path.mkdir()
+    with zipfile.ZipFile(root_path / "issue.cbz", "w") as archive:
+        for index in range(1, page_count + 1):
+            archive.writestr(f"p{index:02d}.png", _png_bytes((index * 15, 40, 200 - index * 10)))
+
+    library = create_library_with_root(db, "cover-lib", str(root_path))
+    series = Series(name="Cover Series", library=library)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
+    db.flush()
+    comic = create_comic(db, volume, library.active_root, "issue.cbz", filename="issue.cbz", number="1")
+    db.commit()
+    return comic
+
+
+def test_cover_endpoints_are_admin_only(auth_client, db, normal_user, tmp_path, monkeypatch):
+    comic = _create_cover_comic(db, tmp_path, monkeypatch)
+    url = f"/api/comics/{comic.id}/cover"
+
+    assert auth_client.get(url).status_code == 400
+    assert auth_client.put(url, json={"filename": "p02.png"}).status_code == 400
+    assert auth_client.delete(url).status_code == 400
+    upload = auth_client.post(f"{url}/upload", files={"file": ("cover.png", _png_bytes((1, 2, 3)), "image/png")})
+    assert upload.status_code == 400
+
+    db.refresh(comic)
+    assert comic.cover_override_page is None
+    assert comic.cover_override_image is None
+
+
+def test_get_comic_detail_reports_admin_flag(client, db, normal_user, admin_user, tmp_path, monkeypatch):
+    comic = _create_cover_comic(db, tmp_path, monkeypatch)
+    normal_user.accessible_libraries.append(comic.volume.series.library)
+    db.commit()
+
+    app.dependency_overrides[get_current_user] = lambda: admin_user
+    assert client.get(f"/api/comics/{comic.id}").json()["is_admin"] is True
+
+    app.dependency_overrides[get_current_user] = lambda: normal_user
+    assert client.get(f"/api/comics/{comic.id}").json()["is_admin"] is False
+
+
+def test_cover_options_list_first_pages_and_set_page(admin_client, db, tmp_path, monkeypatch):
+    comic = _create_cover_comic(db, tmp_path, monkeypatch)
+
+    options = admin_client.get(f"/api/comics/{comic.id}/cover")
+    assert options.status_code == 200
+    data = options.json()
+    assert data["mode"] == "auto"
+    assert data["total_pages"] == 14
+    assert [page["filename"] for page in data["pages"]] == [f"p{index:02d}.png" for index in range(1, 13)]
+    assert data["pages"][4] == {"index": 4, "filename": "p05.png"}
+
+    response = admin_client.put(f"/api/comics/{comic.id}/cover", json={"filename": "p05.png"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["mode"] == "page"
+    assert data["selected_page"] == "p05.png"
+    assert data["selected_page_index"] == 4
+
+    db.refresh(comic)
+    assert comic.cover_override_page == "p05.png"
+    assert comic.is_dirty is False
+    assert Path(comic.thumbnail_path) == tmp_path / "cover" / f"comic_{comic.id}.webp"
+    assert Path(comic.thumbnail_path).is_file()
+    assert data["thumbnail_hash"] == int(comic.updated_at.timestamp())
+
+    missing = admin_client.put(f"/api/comics/{comic.id}/cover", json={"filename": "not-a-page.png"})
+    assert missing.status_code == 400
+    db.refresh(comic)
+    assert comic.cover_override_page == "p05.png"
+
+
+def test_cover_upload_validates_and_replaces_page_choice(admin_client, db, tmp_path, monkeypatch):
+    comic = _create_cover_comic(db, tmp_path, monkeypatch)
+    url = f"/api/comics/{comic.id}/cover/upload"
+    admin_client.put(f"/api/comics/{comic.id}/cover", json={"filename": "p03.png"})
+
+    wrong_type = admin_client.post(url, files={"file": ("cover.txt", b"hello", "text/plain")})
+    assert wrong_type.status_code == 400
+    not_an_image = admin_client.post(url, files={"file": ("cover.png", b"not really a png", "image/png")})
+    assert not_an_image.status_code == 400
+    with monkeypatch.context() as patch_limit:
+        patch_limit.setattr("app.api.comics.COVER_UPLOAD_MAX_BYTES", 10)
+        too_large = admin_client.post(url, files={"file": ("cover.png", _png_bytes((1, 2, 3)), "image/png")})
+    assert too_large.status_code == 413
+
+    db.refresh(comic)
+    assert comic.cover_override_page == "p03.png"
+    assert comic.cover_override_image is None
+
+    response = admin_client.post(url, files={"file": ("my cover.png", _png_bytes((10, 200, 30)), "image/png")})
+    assert response.status_code == 200
+    assert response.json()["mode"] == "image"
+
+    db.refresh(comic)
+    assert comic.cover_override_page is None
+    assert Path(comic.cover_override_image) == tmp_path / "cover_overrides" / f"{comic.id}.png"
+    assert Path(comic.cover_override_image).read_bytes() == _png_bytes((10, 200, 30))
+    assert Path(comic.thumbnail_path).is_file()
+
+
+def test_cover_reset_clears_overrides_and_deletes_upload(admin_client, db, tmp_path, monkeypatch):
+    comic = _create_cover_comic(db, tmp_path, monkeypatch)
+    admin_client.post(
+        f"/api/comics/{comic.id}/cover/upload",
+        files={"file": ("cover.png", _png_bytes((10, 200, 30)), "image/png")},
+    )
+    db.refresh(comic)
+    upload_path = Path(comic.cover_override_image)
+    assert upload_path.is_file()
+
+    response = admin_client.delete(f"/api/comics/{comic.id}/cover")
+
+    assert response.status_code == 200
+    assert response.json()["mode"] == "auto"
+    db.refresh(comic)
+    assert comic.cover_override_page is None
+    assert comic.cover_override_image is None
+    assert not upload_path.exists()
+
+
+def test_cover_options_reports_missing_page_and_missing_file(admin_client, db, tmp_path, monkeypatch):
+    comic = _create_cover_comic(db, tmp_path, monkeypatch, page_count=3)
+    comic.cover_override_page = "gone.png"
+    db.commit()
+
+    data = admin_client.get(f"/api/comics/{comic.id}/cover").json()
+    assert data["mode"] == "page"
+    assert data["selected_page"] == "gone.png"
+    assert data["selected_page_index"] is None
+
+    Path(comic.absolute_path).unlink()
+    assert admin_client.get(f"/api/comics/{comic.id}/cover").status_code == 404
+    assert admin_client.get("/api/comics/999999/cover").status_code == 404

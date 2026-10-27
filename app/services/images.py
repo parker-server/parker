@@ -30,10 +30,53 @@ class ImageService:
         self.thumbnail_size: tuple[float, float] = settings.thumbnail_size
         self.avatar_size: tuple[float, float] = settings.avatar_size
 
-    def process_cover(self, comic_path: str, thumbnail_path: Path) -> dict:
+    def get_cover_bytes(self, comic_path: str,
+                        cover_page: Optional[str] = None,
+                        cover_image_path: Optional[str] = None) -> Optional[bytes]:
+        """
+        Return the raw bytes of the image to use as a comic's cover.
+
+        Precedence: an uploaded image, then a chosen archive page (by filename),
+        then the first page from automatic page sorting. An override that no
+        longer exists (deleted upload, replaced archive) falls back silently.
+        A ComicInfo FrontCover signal would slot in before the automatic pick.
+        """
+        if cover_image_path:
+            image_path = Path(cover_image_path)
+            if image_path.is_file():
+                return image_path.read_bytes()
+            logger.warning(f"Cover override image not found: {cover_image_path}")
+
+        if cover_page:
+            page_bytes = self._read_named_page(comic_path, cover_page)
+            if page_bytes:
+                return page_bytes
+            logger.warning(f"Cover override page {cover_page!r} not found in {Path(comic_path).name}")
+
+        cover_bytes, success, _ = self.get_page_image(comic_path, 0, transcode_webp=False)
+        return cover_bytes if success else None
+
+    @staticmethod
+    def _read_named_page(comic_path: str, page_name: str) -> Optional[bytes]:
+        """Read one page by its archive filename, or None if it isn't a page of the archive."""
+        try:
+            file_path = Path(comic_path)
+            if not file_path.exists():
+                return None
+            with ComicArchive(file_path) as archive:
+                if page_name not in archive.get_pages():
+                    return None
+                return archive.read_file(page_name)
+        except Exception as e:
+            logger.error(f"Error reading page {page_name!r} from {Path(comic_path).name}: {e}")
+            return None
+
+    def process_cover(self, comic_path: str, thumbnail_path: Path,
+                      cover_page: Optional[str] = None,
+                      cover_image_path: Optional[str] = None) -> dict:
         """
         Optimized Workflow:
-        1. Open Archive (Expensive I/O) -> Extract Cover
+        1. Open Archive (Expensive I/O) -> Extract Cover (honouring any manual override)
         2. Calculate Colors (CPU) using a small resized copy
         3. Resize & Save Thumbnail (CPU/Disk) using the original high-res data
 
@@ -42,11 +85,10 @@ class ImageService:
         result = {"success": False, "palette": None}
 
         try:
-            # 1. Get Raw Bytes (Reuse existing logic, force raw)
-            # This handles the archive opening and file detection
-            cover_bytes, success, _ = self.get_page_image(comic_path, 0, transcode_webp=False)
+            # 1. Get Raw Bytes of the cover (override image, chosen page or page 0)
+            cover_bytes = self.get_cover_bytes(comic_path, cover_page, cover_image_path)
 
-            if not success or not cover_bytes:
+            if not cover_bytes:
                 return result
 
             with _allow_truncated_image_loads():

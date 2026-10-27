@@ -7,6 +7,7 @@ from alembic import command
 from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
@@ -84,31 +85,38 @@ def _seed_volume(session, name: str, series_name: str):
     return library, volume
 
 
-def _add_comic(session, library, volume, number: str, title: str, summary: str) -> Comic:
-    comic = Comic(
-        volume=volume,
-        number=number,
-        title=title,
-        summary=summary,
-        filename=f"{number}.cbz",
-        library_root_id=library.active_root.id,
-        relative_path=f"{number}.cbz",
+def _insert_comic_row(session, library, volume, number: str, title: str, summary: str) -> int:
+    """Insert a comic, at any revision of the migration chain.
+
+    Names only the columns this test needs, so comic columns added by later
+    migrations (which the ORM model already has) don't break the insert.
+    """
+    result = session.execute(
+        Comic.__table__.insert().values(
+            volume_id=volume.id,
+            number=number,
+            title=title,
+            summary=summary,
+            filename=f"{number}.cbz",
+            library_root_id=library.active_root.id,
+            relative_path=f"{number}.cbz",
+        )
     )
-    session.add(comic)
     session.commit()
-    return comic
+    return result.inserted_primary_key[0]
 
 
 def _assert_index_tracks_comic_changes(engine, session, library, volume):
-    comic = _add_comic(session, library, volume, "7", "Falcon Rising", "Harbor storm")
-    comic_id = comic.id
+    comics = Comic.__table__
+    comic_id = _insert_comic_row(session, library, volume, "7", "Falcon Rising", "Harbor storm")
     assert _match(engine, "Falcon") == [comic_id]
     assert _match(engine, "Harbor") == [comic_id]
     # Other comics in the volume share the series name, so only check this one is included.
     assert comic_id in _match(engine, "Zephyr")
 
-    comic.title = "Glacier Dawn"
-    comic.summary = "Canyon echo"
+    session.execute(
+        comics.update().where(comics.c.id == comic_id).values(title="Glacier Dawn", summary="Canyon echo")
+    )
     session.commit()
     assert _match(engine, "Falcon") == []
     assert _match(engine, "Harbor") == []
@@ -116,7 +124,7 @@ def _assert_index_tracks_comic_changes(engine, session, library, volume):
     assert _match(engine, "Canyon") == [comic_id]
     assert comic_id in _match(engine, "Zephyr")
 
-    session.delete(comic)
+    session.execute(comics.delete().where(comics.c.id == comic_id))
     session.commit()
     assert _match(engine, "Glacier") == []
     assert _match(engine, "Canyon") == []
@@ -132,7 +140,7 @@ def test_restore_triggers_migration_backfills_comics_missed_by_dropped_triggers(
 
     session = sessionmaker(bind=engine)()
     library, volume = _seed_volume(session, "fts-backfill-lib", "Backfill Series")
-    comic_id = _add_comic(session, library, volume, "1", "Missed Comic", "Missed Comic summary").id
+    comic_id = _insert_comic_row(session, library, volume, "1", "Missed Comic", "Missed Comic summary")
     session.close()
 
     with engine.begin() as conn:
@@ -154,7 +162,7 @@ def test_contentless_migration_reindexes_existing_comics_without_storing_text(mi
 
     session = sessionmaker(bind=engine)()
     library, volume = _seed_volume(session, "fts-reindex-lib", "Quasar Series")
-    comic_id = _add_comic(session, library, volume, "1", "Existing Comic", "Lantern tale").id
+    comic_id = _insert_comic_row(session, library, volume, "1", "Existing Comic", "Lantern tale")
     session.close()
     assert _stores_fts_content(engine)
 
@@ -182,6 +190,42 @@ def test_fts_index_at_head_is_contentless_and_tracks_comic_changes(migrated_db):
     session.close()
 
 
+def test_every_migration_after_the_trigger_fix_keeps_the_search_index_in_sync(migrated_db):
+    """Guard against a later migration silently dropping the search triggers again.
+
+    On SQLite, a migration that rebuilds the comics table (for example a batch
+    alter) drops its triggers, so new or edited comics stop being indexed.
+    Step through every later revision, and round-trip the newest one.
+    """
+    config, engine = migrated_db
+    script = ScriptDirectory.from_config(config)
+    later_revisions = [
+        revision.revision
+        for revision in script.iterate_revisions("head", REVISION_TRIGGER_FIX)
+        if revision.revision != REVISION_TRIGGER_FIX
+    ]
+    assert later_revisions, "expected migrations after the trigger fix"
+
+    command.upgrade(config, REVISION_TRIGGER_FIX)
+    session = sessionmaker(bind=engine)()
+    library, volume = _seed_volume(session, "fts-guard-lib", "Zephyr Series")
+    comic_id = _insert_comic_row(session, library, volume, "1", "Guarded Comic", "Beacon tale")
+
+    # iterate_revisions walks from head down, so upgrade in reverse
+    for revision in reversed(later_revisions):
+        command.upgrade(config, revision)
+        assert _fts_triggers(engine) == FTS_TRIGGERS, f"search triggers missing after {revision}"
+        assert _match(engine, "Beacon") == [comic_id], f"existing comic lost from index after {revision}"
+
+    command.downgrade(config, "-1")
+    assert _fts_triggers(engine) == FTS_TRIGGERS, "search triggers missing after downgrading the newest migration"
+    command.upgrade(config, "head")
+    assert _fts_triggers(engine) == FTS_TRIGGERS, "search triggers missing after upgrading back to head"
+
+    _assert_index_tracks_comic_changes(engine, session, library, volume)
+    session.close()
+
+
 @pytest.mark.parametrize(
     ("sqlite_version", "expect_stored_content"),
     [((3, 42, 0), True), ((3, 43, 0), False)],
@@ -194,7 +238,7 @@ def test_contentless_migration_falls_back_to_stored_content_before_sqlite_3_43(
 
     session = sessionmaker(bind=engine)()
     library, volume = _seed_volume(session, "fts-fallback-lib", "Zephyr Series")
-    comic_id = _add_comic(session, library, volume, "1", "Existing Comic", "Lantern tale").id
+    comic_id = _insert_comic_row(session, library, volume, "1", "Existing Comic", "Lantern tale")
     library_type, library_id, volume_id = type(library), library.id, volume.id
     session.close()
 

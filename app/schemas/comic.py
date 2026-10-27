@@ -79,3 +79,24 @@ class ComicDetailResponse(BaseModel):
     parker_rating_count: int = 0
     user_rating: int | None = None
     parker_readers_count: int | None = None
+    is_admin: bool = False
+
+
+class ComicCoverPage(BaseModel):
+    index: int
+    filename: str
+
+
+class ComicCoverOptionsResponse(BaseModel):
+    # Which cover source is active: the automatic pick, a chosen page or an uploaded image
+    mode: Literal["auto", "page", "image"]
+    selected_page: str | None = None
+    # None when the chosen page is no longer in the archive (the automatic pick is used)
+    selected_page_index: int | None = None
+    total_pages: int
+    pages: list[ComicCoverPage] = Field(default_factory=list)
+    thumbnail_hash: int
+
+
+class ComicCoverPageUpdate(BaseModel):
+    filename: str = Field(..., min_length=1)

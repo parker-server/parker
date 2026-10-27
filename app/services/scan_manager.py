@@ -523,6 +523,7 @@ class ScanManager:
             if library_id is None:
                 thumb_stats = maintenance.cleanup_orphaned_thumbnails()
                 stats["orphaned_thumbnails_deleted"] = thumb_stats
+                stats["orphaned_cover_overrides_deleted"] = maintenance.cleanup_orphaned_cover_overrides()
 
         except Exception as e:
             error = str(e)

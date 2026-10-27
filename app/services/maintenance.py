@@ -297,6 +297,31 @@ class MaintenanceService:
         self.logger.info(f"Janitor: Deleted {deleted_count} orphaned thumbnail files.")
         return deleted_count
 
+    def cleanup_orphaned_cover_overrides(self) -> int:
+        """
+        Delete uploaded cover images whose comic no longer exists.
+        Uses the same POSIX path matching as cleanup_orphaned_thumbnails.
+        """
+        override_root = settings.cover_override_dir
+        if not override_root.exists():
+            return 0
+
+        comic_images = self.db.query(Comic.cover_override_image).filter(Comic.cover_override_image != None).all()
+        valid_images = {Path(i[0]).as_posix() for i in comic_images}
+
+        deleted_count = 0
+        for image_file in override_root.rglob('*'):
+            if image_file.is_file() and image_file.as_posix() not in valid_images:
+                try:
+                    self.logger.info(f"Janitor: Deleting unreferenced cover override: {image_file.as_posix()}")
+                    image_file.unlink()
+                    deleted_count += 1
+                except Exception as e:
+                    self.logger.error(f"Failed to delete orphaned cover override {image_file}: {e}")
+
+        self.logger.info(f"Janitor: Deleted {deleted_count} orphaned cover override files.")
+        return deleted_count
+
     def cleanup_old_jobs(self) -> int:
         """
         Delete terminal job history rows older than the configured retention window.

@@ -554,6 +554,51 @@ def test_cleanup_orphaned_thumbnails_deletes_unreferenced_and_logs_errors(db, tm
     service.logger.error.assert_called_once()
 
 
+def test_cleanup_orphaned_cover_overrides_handles_missing_root(db, tmp_path, monkeypatch):
+    service = MaintenanceService(db)
+    monkeypatch.setattr(maintenance_module.settings, "cover_override_dir", tmp_path / "no-override-dir")
+
+    assert service.cleanup_orphaned_cover_overrides() == 0
+
+
+def test_cleanup_orphaned_cover_overrides_deletes_unreferenced_and_logs_errors(db, tmp_path, monkeypatch):
+    service = MaintenanceService(db)
+    service.logger = MagicMock()
+
+    override_dir = tmp_path / "cover_overrides"
+    override_dir.mkdir(parents=True)
+    monkeypatch.setattr(maintenance_module.settings, "cover_override_dir", override_dir)
+
+    referenced = override_dir / "1.png"
+    orphan = override_dir / "2.jpg"
+    error_file = override_dir / "3.webp"
+    referenced.write_bytes(b"ref")
+    orphan.write_bytes(b"orph")
+    error_file.write_bytes(b"err")
+
+    lib = _create_library(db, "maint-override-lib", tmp_path)
+    comic = _create_comic(db, lib, "override-comic", "override.cbz")
+    comic.cover_override_image = str(referenced)
+    db.commit()
+
+    original_unlink = Path.unlink
+
+    def selective_unlink(path_obj, *args, **kwargs):
+        if path_obj.name == "3.webp":
+            raise OSError("cannot delete")
+        return original_unlink(path_obj, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", selective_unlink)
+
+    deleted = service.cleanup_orphaned_cover_overrides()
+
+    assert deleted == 1
+    assert referenced.exists()
+    assert not orphan.exists()
+    assert error_file.exists()
+    service.logger.error.assert_called_once()
+
+
 def test_cleanup_old_jobs_prunes_only_terminal_jobs_outside_retention(db, monkeypatch):
     now = datetime.now(timezone.utc)
     old = now - timedelta(days=31)

@@ -1,19 +1,22 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response, FileResponse
 from sqlalchemy import Float, func, case, or_
 from sqlalchemy.orm import Session, joinedload, selectinload
 from typing import List, Annotated, Literal
 from pathlib import Path
+from io import BytesIO
 import re
 import random
 from pydantic import BaseModel, Field
+from PIL import Image
 
 from app.core.comic_helpers import (get_reading_time, get_format_sort_index, get_issue_number_sort_keys,
                                     REVERSE_NUMBERING_SERIES,
                                     assert_user_can_view_comic, get_comic_age_restriction,
                                     get_series_age_restriction, get_thumbnail_url, get_thumbnail_hash,
                                     user_can_download)
-from app.api.deps import SessionDep, CurrentUser, ComicDep, release_db_connection
+from app.api.deps import SessionDep, CurrentUser, ComicDep, AdminUser, release_db_connection
+from app.config import settings
 
 from app.models.comic import Comic, Volume
 from app.models.series import Series
@@ -28,8 +31,10 @@ from app.routers.opds import get_opds_acquisition_type, get_opds_download_filena
 
 
 from app.schemas.search import SearchRequest, SearchResponse
-from app.schemas.comic import ComicDetailBookmark, ComicDetailResponse
+from app.schemas.comic import (ComicCoverOptionsResponse, ComicCoverPage, ComicCoverPageUpdate,
+                               ComicDetailBookmark, ComicDetailResponse)
 from app.schemas.external_review import ExternalReviewsResponse
+from app.services.archive import ComicArchive
 from app.services.search import SearchService
 from app.services.comic_ratings import build_parker_rating_state
 from app.services.external_reviews import (
@@ -39,12 +44,19 @@ from app.services.external_reviews import (
 from app.services.scan_manager import scan_manager
 from app.services.settings_service import SettingsService
 from app.services.social_insights import get_visible_comic_reader_count
+from app.services.thumbnailer import ThumbnailService
 
 
 
 router = APIRouter()
 
 COVER_MANIFEST_PAGE_SIZE = 60
+
+# Manual cover picker: how many leading pages to offer, and upload limits
+COVER_CANDIDATE_PAGE_LIMIT = 12
+COVER_UPLOAD_MAX_BYTES = 10 * 1024 * 1024
+COVER_UPLOAD_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
+COVER_UPLOAD_EXTENSIONS = {"JPEG": "jpg", "PNG": "png", "WEBP": "webp"}
 
 
 class ComicRatingUpdate(BaseModel):
@@ -278,6 +290,7 @@ async def get_comic(comic_id: int, db: SessionDep, current_user: CurrentUser):
         parker_rating_count=parker_rating["parker_rating_count"],
         user_rating=parker_rating["user_rating"],
         parker_readers_count=parker_readers_count,
+        is_admin=current_user.is_superuser,
     )
 
 
@@ -415,6 +428,137 @@ def get_comic_thumbnail(
     else:
         # Return a placeholder or 404
         raise HTTPException(status_code=404, detail="Could not find thumbnail")
+
+
+# --- MANUAL COVER OVERRIDE (admin) ---
+def _get_comic_for_cover(db: Session, comic_id: int) -> Comic:
+    comic = (
+        db.query(Comic)
+        .options(joinedload(Comic.library_root))
+        .filter(Comic.id == comic_id)
+        .first()
+    )
+    if not comic:
+        raise HTTPException(status_code=404, detail="Comic not found")
+    return comic
+
+
+def _get_archive_pages(comic: Comic) -> list[str]:
+    file_path = Path(comic.absolute_path)
+    if not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Comic file not found")
+    try:
+        with ComicArchive(file_path) as archive:
+            return archive.get_pages()
+    except Exception:
+        raise HTTPException(status_code=422, detail="Could not read the comic archive")
+
+
+def _build_cover_options(comic: Comic, pages: list[str]) -> ComicCoverOptionsResponse:
+    if comic.cover_override_image:
+        mode = "image"
+    elif comic.cover_override_page:
+        mode = "page"
+    else:
+        mode = "auto"
+
+    selected_page_index = None
+    if comic.cover_override_page in pages:
+        selected_page_index = pages.index(comic.cover_override_page)
+
+    return ComicCoverOptionsResponse(
+        mode=mode,
+        selected_page=comic.cover_override_page,
+        selected_page_index=selected_page_index,
+        total_pages=len(pages),
+        pages=[
+            ComicCoverPage(index=index, filename=filename)
+            for index, filename in enumerate(pages[:COVER_CANDIDATE_PAGE_LIMIT])
+        ],
+        thumbnail_hash=get_thumbnail_hash(comic.updated_at),
+    )
+
+
+def _remove_cover_override_image(comic: Comic) -> None:
+    if comic.cover_override_image:
+        Path(comic.cover_override_image).unlink(missing_ok=True)
+    comic.cover_override_image = None
+
+
+def _regenerate_cover(db: Session, comic: Comic, pages: list[str]) -> ComicCoverOptionsResponse:
+    # Commits the override along with the new thumbnail and palette
+    ThumbnailService(db).process_comic_thumbnail(comic)
+    return _build_cover_options(comic, pages)
+
+
+@router.get("/{comic_id}/cover", response_model=ComicCoverOptionsResponse, name="cover_options")
+def get_cover_options(comic_id: int, db: SessionDep, admin: AdminUser):
+    """List the first pages of the archive as cover candidates, plus the active choice.
+    Previews are served by the reader's page endpoint, using each page's index."""
+    comic = _get_comic_for_cover(db, comic_id)
+    return _build_cover_options(comic, _get_archive_pages(comic))
+
+
+@router.put("/{comic_id}/cover", response_model=ComicCoverOptionsResponse, name="set_cover_page")
+def set_cover_page(comic_id: int, payload: ComicCoverPageUpdate, db: SessionDep, admin: AdminUser):
+    """Use one of the archive's pages, by filename, as the cover."""
+    comic = _get_comic_for_cover(db, comic_id)
+    pages = _get_archive_pages(comic)
+    if payload.filename not in pages:
+        raise HTTPException(status_code=400, detail="That page is not in this comic")
+
+    _remove_cover_override_image(comic)
+    comic.cover_override_page = payload.filename
+    return _regenerate_cover(db, comic, pages)
+
+
+@router.post("/{comic_id}/cover/upload", response_model=ComicCoverOptionsResponse, name="upload_cover")
+def upload_cover(comic_id: int, db: SessionDep, admin: AdminUser, file: UploadFile = File(...)):
+    """Use an uploaded JPEG, PNG or WebP image as the cover."""
+    comic = _get_comic_for_cover(db, comic_id)
+    pages = _get_archive_pages(comic)
+
+    if file.content_type not in COVER_UPLOAD_CONTENT_TYPES:
+        raise HTTPException(status_code=400, detail="Cover must be a JPEG, PNG or WebP image")
+
+    content = file.file.read(COVER_UPLOAD_MAX_BYTES + 1)
+    if len(content) > COVER_UPLOAD_MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail="File too large. Maximum size is 10MB."
+        )
+
+    # Trust the decoded image, not the declared content type
+    try:
+        with Image.open(BytesIO(content)) as img:
+            image_format = img.format
+            img.verify()
+    except Exception:
+        raise HTTPException(status_code=400, detail="File is not a valid image")
+
+    extension = COVER_UPLOAD_EXTENSIONS.get(image_format)
+    if not extension:
+        raise HTTPException(status_code=400, detail="Cover must be a JPEG, PNG or WebP image")
+
+    _remove_cover_override_image(comic)
+    settings.cover_override_dir.mkdir(parents=True, exist_ok=True)
+    image_path = settings.cover_override_dir / f"{comic.id}.{extension}"
+    image_path.write_bytes(content)
+
+    comic.cover_override_image = str(image_path)
+    comic.cover_override_page = None
+    return _regenerate_cover(db, comic, pages)
+
+
+@router.delete("/{comic_id}/cover", response_model=ComicCoverOptionsResponse, name="reset_cover")
+def reset_cover(comic_id: int, db: SessionDep, admin: AdminUser):
+    """Clear any manual cover and go back to the automatic pick."""
+    comic = _get_comic_for_cover(db, comic_id)
+    pages = _get_archive_pages(comic)
+
+    _remove_cover_override_image(comic)
+    comic.cover_override_page = None
+    return _regenerate_cover(db, comic, pages)
 
 
 @router.get("/{comic_id}/download", name="download")

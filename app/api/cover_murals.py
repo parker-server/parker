@@ -167,12 +167,12 @@ def _render_export_covers(
         if not comic:
             continue
 
-        image_bytes, success, _ = image_service.get_page_image(
+        image_bytes = image_service.get_cover_bytes(
             comic.absolute_path,
-            0,
-            transcode_webp=False,
+            comic.cover_override_page,
+            comic.cover_override_image,
         )
-        if not success or not image_bytes:
+        if not image_bytes:
             raise HTTPException(status_code=404, detail=f"Could not read cover for {comic.title or comic.filename}")
 
         with Image.open(BytesIO(image_bytes)) as source:

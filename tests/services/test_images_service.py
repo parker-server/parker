@@ -357,3 +357,81 @@ def test_image_service_get_page_image_returns_native_avif_bytes_from_archive(tmp
 
     opened = Image.open(BytesIO(image_bytes))
     assert opened.size == (48, 72)
+
+
+BLUE = (30, 40, 200)
+RED = (200, 30, 40)
+GREEN = (30, 180, 60)
+
+
+def _colored_page(color: tuple[int, int, int]) -> bytes:
+    # Mostly one color, with a light band so ColorThief has more than one color to work with
+    image = Image.new("RGB", (48, 72), color)
+    ImageDraw.Draw(image).rectangle((0, 60, 47, 71), fill=(245, 245, 245))
+    return _image_bytes(image, "PNG")
+
+
+def _is_close(actual: tuple[int, ...], expected: tuple[int, int, int], tolerance: int = 40) -> bool:
+    return all(abs(a - e) <= tolerance for a, e in zip(actual, expected))
+
+
+def _hex_to_rgb(value: str) -> tuple[int, int, int]:
+    return int(value[1:3], 16), int(value[3:5], 16), int(value[5:7], 16)
+
+
+def _build_two_page_cbz(tmp_path: Path) -> Path:
+    return _build_cbz(
+        tmp_path,
+        "override.cbz",
+        {
+            "01.png": _colored_page(BLUE),
+            "02.png": _colored_page(RED),
+            "ComicInfo.xml": b"<ComicInfo />",
+        },
+    )
+
+
+def test_image_service_get_cover_bytes_prefers_upload_then_chosen_page_then_automatic(tmp_path):
+    archive_path = _build_two_page_cbz(tmp_path)
+    upload_path = tmp_path / "upload.png"
+    upload_path.write_bytes(_colored_page(GREEN))
+    service = ImageService()
+
+    assert service.get_cover_bytes(str(archive_path)) == _colored_page(BLUE)
+    assert service.get_cover_bytes(str(archive_path), cover_page="02.png") == _colored_page(RED)
+    assert service.get_cover_bytes(
+        str(archive_path),
+        cover_page="02.png",
+        cover_image_path=str(upload_path),
+    ) == _colored_page(GREEN)
+
+
+def test_image_service_get_cover_bytes_falls_back_when_override_is_gone(tmp_path):
+    archive_path = _build_two_page_cbz(tmp_path)
+    service = ImageService()
+
+    # The chosen page was removed when the archive was replaced
+    assert service.get_cover_bytes(str(archive_path), cover_page="99.png") == _colored_page(BLUE)
+    # Non-image entries are not pages
+    assert service.get_cover_bytes(str(archive_path), cover_page="ComicInfo.xml") == _colored_page(BLUE)
+    # The uploaded file was deleted, so the chosen page is next
+    assert service.get_cover_bytes(
+        str(archive_path),
+        cover_page="02.png",
+        cover_image_path=str(tmp_path / "deleted.png"),
+    ) == _colored_page(RED)
+    assert service.get_cover_bytes(str(tmp_path / "missing.cbz"), cover_page="02.png") is None
+
+
+def test_image_service_process_cover_uses_override_for_thumbnail_and_palette(tmp_path):
+    archive_path = _build_two_page_cbz(tmp_path)
+    thumbnail_path = tmp_path / "override.webp"
+
+    result = ImageService().process_cover(str(archive_path), thumbnail_path, cover_page="02.png")
+
+    assert result["success"] is True
+    palette_colors = [_hex_to_rgb(value) for value in result["palette"].values() if value]
+    assert any(_is_close(color, RED) for color in palette_colors)
+    assert not any(_is_close(color, BLUE) for color in palette_colors)
+    with Image.open(thumbnail_path) as thumbnail:
+        assert _is_close(thumbnail.convert("RGB").getpixel((thumbnail.width // 2, 2)), RED)

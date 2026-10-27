@@ -1,20 +1,27 @@
 import warnings
+import zipfile
+from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
 from queue import Empty
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+from PIL import Image, ImageDraw
 
-from app.models.comic import Volume
+from app.config import settings
+from app.models.comic import Comic, Volume
 from app.models.series import Series
 from app.services.thumbnailer import (
     ThumbnailService,
     _apply_batch,
+    _thumbnail_task,
     _thumbnail_worker,
     _thumbnail_writer,
 )
 import app.services.thumbnailer as thumbnailer_module
+import app.services.workers.metadata_writer as metadata_writer_module
 from tests.factories import create_comic, create_library_with_root
 
 
@@ -92,7 +99,7 @@ class _FakePool:
         return False
 
     def imap_unordered(self, fn, tasks):
-        for comic_id, _file_path in tasks:
+        for comic_id, *_rest in tasks:
             yield {
                 "comic_id": comic_id,
                 "thumbnail_path": f"./storage/cover/comic_{comic_id}.webp",
@@ -179,12 +186,12 @@ def test_apply_batch_updates_processed_and_reports_error_and_missing(db, tmp_pat
 )
 def test_thumbnail_worker_success_and_failure_paths(monkeypatch, result_payload, expect_error):
     class FakeImageService:
-        def process_cover(self, file_path, target_path):
+        def process_cover(self, file_path, target_path, **_overrides):
             return result_payload
 
     monkeypatch.setattr("app.services.images.ImageService", FakeImageService)
 
-    payload = _thumbnail_worker((42, "/tmp/test.cbz"))
+    payload = _thumbnail_worker((42, "/tmp/test.cbz", None, None))
 
     assert payload["comic_id"] == 42
     assert payload["error"] is expect_error
@@ -197,13 +204,13 @@ def test_thumbnail_worker_success_and_failure_paths(monkeypatch, result_payload,
 
 def test_thumbnail_worker_captures_image_warnings(monkeypatch):
     class FakeImageService:
-        def process_cover(self, file_path, target_path):
+        def process_cover(self, file_path, target_path, **_overrides):
             warnings.warn("Corrupt EXIF data. Expecting to read 2 bytes but only got 0.")
             return {"success": True, "palette": {"primary": "#abc"}}
 
     monkeypatch.setattr("app.services.images.ImageService", FakeImageService)
 
-    payload = _thumbnail_worker((42, "/tmp/test.cbz"))
+    payload = _thumbnail_worker((42, "/tmp/test.cbz", None, None))
 
     assert payload["error"] is False
     assert payload["warning_details"] == [
@@ -218,12 +225,12 @@ def test_thumbnail_worker_captures_image_warnings(monkeypatch):
 
 def test_thumbnail_worker_exception_path(monkeypatch):
     class FakeImageService:
-        def process_cover(self, file_path, target_path):
+        def process_cover(self, file_path, target_path, **_overrides):
             raise RuntimeError("explode")
 
     monkeypatch.setattr("app.services.images.ImageService", FakeImageService)
 
-    payload = _thumbnail_worker((7, "/tmp/test.cbz"))
+    payload = _thumbnail_worker((7, "/tmp/test.cbz", None, None))
 
     assert payload["comic_id"] == 7
     assert payload["error"] is True
@@ -493,6 +500,8 @@ def test_process_missing_thumbnails_parallel_worker_limit_override(db, tmp_path,
         thumbnail_path=None,
         color_primary=None,
         is_dirty=True,
+        cover_override_page=None,
+        cover_override_image=None,
     )
     monkeypatch.setattr(service, "_get_target_comics", lambda force=False: [dirty])
 
@@ -551,6 +560,8 @@ def test_process_missing_thumbnails_parallel_respects_requested_worker_cap(db, t
         thumbnail_path=None,
         color_primary=None,
         is_dirty=True,
+        cover_override_page=None,
+        cover_override_image=None,
     )
     monkeypatch.setattr(service, "_get_target_comics", lambda force=False: [dirty])
 
@@ -580,6 +591,8 @@ def test_process_missing_thumbnails_parallel_timeout_terminates_stuck_writer(db,
         thumbnail_path=None,
         color_primary=None,
         is_dirty=True,
+        cover_override_page=None,
+        cover_override_image=None,
     )
     monkeypatch.setattr(service, "_get_target_comics", lambda force=False: [dirty])
 
@@ -611,3 +624,129 @@ def test_process_missing_thumbnails_parallel_timeout_terminates_stuck_writer(db,
         _FakeProcess.force_stuck = False
 
 
+
+
+BLUE = (30, 40, 200)
+RED = (200, 30, 40)
+
+
+def _colored_page(color):
+    image = Image.new("RGB", (48, 72), color)
+    ImageDraw.Draw(image).rectangle((0, 60, 47, 71), fill=(245, 245, 245))
+    output = BytesIO()
+    image.save(output, format="PNG")
+    return output.getvalue()
+
+
+def _write_cbz(path: Path, pages: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, data in pages.items():
+            archive.writestr(name, data)
+
+
+def _thumbnail_top_color(path) -> tuple:
+    with Image.open(path) as thumbnail:
+        return thumbnail.convert("RGB").getpixel((thumbnail.width // 2, 2))
+
+
+def _is_close(actual, expected, tolerance: int = 40) -> bool:
+    return all(abs(a - e) <= tolerance for a, e in zip(actual, expected))
+
+
+def test_process_comic_thumbnail_uses_cover_override_and_clears_dirty(db, tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "cover_dir", tmp_path / "cover")
+    lib, _series, volume = _seed_library_and_comics(db, tmp_path, lib_name="override-lib")
+    _write_cbz(tmp_path / "override-lib" / "issue.cbz", {"01.png": _colored_page(BLUE), "02.png": _colored_page(RED)})
+    old_timestamp = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    comic = create_comic(
+        db, volume, lib.active_root, "issue.cbz",
+        filename="issue.cbz",
+        is_dirty=True,
+        cover_override_page="02.png",
+        updated_at=old_timestamp,
+    )
+    db.commit()
+
+    assert ThumbnailService(db).process_comic_thumbnail(comic) is True
+
+    db.refresh(comic)
+    assert Path(comic.thumbnail_path) == tmp_path / "cover" / f"comic_{comic.id}.webp"
+    assert _is_close(_thumbnail_top_color(comic.thumbnail_path), RED)
+    assert comic.color_primary is not None
+    assert comic.is_dirty is False
+    assert comic.updated_at.replace(tzinfo=timezone.utc) > old_timestamp
+
+
+def test_process_comic_thumbnail_marks_comic_dirty_when_generation_fails(db, tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "cover_dir", tmp_path / "cover")
+    lib, _series, volume = _seed_library_and_comics(db, tmp_path, lib_name="missing-lib")
+    comic = create_comic(db, volume, lib.active_root, "missing.cbz", filename="missing.cbz", is_dirty=False)
+    db.commit()
+
+    assert ThumbnailService(db).process_comic_thumbnail(comic) is False
+
+    db.refresh(comic)
+    assert comic.is_dirty is True
+    assert comic.thumbnail_path is None
+
+
+def test_cover_override_survives_rescan_and_regenerated_thumbnail_uses_it(db, tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "cover_dir", tmp_path / "cover")
+    root_path = tmp_path / "rescan-lib"
+    archive_path = root_path / "Series" / "issue.cbz"
+    _write_cbz(archive_path, {"01.png": _colored_page(BLUE), "02.png": _colored_page(RED)})
+
+    lib, series, volume = _seed_library_and_comics(db, tmp_path, lib_name="rescan-lib")
+    root = lib.active_root
+    comic = create_comic(
+        db, volume, root, "Series/issue.cbz",
+        filename="issue.cbz",
+        number="1",
+        cover_override_page="02.png",
+    )
+    db.commit()
+
+    # The file changes on disk (a new page is added in front), then a rescan updates the same row
+    _write_cbz(archive_path, {"00.png": _colored_page(BLUE), "01.png": _colored_page(BLUE), "02.png": _colored_page(RED)})
+    no_op = MagicMock(return_value=[])
+    stats = metadata_writer_module._apply_metadata_batch(
+        db,
+        [{
+            "file_path": str(archive_path),
+            "mtime": 2.0,
+            "size": archive_path.stat().st_size,
+            "metadata": {"series": series.name, "volume": "1", "number": "1", "page_count": 3},
+            "error": False,
+        }],
+        {(root.id, "Series/issue.cbz"): comic},
+        lambda name, *_args: series,
+        lambda _series, _volume_num, _file_path: volume,
+        SimpleNamespace(
+            get_or_create_characters=no_op,
+            get_or_create_teams=no_op,
+            get_or_create_locations=no_op,
+            get_or_create_genres=no_op,
+        ),
+        SimpleNamespace(add_credits_to_comic=MagicMock()),
+        SimpleNamespace(update_comic_reading_lists=MagicMock()),
+        SimpleNamespace(update_comic_collections=MagicMock()),
+        library_root_id=root.id,
+        library_root_path=str(root_path),
+    )
+
+    assert stats["updated"] == 1
+    rescanned = db.query(Comic).filter_by(library_root_id=root.id, relative_path="Series/issue.cbz").one()
+    assert rescanned.id == comic.id
+    assert rescanned.cover_override_page == "02.png"
+    assert rescanned.is_dirty is True
+
+    # The thumbnail task picks up the dirty comic and honours the override
+    dirty_comics = ThumbnailService(db, library_id=lib.id)._get_target_comics()
+    assert [c.id for c in dirty_comics] == [comic.id]
+    payload = _thumbnail_worker(_thumbnail_task(dirty_comics[0]))
+    _apply_batch(db, [payload])
+
+    db.refresh(rescanned)
+    assert rescanned.is_dirty is False
+    assert _is_close(_thumbnail_top_color(rescanned.thumbnail_path), RED)
