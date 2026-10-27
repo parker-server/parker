@@ -84,6 +84,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
   - Dynamic backgrounds from cover colors
   - Configurable login backgrounds with curated static covers, cover context, and solid-color previews
   - Cover Browser gallery mode with lazy-loaded manifests for very large runs
+  - Admin cover picker for individual comics: choose one of the first pages, upload an image, or reset to the automatic pick
   - Cover Murals for arranging selected covers into compact source-size composite images with optional spacing, horizontal/vertical overlap, overlap stacking, and export scaling
 
 - **Format Support**
@@ -247,6 +248,29 @@ Known client behavior:
   CBR support depends on the archive's RAR version.
 - Librera can browse Parker OPDS catalogs, but may not acquire/open issues when
   tapping comic entries.
+
+### Changing a Comic's Cover
+
+Parker picks each comic's cover from its archive's page filenames. When that
+pick is wrong (for example a wraparound cover, or a scanner tag that sorts first),
+an admin can fix that one comic by hand. Open the comic, click **Change Cover**,
+and either click one of the first 12 pages, upload a JPEG, PNG or WebP image (up
+to 10MB), or click **Reset to Automatic**. The thumbnail and cover colors update
+straight away.
+
+The cover comes from the first of these that exists: an uploaded image, then the
+chosen page, then the automatic pick. The page is saved by its filename in the
+archive, so later changes to the cover sorting rules can't move it to another
+page. If the archive is replaced and that file is no longer in it, Parker
+quietly uses the automatic pick and the dialog says so.
+
+A manual cover is kept when a rescan updates the comic, for example after its
+metadata is edited, and regenerated thumbnails still use it. Like reading
+progress, it is lost if the comic's file is moved, renamed or deleted, because
+Parker then treats it as a different comic. Uploaded images are saved in
+`storage/cover_overrides/` (`./data/cover_overrides/` on the Docker host). They
+are not included in database backups. When a comic is removed, the next global
+cleanup deletes its uploaded image.
 
 ### Cover Audit Tool
 

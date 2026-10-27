@@ -1032,3 +1032,26 @@ def test_cover_mural_owner_and_access_guards(auth_client, db, normal_user):
 
     assert blocked.status_code == 200
     assert blocked.json() == {"message": "No accessible comics selected", "added": 0}
+
+
+def test_render_export_covers_uses_manual_cover_override(db, normal_user, tmp_path):
+    from app.services.images import ImageService
+
+    _, comics = _seed_comics(db, normal_user, tmp_path=tmp_path, prefix="override-export", with_files=True)
+    override_path = tmp_path / "override.png"
+    Image.new("RGB", (30, 45), (20, 200, 40)).save(override_path, format="PNG")
+    comics[0].cover_override_image = str(override_path)
+    db.commit()
+
+    item = CoverMuralItem(comic=comics[0], x=0, y=0, width=30, height=45)
+    rendered = cover_murals_api._render_export_covers(
+        [item],
+        image_service=ImageService(),
+        scale=1,
+        source_size=True,
+    )
+
+    assert len(rendered) == 1
+    cover = rendered[0][1]
+    assert cover.size == (30, 45)
+    assert cover.getpixel((15, 20))[:3] == (20, 200, 40)

@@ -41,6 +41,12 @@ class Comic(Base):
     file_modified_at = Column(Float)
     file_size = Column(Integer)
     thumbnail_path = Column(String, nullable=True)  # Path to cached thumbnail
+    # Manual cover override, set by an admin. Cover precedence is: uploaded image,
+    # then the chosen archive page, then the automatic pick from page sorting.
+    # The page is stored by its filename inside the archive (not an index) so
+    # changes to the page sorting rules can't shift it to another page.
+    cover_override_page = Column(String, nullable=True)
+    cover_override_image = Column(String, nullable=True)  # Path to an uploaded cover image
     page_count = Column(Integer, default=0)
 
     # Basic metadata

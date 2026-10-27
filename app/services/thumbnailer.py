@@ -5,10 +5,12 @@ from pathlib import Path
 import multiprocessing
 from multiprocessing import Queue
 from queue import Empty
-from typing import Tuple, Dict, Any, List
+from datetime import datetime, timezone
+from typing import Tuple, Dict, Any, List, Optional
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, joinedload
 
+from app.config import settings
 from app.core.settings_loader import get_cached_setting
 from app.database import SessionLocal, engine
 from app.models.comic import Comic, Volume
@@ -16,6 +18,17 @@ from app.models.series import Series
 from app.services.images import ImageService
 
 logger = logging.getLogger(__name__)
+
+# (comic_id, archive path, cover_override_page, cover_override_image)
+ThumbnailTask = Tuple[int, str, Optional[str], Optional[str]]
+
+
+def get_comic_thumbnail_path(comic_id: int) -> Path:
+    return settings.cover_dir / f"comic_{comic_id}.webp"
+
+
+def _thumbnail_task(comic: Comic) -> ThumbnailTask:
+    return comic.id, comic.absolute_path, comic.cover_override_page, comic.cover_override_image
 
 
 def _format_warning_details(comic_id: int, file_path: str, captured_warnings) -> List[Dict[str, Any]]:
@@ -125,23 +138,28 @@ def _apply_batch_with_retry(db, batch, attempts: int = 5, delay: float = 1.0):
             raise
 
 
-def _thumbnail_worker(task: Tuple[int, str]) -> Dict[str, Any]:
+def _thumbnail_worker(task: ThumbnailTask) -> Dict[str, Any]:
     """
     Pure CPU worker: generates thumbnail + palette.
     Does NOT touch the database.
     """
-    comic_id, file_path = task
+    comic_id, file_path, cover_page, cover_image_path = task
     # Import here to avoid issues after fork
     from app.services.images import ImageService
 
     image_service = ImageService()
-    target_path = Path(f"./storage/cover/comic_{comic_id}.webp")
+    target_path = get_comic_thumbnail_path(comic_id)
     captured_warnings = []
 
     try:
         with warnings.catch_warnings(record=True) as captured_warnings:
             warnings.simplefilter("always")
-            result = image_service.process_cover(str(file_path), target_path)
+            result = image_service.process_cover(
+                str(file_path),
+                target_path,
+                cover_page=cover_page,
+                cover_image_path=cover_image_path,
+            )
 
         warning_details = _format_warning_details(
             comic_id,
@@ -292,6 +310,37 @@ class ThumbnailService:
         )
 
 
+    def process_comic_thumbnail(self, comic: Comic) -> bool:
+        """
+        Regenerate one comic's thumbnail and palette right away, in this process.
+        Used after an admin changes the comic's cover. On failure the comic is
+        marked dirty so the next thumbnail task tries again.
+        """
+        _comic_id, file_path, cover_page, cover_image_path = _thumbnail_task(comic)
+        target_path = get_comic_thumbnail_path(comic.id)
+        result = self.image_service.process_cover(
+            file_path,
+            target_path,
+            cover_page=cover_page,
+            cover_image_path=cover_image_path,
+        )
+
+        if result.get("success"):
+            comic.thumbnail_path = str(target_path)
+            palette = result.get("palette")
+            if palette:
+                comic.color_primary = palette.get("primary")
+                comic.color_secondary = palette.get("secondary")
+                comic.color_palette = palette
+            comic.is_dirty = False
+        else:
+            comic.is_dirty = True
+
+        # Bumps the thumbnail URL version so browsers fetch the new cover
+        comic.updated_at = datetime.now(timezone.utc)
+        self.db.commit()
+        return bool(result.get("success"))
+
     def _get_target_comics(self, force: bool = False) -> List[Comic]:
 
         if not self.library_id:
@@ -342,7 +391,7 @@ class ThumbnailService:
             return stats
 
         # Pre-filter "skipped" to avoid sending unnecessary work
-        tasks: List[Tuple[int, str]] = []
+        tasks: List[ThumbnailTask] = []
         for comic in comics:
             has_thumb = comic.thumbnail_path and Path(str(comic.thumbnail_path)).exists()
             has_colors = comic.color_primary is not None
@@ -351,7 +400,7 @@ class ThumbnailService:
                 stats["skipped"] += 1
                 continue
 
-            tasks.append((comic.id, comic.absolute_path))
+            tasks.append(_thumbnail_task(comic))
 
         if not tasks:
             return stats
