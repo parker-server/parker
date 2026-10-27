@@ -253,29 +253,32 @@ def run_audit(
     return flagged
 
 
-def mark_changed_for_thumbnails(db: Session, changes: Path) -> tuple[int, int]:
+def mark_changed_for_thumbnails(db: Session, changes: Path) -> tuple[int, list[str]]:
     """
     Flag the comics listed in a cover_changes.csv as needing new thumbnails, so the
-    regular thumbnail task regenerates just them. Returns (marked, not found).
+    regular thumbnail task regenerates just them. Returns how many were marked and
+    the listed paths that match no comic in the library.
     """
     with changes.open(newline="", encoding="utf-8-sig") as file:
-        wanted = {os.path.normpath(row["path"]) for row in csv.DictReader(file)}
+        listed = {os.path.normpath(row["path"]): row["path"] for row in csv.DictReader(file)}
+    wanted = set(listed)
 
     rows = (
         db.query(Comic.id, LibraryRoot.path, Comic.relative_path)
         .join(LibraryRoot, Comic.library_root_id == LibraryRoot.id)
         .all()
     )
-    comic_ids = [
-        comic_id
-        for comic_id, root_path, relative_path in rows
-        if os.path.normpath(resolve_absolute_path(root_path, relative_path)) in wanted
-    ]
+    found = {}
+    for comic_id, root_path, relative_path in rows:
+        path = os.path.normpath(resolve_absolute_path(root_path, relative_path))
+        if path in wanted:
+            found[path] = comic_id
+    comic_ids = list(found.values())
     for start in range(0, len(comic_ids), MARK_BATCH_SIZE):
         batch = comic_ids[start:start + MARK_BATCH_SIZE]
         db.query(Comic).filter(Comic.id.in_(batch)).update({Comic.is_dirty: True}, synchronize_session=False)
     db.commit()
-    return len(comic_ids), len(wanted) - len(comic_ids)
+    return len(comic_ids), sorted(listed[path] for path in wanted - set(found))
 
 
 def alternative_pages(pages: list[str]) -> list[tuple[str, str]]:
@@ -570,7 +573,9 @@ def main(argv: list[str] | None = None) -> None:
     if args.mark_thumbnails:
         with SessionLocal() as db:
             marked, not_found = mark_changed_for_thumbnails(db, args.mark_thumbnails)
-        print(f"Marked {marked} comics for new thumbnails ({not_found} paths not found in the library).", file=sys.stderr)
+        print(f"Marked {marked} comics for new thumbnails ({len(not_found)} paths not found in the library).", file=sys.stderr)
+        for path in not_found:
+            print(f"  not found: {path}", file=sys.stderr)
         print("Run the thumbnail task from Admin > Tasks to regenerate them.", file=sys.stderr)
         return
     if args.contact_sheet:

@@ -142,7 +142,9 @@ def _zero_page_parts(stem_key: str) -> tuple[str, bool] | None:
     match = ZERO_PAGE_RE.match(stem.strip())
     if not match:
         return None
-    return f"{directory}{match.group('prefix')}".lower(), bool(match.group("letter"))
+    # Ignore how many zeros there are, so "000" and "00q" still pair up
+    prefix = re.sub(r'0+$', '0', match.group('prefix'))
+    return f"{directory}{prefix}".lower(), bool(match.group("letter"))
 
 
 @lru_cache(maxsize=64)

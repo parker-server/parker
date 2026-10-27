@@ -254,6 +254,7 @@ def test_mark_changed_for_thumbnails_flags_only_listed_comics(db, tmp_path):
 
     db.refresh(changed)
     db.refresh(unchanged)
-    assert (marked, not_found) == (1, 1)
+    assert marked == 1
+    assert not_found == [str(root_path / "Gone" / "Removed #001.cbz")]
     assert changed.is_dirty is True
     assert unchanged.is_dirty is False

@@ -565,6 +565,8 @@ def test_comic_archive_sort_pages_prefers_bare_zero_page_over_lettered_variant_w
         ["Elektra_#1_pg00a_anthony.jpg", "Elektra_#1_pg01_anthony.jpg", "Elektra_#1_pg00_anthony.jpg"],
         ["n-MisterX-10-00a-01.jpg", "n-MisterX-10-01.jpg", "n-MisterX-10-00.jpg"],
         ["rex_mundi_06_pg_00b_summary_(sd).jpg", "rex_mundi_06_pg_01_(sd).jpg", "rex_mundi_06_pg_00_fc_(sd).jpg"],
+        # Different numbers of zeros still pair up
+        ["The Sentry - Hulk (2001) 00q.png", "The Sentry - Hulk (2001) 002.png", "The Sentry - Hulk (2001) 000.png"],
     ]
     with patch("app.services.archive.zipfile.is_zipfile", return_value=True), \
          patch("app.services.archive.zipfile.ZipFile"):
