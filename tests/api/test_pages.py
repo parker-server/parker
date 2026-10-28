@@ -1105,6 +1105,8 @@ def test_reader_page_uses_modular_reader_shell(auth_client):
     assert 'data-settings-toggle' in body
     assert 'data-double-page-setting' in body
     assert 'data-reader-toolbar-menu-toggle' in body
+    assert 'data-reader-toolbar-shortcuts' in body
+    assert 'data-reader-toolbar-fullscreen' in body
     for icon_name in [
         "chevron-left",
         "chevron-right",
