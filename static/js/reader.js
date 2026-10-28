@@ -174,6 +174,7 @@
             showSettings: false,
             showShortcuts: false,
             showToolbarMenu: false,
+            fullscreenSupported: Boolean(document.fullscreenEnabled),
             fitMode: 'contain',
             viewMode: 'single',
             isCompactReaderLayout: false,

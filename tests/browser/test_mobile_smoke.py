@@ -71,6 +71,8 @@ def test_mobile_reader_tap_navigation_advances_page(mobile_page, browser_server)
     assert mobile_page.locator("[data-reader-toolbar-lock]").is_visible()
     assert mobile_page.locator("[data-reader-toolbar-settings]").is_visible()
     assert mobile_page.locator("[data-reader-toolbar-bookmarks]").is_visible()
+    assert mobile_page.locator("[data-reader-toolbar-shortcuts]").is_visible()
+    assert mobile_page.locator("[data-reader-toolbar-fullscreen]").is_visible()
     assert mobile_page.locator("[data-reader-toolbar-magnifier]").is_hidden()
 
     mobile_page.locator("[data-reader-toolbar-lock]").click()
@@ -78,6 +80,60 @@ def test_mobile_reader_tap_navigation_advances_page(mobile_page, browser_server)
         "document.querySelector('.reader-container')._x_dataStack[0].uiLocked === true"
     )
     mobile_page.locator("[data-reader-toolbar-menu]").wait_for(state="hidden")
+
+    toolbar_menu_toggle.click()
+    mobile_page.locator("[data-reader-toolbar-shortcuts]").click()
+    mobile_page.locator("[data-keyboard-shortcuts-modal]").wait_for(state="visible")
+    mobile_page.locator("[data-reader-toolbar-menu]").wait_for(state="hidden")
+
+
+@pytest.mark.browser
+def test_tablet_reader_toolbar_keeps_fullscreen_and_shortcuts(browser, browser_server):
+    context = browser.new_context(
+        viewport={"width": 1024, "height": 768},
+        is_mobile=True,
+        has_touch=True,
+    )
+    page = context.new_page()
+    try:
+        page.goto(
+            f"{browser_server['base_url']}/reader/{browser_server['seed']['active_comic_id']}",
+            wait_until="networkidle",
+        )
+        page.locator(".reader-container").wait_for()
+        page.locator(".nav-zone.center").click()
+        page.get_by_role("button", name="Close").wait_for()
+
+        assert page.locator("[data-fullscreen-toggle]").is_visible()
+        assert page.locator("[data-keyboard-shortcuts-toggle]").is_visible()
+        assert page.locator("[data-settings-toggle]").is_visible()
+        assert page.locator("[data-bookmarks-toggle]").is_visible()
+        assert page.locator("[data-magnifier-toggle]").is_hidden()
+        assert page.locator("[data-reader-toolbar-menu-toggle]").is_hidden()
+
+        page.locator("[data-keyboard-shortcuts-toggle]").click()
+        page.locator("[data-keyboard-shortcuts-modal]").wait_for(state="visible")
+    finally:
+        context.close()
+
+
+@pytest.mark.browser
+def test_reader_hides_fullscreen_when_browser_cannot_go_fullscreen(mobile_page, browser_server):
+    # iPhone Safari has no Fullscreen API for pages.
+    mobile_page.add_init_script(
+        "Object.defineProperty(Document.prototype, 'fullscreenEnabled', { get: () => false });"
+    )
+    mobile_page.goto(
+        f"{browser_server['base_url']}/reader/{browser_server['seed']['active_comic_id']}",
+        wait_until="networkidle",
+    )
+    mobile_page.locator(".reader-container").wait_for()
+    mobile_page.locator(".nav-zone.center").click()
+    mobile_page.locator("[data-reader-toolbar-menu-toggle]").click()
+
+    mobile_page.locator("[data-reader-toolbar-menu]").wait_for(state="visible")
+    assert mobile_page.locator("[data-reader-toolbar-shortcuts]").is_visible()
+    assert mobile_page.locator("[data-reader-toolbar-fullscreen]").is_hidden()
 
 
 @pytest.mark.browser
