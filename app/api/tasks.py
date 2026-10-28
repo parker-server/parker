@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import SessionDep, AdminUser
 from app.models.library import Library
@@ -55,21 +57,22 @@ async def run_refresh_descriptions_task(
     }
 
 @router.post("/refresh-colorscapes", name="colorscape_refresh")
-async def run_colorscape_refresh_task(
+def run_colorscape_refresh_task(
         db: SessionDep,
-        admin: AdminUser
+        admin: AdminUser,
+        force: Annotated[bool, Query(description="Rebuild every comic, not just changed ones")] = False,
 ):
     """
-    Queue background jobs to generate colors for comics that are missing them.
+    Queue a thumbnail job per library. Each job rebuilds thumbnails and cover colors
+    for comics marked as changed (by a scan or the cover audit), or for every comic
+    when force is true. Files are not rescanned.
     """
 
     libraries = db.query(Library).all()
     queued_count = 0
 
     for lib in libraries:
-        # We call the method on scan_manager
-        # force=False ensures we only target items MISSING data (Backfill)
-        res = scan_manager.add_thumbnail_task(lib.id, force=False)
+        res = scan_manager.add_thumbnail_task(lib.id, force=force)
         if res['status'] == 'queued':
             queued_count += 1
 

@@ -1,4 +1,6 @@
-from unittest.mock import patch
+from unittest.mock import call, patch
+
+import pytest
 
 from tests.factories import create_library_with_root
 
@@ -46,3 +48,20 @@ def test_refresh_colorscapes_counts_only_queued_libraries(admin_client, db):
         "message": "Queued background processing for 1 libraries.",
         "stats": {"libraries_queued": 1},
     }
+
+
+@pytest.mark.parametrize(("query", "expected_force"), [("", False), ("?force=true", True)])
+def test_refresh_colorscapes_passes_force_to_every_library(admin_client, db, query, expected_force):
+    library_a = create_library_with_root(db, "Thumbs-A", "/tmp/thumbs-a")
+    library_b = create_library_with_root(db, "Thumbs-B", "/tmp/thumbs-b")
+    db.commit()
+
+    with patch("app.api.tasks.scan_manager.add_thumbnail_task", return_value={"status": "queued"}) as mock_thumbs:
+        response = admin_client.post(f"/api/tasks/refresh-colorscapes{query}")
+
+    assert response.status_code == 200
+    assert response.json()["stats"] == {"libraries_queued": 2}
+    assert sorted(mock_thumbs.call_args_list) == sorted([
+        call(library_a.id, force=expected_force),
+        call(library_b.id, force=expected_force),
+    ])

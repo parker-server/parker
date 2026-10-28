@@ -249,6 +249,23 @@ Known client behavior:
 - Librera can browse Parker OPDS catalogs, but may not acquire/open issues when
   tapping comic entries.
 
+### Regenerating Thumbnails
+
+Thumbnails and the cover colors used by the Colorscape and Hybrid backgrounds
+are rebuilt without rescanning files, at three levels:
+
+- **One series:** the **Regenerate thumbnails** button on the series page.
+- **One library:** the **Thumbnails** button on the library's row in
+  **Admin > Libraries**, next to **Force**. It rebuilds every comic in that
+  library only.
+- **Every library:** the **Regenerate Thumbnails** card in **Admin > Tasks**.
+  **Changed only** rebuilds comics marked as changed by a scan or by the cover
+  audit's `--mark-thumbnails`. **All** rebuilds every comic.
+
+**Force** (a force rescan) re-reads every file's metadata as well, so use the
+buttons above when only covers need updating, for example after a change to the
+cover sorting rules.
+
 ### Changing a Comic's Cover
 
 Parker picks each comic's cover from its archive's page filenames. When that
@@ -346,9 +363,9 @@ docker compose exec parker python -m app.services.cover_audit --contact-sheet st
 
 That sheet is written to `storage/cover_changes_sheet/`.
 
-Parker's thumbnail task only redoes comics marked as needing new thumbnails. To
-regenerate just the comics whose cover changed, not the whole library, mark them
-and then run the thumbnail task from **Admin > Tasks**:
+To regenerate just the comics whose cover changed, not the whole library, mark
+them and then click **Changed only** on the **Regenerate Thumbnails** card in
+**Admin > Tasks**:
 
 ```bash
 docker compose exec parker python -m app.services.cover_audit --mark-thumbnails storage/cover_changes.csv
