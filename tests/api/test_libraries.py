@@ -1333,6 +1333,53 @@ def test_scan_library_returns_404_for_missing_library(admin_client):
     assert response.json() == {"detail": "Library not found"}
 
 
+def test_regenerate_library_thumbnails_queues_forced_thumbnail_job(admin_client, db):
+    library = create_library_with_root(db, "Thumbs", "/tmp/thumbs")
+
+    expected = {"status": "queued", "job_id": 56, "message": "Job queued"}
+    with (
+        patch("app.api.libraries.scan_manager.add_thumbnail_task", return_value=expected) as mock_thumbs,
+        patch("app.api.libraries.scan_manager.add_task") as mock_scan,
+    ):
+        response = admin_client.post(f"/api/libraries/{library.id}/thumbnails")
+
+    assert response.status_code == 200
+    assert response.json() == expected
+    mock_thumbs.assert_called_once_with(library.id, force=True)
+    # Thumbnails only: no file rescan
+    mock_scan.assert_not_called()
+
+
+def test_regenerate_library_thumbnails_reports_job_already_active(admin_client, db):
+    library = create_library_with_root(db, "Thumbs Busy", "/tmp/thumbs-busy")
+
+    expected = {"status": "ignored", "job_id": 7, "message": "Job already active"}
+    with patch("app.api.libraries.scan_manager.add_thumbnail_task", return_value=expected):
+        response = admin_client.post(f"/api/libraries/{library.id}/thumbnails")
+
+    assert response.status_code == 200
+    assert response.json() == expected
+
+
+def test_regenerate_library_thumbnails_returns_404_for_missing_library(admin_client):
+    with patch("app.api.libraries.scan_manager.add_thumbnail_task") as mock_thumbs:
+        response = admin_client.post("/api/libraries/999999/thumbnails")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Library not found"}
+    mock_thumbs.assert_not_called()
+
+
+def test_regenerate_library_thumbnails_requires_admin(auth_client, db):
+    library = create_library_with_root(db, "Thumbs Admin Only", "/tmp/thumbs-admin-only")
+
+    with patch("app.api.libraries.scan_manager.add_thumbnail_task") as mock_thumbs:
+        response = auth_client.post(f"/api/libraries/{library.id}/thumbnails")
+
+    assert response.status_code == 400
+    mock_thumbs.assert_not_called()
+
+
 def test_has_library_access_helper_paths(db, normal_user, admin_user):
     from app.api.libraries import _has_library_access
 

@@ -145,27 +145,42 @@
         </div>
 
         <div class="bg-gray-800 rounded-lg p-6 border border-gray-700 shadow-lg">
-            <div class="flex justify-between items-start">
+            <div class="flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-start">
                 <div>
                     <h3 class="text-xl font-bold text-white flex items-center gap-2">
-                        {{ lucide_icon("palette", "h-5 w-5 text-purple-300") }} Refresh Colorscapes
+                        {{ lucide_icon("image", "h-5 w-5 text-purple-300") }} Regenerate Thumbnails
                     </h3>
                     <p class="text-gray-400 mt-2 text-sm max-w-xl">
-                        Analyzes cover art to generate dominant colors for the "Colorscape" and "Hybrid" background modes.
-                        Only processes comics that are missing color data.
+                        Rebuilds cover thumbnails and the cover colors used by the "Colorscape" and "Hybrid" background modes, without rescanning files.
+                        <strong class="text-gray-300">Changed only</strong> covers comics marked by a scan or the cover audit.
+                        <strong class="text-gray-300">All</strong> rebuilds every comic in every library and can take a long time.
+                        To rebuild one library, use its Thumbnails button in Libraries.
                     </p>
                 </div>
-                <button
-                    x-on:click="runTask('colorscape_refresh')"
-                    class="btn-primary flex items-center gap-2"
-                    :disabled="loading"
-                    :class="loading ? 'opacity-50 cursor-not-allowed' : ''"
-                >
-                    <span x-show="loading && activeTask === 'colorscape_refresh'" x-cloak>
-                        {{ lucide_icon("refresh-cw", "h-4 w-4 animate-spin") }}
-                    </span>
-                    <span x-show="!(loading && activeTask === 'colorscape_refresh')">Run Task</span>
-                </button>
+                <div class="flex shrink-0 gap-2 sm:justify-end">
+                    <button
+                        x-on:click="runTask('colorscape_refresh')"
+                        class="btn-primary flex items-center gap-2"
+                        :disabled="loading"
+                        :class="loading ? 'opacity-50 cursor-not-allowed' : ''"
+                    >
+                        <span x-show="loading && activeTask === 'colorscape_refresh' && !activeForce" x-cloak>
+                            {{ lucide_icon("refresh-cw", "h-4 w-4 animate-spin") }}
+                        </span>
+                        <span x-show="!(loading && activeTask === 'colorscape_refresh' && !activeForce)">Changed only</span>
+                    </button>
+                    <button
+                        x-on:click="regenerateAllThumbnails()"
+                        class="btn-secondary flex items-center gap-2"
+                        :disabled="loading"
+                        :class="loading ? 'opacity-50 cursor-not-allowed' : ''"
+                    >
+                        <span x-show="loading && activeTask === 'colorscape_refresh' && activeForce" x-cloak>
+                            {{ lucide_icon("refresh-cw", "h-4 w-4 animate-spin") }}
+                        </span>
+                        <span x-show="!(loading && activeTask === 'colorscape_refresh' && activeForce)">All</span>
+                    </button>
+                </div>
             </div>
 
             <div x-show="activeTask === 'colorscape_refresh' && lastResult"
@@ -177,6 +192,7 @@
                 </div>
                 <div class="text-gray-300">
                     <p>Queue Size: <span class="text-white font-bold" x-text="lastResult?.stats?.libraries_queued"></span> libraries.</p>
+                    <p class="text-gray-400 text-xs mt-1">Libraries that already have a thumbnail job queued or running are skipped.</p>
                 </div>
             </div>
         </div>
@@ -190,16 +206,30 @@ function taskManager() {
         loading: false,
         lastResult: null,
         activeTask: null, // Track which task was run
+        activeForce: false, // Whether the active task was run in force mode
 
-        async runTask(taskName) {
+        async regenerateAllThumbnails() {
+            const confirmed = await window.parker.dialog.confirm(
+                'Regenerate All Thumbnails',
+                'Rebuild the thumbnail and cover colors for every comic in every library? On a large server this can take hours.',
+                { isDestructive: false, confirmText: 'Regenerate All' }
+            );
+            if (!confirmed) return;
+
+            await this.runTask('colorscape_refresh', { force: true });
+        },
+
+        async runTask(taskName, { force = false } = {}) {
 
             this.loading = true;
             this.lastResult = null;
             this.activeTask = taskName; // Set active task context
+            this.activeForce = force;
 
             try {
                 // 1. Trigger the Job
-                const res = await fetch(window.parker.route(`tasks.${taskName}`), { method: 'POST' });
+                const query = force ? 'force=true' : '';
+                const res = await fetch(window.parker.route(`tasks.${taskName}`, {}, query), { method: 'POST' });
                 if (res.ok) {
 
                     this.startResult = await res.json();

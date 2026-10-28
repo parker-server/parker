@@ -83,6 +83,15 @@
                                     Force
                                 </button>
 
+                                <button
+                                    x-on:click="regenerateThumbnails(lib)"
+                                    class="text-gray-500 hover:text-purple-300 text-xs px-2 disabled:opacity-30 disabled:cursor-not-allowed"
+                                    title="Regenerate Thumbnails (No rescan)"
+                                    :disabled="lib.is_scanning"
+                                >
+                                    Thumbnails
+                                </button>
+
                                 <div class="h-4 w-px bg-gray-700 mx-1"></div>
 
                                 <button x-on:click="openRootsModal(lib)" class="text-purple-300 hover:text-white text-sm font-medium px-2">Roots</button>
@@ -1337,6 +1346,35 @@ function libraryManager() {
                 lib.is_scanning = false;
                 await window.parker.dialog.alert('Error', 'Failed to start scan');
             }
+        },
+
+        async regenerateThumbnails(lib) {
+            const comicCount = (lib.roots || []).reduce((total, root) => total + Number(root.comic_count || 0), 0);
+            const scope = comicCount > 0
+                ? `all ${comicCount.toLocaleString()} comics in "${lib.name}"`
+                : `every comic in "${lib.name}"`;
+
+            const confirmed = await window.parker.dialog.confirm(
+                'Regenerate Thumbnails',
+                `Rebuild the thumbnail and cover colors for ${scope}? Files are not rescanned, but a large library can take a while.`,
+                { isDestructive: false, confirmText: 'Regenerate' }
+            );
+            if (!confirmed) return;
+
+            const res = await fetch(window.parker.route('libraries.regenerate_thumbnails', { library_id: lib.id }), { method: 'POST' });
+            if (!res.ok) {
+                await window.parker.dialog.alert('Error', 'Failed to start thumbnail regeneration');
+                return;
+            }
+
+            const result = await res.json();
+            if (result.status === 'ignored') {
+                window.parker.showToast(`A thumbnail job for "${lib.name}" is already queued or running`, 'info');
+                return;
+            }
+
+            lib.is_scanning = true; // Optimistic update; the poll refreshes it
+            window.parker.showToast('Thumbnail regeneration started', 'info');
         },
 
         formatDate(dateStr) {

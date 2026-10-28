@@ -1104,3 +1104,20 @@ async def scan_library(
     # Returns: {"status": "queued", "job_id": 123, "message": "..."}
     return result
 
+
+@router.post("/{library_id}/thumbnails", tags=["admin"], name="regenerate_thumbnails")
+def regenerate_library_thumbnails(
+        library_id: int,
+        db: SessionDep,
+        admin_user: AdminUser
+):
+    """
+    Rebuild every thumbnail and cover color in a library without rescanning its files.
+    Returns "ignored" if a thumbnail job for this library is already queued or running.
+    """
+    library = db.query(Library).filter(Library.id == library_id).first()
+    if not library:
+        raise HTTPException(status_code=404, detail="Library not found")
+
+    return scan_manager.add_thumbnail_task(library_id, force=True)
+
