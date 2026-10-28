@@ -1,6 +1,7 @@
+import re
 from fastapi import APIRouter, Depends, Query
 from typing import List, Annotated, Optional
-from sqlalchemy import func, not_
+from sqlalchemy import and_, case, func, not_
 from sqlalchemy.orm import Query as SqlQuery
 
 from app.api.deps import SessionDep, CurrentUser
@@ -21,6 +22,29 @@ def _get_allowed_library_ids(user) -> Optional[List[int]]:
     if user.is_superuser:
         return None
     return [lib.id for lib in user.accessible_libraries]
+
+def _words_match_condition(column, query: str):
+    """
+    Every word in the query must appear in the column, in any order.
+    Punctuation is ignored, so "sam wilson captain america" finds "Captain America: Sam Wilson".
+    """
+    words = re.findall(r"[^\W_]+", query)
+    if not words:
+        return column.ilike(f"%{query}%")
+    return and_(*[column.ilike(f"%{word}%") for word in words])
+
+def _closest_match_order(column, query: str) -> list:
+    """
+    Order matches closest first: names starting with the query, then names
+    containing the exact phrase, then the rest. Shorter names break ties.
+    """
+    query = query.strip()
+    closeness = case(
+        (column.ilike(f"{query}%"), 0),
+        (column.ilike(f"%{query}%"), 1),
+        else_=2,
+    )
+    return [closeness, func.length(column), column]
 
 def _apply_security_scopes(query: SqlQuery, model, user: CurrentUser, allowed_ids: List[int]) -> SqlQuery:
     """
@@ -224,17 +248,17 @@ async def quick_search(
     Secured
     """
     limit = 5
-    q_str = f"%{q}%"
     allowed_ids = _get_allowed_library_ids(current_user)
 
     results = {}
 
     # Helper for quick search queries
     def get_scoped_results(model, name_col):
-        base = db.query(model).filter(name_col.ilike(q_str))
+        base = db.query(model).filter(_words_match_condition(name_col, q))
         # OPTIMIZATION: distinct() is crucial here because _apply_security_scopes
         # joins to 'comics'. Without distinct, we get one row per comic appearance.
-        return _apply_security_scopes(base, model, current_user, allowed_ids).distinct().limit(limit).all()
+        scoped = _apply_security_scopes(base, model, current_user, allowed_ids).distinct()
+        return scoped.order_by(*_closest_match_order(name_col, q)).limit(limit).all()
 
     # 1. Series (Scoped to User)
     series_objs = get_scoped_results(Series, Series.name)
@@ -283,11 +307,16 @@ async def quick_search(
     results["locations"] = [{"id": l.id, "name": l.name} for l in locs_objs]
 
     # 6. Pull Lists
-    base_pull = db.query(PullList).filter(PullList.name.ilike(q_str),
+    base_pull = db.query(PullList).filter(_words_match_condition(PullList.name, q),
                                           PullList.user_id == current_user.id)
 
 
-    pull_list_objs = _apply_security_scopes(base_pull, PullList, current_user, allowed_ids).limit(limit).all()
+    pull_list_objs = (
+        _apply_security_scopes(base_pull, PullList, current_user, allowed_ids)
+        .order_by(*_closest_match_order(PullList.name, q))
+        .limit(limit)
+        .all()
+    )
 
     results['pull_lists'] = [{"id": p.id, "name": p.name} for p in pull_list_objs]
 

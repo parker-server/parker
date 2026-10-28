@@ -284,3 +284,56 @@ def test_quick_search_superuser_sees_all_series(admin_client, db, normal_user):
     assert "FindMe Safe Series" in names
     assert "FindMe Banned Series" in names
     assert "FindMe Hidden Series" in names
+
+
+def _add_series_with_comic(db, names):
+    library = create_library_with_root(db, "Quick Search Library", "/tmp/quick-search")
+    for name in names:
+        series = Series(name=name, library_id=library.id)
+        db.add(series)
+        db.flush()
+        volume = Volume(series_id=series.id, volume_number=1)
+        db.add(volume)
+        db.flush()
+        create_comic(db, volume, library.active_root, f"series-{series.id}.cbz",
+                     filename=f"series-{series.id}.cbz", number="1")
+    db.commit()
+
+
+def _quick_series_names(client, q):
+    response = client.get("/api/search/quick", params={"q": q})
+    assert response.status_code == 200
+    return [row["name"] for row in response.json()["series"]]
+
+
+def test_quick_search_ignores_word_order_and_punctuation(admin_client, db):
+    _add_series_with_comic(db, ["100 Bullets: Brother Lono", "Captain America: Sam Wilson", "Captain Marvel"])
+
+    def series_names(q):
+        return _quick_series_names(admin_client, q)
+
+    assert series_names("brother lono 100 bullets") == ["100 Bullets: Brother Lono"]
+    assert series_names("sam wilson captain america") == ["Captain America: Sam Wilson"]
+    assert series_names("captain america: sam wilson") == ["Captain America: Sam Wilson"]
+    assert series_names("bullets lono") == ["100 Bullets: Brother Lono"]
+    assert series_names("captain lono") == []
+
+
+def test_quick_search_lists_closest_matches_first(admin_client, db):
+    # Loose matches are created first so they would fill the 5-result limit without ranking.
+    _add_series_with_comic(db, [
+        "Captain Marvel and the America Squad",
+        "Captain Britain Visits America",
+        "America's Best Captain Stories",
+        "Captain Atom: America Rising",
+        "Captain Carter in America",
+        "Captain Universe Saves America",
+        "All-New Captain America",
+        "Captain America: Sam Wilson",
+        "Captain America",
+    ])
+
+    names = _quick_series_names(admin_client, "captain america")
+
+    assert len(names) == 5
+    assert names[:3] == ["Captain America", "Captain America: Sam Wilson", "All-New Captain America"]
