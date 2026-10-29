@@ -201,7 +201,7 @@ async def series_detail(
 
     # Find the "Smart Cover" to use for colors/background
     base_query = db.query(Comic).join(Volume).filter(Volume.series_id == series.id)
-    cover_comic = get_smart_cover(base_query, series.name)
+    cover_comic = get_smart_cover(base_query, series.name, prefer_volume_order=True)
 
     return templates.TemplateResponse(request=request, name="comics/series_detail.html", context={
         "series_id": series.id,

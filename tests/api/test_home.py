@@ -1,9 +1,8 @@
 from datetime import datetime, timedelta, timezone
-from types import SimpleNamespace
 from unittest.mock import patch
 
 from app.api.deps import get_current_user
-from app.api.home import HOME_RAIL_KEYS, _pick_best_cover, format_home_item
+from app.api.home import HOME_RAIL_KEYS, format_home_item
 from app.main import app
 from app.models.comic import Comic, Volume
 from app.models.interactions import UserComicRating, UserLibraryPin, UserVolumeFollow
@@ -56,7 +55,7 @@ def _home_layout_keys(payload: dict) -> list[str]:
     return [rail["key"] for rail in payload["rails"]]
 
 
-def test_format_home_item_and_pick_best_cover_helpers():
+def test_format_home_item_helper():
     comic = Comic(
         id=11,
         number="7",
@@ -80,32 +79,6 @@ def test_format_home_item_and_pick_best_cover_helpers():
 
     no_progress = format_home_item(comic)
     assert no_progress["progress_percentage"] is None
-
-    assert _pick_best_cover(SimpleNamespace(name="Any"), []) is None
-
-    non_reverse = SimpleNamespace(name="Regular")
-    regular_pool = [
-        SimpleNamespace(number="A", format=None),
-        SimpleNamespace(number="3", format=None),
-        SimpleNamespace(number="2", format="annual"),
-    ]
-    picked_regular = _pick_best_cover(non_reverse, regular_pool)
-    assert picked_regular.number == "3"
-
-    issue_one_pool = [
-        SimpleNamespace(number="2", format=None),
-        SimpleNamespace(number="1", format=None),
-    ]
-    picked_issue_one = _pick_best_cover(non_reverse, issue_one_pool)
-    assert picked_issue_one.number == "1"
-
-    reverse = SimpleNamespace(name="Countdown")
-    reverse_pool = [
-        SimpleNamespace(number="1", format=None),
-        SimpleNamespace(number="4", format=None),
-    ]
-    picked_reverse = _pick_best_cover(reverse, reverse_pool)
-    assert picked_reverse.number == "4"
 
 
 def test_home_layout_returns_default_order(auth_client):
@@ -1386,7 +1359,7 @@ def test_home_popular_secondary_guard_when_cover_picker_drops_items(auth_client,
     _grant_library_access(normal_user, *libraries)
     db.commit()
 
-    with patch("app.api.home._pick_best_cover", side_effect=lambda series_obj, comics_list: None if series_obj.name.endswith("4") else comics_list[0]):
+    with patch("app.api.home.pick_series_cover", side_effect=lambda comics_list, series_name: None if series_name.endswith("4") else comics_list[0]):
         response = auth_client.get("/api/home/popular?limit=10")
 
     assert response.status_code == 200

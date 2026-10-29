@@ -1341,3 +1341,23 @@ def test_user_year_in_review_page_uses_lucide_icons(auth_client):
         "\U0001f3af",
     ]:
         assert glyph not in template
+
+
+def test_series_page_background_uses_the_same_cover_as_the_series_api(admin_client, db, monkeypatch):
+    # Volume 1 starts at #100 (Captain America 1968); volume 2 has a #1
+    library = create_library_with_root(db, "Background Cover Library", "/tmp/background-cover")
+    series = Series(name="Background Cover Captain", library=library)
+    first = Volume(series=series, volume_number=1)
+    second = Volume(series=series, volume_number=2)
+    db.add_all([series, first, second])
+    db.flush()
+    hundred = create_comic(db, first, library.active_root, "bg-v1-100.cbz", filename="bg-v1-100.cbz", number="100", year=1968)
+    create_comic(db, second, library.active_root, "bg-v2-1.cbz", filename="bg-v2-1.cbz", number="1", year=1996)
+    db.commit()
+    monkeypatch.setattr("app.routers.pages.get_cached_setting", lambda key, default=None: False)
+
+    response = admin_client.get(f"/series/{series.id}", follow_redirects=False)
+
+    assert response.status_code == 200
+    assert f'const cid = "{hundred.id}";' in response.text
+    assert admin_client.get(f"/api/series/{series.id}").json()["first_issue_id"] == hundred.id

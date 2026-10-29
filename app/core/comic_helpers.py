@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import datetime, timezone
 from functools import lru_cache
 from sqlalchemy import func, or_, and_, not_, case, cast, Float
@@ -349,10 +350,72 @@ def get_smart_cover(base_query, series_name: str = None, prefer_volume_order: bo
     return base_query.order_by(*sort_order).first()
 
 
+# SQLite's CAST(number AS REAL) reads the leading number and ignores the rest ("12b" -> 12)
+_LEADING_NUMBER = re.compile(r"\s*[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?")
+
+
+def _issue_number_value(number) -> float:
+    match = _LEADING_NUMBER.match(number or "")
+    return float(match.group(0)) if match else 0.0
+
+
+def _is_smart_cover_candidate(comic) -> bool:
+    """Python twin of _smart_cover_strict_filters."""
+    number = comic.number
+    fmt = comic.format
+    return (
+        (not fmt or fmt.lower() not in NON_PLAIN_FORMATS)
+        and number is not None
+        and number != '0'
+        and not number.startswith('-')
+        and not number.endswith('.5')
+    )
+
+
+def pick_series_cover(comics, series_name: str = None):
+    """
+    Pick a series cover from lightweight comic rows, with the same rules as
+    get_smart_cover(prefer_volume_order=True): the earliest volume's first regular issue,
+    so #1 when it has one and #100 when it starts at #100. Annuals, specials, #0, negative
+    and .5 issues are skipped unless nothing else exists. Known reverse-numbering series
+    take the highest issue instead.
+
+    Rows need volume_number, number, format and year; month and day are used when present.
+    """
+    if not comics:
+        return None
+
+    is_reverse_series = bool(series_name and series_name.lower() in REVERSE_NUMBERING_SERIES)
+
+    def unknown_last(value, unknown):
+        return unknown if value is None or value == -1 else value
+
+    def non_numeric_rank(number) -> int:
+        if not number:
+            return 1
+        return 1 if _issue_number_value(number) == 0 and number not in ("0", "0.0", "0.00") else 0
+
+    # Stable sorts, least significant key first, matching _smart_cover_sort_order
+    ordered = sorted(comics, key=lambda c: (
+        unknown_last(c.year, 9999),
+        unknown_last(getattr(c, "month", None), 99),
+        unknown_last(getattr(c, "day", None), 99),
+    ))
+    ordered.sort(key=lambda c: c.number or "", reverse=is_reverse_series)
+    ordered.sort(key=lambda c: _issue_number_value(c.number), reverse=is_reverse_series)
+    ordered.sort(key=lambda c: (
+        c.volume_number if c.volume_number is not None else -1,
+        non_numeric_rank(c.number),
+    ))
+
+    return next((c for c in ordered if _is_smart_cover_candidate(c)), ordered[0])
+
+
 def get_smart_covers_by_series(base_query, series_names: dict[int, str]) -> dict:
     """
     Batched get_smart_cover: picks the best cover for many series without one query per series.
-    Uses the same rules (strict candidates first, then the fallback) as get_smart_cover.
+    Uses the same rules (strict candidates first, then the fallback) as
+    get_smart_cover(prefer_volume_order=True), so the earliest volume wins.
 
     Args:
         base_query: A Comic query already joined to Volume and Series, scoped to whatever
@@ -378,7 +441,7 @@ def get_smart_covers_by_series(base_query, series_names: dict[int, str]) -> dict
             base_query
             .filter(Series.id.in_(series_ids))
             .with_entities(Series.id.label("series_id"), Comic.id, Comic.updated_at)
-            .order_by(is_strict_candidate.asc(), *_smart_cover_sort_order(is_reverse_series))
+            .order_by(is_strict_candidate.asc(), *_smart_cover_sort_order(is_reverse_series, prefer_volume_order=True))
             .all()
         )
         for row in rows:

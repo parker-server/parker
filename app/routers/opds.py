@@ -28,8 +28,8 @@ from app.core.comic_helpers import (
     check_container_restriction,
     user_can_download,
     get_banned_comic_condition,
-    NON_PLAIN_FORMATS,
     get_thumbnail_hash,
+    pick_series_cover,
 )
 
 router = APIRouter(prefix="/opds", tags=["opds"])
@@ -199,20 +199,6 @@ def render_xml(request: Request, context: dict):
         media_type="application/atom+xml;charset=utf-8"
     )
 
-# Helper: Check if format is "Standard" (Not Annual/Special)
-def is_standard_format(fmt: str) -> bool:
-    if not fmt: return True
-    f = fmt.lower()
-    return f not in NON_PLAIN_FORMATS
-
-# Helper: Safe Sort Key for issues
-def issue_sort_key(c):
-    try:
-        return float(c.number)
-    except:
-        return 999999
-
-
 def get_opds_user_library_ids(user: OPDSUser) -> list[int]:
     """Return library IDs visible to this OPDS user."""
     return [library.id for library in user.accessible_libraries]
@@ -256,22 +242,6 @@ def get_authorized_opds_volume(volume_id: int, user: OPDSUser, db: SessionDep) -
     return volume
 
 
-def select_opds_cover_comic(comics_list):
-    """Select a stable representative cover comic from lightweight comic rows."""
-    if not comics_list:
-        return None
-
-    standards = [comic for comic in comics_list if is_standard_format(comic.format)]
-    pool = standards if standards else list(comics_list)
-    issue_ones = [comic for comic in pool if comic.number == '1']
-    if issue_ones:
-        issue_ones.sort(key=lambda comic: comic.volume_number or 0)
-        return issue_ones[0]
-
-    pool.sort(key=issue_sort_key)
-    return pool[0]
-
-
 def get_series_comics_map(db: SessionDep, series_ids: list[int]) -> dict[int, list]:
     """Return lightweight comics grouped by series for OPDS navigation entries."""
     if not series_ids:
@@ -282,6 +252,8 @@ def get_series_comics_map(db: SessionDep, series_ids: list[int]) -> dict[int, li
             Comic.id,
             Comic.number,
             Comic.year,
+            Comic.month,
+            Comic.day,
             Comic.format,
             Comic.updated_at,
             Comic.thumbnail_path,
@@ -319,7 +291,7 @@ def get_opds_series_entries(
             [comic for comic in series_comics if comic.volume_id == cover_volume_id]
             if cover_volume_id else series_comics
         )
-        cover_comic = select_opds_cover_comic(cover_candidates) or select_opds_cover_comic(series_comics)
+        cover_comic = pick_series_cover(cover_candidates, series.name) or pick_series_cover(series_comics, series.name)
         series_year = min((comic.year for comic in series_comics if comic.year), default=None)
 
         entries.append({
@@ -344,6 +316,8 @@ def get_volume_comics_map(db: SessionDep, volume_ids: list[int], user: OPDSUser)
             Comic.id,
             Comic.number,
             Comic.year,
+            Comic.month,
+            Comic.day,
             Comic.format,
             Comic.updated_at,
             Comic.thumbnail_path,
@@ -373,7 +347,7 @@ def get_opds_volume_entries(request: Request, db: SessionDep, volumes: list[Volu
     entries = []
     for volume in volumes:
         volume_comics = volume_map.get(volume.id, [])
-        cover_comic = select_opds_cover_comic(volume_comics)
+        cover_comic = pick_series_cover(volume_comics)
         updated_at = max((comic.updated_at for comic in volume_comics if comic.updated_at), default=None)
         volume_number = volume.volume_number if volume.volume_number is not None else "Unknown"
 

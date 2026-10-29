@@ -9,7 +9,7 @@ from app.core.comic_helpers import (get_format_filters, get_smart_cover, get_rea
                                     get_thumbnail_url, get_thumbnail_hash,
                                     NON_PLAIN_FORMATS, REVERSE_NUMBERING_SERIES,
                                     get_series_age_restriction, get_banned_comic_condition,
-                                    get_resume_target)
+                                    get_resume_target, pick_series_cover)
 from app.api.deps import SessionDep, CurrentUser, AdminUser, SeriesDep
 from app.api.deps import PaginationParams, PaginatedResponse
 from app.api.volume_metadata import (
@@ -121,9 +121,12 @@ def bulk_serialize_series(series_list: List[Series], db, current_user) -> List[d
             Comic.id,
             Comic.number,
             Comic.year,
+            Comic.month,
+            Comic.day,
             Comic.format,
             Comic.updated_at,
-            Volume.series_id
+            Volume.series_id,
+            Volume.volume_number,
         )
         .join(Volume)
         .filter(Volume.series_id.in_(series_ids))
@@ -151,47 +154,10 @@ def bulk_serialize_series(series_list: List[Series], db, current_user) -> List[d
         for row in stats:
             read_status_map[row.series_id] = (row.total > 0) and (row.read_count >= row.total)
 
-    # Helper: Check Format
-    def is_standard_format(fmt: str) -> bool:
-        if not fmt: return True
-        return fmt.lower() not in NON_PLAIN_FORMATS
-
-    # Helper: Safe Sort Key
-    def issue_sort_key(c):
-        try:
-            return float(c.number)
-        except:
-            return 999999
-
     # 3. Stitch it all together
     results = []
     for s in series_list:
-        s_comics = series_map.get(s.id, [])
-        cover = None
-
-        if s_comics:
-
-            # Gimmick Detection
-            is_reverse = s.name.lower() in REVERSE_NUMBERING_SERIES
-
-            # Filter for standards
-            standards = [c for c in s_comics if is_standard_format(c.format)]
-            pool = standards if standards else s_comics
-
-            # Try finding Issue #1 (Only if NOT reverse)
-            # (Because for Countdown, #1 is the END, not the cover)
-            if not is_reverse:
-                issue_ones = [c for c in pool if c.number == '1']
-                if issue_ones:
-                    cover = issue_ones[0]
-
-            # Fallback: Sort and Pick First/Last
-            if not cover:
-                pool.sort(key=issue_sort_key)
-                if is_reverse:
-                    cover = pool[-1]  # Highest Number (e.g. Countdown #52)
-                else:
-                    cover = pool[0]  # Lowest Number (e.g. Spider-Man #1)
+        cover = pick_series_cover(series_map.get(s.id, []), s.name)
 
         results.append({
             "id": s.id, "name": s.name,
