@@ -1,6 +1,6 @@
 import json
 from datetime import timedelta
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, urlparse
 
 import pytest
 from sqlalchemy import func, select
@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from app.models.comic import Comic, Volume
 from app.models.interactions import UserVolumeFollow
 from app.models.series import Series
+from app.models.smart_list import SmartList
 from app.models.tags import Character
 from app.core.templates import templates
 from tests.factories import create_comic
@@ -638,3 +639,130 @@ def test_quick_search_advanced_link_matches_words_in_any_order(page, browser_ser
     rules = page.locator(".space-y-4 > div")
     assert rules.count() == 2
     assert [rules.nth(i).locator("span.bg-blue-600 > span").inner_text() for i in range(2)] == ["series", "smoke"]
+
+
+def _url_params(page):
+    return {key: values[0] for key, values in parse_qs(urlparse(page.url).query).items()}
+
+
+@pytest.mark.browser
+def test_search_page_address_follows_search_and_back_restores_it(page, browser_server):
+    seed = browser_server["seed"]
+    title = seed["active_comic_title"]
+    page.goto(f"{browser_server['base_url']}/search", wait_until="networkidle")
+    page.get_by_role("heading", name="Advanced Search").wait_for()
+
+    first_rule = page.locator(".space-y-4 > div").first
+    first_rule.locator("select").nth(0).select_option("title")
+    first_rule.locator("input[x-model='rule.value'][type='text']").fill(title)
+    page.get_by_role("button", name="Search Comics").click()
+    page.locator("div[x-show='hasSearched'] p.text-sm.text-gray-400").filter(has_text=title).first.wait_for()
+
+    params = _url_params(page)
+    assert json.loads(params["filters"]) == [{"field": "title", "operator": "contains", "value": title}]
+    assert "result_mode" not in params
+
+    page.locator("[data-result-mode='series']").click()
+    card = _series_result_card(page, browser_server)
+    card.wait_for()
+    assert _url_params(page)["result_mode"] == "series"
+
+    card.click()
+    page.wait_for_url(f"**/series/{seed['series_id']}")
+    page.go_back()
+
+    def assert_search_restored():
+        _series_result_card(page, browser_server).wait_for()
+        assert page.locator("[data-result-mode='series']").get_attribute("aria-pressed") == "true"
+        assert page.locator("input[x-model='rule.value'][type='text']").first.input_value() == title
+
+    assert_search_restored()
+    # A fresh load of the address restores it too, not just the browser's page cache
+    page.reload(wait_until="networkidle")
+    assert_search_restored()
+
+
+@pytest.mark.browser
+def test_smart_list_edits_survive_reload_and_still_update_that_list(page, browser_server):
+    seed = browser_server["seed"]
+    session = browser_server["db_factory"]()
+    try:
+        smart_list = SmartList(
+            user_id=seed["user_id"],
+            name="Browser Smart Edit",
+            query_config={
+                "match": "all",
+                "filters": [{"field": "series", "operator": "contains", "value": ["smoke"]}],
+                "sort_by": "created",
+                "sort_order": "desc",
+                "limit": 50,
+                "offset": 0,
+            },
+        )
+        session.add(smart_list)
+        session.commit()
+        smart_list_id = smart_list.id
+    finally:
+        session.close()
+
+    try:
+        page.goto(f"{browser_server['base_url']}/search?smart_list_id={smart_list_id}", wait_until="networkidle")
+        page.locator("div[x-show='hasSearched']").get_by_text(f"{_series_issue_count(browser_server)} found", exact=True).wait_for()
+        assert _url_params(page)["smart_list_id"] == str(smart_list_id)
+
+        # Edit the loaded smart list, then reload as Back would
+        page.locator("[data-result-mode='series']").click()
+        _series_result_card(page, browser_server).wait_for()
+        page.reload(wait_until="networkidle")
+        _series_result_card(page, browser_server).wait_for()
+        assert _url_params(page)["smart_list_id"] == str(smart_list_id)
+
+        page.get_by_role("button", name="Save").click()
+        update_button = page.get_by_role("button", name="Update Smart List")
+        update_button.wait_for()
+        update_button.click()
+        page.get_by_text("Smart List updated!").wait_for()
+
+        session = browser_server["db_factory"]()
+        try:
+            lists = session.scalars(select(SmartList).where(SmartList.name == "Browser Smart Edit")).all()
+            assert len(lists) == 1
+            assert lists[0].query_config["result_mode"] == "series"
+        finally:
+            session.close()
+    finally:
+        session = browser_server["db_factory"]()
+        try:
+            for row in session.scalars(select(SmartList).where(SmartList.name == "Browser Smart Edit")).all():
+                session.delete(row)
+            session.commit()
+        finally:
+            session.close()
+
+
+@pytest.mark.browser
+def test_search_too_long_for_the_address_is_kept_behind_a_state_key(page, browser_server):
+    page.goto(f"{browser_server['base_url']}/search", wait_until="networkidle")
+    long_url = page.evaluate(
+        """
+        () => {
+            const filters = [{ field: 'series', operator: 'contains', value: ['smoke'] }];
+            for (let i = 0; i < 40; i += 1) {
+                filters.push({ field: 'series', operator: 'does_not_contain', value: [`Long excluded series name number ${i} padding`] });
+            }
+            return window.parker.searchHandoff.buildUrl({ match: 'all', filters });
+        }
+        """
+    )
+    page.goto(f"{browser_server['base_url']}{long_url}", wait_until="networkidle")
+    page.locator("div[x-show='hasSearched']").get_by_text(f"{_series_issue_count(browser_server)} found", exact=True).wait_for()
+
+    page.locator("[data-result-mode='series']").click()
+    _series_result_card(page, browser_server).wait_for()
+    params = _url_params(page)
+    assert "state_key" in params and "filters" not in params
+
+    page.reload(wait_until="networkidle")
+    _series_result_card(page, browser_server).wait_for()
+    assert page.locator("[data-result-mode='series']").get_attribute("aria-pressed") == "true"
+    assert page.locator(".space-y-4 > div").count() == 41

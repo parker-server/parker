@@ -41,7 +41,18 @@ document.addEventListener('alpine:init', () => {
             if (!Number.isInteger(id)) return;
 
             const list = this.smartLists.find(item => item.id === id);
-            if (list) this.applySearch(list);
+            if (!list) return;
+
+            // An address written after a search already holds the (possibly edited) search,
+            // which the builder has run; just remember which smart list is being edited.
+            const params = new URLSearchParams(window.location.search);
+            if (params.has('sort_by') || params.has('state_key')) {
+                this.loadedListId = list.id;
+                this.newSearchName = list.name;
+                this.builder.syncedSmartListId = list.id;
+                return;
+            }
+            this.applySearch(list);
         },
 
         openSaveModal() {
@@ -88,6 +99,7 @@ document.addEventListener('alpine:init', () => {
         applySearch(item) {
             const query = item.query;
             this.loadedListId = item.id;
+            this.builder.syncedSmartListId = item.isSmart ? item.id : null;
             this.builder.match = query.match || 'all';
             this.builder.sortBy = query.sort_by || 'created';
             this.builder.sortOrder = query.sort_order || 'desc';

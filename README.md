@@ -100,6 +100,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
 - **Search**
   - Advanced rule‑based search builder
   - Show Advanced Search results as Issues or as Series (one card per series, with how many of its issues matched); saved searches remember the choice
+  - The Advanced Search address follows the current search, so Back from a result restores it and searches can be bookmarked or shared
   - Saved searches → Smart Lists
   - Secure autocomplete
   - Navbar quick search matches every typed word in any order, ignoring punctuation (e.g. "brother lono 100 bullets" finds "100 Bullets: Brother Lono"), with the closest matches listed first, and a "See all matching series" link that opens Advanced Search in Series mode

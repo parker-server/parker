@@ -1009,6 +1009,8 @@ document.addEventListener('error', function(e) {
             if (payload.sortOrder) query.set('sort_order', payload.sortOrder);
             if (payload.limit) query.set('limit', String(payload.limit));
             if (payload.libraryId) query.set('library_id', String(payload.libraryId));
+            if (payload.resultMode === 'series') query.set('result_mode', 'series');
+            if (payload.smartListId) query.set('smart_list_id', String(payload.smartListId));
             if (payload.filters && payload.filters.length > 0) {
                 query.set('filters', JSON.stringify(payload.filters));
             }
@@ -1033,7 +1035,10 @@ document.addEventListener('error', function(e) {
                 return window.parker.route('pages.search', {}, rawQuery);
             }
 
-            return window.parker.route('pages.search', {}, `state_key=${encodeURIComponent(key)}`);
+            const keyQuery = new URLSearchParams({ state_key: key });
+            // The search page reads this from the address, not the stored payload
+            if (payload.smartListId) keyQuery.set('smart_list_id', String(payload.smartListId));
+            return window.parker.route('pages.search', {}, keyQuery.toString());
         },
 
         load(key) {
