@@ -42,6 +42,9 @@
                         </div>
                     </a>
                 </template>
+                <a :href="allSeriesHref" class="block px-4 py-2 text-sm font-semibold text-blue-400 hover:bg-gray-700 hover:text-blue-300 transition-colors" data-quick-search-all-series>
+                    See all matching series &rarr;
+                </a>
             </div>
         </template>
 
@@ -130,7 +133,7 @@
         </template>
 
 
-        <a :href="window.parker.route('pages.search', {}, `field=series&value=${encodeURIComponent(query)}&operator=contains`)" class="block px-4 py-3 bg-gray-750 text-center text-blue-400 hover:text-white hover:bg-gray-700 text-sm font-medium border-t border-gray-700">
+        <a :href="advancedSearchHref" data-quick-search-advanced class="block px-4 py-3 bg-gray-750 text-center text-blue-400 hover:text-white hover:bg-gray-700 text-sm font-medium border-t border-gray-700">
             Advanced Search for "<span x-text="query"></span>"
         </a>
     </div>

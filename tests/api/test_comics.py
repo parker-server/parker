@@ -1378,3 +1378,105 @@ def test_cover_options_reports_missing_page_and_missing_file(admin_client, db, t
     Path(comic.absolute_path).unlink()
     assert admin_client.get(f"/api/comics/{comic.id}/cover").status_code == 404
     assert admin_client.get("/api/comics/999999/cover").status_code == 404
+
+
+def _search_series(client, filters, **overrides):
+    payload = {"match": "all", "filters": filters, "sort_by": "series", "sort_order": "asc", "limit": 50, "offset": 0}
+    payload.update(overrides)
+    response = client.post("/api/comics/search/series", json=payload)
+    assert response.status_code == 200
+    return response.json()
+
+
+def _add_issues(db, library, volume, count, prefix, **comic_kwargs):
+    return [
+        create_comic(db, volume, library.active_root, f"{prefix}-{n}.cbz", number=str(n),
+                     filename=f"{prefix}-{n}.cbz", **comic_kwargs)
+        for n in range(1, count + 1)
+    ]
+
+
+def test_search_series_groups_matching_issues_by_series(auth_client, db, normal_user):
+    library, batman, batman_vol = _create_graph(db, lib_name="series-mode", series_name="Absolute Batman")
+    wonder = Series(name="Absolute Wonder Woman", library=library)
+    plain = Series(name="Batman", library=library)
+    wonder_vol = Volume(series=wonder, volume_number=1)
+    plain_vol = Volume(series=plain, volume_number=1)
+    db.add_all([wonder, plain, wonder_vol, plain_vol])
+    db.flush()
+    _add_issues(db, library, batman_vol, 3, "abs-batman", year=2024)
+    _add_issues(db, library, wonder_vol, 2, "abs-wonder", year=2024)
+    _add_issues(db, library, plain_vol, 1, "batman", year=1940)
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    payload = _search_series(auth_client, [{"field": "series", "operator": "contains", "value": ["absolute"]}])
+
+    assert payload["total"] == 2
+    assert [(row["name"], row["match_count"]) for row in payload["results"]] == [
+        ("Absolute Batman", 3),
+        ("Absolute Wonder Woman", 2),
+    ]
+    first = payload["results"][0]
+    assert first["id"] == batman.id
+    assert first["start_year"] == 2024
+    assert first["volume_count"] == 1
+    assert first["thumbnail_path"]
+
+
+def test_search_series_counts_only_matching_issues_and_pages_by_series(auth_client, db, normal_user):
+    library, _, first_vol = _create_graph(db, lib_name="series-mode-paging", series_name="Paging One")
+    second = Series(name="Paging Two", library=library)
+    second_vol = Volume(series=second, volume_number=1)
+    db.add_all([second, second_vol])
+    db.flush()
+    _add_issues(db, library, first_vol, 2, "paging-one-old", year=1990)
+    _add_issues(db, library, first_vol, 1, "paging-one-new", year=2020)
+    _add_issues(db, library, second_vol, 4, "paging-two", year=2021)
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    filters = [{"field": "year", "operator": "at_least", "value": 2000}]
+    all_rows = _search_series(auth_client, filters)
+    assert [(row["name"], row["match_count"]) for row in all_rows["results"]] == [("Paging One", 1), ("Paging Two", 4)]
+
+    second_page = _search_series(auth_client, filters, limit=1, offset=1)
+    assert second_page["total"] == 2
+    assert [row["name"] for row in second_page["results"]] == ["Paging Two"]
+
+
+def test_search_series_hides_series_from_inaccessible_libraries(auth_client, db, normal_user):
+    visible, _, visible_vol = _create_graph(db, lib_name="series-mode-visible", series_name="Absolute Visible")
+    hidden, _, hidden_vol = _create_graph(db, lib_name="series-mode-hidden", series_name="Absolute Hidden")
+    _add_issues(db, visible, visible_vol, 1, "abs-visible")
+    _add_issues(db, hidden, hidden_vol, 1, "abs-hidden")
+    normal_user.accessible_libraries.append(visible)
+    db.commit()
+
+    payload = _search_series(auth_client, [{"field": "series", "operator": "contains", "value": ["absolute"]}])
+
+    assert payload["total"] == 1
+    assert [row["name"] for row in payload["results"]] == ["Absolute Visible"]
+
+
+def test_search_series_sorts_by_series_level_values(auth_client, db, normal_user):
+    library, _, old_vol = _create_graph(db, lib_name="series-mode-sort", series_name="Zeta Old")
+    newer = Series(name="Alpha New", library=library)
+    newer_vol = Volume(series=newer, volume_number=1)
+    db.add_all([newer, newer_vol])
+    db.flush()
+    _add_issues(db, library, old_vol, 2, "zeta-old", year=1985, community_rating=4.5)
+    _add_issues(db, library, newer_vol, 1, "alpha-new", year=2022, community_rating=3.0)
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+
+    def names(sort_by, sort_order):
+        payload = _search_series(auth_client, [], sort_by=sort_by, sort_order=sort_order)
+        return [row["name"] for row in payload["results"]]
+
+    assert names("series", "asc") == ["Alpha New", "Zeta Old"]
+    assert names("year", "asc") == ["Zeta Old", "Alpha New"]
+    assert names("rating", "desc") == ["Zeta Old", "Alpha New"]
+    assert names("created", "desc") == ["Alpha New", "Zeta Old"]
+    # Issue-only sorts fall back to series name
+    assert names("page_count", "asc") == ["Alpha New", "Zeta Old"]

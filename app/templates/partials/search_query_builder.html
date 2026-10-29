@@ -152,7 +152,20 @@
     <div class="border-t border-gray-700 my-6"></div>
 
     <div class="flex flex-col md:flex-row justify-between items-center gap-4">
-        <div class="flex items-center space-x-6">
+        <div class="flex flex-wrap items-center gap-x-6 gap-y-3">
+            {% if search_result_modes %}
+            <div class="flex items-center space-x-2">
+                <span class="text-gray-400 text-sm">Show</span>
+                <div class="inline-flex rounded border border-gray-600 overflow-hidden text-sm" role="group" aria-label="Show results as">
+                    <button type="button" x-on:click="setResultMode('issues')" :aria-pressed="(resultMode === 'issues').toString()"
+                            :class="resultMode === 'issues' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:text-white'"
+                            class="px-3 py-1 transition-colors" data-result-mode="issues">Issues</button>
+                    <button type="button" x-on:click="setResultMode('series')" :aria-pressed="(resultMode === 'series').toString()"
+                            :class="resultMode === 'series' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:text-white'"
+                            class="px-3 py-1 border-l border-gray-600 transition-colors" data-result-mode="series">Series</button>
+                </div>
+            </div>
+            {% endif %}
             <div class="flex items-center space-x-2">
                 <span class="text-gray-400 text-sm">Sort By</span>
                 <select x-model="sortBy" x-on:change="handleSortByChange()" class="bg-gray-700 text-white rounded px-2 py-1 text-sm border border-gray-600 outline-none">
@@ -160,8 +173,8 @@
                     <option value="updated">Date Updated</option>
                     <option value="year">Release Year</option>
                     <option value="series">Series Name</option>
-                    <option value="title">Issue Title</option>
-                    <option value="page_count">Page Count</option>
+                    <option value="title" x-show="sortOptionAvailable('title')" :disabled="!sortOptionAvailable('title')">Issue Title</option>
+                    <option value="page_count" x-show="sortOptionAvailable('page_count')" :disabled="!sortOptionAvailable('page_count')">Page Count</option>
                     <option value="rating">Source Rating</option>
                     <option value="parker_rating">Parker Rating</option>
                 </select>
@@ -194,17 +207,27 @@
 <div class="mt-8" x-show="hasSearched" style="display: none;">
     <h2 class="text-xl font-bold mb-4 flex items-center text-white">
         Results
-        <span class="ml-3 text-sm font-normal text-gray-300 bg-gray-800 px-3 py-1 rounded-full border border-gray-700" x-text="`${totalResults} found`"></span>
+        <span class="ml-3 text-sm font-normal text-gray-300 bg-gray-800 px-3 py-1 rounded-full border border-gray-700" x-text="resultsCountLabel"></span>
     </h2>
 
-    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-         <template x-for="comic in results" :key="comic.id">
-            {% include "partials/comic_card.html" %}
-         </template>
-    </div>
+    <template x-if="resultsMode === 'issues'">
+        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+             <template x-for="comic in results" :key="comic.id">
+                {% include "partials/comic_card.html" %}
+             </template>
+        </div>
+    </template>
+
+    <template x-if="resultsMode === 'series'">
+        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4" data-series-results>
+             <template x-for="series in results" :key="series.id">
+                {% include "partials/series_card.html" %}
+             </template>
+        </div>
+    </template>
 
     <div x-show="!loading && results.length === 0" class="text-center py-20 bg-gray-800/50 rounded-xl border border-dashed border-gray-700">
-        <p class="text-gray-400 text-lg">No comics found matching your criteria.</p>
+        <p class="text-gray-400 text-lg" x-text="resultsMode === 'series' ? 'No series found matching your criteria.' : 'No comics found matching your criteria.'">No comics found matching your criteria.</p>
         <button x-on:click="rules=[{id:1, field:'series', operator:'contains', value:[]}]" class="mt-4 text-blue-400 hover:underline">Reset Filters</button>
     </div>
 </div>

@@ -44,6 +44,10 @@ class SearchRequest(BaseModel):
 
     context_library_id: Optional[int] = None
 
+    # How Advanced Search shows matches: one card per issue, or one per series.
+    # Saved with the search; the issue search endpoint ignores it.
+    result_mode: Literal['issues', 'series'] = 'issues'
+
 
 # 2. The Response Models (Added Back)
 class ComicSearchItem(BaseModel):
@@ -72,3 +76,22 @@ class SearchResponse(BaseModel):
     limit: int
     offset: int
     results: List[ComicSearchItem]
+
+
+class SeriesSearchItem(BaseModel):
+    """A series with at least one issue matching the search"""
+    id: int
+    name: str
+    start_year: Optional[int] = None
+    thumbnail_path: Optional[str] = None
+    publisher: Optional[str] = None
+    volume_count: int = 0
+    match_count: int
+
+
+class SeriesSearchResponse(BaseModel):
+    """Search results grouped by series"""
+    total: int
+    limit: int
+    offset: int
+    results: List[SeriesSearchItem]

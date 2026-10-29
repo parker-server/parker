@@ -78,6 +78,9 @@ document.addEventListener('alpine:init', () => {
         limit: 50,
         sortBy: 'created',
         sortOrder: 'desc',
+        resultMode: 'issues',
+        // Mode of the results on screen, so cards never render the other mode's data
+        resultsMode: 'issues',
         results: [],
         totalResults: 0,
         loading: false,
@@ -86,9 +89,30 @@ document.addEventListener('alpine:init', () => {
         nextId: 2,
         contextLibraryId: null,
         contextLibraryName: null,
+        // Smart list being edited, kept in the address so saving after Back still updates it
+        syncedSmartListId: null,
 
         init() {
             this.checkUrlParams();
+        },
+
+        // On the Advanced Search page, keep the address bar matching the last search,
+        // so Back from a result reruns it and the address can be bookmarked or shared.
+        // Searches too long for an address are stored in the session behind a short state_key.
+        syncUrl(payload) {
+            if (!('syncUrl' in this.$root.dataset) || !window.parker.searchHandoff) return;
+
+            const url = window.parker.searchHandoff.buildUrl({
+                match: payload.match,
+                sortBy: payload.sort_by,
+                sortOrder: payload.sort_order,
+                limit: payload.limit,
+                libraryId: payload.context_library_id,
+                filters: payload.filters,
+                resultMode: payload.result_mode,
+                smartListId: this.syncedSmartListId,
+            });
+            window.history.replaceState(window.history.state, '', url);
         },
 
         applyHydratedFilters(filters) {
@@ -116,6 +140,14 @@ document.addEventListener('alpine:init', () => {
                 this.sortOrder = params.get('sort_order');
             }
 
+            if (params.get('result_mode') === 'series') {
+                this.setResultMode('series', false);
+            }
+
+            // Keep it before the first search rewrites the address
+            const smartListId = parseInt(params.get('smart_list_id'), 10);
+            if (!Number.isNaN(smartListId)) this.syncedSmartListId = smartListId;
+
             if (params.has('state_key') && window.parker.searchHandoff) {
                 const hydrated = window.parker.searchHandoff.load(params.get('state_key'));
                 if (hydrated) {
@@ -125,6 +157,7 @@ document.addEventListener('alpine:init', () => {
                         shouldSearch = true;
                     }
                     if (hydrated.sortOrder) this.sortOrder = hydrated.sortOrder;
+                    if (hydrated.resultMode) this.setResultMode(hydrated.resultMode, false);
                     if (hydrated.limit) {
                         const hydratedLimit = parseInt(hydrated.limit, 10);
                         if (!Number.isNaN(hydratedLimit) && hydratedLimit > 0) {
@@ -329,6 +362,24 @@ document.addEventListener('alpine:init', () => {
             this.sortOrder = this.defaultSortOrder(this.sortBy);
         },
 
+        // Issue Title and Page Count have no series-level meaning
+        sortOptionAvailable(value) {
+            return this.resultMode !== 'series' || !['title', 'page_count'].includes(value);
+        },
+
+        setResultMode(mode, rerun = true) {
+            this.resultMode = mode === 'series' ? 'series' : 'issues';
+            if (!this.sortOptionAvailable(this.sortBy)) {
+                this.sortBy = 'series';
+                this.handleSortByChange();
+            }
+            if (rerun && this.hasSearched) this.performSearch();
+        },
+
+        get resultsCountLabel() {
+            return this.resultsMode === 'series' ? `${this.totalResults} series found` : `${this.totalResults} found`;
+        },
+
         sortOrderLabel(order) {
             if (['series', 'title'].includes(this.sortBy)) return order === 'asc' ? 'A to Z' : 'Z to A';
             if (['created', 'updated', 'year'].includes(this.sortBy)) return order === 'desc' ? 'Newest First' : 'Oldest First';
@@ -342,14 +393,20 @@ document.addEventListener('alpine:init', () => {
             this.loading = true;
             this.hasSearched = true;
             this.results = [];
+            const mode = this.resultMode;
+            this.resultsMode = mode;
+            const payload = this.buildSearchPayload();
+            this.syncUrl(payload);
             try {
-                const res = await fetch(window.parker.route('comics.search'), {
+                const res = await fetch(window.parker.route(mode === 'series' ? 'comics.search_series' : 'comics.search'), {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify(this.buildSearchPayload()),
+                    body: JSON.stringify(payload),
                 });
                 if (!res.ok) throw new Error('Search failed');
                 const data = await res.json();
+                // Ignore a response for a mode the user has since switched away from
+                if (mode !== this.resultMode) return;
                 this.results = data.results;
                 this.totalResults = data.total;
             } catch (error) {
@@ -376,6 +433,7 @@ document.addEventListener('alpine:init', () => {
                 sort_order: this.sortOrder,
                 limit: parseInt(this.limit, 10),
                 context_library_id: this.contextLibraryId,
+                result_mode: this.resultMode,
             };
         },
 

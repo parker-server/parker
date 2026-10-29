@@ -186,6 +186,7 @@ def test_home_injects_active_promoted_rail_and_runs_it_for_the_viewer(auth_clien
             "limit": 50,
             "offset": 0,
             "context_library_id": None,
+            "result_mode": "issues",
         },
     }
     assert rails.index(featured) == next(

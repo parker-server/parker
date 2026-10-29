@@ -72,7 +72,7 @@
         </div>
     </div>
 
-    <div x-data="searchBuilder()" x-ref="queryBuilder" data-search-builder>
+    <div x-data="searchBuilder()" x-ref="queryBuilder" data-search-builder data-sync-url>
         <div x-show="contextLibraryId" class="mb-6 flex items-center gap-2" x-cloak>
             <div class="bg-blue-900/50 text-blue-200 px-3 py-1 rounded-full border border-blue-800 flex items-center text-sm">
                 {{ lucide_icon("folder-open", "mr-2 h-4 w-4 flex-shrink-0") }}
@@ -81,7 +81,9 @@
             </div>
         </div>
 
+        {% with search_result_modes = true %}
         {% include "partials/search_query_builder.html" %}
+        {% endwith %}
     </div>
 
     <div x-show="saveModalOpen"

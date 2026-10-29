@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import or_, and_, func, not_, text, select, cast, Float
+from sqlalchemy import or_, and_, case, func, not_, text, select, cast, Float
 from typing import List, Dict, Any, Union, Optional
 from app.models import (Comic, Volume, Series,
                         Character, Team, Location, Genre,
@@ -163,6 +163,52 @@ class SearchService:
                 break
 
         return matching_series
+
+    def search_series_page(self, request: SearchRequest) -> Dict[str, Any]:
+        """Return one page of series with matching issues, for Advanced Search's Series mode.
+
+        Uses the same filters, library scoping and age restrictions as the issue search,
+        then groups the matching issues by series in SQL so total and paging are by series.
+        Rows are (series_id, match_count) in result order.
+        """
+        query, _, _ = self._build_filtered_query(request)
+        grouped = query.with_entities(
+            Series.id.label("series_id"),
+            func.count(func.distinct(Comic.id)).label("match_count"),
+        ).group_by(Series.id)
+
+        total = self.db.query(func.count()).select_from(grouped.subquery()).scalar()
+
+        sort_column = self._series_sort_column(request.sort_by)
+        primary_order = sort_column.desc() if request.sort_order == 'desc' else sort_column.asc()
+        rows = (
+            grouped.order_by(primary_order, Series.name.asc(), Series.id.asc())
+            .offset(request.offset)
+            .limit(request.limit)
+            .all()
+        )
+
+        return {
+            "total": total,
+            "limit": request.limit,
+            "offset": request.offset,
+            "rows": [(row.series_id, row.match_count) for row in rows],
+        }
+
+    def _series_sort_column(self, sort_by: str):
+        """Series-level equivalent of an issue sort, using the series' matching issues."""
+        if sort_by == 'created':
+            return func.max(Comic.created_at)
+        if sort_by == 'updated':
+            return func.max(Comic.updated_at)
+        if sort_by == 'year':
+            return func.min(case((Comic.year > 0, Comic.year)))
+        if sort_by == 'rating':
+            return func.avg(Comic.community_rating)
+        if sort_by == 'parker_rating' and self._parker_rating_column is not None:
+            return func.avg(self._parker_rating_column)
+        # Issue Title and Page Count have no series equivalent
+        return Series.name
 
     def _build_condition(self, filter: SearchFilter):
         """Build a SQLAlchemy condition from a filter"""
