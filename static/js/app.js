@@ -436,6 +436,28 @@ document.addEventListener('alpine:init', () => {
             return window.parker.route('pages.person_detail', { person_id: item.id });
         },
 
+        // One "series contains" rule per typed word, so Advanced Search matches
+        // words in any order and ignores punctuation, like quick search does.
+        get seriesWordFilters() {
+            const words = this.query.match(/[\p{L}\p{N}]+/gu) || [];
+            return JSON.stringify(words.map(word => ({ field: 'series', operator: 'contains', value: [word] })));
+        },
+
+        get advancedSearchHref() {
+            const params = new URLSearchParams({ filters: this.seriesWordFilters });
+            return window.parker.route('pages.search', {}, params.toString());
+        },
+
+        get allSeriesHref() {
+            const params = new URLSearchParams({
+                result_mode: 'series',
+                sort_by: 'series',
+                sort_order: 'asc',
+                filters: this.seriesWordFilters,
+            });
+            return window.parker.route('pages.search', {}, params.toString());
+        },
+
         async fetchResults() {
             if (this.query.length < 2) {
                 this.isOpen = false;

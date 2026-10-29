@@ -81,7 +81,9 @@
             </div>
         </div>
 
+        {% with search_result_modes = true %}
         {% include "partials/search_query_builder.html" %}
+        {% endwith %}
     </div>
 
     <div x-show="saveModalOpen"

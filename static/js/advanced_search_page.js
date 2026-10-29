@@ -92,6 +92,7 @@ document.addEventListener('alpine:init', () => {
             this.builder.sortBy = query.sort_by || 'created';
             this.builder.sortOrder = query.sort_order || 'desc';
             this.builder.limit = query.limit || 50;
+            this.builder.setResultMode(query.result_mode || 'issues', false);
             if (!this.builder.applyHydratedFilters(query.filters || [])) {
                 this.builder.rules = [
                     {id: Date.now(), field: 'series', operator: 'contains', value: []},

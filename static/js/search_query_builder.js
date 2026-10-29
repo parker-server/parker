@@ -78,6 +78,9 @@ document.addEventListener('alpine:init', () => {
         limit: 50,
         sortBy: 'created',
         sortOrder: 'desc',
+        resultMode: 'issues',
+        // Mode of the results on screen, so cards never render the other mode's data
+        resultsMode: 'issues',
         results: [],
         totalResults: 0,
         loading: false,
@@ -116,6 +119,10 @@ document.addEventListener('alpine:init', () => {
                 this.sortOrder = params.get('sort_order');
             }
 
+            if (params.get('result_mode') === 'series') {
+                this.setResultMode('series', false);
+            }
+
             if (params.has('state_key') && window.parker.searchHandoff) {
                 const hydrated = window.parker.searchHandoff.load(params.get('state_key'));
                 if (hydrated) {
@@ -125,6 +132,7 @@ document.addEventListener('alpine:init', () => {
                         shouldSearch = true;
                     }
                     if (hydrated.sortOrder) this.sortOrder = hydrated.sortOrder;
+                    if (hydrated.resultMode) this.setResultMode(hydrated.resultMode, false);
                     if (hydrated.limit) {
                         const hydratedLimit = parseInt(hydrated.limit, 10);
                         if (!Number.isNaN(hydratedLimit) && hydratedLimit > 0) {
@@ -329,6 +337,24 @@ document.addEventListener('alpine:init', () => {
             this.sortOrder = this.defaultSortOrder(this.sortBy);
         },
 
+        // Issue Title and Page Count have no series-level meaning
+        sortOptionAvailable(value) {
+            return this.resultMode !== 'series' || !['title', 'page_count'].includes(value);
+        },
+
+        setResultMode(mode, rerun = true) {
+            this.resultMode = mode === 'series' ? 'series' : 'issues';
+            if (!this.sortOptionAvailable(this.sortBy)) {
+                this.sortBy = 'series';
+                this.handleSortByChange();
+            }
+            if (rerun && this.hasSearched) this.performSearch();
+        },
+
+        get resultsCountLabel() {
+            return this.resultsMode === 'series' ? `${this.totalResults} series found` : `${this.totalResults} found`;
+        },
+
         sortOrderLabel(order) {
             if (['series', 'title'].includes(this.sortBy)) return order === 'asc' ? 'A to Z' : 'Z to A';
             if (['created', 'updated', 'year'].includes(this.sortBy)) return order === 'desc' ? 'Newest First' : 'Oldest First';
@@ -342,14 +368,18 @@ document.addEventListener('alpine:init', () => {
             this.loading = true;
             this.hasSearched = true;
             this.results = [];
+            const mode = this.resultMode;
+            this.resultsMode = mode;
             try {
-                const res = await fetch(window.parker.route('comics.search'), {
+                const res = await fetch(window.parker.route(mode === 'series' ? 'comics.search_series' : 'comics.search'), {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(this.buildSearchPayload()),
                 });
                 if (!res.ok) throw new Error('Search failed');
                 const data = await res.json();
+                // Ignore a response for a mode the user has since switched away from
+                if (mode !== this.resultMode) return;
                 this.results = data.results;
                 this.totalResults = data.total;
             } catch (error) {
@@ -376,6 +406,7 @@ document.addEventListener('alpine:init', () => {
                 sort_order: this.sortOrder,
                 limit: parseInt(this.limit, 10),
                 context_library_id: this.contextLibraryId,
+                result_mode: this.resultMode,
             };
         },
 

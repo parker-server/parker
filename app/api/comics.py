@@ -16,6 +16,7 @@ from app.core.comic_helpers import (get_reading_time, get_format_sort_index, get
                                     get_series_age_restriction, get_thumbnail_url, get_thumbnail_hash,
                                     user_can_download)
 from app.api.deps import SessionDep, CurrentUser, ComicDep, AdminUser, release_db_connection
+from app.api.home import _serialize_series_rail_items
 from app.config import settings
 
 from app.models.comic import Comic, Volume
@@ -30,7 +31,7 @@ from app.models.interactions import UserComicRating
 from app.routers.opds import get_opds_acquisition_type, get_opds_download_filename
 
 
-from app.schemas.search import SearchRequest, SearchResponse
+from app.schemas.search import SearchRequest, SearchResponse, SeriesSearchResponse
 from app.schemas.comic import (ComicCoverOptionsResponse, ComicCoverPage, ComicCoverPageUpdate,
                                ComicDetailBookmark, ComicDetailResponse)
 from app.schemas.external_review import ExternalReviewsResponse
@@ -129,6 +130,28 @@ async def search_comics(request: SearchRequest, db: SessionDep, current_user: Cu
     search_service = SearchService(db, current_user)
     results = search_service.search(request)
     return results
+
+@router.post("/search/series", response_model=SeriesSearchResponse, name="search_series")
+async def search_series(request: SearchRequest, db: SessionDep, current_user: CurrentUser):
+    """
+    Search with the same filters as /search, but return one result per series
+    that has matching issues, with how many of its issues matched.
+    """
+    page = SearchService(db, current_user).search_series_page(request)
+    series_ids = [series_id for series_id, _ in page["rows"]]
+    match_counts = dict(page["rows"])
+
+    series_by_id = {s.id: s for s in db.query(Series).filter(Series.id.in_(series_ids)).all()}
+    items = _serialize_series_rail_items(db, [series_by_id[series_id] for series_id in series_ids])
+    for item in items:
+        item["match_count"] = match_counts[item["id"]]
+
+    return {
+        "total": page["total"],
+        "limit": page["limit"],
+        "offset": page["offset"],
+        "results": items,
+    }
 
 @router.get("/{comic_id}", response_model=ComicDetailResponse, name="detail")
 async def get_comic(comic_id: int, db: SessionDep, current_user: CurrentUser):

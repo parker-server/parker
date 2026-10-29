@@ -129,3 +129,18 @@ def test_delete_saved_search_404_for_missing_or_foreign(auth_client, db, normal_
     missing_delete = auth_client.delete("/api/saved-searches/999999")
     assert missing_delete.status_code == 404
     assert missing_delete.json() == {"detail": "Saved search not found"}
+
+
+def test_saved_search_keeps_series_result_mode_and_defaults_old_searches_to_issues(auth_client, db, normal_user):
+    payload = _payload("Series Mode Search")
+    payload["query"]["result_mode"] = "series"
+    response = auth_client.post("/api/saved-searches/", json=payload)
+    assert response.status_code == 200
+    assert response.json()["query"]["result_mode"] == "series"
+
+    # Searches saved before result_mode existed have no such key
+    db.add(SavedSearch(user_id=normal_user.id, name="Old Search", query_json=json.dumps(_payload("Old Search")["query"])))
+    db.commit()
+
+    listed = {row["name"]: row["query"]["result_mode"] for row in auth_client.get("/api/saved-searches/").json()}
+    assert listed == {"Series Mode Search": "series", "Old Search": "issues"}

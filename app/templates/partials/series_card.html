@@ -34,5 +34,8 @@
     <div class="mt-2">
         <p class="font-bold text-gray-200 truncate text-sm" x-text="series.name"></p>
         <p class="text-xs text-gray-500" x-text="series.start_year"></p>
+        <template x-if="series.match_count">
+            <p class="text-xs text-blue-300" x-text="`${series.match_count} matching ${series.match_count === 1 ? 'issue' : 'issues'}`"></p>
+        </template>
     </div>
 </a>
