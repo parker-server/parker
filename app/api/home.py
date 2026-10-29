@@ -9,7 +9,7 @@ from collections import defaultdict
 
 from app.core.settings_loader import get_cached_setting
 from app.api.deps import CurrentUser, PaginatedResponse, PaginationParams, SessionDep
-from app.core.comic_helpers import get_format_filters, get_smart_cover, get_series_age_restriction, get_thumbnail_url
+from app.core.comic_helpers import get_format_filters, get_smart_cover, get_series_age_restriction, get_thumbnail_url, pick_series_cover
 from app.models.comic import Comic, Volume
 from app.models.interactions import UserComicRating
 from app.models.interactions import UserLibraryPin
@@ -20,7 +20,7 @@ from app.models.user import User
 from app.models.reading_progress import ReadingProgress
 from app.schemas.search import ComicSearchItem
 from app.schemas.search import SearchRequest
-from app.core.comic_helpers import REVERSE_NUMBERING_SERIES, NON_PLAIN_FORMATS
+from app.core.comic_helpers import REVERSE_NUMBERING_SERIES
 from app.api.promoted_rails import get_active_promoted_rails, is_promoted_rail_active
 from app.models.promoted_rail import PromotedRail
 from app.services.search import SearchService
@@ -416,51 +416,6 @@ def format_home_item(
 
     return item
 
-# --- HELPER FOR COVER LOGIC ---
-def _pick_best_cover(series_obj, comics_list):
-    """
-    Selects the best cover from a list of lightweight comic tuples/objects.
-    Adapts logic from libraries.py to handle Reverse Numbering.
-    """
-    if not comics_list:
-        return None
-
-    # Helper: Check if format is "Standard"
-    def is_standard_format(fmt: str) -> bool:
-        if not fmt: return True
-        return fmt.lower() not in NON_PLAIN_FORMATS
-
-    # Helper: Safe Sort Key
-    def issue_sort_key(c):
-        try:
-            return float(c.number)
-        except:
-            return 999999
-
-    # 1. Gimmick Detection
-    is_reverse = series_obj.name.lower() in REVERSE_NUMBERING_SERIES
-
-    # 2. Filter for standards
-    standards = [c for c in comics_list if is_standard_format(c.format)]
-    pool = standards if standards else comics_list
-
-    # 3. Try finding Issue #1 (Only if NOT reverse)
-    if not is_reverse:
-        issue_ones = [c for c in pool if c.number == '1']
-        if issue_ones:
-            # If multiple #1s (e.g. multiple volumes), picking the first found or sorting is fine
-            return issue_ones[0]
-
-    # 4. Fallback: Sort by number
-    pool.sort(key=issue_sort_key)
-
-    # 5. Pick First or Last based on Gimmick
-    if is_reverse:
-        return pool[-1]  # Highest Number (e.g. Countdown #52)
-    else:
-        return pool[0]   # Lowest Number (e.g. Spider-Man #10)
-
-
 def _latest_event_volume_by_series_id(db: Session, series_ids: list[int], timestamp_column):
     if not series_ids:
         return {}
@@ -499,11 +454,14 @@ def _serialize_series_rail_items(db: Session, series_list, cover_volume_by_serie
             Comic.id,
             Comic.number,
             Comic.year,
+            Comic.month,
+            Comic.day,
             Comic.format,
             Comic.publisher,
             Comic.updated_at,
             Comic.volume_id,
-            Volume.series_id
+            Volume.series_id,
+            Volume.volume_number,
         )
         .join(Volume)
         .filter(Volume.series_id.in_(series_ids))
@@ -527,7 +485,7 @@ def _serialize_series_rail_items(db: Session, series_list, cover_volume_by_serie
         s_comics = series_map.get(s.id, [])
         cover_volume_id = cover_volume_by_series_id.get(s.id) if cover_volume_by_series_id else None
         cover_candidates = [c for c in s_comics if c.volume_id == cover_volume_id] if cover_volume_id else s_comics
-        first_issue = _pick_best_cover(s, cover_candidates) or _pick_best_cover(s, s_comics)
+        first_issue = pick_series_cover(cover_candidates, s.name) or pick_series_cover(s_comics, s.name)
 
         if not first_issue:
             continue

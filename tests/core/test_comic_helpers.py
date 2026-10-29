@@ -1,4 +1,6 @@
-from app.core.comic_helpers import get_smart_cover, get_smart_covers_by_series
+from types import SimpleNamespace
+
+from app.core.comic_helpers import get_smart_cover, get_smart_covers_by_series, pick_series_cover
 from app.models.comic import Comic, Volume
 from app.models.series import Series
 from tests.factories import create_comic, create_library_with_root
@@ -53,10 +55,20 @@ def _seed_cover_series(db):
         {"label": "fifty", "number": "50", "year": 2007},
         {"label": "zero", "number": "0", "year": 2008},
     ]])
-    # Two volumes with a #1 -> earliest year wins
-    add_series("Year Tiebreak", [
-        [{"label": "late", "number": "1", "year": 2005}],
-        [{"label": "early", "number": "1", "year": 1999}],
+    # Two volumes with a #1 -> the earliest volume wins, even when a later volume is older
+    add_series("Two Volumes", [
+        [{"label": "vol-one", "number": "1", "year": 2005}],
+        [{"label": "vol-two", "number": "1", "year": 1999}],
+    ])
+    # Volume 1 continues an older title's numbering (Captain America 1968 starts at #100)
+    add_series("Starts At 100", [
+        [{"label": "hundred", "number": "100", "year": 1968}, {"label": "hundred-one", "number": "101", "year": 1968}],
+        [{"label": "vol-two-one", "number": "1", "year": 1996}],
+    ])
+    # Volume 1 is only an annual -> the first regular issue of the next volume wins
+    add_series("Annual Then Regular", [
+        [{"label": "annual", "number": "1", "format": "annual", "year": 1990}],
+        [{"label": "regular", "number": "1", "year": 1991}],
     ])
     db.commit()
     return seeded
@@ -74,7 +86,7 @@ def test_smart_covers_by_series_matches_get_smart_cover(db):
 
     assert set(batched) == set(series_names)
     for name, (series_id, _) in seeded.items():
-        expected = get_smart_cover(_base_query(db).filter(Series.id == series_id), series_name=name)
+        expected = get_smart_cover(_base_query(db).filter(Series.id == series_id), series_name=name, prefer_volume_order=True)
         assert batched[series_id].id == expected.id, name
 
 
@@ -92,7 +104,9 @@ def test_smart_covers_by_series_picks_expected_covers(db):
     assert picked("Annuals Only") == seeded["Annuals Only"][1]["one"]
     assert picked("Only Zero") == seeded["Only Zero"][1]["zero"]
     assert picked("Countdown") == seeded["Countdown"][1]["fifty-two"]
-    assert picked("Year Tiebreak") == seeded["Year Tiebreak"][1]["early"]
+    assert picked("Two Volumes") == seeded["Two Volumes"][1]["vol-one"]
+    assert picked("Starts At 100") == seeded["Starts At 100"][1]["hundred"]
+    assert picked("Annual Then Regular") == seeded["Annual Then Regular"][1]["regular"]
 
 
 def test_smart_covers_by_series_exposes_thumbnail_fields_and_skips_empty_series(db):
@@ -122,3 +136,41 @@ def test_smart_covers_by_series_query_count_is_bounded_by_numbering_direction(db
     with count_queries() as statements:
         get_smart_covers_by_series(_base_query(db), everything)
     assert len(statements) == 2
+
+
+def _lightweight_rows(db, series_id):
+    return (
+        _base_query(db)
+        .filter(Series.id == series_id)
+        .with_entities(Comic.id, Comic.number, Comic.year, Comic.month, Comic.day, Comic.format, Volume.volume_number)
+        .all()
+    )
+
+
+def test_pick_series_cover_matches_the_series_page_rule(db):
+    seeded = _seed_cover_series(db)
+
+    for name, (series_id, _) in seeded.items():
+        expected = get_smart_cover(_base_query(db).filter(Series.id == series_id), series_name=name, prefer_volume_order=True)
+        assert pick_series_cover(_lightweight_rows(db, series_id), name).id == expected.id, name
+
+
+def test_pick_series_cover_ignores_row_order(db):
+    seeded = _seed_cover_series(db)
+    series_id, labels = seeded["Two Volumes"]
+    rows = _lightweight_rows(db, series_id)
+
+    assert pick_series_cover(rows, "Two Volumes").id == labels["vol-one"]
+    assert pick_series_cover(list(reversed(rows)), "Two Volumes").id == labels["vol-one"]
+
+
+def test_pick_series_cover_handles_empty_lists_and_missing_dates():
+    assert pick_series_cover([], "Any") is None
+
+    def row(number, volume_number=1, fmt=None, year=None):
+        return SimpleNamespace(number=number, volume_number=volume_number, format=fmt, year=year)
+
+    # Rows without month/day still sort; non-numeric numbers lose to numeric ones
+    assert pick_series_cover([row("A"), row("3"), row("2", fmt="annual")], "Regular").number == "3"
+    assert pick_series_cover([row("2"), row("1")], "Regular").number == "1"
+    assert pick_series_cover([row("1"), row("4")], "Countdown").number == "4"

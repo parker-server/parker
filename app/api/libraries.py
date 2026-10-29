@@ -9,7 +9,7 @@ import logging
 import os
 
 from app.config import settings
-from app.core.comic_helpers import get_thumbnail_url, NON_PLAIN_FORMATS, REVERSE_NUMBERING_SERIES, get_series_age_restriction
+from app.core.comic_helpers import get_thumbnail_url, get_series_age_restriction, pick_series_cover
 from app.core.path_utils import paths_overlap
 from app.models.library import Library
 from app.models.library_root import LibraryRoot
@@ -589,6 +589,8 @@ async def get_library_series(
             Comic.id,
             Comic.number,
             Comic.year,
+            Comic.month,
+            Comic.day,
             Comic.format,
             Comic.updated_at,
             Volume.series_id,
@@ -623,19 +625,6 @@ async def get_library_series(
 
     # --- BATCH OPTIMIZATION END ---
 
-    # Helper: Check if format is "Standard" (Not Annual/Special)
-    def is_standard_format(fmt: str) -> bool:
-        if not fmt: return True
-        f = fmt.lower()
-        return f not in NON_PLAIN_FORMATS
-
-    # Helper: Safe Sort Key for issues
-    def issue_sort_key(c):
-        try:
-            return float(c.number)
-        except:
-            return 999999
-
     # 3. Serialization & Thumbnails
     items = []
     for s in series_list:
@@ -647,43 +636,7 @@ async def get_library_series(
         read_count = sum(1 for c in s_comics if c.id in read_comic_ids)
         is_fully_read = (total_count > 0) and (read_count >= total_count)
 
-        # Find a cover (First issue of first volume)
-        # Logic: Find Smart Cover (Python version of get_smart_cover)
-        # 1. Look for Issue "1"
-        # 2. Else look for lowest number
-        # 3. Else first found
-
-        cover_comic = None
-        if s_comics:
-
-            # GIMMICK DETECTION
-            is_reverse = s.name.lower() in REVERSE_NUMBERING_SERIES
-
-            # Filter for standards
-            standards = [c for c in s_comics if is_standard_format(c.format)]
-
-            # Decide which pool to search (Prefer standards, fallback to all)
-            pool = standards if standards else s_comics
-
-            # Try finding issue #1 exactly in the pool (Only if NOT reverse)
-            # (Because for Countdown, #1 is the END, not the cover)
-            issue_ones = []
-            if not is_reverse:
-                issue_ones = [c for c in pool if c.number == '1']
-
-            if issue_ones:
-                issue_ones.sort(key=lambda c: c.volume_number)
-                cover_comic = issue_ones[0]
-            else:
-                # Fallback: Sort by number
-                pool.sort(key=issue_sort_key)
-
-                # If Reverse Series (Zero Hour), take the LAST item (Highest Number)
-                # If Standard Series, take the FIRST item (Lowest Number)
-                if is_reverse:
-                    cover_comic = pool[-1]
-                else:
-                    cover_comic = pool[0]
+        cover_comic = pick_series_cover(s_comics, s.name)
 
         items.append({
             "id": s.id,

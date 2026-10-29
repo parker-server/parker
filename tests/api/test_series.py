@@ -1483,3 +1483,46 @@ def test_series_list_reverse_numbering_fallback_uses_highest_issue(auth_client, 
     item = next(x for x in payload["items"] if x["id"] == series.id)
     assert item["start_year"] == 2007
     assert str(issue_four.id) in item["thumbnail_path"]
+
+
+def _thumbnail_comic_id(thumbnail_path: str) -> int:
+    return int(thumbnail_path.split("/api/comics/")[1].split("/")[0])
+
+
+def test_series_covers_agree_across_pages_for_multi_volume_series(admin_client, db):
+    library = create_library_with_root(db, "Cover Agreement Library", "/tmp/cover-agreement")
+
+    def add_series(name, volumes):
+        series = Series(name=name, library=library)
+        db.add(series)
+        db.flush()
+        ids = {}
+        for volume_number, numbers, year in volumes:
+            volume = Volume(series=series, volume_number=volume_number)
+            db.add(volume)
+            db.flush()
+            for number in numbers:
+                path = f"{name}-v{volume_number}-{number}.cbz"
+                comic = create_comic(db, volume, library.active_root, path, filename=path, number=number, year=year)
+                ids[(volume_number, number)] = comic.id
+        return series, ids
+
+    # Volume 2 is inserted first, so an unsorted "first #1 found" pick would choose it
+    action, action_ids = add_series("Cover Agreement Action", [(2, ["1", "2"], 2011), (1, ["1", "2"], 1938)])
+    # Volume 1 has no #1: it continues an older title's numbering from #100
+    cap, cap_ids = add_series("Cover Agreement Captain", [(1, ["100", "101"], 1968), (2, ["1", "2"], 1996)])
+    db.commit()
+    expected = {action.id: action_ids[(1, "1")], cap.id: cap_ids[(1, "100")]}
+
+    library_list = admin_client.get(f"/api/libraries/{library.id}/series").json()["items"]
+    series_list = admin_client.get("/api/series/", params={"size": 100}).json()["items"]
+    search = admin_client.post(
+        "/api/comics/search/series",
+        json={"filters": [{"field": "series", "operator": "contains", "value": ["cover agreement"]}]},
+    ).json()["results"]
+
+    for series_id, comic_id in expected.items():
+        assert admin_client.get(f"/api/series/{series_id}").json()["first_issue_id"] == comic_id
+        for page_name, rows in (("library list", library_list), ("series list", series_list), ("search", search)):
+            row = next(item for item in rows if item["id"] == series_id)
+            assert _thumbnail_comic_id(row["thumbnail_path"]) == comic_id, page_name
