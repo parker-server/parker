@@ -514,6 +514,7 @@ def test_run_scan_job_logs_followup_queue_failure(monkeypatch):
     monkeypatch.setattr(sm, "get_cached_setting", lambda key, default: False)
 
     manager._safe_job_update = MagicMock()
+    manager._refresh_database_statistics = MagicMock()
 
     manager._run_scan_job({"id": 100, "library_id": 1, "force": False})
 
@@ -1294,3 +1295,79 @@ def test_recover_interrupted_jobs_uses_review_lookup_message(monkeypatch, db):
     db.refresh(review_job)
     assert review_job.status == JobStatus.FAILED
     assert review_job.error_message == "External review lookup interrupted by server restart"
+
+
+def _statistics_exist(db) -> bool:
+    return db.connection().exec_driver_sql("SELECT 1 FROM sqlite_master WHERE name = 'sqlite_stat1'").first() is not None
+
+
+def test_completed_cleanup_job_refreshes_database_statistics(monkeypatch, db):
+    manager = _manager()
+    monkeypatch.setattr(sm, "SessionLocal", _session_local_factory(db))
+    maintenance = MagicMock()
+    maintenance.cleanup_missing_files.return_value = []
+    maintenance.cleanup_orphans.return_value = {}
+    monkeypatch.setattr(sm, "MaintenanceService", MagicMock(return_value=maintenance))
+    manager._safe_job_update = MagicMock()
+    manager._set_library_scanning_status = MagicMock()
+
+    manager._run_cleanup_job({"id": 30, "library_id": 5})
+
+    assert _statistics_exist(db)
+
+
+def test_failed_cleanup_job_does_not_refresh_database_statistics(monkeypatch, db):
+    manager = _manager()
+    monkeypatch.setattr(sm, "SessionLocal", _session_local_factory(db))
+    maintenance = MagicMock()
+    maintenance.cleanup_missing_files.side_effect = RuntimeError("cleanup fail")
+    monkeypatch.setattr(sm, "MaintenanceService", MagicMock(return_value=maintenance))
+    manager._safe_job_update = MagicMock()
+    manager._set_library_scanning_status = MagicMock()
+    manager._refresh_database_statistics = MagicMock()
+
+    manager._run_cleanup_job({"id": 31, "library_id": 5})
+
+    manager._refresh_database_statistics.assert_not_called()
+
+
+@pytest.mark.parametrize("fatal_error", [None, "writer boom"])
+def test_finished_scan_job_refreshes_database_statistics(monkeypatch, db, fatal_error):
+    manager = _manager()
+    monkeypatch.setattr(sm, "SessionLocal", _session_local_factory(db))
+    lib = create_library_with_root(db, "stats-scan-lib", "/tmp/stats-scan-lib")
+    db.commit()
+    scanner_mock = MagicMock()
+    scanner_mock.scan_parallel.return_value = {"imported": 1, "fatal_error": fatal_error}
+    monkeypatch.setattr(sm, "LibraryScanner", lambda library, session: scanner_mock)
+    monkeypatch.setattr(sm, "get_cached_setting", lambda key, default: False)
+    manager._safe_job_update = MagicMock()
+
+    manager._run_scan_job({"id": 32, "library_id": lib.id, "force": False})
+
+    assert _statistics_exist(db)
+
+
+def test_completed_metadata_rehydrate_job_refreshes_database_statistics(monkeypatch, db):
+    manager = _manager()
+    monkeypatch.setattr(sm, "SessionLocal", _session_local_factory(db))
+    lib = create_library_with_root(db, "stats-rehydrate-lib", "/tmp/stats-rehydrate-lib")
+    db.commit()
+    monkeypatch.setattr(sm, "rehydrate_library_metadata_from_cache", MagicMock(return_value={"comics": 1}))
+    manager._safe_job_update = MagicMock()
+    manager._set_library_scanning_status = MagicMock()
+
+    manager._run_metadata_rehydrate_job({"id": 33, "library_id": lib.id})
+
+    assert _statistics_exist(db)
+
+
+def test_statistics_refresh_failure_is_logged_not_raised(monkeypatch):
+    manager = _manager()
+    monkeypatch.setattr(sm, "refresh_query_planner_statistics", MagicMock(side_effect=RuntimeError("locked")))
+    monkeypatch.setattr(sm, "SessionLocal", MagicMock())
+
+    manager._refresh_database_statistics()
+
+    manager.logger.warning.assert_called_once()
+    assert "locked" in manager.logger.warning.call_args.args[0]

@@ -25,7 +25,7 @@ from app.core.security import (
 from app.core.templates import templates
 from app.database import engine, Base
 from app.config import settings, debug_print_settings
-from app.database import SessionLocal
+from app.database import SessionLocal, refresh_query_planner_statistics
 from app.logging import log_config
 from app.models.user import User
 from app.services.admin_bootstrap import AdminBootstrapError, ensure_initial_admin
@@ -132,6 +132,15 @@ async def lifespan(app: FastAPI):
                 )
         except Exception as exc:
             logger.warning("Startup storage diagnostic failed: %s", exc)
+
+        # Databases created before statistics refreshes were added have none until the next
+        # scan, and SQLite can pick very slow plans without them.
+        try:
+            with SessionLocal() as stats_db:
+                if refresh_query_planner_statistics(stats_db, only_if_missing=True):
+                    logger.info("Created database statistics for the query planner")
+        except Exception as exc:
+            logger.warning("Database statistics refresh failed: %s", exc)
 
         # START WATCHER
         library_watcher.start()

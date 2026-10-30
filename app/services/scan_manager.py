@@ -7,7 +7,7 @@ from sqlalchemy import asc
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app.core.settings_loader import get_cached_setting
-from app.database import SessionLocal
+from app.database import SessionLocal, refresh_query_planner_statistics
 from app.models import ScanJob, Library
 from app.models.job import JobType, JobStatus, JOB_LANES, LIBRARY_LANE
 
@@ -413,6 +413,8 @@ class ScanManager:
                 summary=summary,
                 error=fatal_error,
             )
+            # Comics committed before a writer failure still changed the data.
+            self._refresh_database_statistics()
 
             # 3. Queue Pipeline: THUMBNAIL -> CLEANUP
             # We queue both now so they run in sequence via priority
@@ -536,6 +538,7 @@ class ScanManager:
             self._safe_job_update(job_id, JobStatus.FAILED, error=error)
         else:
             self._safe_job_update(job_id, JobStatus.COMPLETED, summary=stats)
+            self._refresh_database_statistics()
 
         # 3. Reset Flag (Final Step)
         if library_id:
@@ -572,9 +575,18 @@ class ScanManager:
             self._safe_job_update(job_id, JobStatus.FAILED, error=error)
         else:
             self._safe_job_update(job_id, JobStatus.COMPLETED, summary=summary)
+            self._refresh_database_statistics()
 
         if library_id:
             self._set_library_scanning_status(library_id, False)
+
+    def _refresh_database_statistics(self):
+        """Refresh SQLite's query planner statistics after a job that changed library data."""
+        try:
+            with SessionLocal() as db:
+                refresh_query_planner_statistics(db)
+        except Exception as e:
+            self.logger.warning(f"Could not refresh database statistics: {e}")
 
     def _run_external_review_job(self, job_data):
         job_id = job_data['id']
