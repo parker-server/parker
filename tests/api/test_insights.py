@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+from sqlalchemy import event
+
 from app.api import insights
 from app.api.deps import get_current_user
 from app.main import app
@@ -856,3 +858,44 @@ def test_cached_collaborations_are_not_shared_between_user_scopes(auth_client, a
 
     assert user_payload["pair_count"] == 1
     assert admin_payload["pair_count"] == 3
+
+
+def _pair_query_plan(db, links_a, links_b, entity_a, entity_b, same_side):
+    """EXPLAIN QUERY PLAN for the pair count, run on the test DB, which has no ANALYZE statistics."""
+    captured = []
+
+    def capture(conn, cursor, statement, parameters, context, executemany):
+        captured.append((statement, parameters))
+
+    engine = db.get_bind()
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        insights._count_top_pairs(db, links_a, links_b, entity_a, entity_b, same_side, 2, 50)
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+
+    statement, parameters = captured[-1]
+    rows = db.connection().exec_driver_sql("EXPLAIN QUERY PLAN " + statement, parameters).fetchall()
+    return " | ".join(row[-1] for row in rows)
+
+
+def test_pair_query_reads_each_comics_links_through_the_comic_index(db):
+    # Without statistics SQLite once compared every writer credit with every penciller
+    # credit (SCAN link_b), then looked up each candidate id per comic (person_id=?),
+    # which took minutes on a 73k-issue library.
+    credit_plan = _pair_query_plan(
+        db,
+        insights._restrict_links(insights._credit_links("writer", None), [1, 2, 3]),
+        insights._restrict_links(insights._credit_links("penciller", None), [4, 5, 6]),
+        Person,
+        Person,
+        same_side=False,
+    )
+    character_links = insights._restrict_links(insights._character_links(None), [1, 2, 3])
+    character_plan = _pair_query_plan(db, character_links, character_links, Character, Character, same_side=True)
+
+    for plan in (credit_plan, character_plan):
+        assert "SCAN link" not in plan
+        assert "(comic_id=?" in plan
+        assert "person_id=?" not in plan
+        assert "character_id=?" not in plan
