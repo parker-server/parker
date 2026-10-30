@@ -241,7 +241,9 @@ def _character_links(visible_comic_ids: Optional[Select]) -> Select:
 def _restrict_links(links: Select, entity_ids: Optional[list[int]]) -> Select:
     if entity_ids is None:
         return links
-    return links.where(links.selected_columns.entity_id.in_(entity_ids))
+    # "+ 0" keeps SQLite from looking up every listed id in the (comic_id, entity) index
+    # for each comic. It reads the comic's few links instead and filters them.
+    return links.where((links.selected_columns.entity_id + 0).in_(entity_ids))
 
 
 def _entity_frequencies(db: Session, links: Select) -> list[tuple[int, int]]:
@@ -266,10 +268,11 @@ def _count_top_pairs(
     min_shared: int,
     pair_cap: int,
 ) -> list[PairRow]:
-    side_a = links_a.cte("links_a").prefix_with("MATERIALIZED")
-    side_b = side_a if same_side else links_b.cte("links_b").prefix_with("MATERIALIZED")
-    link_a = side_a.alias("link_a")
-    link_b = side_b.alias("link_b")
+    # Plain subqueries let SQLite join on the link tables' own comic_id indexes. Without
+    # ANALYZE statistics it will not build a temporary index for a materialized CTE and
+    # compares every row on one side with every row on the other.
+    link_a = links_a.subquery("link_a")
+    link_b = links_b.subquery("link_b")
 
     join_on = link_a.c.comic_id == link_b.c.comic_id
     if same_side:
