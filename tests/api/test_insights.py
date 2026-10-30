@@ -1,7 +1,13 @@
+from datetime import datetime, timezone
+
+from app.api import insights
+from app.api.deps import get_current_user
+from app.main import app
 from app.models.comic import Volume
 from app.models.credits import ComicCredit, Person
+from app.models.job import JobStatus, JobType, ScanJob
 from app.models.series import Series
-from app.models.tags import Character
+from app.models.tags import Character, comic_characters
 from tests.factories import create_comic, create_library_with_root
 
 
@@ -745,3 +751,108 @@ def test_artist_character_collaborations_reject_limit_over_guardrail(auth_client
     response = auth_client.get("/api/insights/creator-character-collaborations?role_a=penciller&limit=16")
 
     assert response.status_code == 422
+
+
+def _seed_character_comics(db, cast_per_comic):
+    """One comic per entry in cast_per_comic, each listing character names. Returns comics and characters."""
+    library = create_library_with_root(db, "Character Pairs", "/tmp/character-pairs")
+    series = Series(name="Character Pairs Series", library_id=library.id)
+    db.add(series)
+    db.flush()
+    volume = Volume(series_id=series.id, volume_number=1)
+    db.add(volume)
+    db.flush()
+
+    characters = {}
+    for cast in cast_per_comic:
+        for name in cast:
+            if name not in characters:
+                characters[name] = Character(name=name)
+                db.add(characters[name])
+    db.flush()
+
+    comics = []
+    for index, cast in enumerate(cast_per_comic, start=1):
+        comic = create_comic(
+            db, volume, library.active_root, f"pairs-{index}.cbz",
+            number=str(index), title=f"Pairs #{index}", filename=f"pairs-{index}.cbz",
+        )
+        comic.characters.extend(characters[name] for name in cast)
+        comics.append(comic)
+    db.commit()
+    return comics, characters
+
+
+def test_pair_counting_widens_candidates_until_result_is_exact(db, monkeypatch):
+    # The busiest characters only meet once; the closest pair is two quieter characters.
+    _seed_character_comics(db, [
+        *[["Busy A"]] * 5,
+        *[["Busy B"]] * 5,
+        ["Busy A", "Busy B"],
+        *[["Quiet C", "Quiet D"]] * 3,
+    ])
+    links = insights._character_links(None)
+
+    monkeypatch.setattr(insights, "PAIR_CANDIDATES_START", 2)
+    pairs = insights._collaboration_pairs(db, links, links, Character, Character, True, 1, pair_cap=1)
+
+    assert [(pair.person_a, pair.person_b, pair.shared_issues) for pair in pairs] == [("Quiet C", "Quiet D", 3)]
+
+
+def test_pair_counting_matches_full_count_for_any_starting_candidates(db, monkeypatch):
+    _seed_character_comics(db, [
+        *[["Busy A", "Side E"]] * 4,
+        *[["Busy B", "Side E"]] * 2,
+        ["Busy A", "Busy B"],
+        *[["Quiet C", "Quiet D", "Busy A"]] * 3,
+    ])
+    links = insights._character_links(None)
+
+    def top_pairs():
+        return insights._collaboration_pairs(db, links, links, Character, Character, True, 1, pair_cap=3)
+
+    monkeypatch.setattr(insights, "PAIR_CANDIDATES_MAX", 0)
+    full_count = top_pairs()
+    assert len(full_count) == 3
+
+    monkeypatch.setattr(insights, "PAIR_CANDIDATES_MAX", 2400)
+    for start in (1, 2, 3, 150):
+        monkeypatch.setattr(insights, "PAIR_CANDIDATES_START", start)
+        assert top_pairs() == full_count
+
+
+def test_collaborations_are_cached_until_a_library_job_finishes(admin_client, db):
+    comics, characters = _seed_character_comics(db, [
+        ["Cache Alpha", "Cache Beta"],
+        ["Cache Alpha", "Cache Beta"],
+        ["Cache Alpha"],
+    ])
+
+    def alpha_beta_shared():
+        payload = admin_client.get("/api/insights/character-collaborations").json()
+        return payload["pairs"][0]["shared_issues"]
+
+    assert alpha_beta_shared() == 2
+
+    db.execute(comic_characters.insert().values(comic_id=comics[2].id, character_id=characters["Cache Beta"].id))
+    db.commit()
+    assert alpha_beta_shared() == 2
+
+    db.add(ScanJob(job_type=JobType.THUMBNAIL, status=JobStatus.COMPLETED, completed_at=datetime.now(timezone.utc)))
+    db.commit()
+    assert alpha_beta_shared() == 2
+
+    db.add(ScanJob(job_type=JobType.SCAN, status=JobStatus.COMPLETED, completed_at=datetime.now(timezone.utc)))
+    db.commit()
+    assert alpha_beta_shared() == 3
+
+
+def test_cached_collaborations_are_not_shared_between_user_scopes(auth_client, admin_user, db, normal_user):
+    _seed_character_collab_fixture(db, normal_user)
+
+    user_payload = auth_client.get("/api/insights/character-collaborations").json()
+    app.dependency_overrides[get_current_user] = lambda: admin_user
+    admin_payload = auth_client.get("/api/insights/character-collaborations").json()
+
+    assert user_payload["pair_count"] == 1
+    assert admin_payload["pair_count"] == 3
