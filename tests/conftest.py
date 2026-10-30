@@ -67,6 +67,16 @@ def clear_password_change_cache():
     security._password_change_not_required_until.clear()
 
 
+@pytest.fixture(autouse=True)
+def clear_insights_cache():
+    """Each test gets a fresh database, so forget insights results cached by an earlier test."""
+    from app.api.insights import clear_insights_cache as clear
+
+    clear()
+    yield
+    clear()
+
+
 # 2. DB SESSION FIXTURE
 @pytest.fixture(scope="function")
 def db():
