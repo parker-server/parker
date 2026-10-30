@@ -1,3 +1,5 @@
+from sqlalchemy import event
+
 from app.models.collection import Collection, CollectionItem
 from app.models.comic import Comic, Volume
 from app.models.reading_list import ReadingList, ReadingListItem
@@ -226,3 +228,39 @@ def test_timeline_rejects_non_mvp_subject_types(auth_client, db, normal_user):
     response = auth_client.get("/api/timelines?type=location&name=Timeline%20City")
 
     assert response.status_code == 422
+
+
+def _timeline_lookup_plan(client, db, url: str, link_table: str) -> str:
+    """EXPLAIN QUERY PLAN for the query that loads a timeline's comics."""
+    captured = []
+
+    def capture(conn, cursor, statement, parameters, context, executemany):
+        captured.append((statement, parameters))
+
+    engine = db.get_bind()
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        assert client.get(url).status_code == 200
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+
+    statement, parameters = next(
+        (statement, parameters)
+        for statement, parameters in captured
+        if f"IN (SELECT {link_table}.comic_id" in statement
+    )
+    rows = db.connection().exec_driver_sql("EXPLAIN QUERY PLAN " + statement, parameters).fetchall()
+    return " | ".join(row[-1] for row in rows)
+
+
+def test_timeline_finds_subject_comics_through_the_subject_index(auth_client, db, normal_user):
+    # Checking every comic for the subject's name took up to 0.15s on a 73k-issue library.
+    _seed_timeline_fixture(db, normal_user)
+
+    character_plan = _timeline_lookup_plan(
+        auth_client, db, "/api/timelines?type=character&name=Timeline%20Hero", "comic_characters"
+    )
+    team_plan = _timeline_lookup_plan(auth_client, db, "/api/timelines?type=team&name=Timeline%20Team", "comic_teams")
+
+    assert "idx_comic_characters_character_comic (character_id=?)" in character_plan
+    assert "idx_comic_teams_team_comic (team_id=?)" in team_plan

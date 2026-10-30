@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import Float, case, cast, func, or_
+from sqlalchemy import Float, case, cast, func, or_, select
 from sqlalchemy.orm import joinedload
 
 from app.api.deps import CurrentUser, SessionDep
@@ -9,7 +9,7 @@ from app.models.comic import Comic, Volume
 from app.models.library import Library
 from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.series import Series
-from app.models.tags import Character, Team
+from app.models.tags import Character, Team, comic_characters, comic_teams
 from app.schemas.timeline import (
     TimelineCollectionAnnotation,
     TimelineComicEntry,
@@ -27,9 +27,10 @@ from app.schemas.timeline import (
 
 router = APIRouter()
 
+# Each subject's model and the link-table column that points at it.
 SUBJECT_MODELS = {
-    "character": (Character, Comic.characters),
-    "team": (Team, Comic.teams),
+    "character": (Character, comic_characters.c.character_id),
+    "team": (Team, comic_teams.c.team_id),
 }
 
 
@@ -51,7 +52,7 @@ def _apply_scope(query, user: CurrentUser, allowed_ids: list[int] | None):
 
 
 def _subject_query(db: SessionDep, subject_type: TimelineSubjectType, name: str, user: CurrentUser):
-    model, relationship = SUBJECT_MODELS[subject_type]
+    model, _link_column = SUBJECT_MODELS[subject_type]
     allowed_ids = _allowed_library_ids(user)
 
     query = (
@@ -151,6 +152,8 @@ def _load_annotations(db: SessionDep, comics: list[Comic]) -> dict[int, dict]:
     if not comic_ids:
         return annotations
 
+    # "+ 0" keeps SQLite from looking up every timeline comic id in each list's
+    # (list_id, comic_id) index. Reading the items once and filtering is much faster.
     reading_rows = (
         db.query(
             ReadingListItem.comic_id,
@@ -163,7 +166,7 @@ def _load_annotations(db: SessionDep, comics: list[Comic]) -> dict[int, dict]:
         .join(Volume, Comic.volume_id == Volume.id)
         .join(Series, Volume.series_id == Series.id)
         .join(Library, Series.library_id == Library.id)
-        .filter(ReadingListItem.comic_id.in_(comic_ids), Library.parse_reading_lists == True)
+        .filter((ReadingListItem.comic_id + 0).in_(comic_ids), Library.parse_reading_lists == True)
         .order_by(ReadingList.name.asc(), ReadingListItem.position.asc())
         .all()
     )
@@ -175,7 +178,7 @@ def _load_annotations(db: SessionDep, comics: list[Comic]) -> dict[int, dict]:
         .join(Volume, Comic.volume_id == Volume.id)
         .join(Series, Volume.series_id == Series.id)
         .join(Library, Series.library_id == Library.id)
-        .filter(CollectionItem.comic_id.in_(comic_ids), Library.parse_collections == True)
+        .filter((CollectionItem.comic_id + 0).in_(comic_ids), Library.parse_collections == True)
         .order_by(Collection.name.asc())
         .all()
     )
@@ -209,7 +212,7 @@ def _first_by(items: list[Comic], key_fn) -> list[dict]:
 
 
 @router.get("/suggestions", response_model=list[TimelineSuggestion], name="suggestions")
-async def timeline_suggestions(
+def timeline_suggestions(
     db: SessionDep,
     current_user: CurrentUser,
     q: str = Query(..., min_length=1),
@@ -219,7 +222,7 @@ async def timeline_suggestions(
     allowed_ids = _allowed_library_ids(current_user)
     suggestions = []
 
-    for subject_type, (model, _relationship) in SUBJECT_MODELS.items():
+    for subject_type, (model, _link_column) in SUBJECT_MODELS.items():
         query = (
             db.query(model.name)
             .join(model.comics)
@@ -244,7 +247,7 @@ async def timeline_suggestions(
 
 
 @router.get("/", response_model=TimelineResponse, name="detail")
-async def get_timeline(
+def get_timeline(
     db: SessionDep,
     current_user: CurrentUser,
     subject_type: TimelineSubjectType = Query(..., alias="type"),
@@ -255,8 +258,10 @@ async def get_timeline(
     if not subject:
         raise HTTPException(status_code=404, detail="Timeline subject not found")
 
-    model, relationship = SUBJECT_MODELS[subject_type]
+    _model, link_column = SUBJECT_MODELS[subject_type]
     allowed_ids = _allowed_library_ids(current_user)
+    # Look up the subject's comic ids directly instead of checking every comic for the name.
+    subject_comic_ids = select(link_column.table.c.comic_id).where(link_column == subject.id)
 
     sort_year = case((or_(Comic.year == None, Comic.year <= 0), 9999), else_=Comic.year)
     sort_month = case((or_(Comic.month == None, Comic.month <= 0), 99), else_=Comic.month)
@@ -266,7 +271,7 @@ async def get_timeline(
         db.query(Comic)
         .join(Volume, Comic.volume_id == Volume.id)
         .join(Series, Volume.series_id == Series.id)
-        .filter(relationship.any(model.name == subject.name))
+        .filter(Comic.id.in_(subject_comic_ids))
         .options(joinedload(Comic.volume).joinedload(Volume.series))
     )
     comics = (
