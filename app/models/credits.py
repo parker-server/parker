@@ -20,7 +20,7 @@ class ComicCredit(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     comic_id = Column(Integer, ForeignKey('comics.id', ondelete='CASCADE'), nullable=False)
-    person_id = Column(Integer, ForeignKey('people.id', ondelete='CASCADE'), nullable=False)
+    person_id = Column(Integer, ForeignKey('people.id', ondelete='CASCADE'), nullable=False, index=True)
     role = Column(String, nullable=False, index=True)  # 'writer', 'penciller', 'inker', etc.
 
     # Prevent duplicate person+role on same comic
