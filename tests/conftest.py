@@ -92,6 +92,11 @@ def db():
     # Cleanup
     session.close()
     Base.metadata.drop_all(bind=engine)
+    # ANALYZE statistics are not part of the models, so drop them too: query plans in
+    # later tests should not depend on which earlier test refreshed them.
+    with engine.begin() as conn:
+        conn.exec_driver_sql("DROP TABLE IF EXISTS sqlite_stat1")
+        conn.exec_driver_sql("DROP TABLE IF EXISTS sqlite_stat4")
 
 
 @pytest.fixture(scope="function")
