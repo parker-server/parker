@@ -94,8 +94,9 @@ Batches, busiest pages first. Run the related tests after each batch.
 - [ ] `routers/opds.py` (12)
 - [ ] `api/libraries.py` (17), `api/users.py` (12)
 - [ ] `routers/admin.py` (20), `api/reports.py` (7), `api/jobs.py` (5), `api/tasks.py` (3), `api/stats.py` (4)
-- [ ] The rest of `app/api/`: bookmarks, reading lists, collections, saved searches, auth, search, timelines, batch, people, CBL sources (26)
+- [ ] The rest of `app/api/`: bookmarks, reading lists, collections, saved searches, auth, search, batch, people, CBL sources (24)
 - [x] `api/insights.py` (3), converted early with the chemistry query speed-up
+- [x] `api/timelines.py` (2), converted early with the timeline query speed-up
 - [ ] The 7 CBL and upload routes from the table above
 - [ ] Full test suite
 

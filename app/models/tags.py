@@ -7,14 +7,17 @@ comic_characters = Table(
     'comic_characters',
     Base.metadata,
     Column('comic_id', Integer, ForeignKey('comics.id', ondelete='CASCADE'), primary_key=True),
-    Column('character_id', Integer, ForeignKey('characters.id', ondelete='CASCADE'), primary_key=True)
+    Column('character_id', Integer, ForeignKey('characters.id', ondelete='CASCADE'), primary_key=True),
+    # Finds a character's comics without touching the table (timelines, suggestions).
+    Index('idx_comic_characters_character_comic', 'character_id', 'comic_id'),
 )
 
 comic_teams = Table(
     'comic_teams',
     Base.metadata,
     Column('comic_id', Integer, ForeignKey('comics.id', ondelete='CASCADE'), primary_key=True),
-    Column('team_id', Integer, ForeignKey('teams.id', ondelete='CASCADE'), primary_key=True)
+    Column('team_id', Integer, ForeignKey('teams.id', ondelete='CASCADE'), primary_key=True),
+    Index('idx_comic_teams_team_comic', 'team_id', 'comic_id'),
 )
 
 comic_locations = Table(
