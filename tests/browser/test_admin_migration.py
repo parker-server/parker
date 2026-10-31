@@ -1,3 +1,5 @@
+import json
+import re
 import sqlite3
 
 import pytest
@@ -80,14 +82,70 @@ def test_admin_migration_requires_preview_before_enabling_run(page, browser_serv
 
         page.get_by_role("button", name="Preview Import").click()
         page.get_by_text("Import Preview").wait_for()
-        page.get_by_text("1 new user to create").wait_for()
-        page.get_by_text("1 existing user match").wait_for()
-        page.get_by_text("1 existing user with importable progress").wait_for()
+        page.get_by_text("2 of 2 users selected · 1 new account · 2 progress records").wait_for()
+        assert not run_button.is_disabled()
+
+        page.get_by_role("button", name="Select none").click()
+        page.get_by_text("0 of 2 users selected · 0 new accounts · 0 progress records").wait_for()
+        assert run_button.is_disabled()
+
+        page.get_by_label("Import preview-new-user").check()
+        page.get_by_text("1 of 2 users selected · 1 new account · 1 progress record").wait_for()
         assert not run_button.is_disabled()
 
         file_input.set_input_files([])
         page.get_by_text("Import Preview").wait_for(state="hidden")
         assert run_button.is_disabled()
+    finally:
+        session = browser_server["db_factory"]()
+        try:
+            admin = session.get(User, browser_server["seed"]["user_id"])
+            if admin is not None:
+                admin.is_superuser = False
+                session.commit()
+        finally:
+            session.close()
+
+
+@pytest.mark.browser
+def test_admin_migration_run_sends_only_selected_users(page, browser_server, tmp_path):
+    kavita_db_path = tmp_path / "kavita-preview.db"
+    _create_kavita_preview_db(kavita_db_path)
+
+    session = browser_server["db_factory"]()
+    try:
+        admin = session.get(User, browser_server["seed"]["user_id"])
+        admin.is_superuser = True
+        session.commit()
+    finally:
+        session.close()
+
+    run_requests = []
+
+    def fulfill_run(route):
+        run_requests.append(route.request)
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps({"status": "Migration of users and reading progress complete.", "details": {"inserted": 1, "updated": 0, "skipped": 0}}),
+        )
+
+    page.route("**/api/migration/run", fulfill_run)
+
+    try:
+        page.goto(f"{browser_server['base_url']}/admin/migration", wait_until="networkidle")
+        page.locator("#kavita-db-file").set_input_files(str(kavita_db_path))
+        page.get_by_role("button", name="Preview Import").click()
+        page.get_by_text("2 of 2 users selected").wait_for()
+
+        page.get_by_label("Import browser-user").uncheck()
+        page.get_by_role("button", name="Start Migration").click()
+        page.locator('[x-data="globalDialog()"]').get_by_role("button", name="Migrate").click()
+        page.get_by_text("Migration of users and reading progress complete.").wait_for()
+
+        assert len(run_requests) == 1
+        body = run_requests[0].post_data
+        assert re.findall(r'name="kavita_user_ids"\s+(\d+)', body) == ["2"]
     finally:
         session = browser_server["db_factory"]()
         try:

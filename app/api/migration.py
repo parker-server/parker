@@ -5,7 +5,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, Response
 
 from app.api.deps import AdminUser, SessionDep
-from app.services.kavita_migration import KavitaMigrationService
+from app.services.kavita_migration import InvalidKavitaDatabaseError, KavitaMigrationService
 from app.services.kavita_migration_staging import (
     consume_preview,
     discard_preview,
@@ -48,6 +48,8 @@ def preview_kavita_migration(
             "preview_token": preview_token,
             "expires_at": expires_at.isoformat(),
         }
+    except InvalidKavitaDatabaseError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=f"File error: {exc}") from exc
     except HTTPException:
@@ -79,6 +81,10 @@ def run_kavita_migration(
     admin: AdminUser,
     preview_token: Annotated[str, Form(description="Migration preview token")],
     user_strategy: Annotated[str, Form(description="User migration strategy")] = "temp-password",
+    kavita_user_ids: Annotated[
+        list[int] | None,
+        Form(description="Kavita user IDs to import; omit to import every user"),
+    ] = None,
 ):
     """Run a previously previewed Kavita migration (users + reading progress)."""
     _validate_user_strategy(user_strategy)
@@ -95,7 +101,7 @@ def run_kavita_migration(
     try:
         try:
             service = KavitaMigrationService(db=db, kavita_db_path=staged_preview.db_path)
-            csv_data = service.migrate_users(strategy=user_strategy)
+            csv_data = service.migrate_users(strategy=user_strategy, kavita_user_ids=kavita_user_ids)
             stats = service.migrate_progress()
             db.commit()
 
