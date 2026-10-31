@@ -122,6 +122,10 @@
                         <span class="text-xs text-blue-200 font-medium truncate max-w-[100px]" x-text="`Scanning ${libraryName}...`"></span>
                     </div>
 
+                    {% if get_system_setting("features.notifications_enabled", True) %}
+                    {% include "partials/notification_bell.html" %}
+                    {% endif %}
+
                     <div class="hidden md:block relative w-56 xl:w-80">
                         {% include "partials/search_widget.html" %}
                     </div>

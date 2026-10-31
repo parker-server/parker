@@ -12,6 +12,7 @@ from app.core.templates import templates
 from app.models.comic import Comic, Volume
 from app.core.login_effects import get_active_effect
 from app.core.login_backgrounds import SOLID_COLORS, STATIC_COVERS
+from app.services.notifications import NotificationService
 from app.services.settings_service import SettingsService
 from app.services.startup_diagnostics import (
     build_home_startup_notice,
@@ -315,8 +316,21 @@ async def settings_page(request: Request, db: SessionDep, user: CurrentUser):
     return templates.TemplateResponse(
         request=request,
         name="user/settings.html",
-        context={"opds_enabled": opds_enabled},
+        context={
+            "opds_enabled": opds_enabled,
+            "notifications_enabled": NotificationService(db).is_enabled(),
+        },
     )
+
+@router.get("/user/notifications", response_class=HTMLResponse, name="user_notifications")
+def notifications_page(request: Request, db: SessionDep, user: CurrentUser):
+    if not NotificationService(db).is_enabled():
+        raise HTTPException(status_code=404, detail="Notifications are turned off")
+    return templates.TemplateResponse(request=request, name="user/notifications.html")
+
+@router.get("/whats-new", response_class=HTMLResponse, name="whats_new")
+async def whats_new_page(request: Request, user: CurrentUser):
+    return templates.TemplateResponse(request=request, name="whats_new.html")
 
 @router.get("/user/opds-keys", response_class=HTMLResponse, name="user_opds_keys")
 async def opds_keys_page(request: Request, db: SessionDep, user: CurrentUser):

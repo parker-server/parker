@@ -27,6 +27,9 @@ class User(Base):
     allow_unknown_age_ratings = Column(Boolean, default=False, nullable=False)
     monthly_reading_goal = Column(Integer, default=10, nullable=False)
     home_rail_layout = Column(JSON, nullable=True)
+    # Keyed by notification kind, then channel: {"follow_arrivals": {"in_app": false}}.
+    # Missing keys mean the kind's default.
+    notification_preferences = Column(JSON, nullable=True)
 
 
     # Permissions
@@ -57,6 +60,9 @@ class User(Base):
 
     # Revocable OPDS keys owned by the user.
     opds_tokens = relationship("UserOPDSToken", back_populates="user", cascade="all, delete-orphan")
+
+    # In-app notifications for the user.
+    notifications = relationship("Notification", cascade="all, delete-orphan")
 
     # Use cascade="all, delete-orphan" so that if a user is deleted, their logs are wiped too
     activity_logs = relationship("ActivityLog", back_populates="user", cascade="all, delete-orphan")

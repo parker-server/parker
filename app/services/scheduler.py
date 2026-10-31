@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
 from app.services.backup import BackupService
+from app.services.notifications import run_notification_checks
 from app.services.scan_manager import scan_manager
 from app.models.setting import SystemSetting
 from app.models.library import Library
@@ -39,6 +40,8 @@ class SchedulerService:
             "description": "Library Scan"
         }
     }
+
+    NOTIFICATION_CHECKS_HOUR = 9  # 9 AM, so dated notifications arrive in the morning
 
     def __new__(cls):
         if cls._instance is None:
@@ -99,6 +102,16 @@ class SchedulerService:
             )
             logger.info(f"Scheduled {config['description']}: {interval} (at {config['default_hour']}:00)")
 
+        # Notification checks are calendar-driven (for example Year in Review on
+        # a set date), so they always run daily and are not admin-tunable.
+        self._scheduler.add_job(
+            self.run_notification_checks_job,
+            trigger=CronTrigger(hour=self.NOTIFICATION_CHECKS_HOUR, minute=0),
+            id="notification_checks",
+            replace_existing=True,
+        )
+        logger.info(f"Scheduled Notification Checks: daily (at {self.NOTIFICATION_CHECKS_HOUR}:00)")
+
     @staticmethod
     def _get_trigger_for_interval(interval: str, hour: int) -> CronTrigger:
         """
@@ -145,6 +158,14 @@ class SchedulerService:
         except Exception as e:
             logger.error(f"Failed to queue cleanup: {e}")
 
+
+    @staticmethod
+    def run_notification_checks_job():
+        try:
+            with SessionLocal() as session:
+                run_notification_checks(session)
+        except Exception as e:
+            logger.error(f"Notification checks failed: {e}")
 
     @staticmethod
     def run_scan_job():

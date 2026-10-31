@@ -21,6 +21,10 @@
             <h1 class="text-3xl font-bold text-white mb-2">{{ instance_name }}</h1>
             <p class="text-sm uppercase tracking-[0.24em] text-gray-500 mb-2">Powered by Parker</p>
             <p class="text-blue-400 font-mono">v{{ app_version }}</p>
+            <a href="{{ url('/whats-new') }}" class="mt-2 inline-block text-sm font-semibold text-blue-400 hover:text-blue-300">
+                What's new in this version
+            </a>
+            <br>
             <a
                 x-show="updateAvailable"
                 x-cloak

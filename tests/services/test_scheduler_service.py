@@ -124,11 +124,45 @@ def test_reschedule_jobs_removes_existing_and_skips_disabled(monkeypatch):
     svc.reschedule_jobs()
 
     svc._scheduler.remove_all_jobs.assert_called_once()
-    svc._scheduler.add_job.assert_called_once()
+    calls = {call.kwargs["id"]: call.kwargs for call in svc._scheduler.add_job.call_args_list}
+    assert set(calls) == {"scan", "notification_checks"}
+    assert calls["scan"]["trigger"] == "daily-4"
+    assert calls["scan"]["replace_existing"] is True
+
+
+def test_reschedule_jobs_always_adds_daily_notification_checks(monkeypatch):
+    svc = _service()
+    svc._scheduler = MagicMock()
+    monkeypatch.setattr(scheduler.SchedulerService, "_TASK_REGISTRY", {})
+
+    svc.reschedule_jobs()
+
     kwargs = svc._scheduler.add_job.call_args.kwargs
-    assert kwargs["id"] == "scan"
-    assert kwargs["trigger"] == "daily-4"
+    assert kwargs["id"] == "notification_checks"
     assert kwargs["replace_existing"] is True
+    assert str(kwargs["trigger"].fields[5]) == str(svc.NOTIFICATION_CHECKS_HOUR)
+
+
+def test_run_notification_checks_job_logs_failures(monkeypatch):
+    calls = []
+
+    class Session:
+        def __enter__(self):
+            return "session"
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(scheduler, "SessionLocal", Session)
+    monkeypatch.setattr(scheduler, "run_notification_checks", lambda db: calls.append(db))
+    scheduler.SchedulerService.run_notification_checks_job()
+    assert calls == ["session"]
+
+    def fail(db):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(scheduler, "run_notification_checks", fail)
+    scheduler.SchedulerService.run_notification_checks_job()  # does not raise
 
 
 def test_get_trigger_for_interval_covers_all_mappings():

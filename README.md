@@ -30,6 +30,12 @@ https://github.com/parker-server/parker/wiki/Getting-Started
   - Avatar uploads
   - Hybrid authentication (JWT + secure cookies)
 
+- **Notifications**
+  - Navbar bell with an unread count and a dropdown of recent notifications, plus a full notifications page with mark read, remove, and clear read
+  - A What's New notification after Parker is updated, linking to a What's New page with reader-facing highlights (admin-only highlights for admins)
+  - Per-user on/off choices for each kind of notification in Account Settings
+  - Site-wide **Enable Notifications** setting under Settings → Features, and configurable retention for read notifications
+
 - **Reader**
   - Context‑aware navigation (series, volume, lists, story arcs)
   - Context-aware Continue actions for series, volumes, reading lists, collections, and stacks

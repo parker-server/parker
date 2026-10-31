@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft. Not started. Open questions are listed at the end; the phase 1 shape below does not depend on them.
+Phase 1 is split into two pull requests. The first (notification center and What's New) is built on `feature/notifications`. The second (follow arrivals and Year in Review) is not started. Open questions are listed at the end.
 
 ## Goal
 
@@ -258,7 +258,8 @@ Release notes stay as they are (`docs/releases/x.x.x.md` with the four required 
 - **When**: at startup. Parker stores the last version it announced in a system setting (`notifications.whats_new_last_version`). Entries newer than that, and not newer than the running version, are announced, then the setting is updated.
 - **Who**: users who exist at that moment. New users do not get a backlog of old announcements.
 - **Grouping**: one notification per user per upgrade, even when several versions are skipped: "What's new in Parker 0.1.50" with the entry count. The producer passes `data = {"version": ..., "entries": n}` and the kind's `render` writes the text. It links to a **What's New** page (`/whats-new`) that lists all entries for the user's audience, newest first.
-- **First install**: the setting starts at the installed version, so a fresh install announces nothing.
+- **First start of the notification center**: the setting starts empty. On a fresh install (no libraries yet) nothing is announced. On a server that already has libraries, the running version's entries are announced, so the release that adds notifications can introduce itself. Either way the setting is then set to the running version.
+- When notifications are off, the version is still recorded, so turning them on later does not announce old news.
 - An entry is optional per release. Most bug-fix releases will have none.
 
 ### Year in Review
@@ -338,7 +339,7 @@ Phase 2 can move `admin_update_available` here instead of tying it to the versio
 
 ## Retention
 
-Add `cleanup_old_notifications()` to `MaintenanceService` (`app/services/maintenance.py`), following `cleanup_old_jobs()`, and call it from the daily notification check. The scheduled cleanup task defaults to monthly, which is too slow for a 30-day window.
+`NotificationService.cleanup_old_notifications()` runs from the daily notification check, following the pattern of `cleanup_old_jobs()`. It lives in the notification service, which owns the table, rather than in `MaintenanceService`. The scheduled cleanup task defaults to monthly, which is too slow for a 30-day window.
 
 - delete read notifications older than `notifications.retention_days`
 - delete unread notifications older than 90 days, so a user who never logs in does not collect rows forever
@@ -365,7 +366,7 @@ All return 404 when `features.notifications_enabled` is off, except `/api/whats-
 
 - **Bell in the navbar** (`app/templates/base.html`), between the scanner status and the search widget, with an unread count. The count is fetched on page load and again on `visibilitychange` when the tab becomes visible. No polling timer.
 - **Dropdown** under the bell: the 10 most recent notifications, unread ones highlighted, each with its kind icon (`partials/lucide_icon.html`), title, body and relative time. Clicking one marks it read and follows the link. Footer actions: **Mark all read** and **View all**.
-- **Mobile menu**: a Notifications entry with the unread count.
+- **Phones**: the bell stays in the top bar at every width, so the mobile menu needs no separate entry. On small screens the dropdown spans the screen width instead of hanging off the bell.
 - **Notifications page** (`/user/notifications`): full list with All and Unread tabs, mark read, remove, clear read, and a link to preferences.
 - **Preferences**: a Notifications section on `/user/settings`.
 - **What's New page** (`/whats-new`): entries grouped by version. Also linked from the admin About page.
@@ -409,7 +410,8 @@ All return 404 when `features.notifications_enabled` is off, except `/api/whats-
 - Follow producer tests: only followers who can see the comic are notified (library and age rating); only comics from this scan; a library's first scan and batches over the limit are skipped; one notification per volume.
 - Year in Review tests, with a fixed date: nothing before December 15; sent on December 15 to users with reading that year and not to others; a January run sends for the previous year if December was missed; nothing after January 31; a second run in the same season sends nothing.
 - What's New tests: fresh install announces nothing; an upgrade across several versions creates one notification per user; admin entries reach admins only; users created later get none.
-- Retention test following the existing `cleanup_old_jobs` tests, run through the daily notification check.
+- Retention tests, including that cleanup still runs through the daily notification check when notifications are off.
+- Test files: `tests/services/test_notification_service.py`, `tests/api/test_notifications.py` and `tests/browser/test_notifications_browser.py`.
 - `tests/services/test_migrations_match_models.py` keeps passing.
 - Playwright: the bell shows a count after a followed volume gets a new issue; clicking a notification opens the volume and clears the count; mark all read; turning a kind off in preferences stops new ones; the bell is hidden when the setting is off.
 

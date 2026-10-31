@@ -34,6 +34,7 @@ from app.services.settings_service import SettingsService
 from app.services.scheduler import scheduler_service
 from app.services.scan_manager import scan_manager
 from app.services.startup_diagnostics import log_startup_diagnostics
+from app.services.notifications import run_notification_checks, run_startup_producers
 
 
 from app.services.watcher import library_watcher
@@ -52,6 +53,7 @@ from app.api import insights
 from app.api import timelines
 from app.api import people
 from app.api import promoted_rails
+from app.api import notifications
 
 # Frontend Routes (HTML)
 from app.routers import pages, admin
@@ -150,6 +152,15 @@ async def lifespan(app: FastAPI):
 
         # START SCHEDULER
         scheduler_service.start()
+
+        # Announce What's New after an upgrade and run the daily notification
+        # checks once, in case the server was off when they were due.
+        try:
+            with SessionLocal() as notifications_db:
+                run_startup_producers(notifications_db)
+                run_notification_checks(notifications_db)
+        except Exception as exc:
+            logger.warning("Startup notification work failed: %s", exc)
 
     except:
         # Lock is held by another worker.
@@ -372,6 +383,8 @@ app.include_router(smart_lists.router, prefix="/api/smart-lists", tags=["smart-l
 app.include_router(pull_lists.router, prefix="/api/pull-lists", tags=["pull-lists"])
 app.include_router(cover_murals.router, prefix="/api/cover-murals", tags=["cover-murals"])
 app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"])
+app.include_router(notifications.router, prefix="/api/notifications", tags=["notifications"])
+app.include_router(notifications.whats_new_router, prefix="/api/whats-new", tags=["whats-new"])
 app.include_router(promoted_rails.router, prefix="/api/promoted-rails", tags=["promoted-rails", "admin"])
 
 # Pure admin routers

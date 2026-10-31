@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+{% from "partials/lucide_icon.html" import lucide_icon %}
+
+{% block title %}Notifications - Parker{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto" x-data="notificationsPage()">
+
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+        <h1 class="text-3xl font-bold text-white">Notifications</h1>
+        <a href="{{ url('/user/settings') }}#notifications" class="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors">
+            {{ lucide_icon("settings", "h-4 w-4 flex-shrink-0") }} Notification settings
+        </a>
+    </div>
+
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div class="inline-flex rounded-lg bg-gray-800 border border-gray-700 p-1" role="tablist">
+            <button
+                type="button"
+                role="tab"
+                :aria-selected="(tab === 'all').toString()"
+                @click="setTab('all')"
+                class="px-4 py-1.5 rounded-md text-sm font-semibold transition-colors"
+                :class="tab === 'all' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'"
+            >All</button>
+            <button
+                type="button"
+                role="tab"
+                :aria-selected="(tab === 'unread').toString()"
+                @click="setTab('unread')"
+                class="px-4 py-1.5 rounded-md text-sm font-semibold transition-colors"
+                :class="tab === 'unread' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'"
+            >Unread <span x-show="unreadCount > 0" x-text="`(${unreadCount})`"></span></button>
+        </div>
+
+        <div class="flex items-center gap-2">
+            <button
+                type="button"
+                @click="markAllRead()"
+                :disabled="unreadCount === 0"
+                class="inline-flex items-center gap-2 rounded-lg border border-gray-700 px-3 py-2 text-sm font-semibold text-gray-300 hover:text-white hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+                {{ lucide_icon("circle-check", "h-4 w-4 flex-shrink-0") }} Mark all read
+            </button>
+            <button
+                type="button"
+                @click="clearRead()"
+                class="inline-flex items-center gap-2 rounded-lg border border-gray-700 px-3 py-2 text-sm font-semibold text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
+            >
+                {{ lucide_icon("trash-2", "h-4 w-4 flex-shrink-0") }} Clear read
+            </button>
+        </div>
+    </div>
+
+    <div class="bg-gray-800 rounded-lg border border-gray-700 shadow-xl overflow-hidden">
+        <p x-show="loading && items.length === 0" class="px-6 py-10 text-center text-gray-400">Loading...</p>
+
+        <div x-show="!loading && items.length === 0" x-cloak class="px-6 py-12 text-center">
+            <div class="inline-flex text-gray-500 mb-3">{{ lucide_icon("bell", "h-8 w-8") }}</div>
+            <p class="text-white font-semibold" x-text="tab === 'unread' ? 'No unread notifications' : 'No notifications yet'"></p>
+            <p class="text-sm text-gray-400 mt-1">You'll see news from Parker here.</p>
+        </div>
+
+        <template x-for="item in items" :key="item.id">
+            <div
+                class="flex gap-4 px-5 py-4 border-b border-gray-700 last:border-b-0"
+                :class="item.is_read ? '' : 'bg-blue-500/5'"
+                data-testid="notification-row"
+            >
+                <span class="mt-0.5 text-blue-300" x-html="window.parker.notifications.iconHtml(item.icon)"></span>
+
+                <button type="button" @click="openItem(item)" class="min-w-0 flex-1 text-left group">
+                    <span class="flex items-center gap-2">
+                        <span x-show="!item.is_read" class="h-2 w-2 rounded-full bg-blue-500 flex-shrink-0">
+                            <span class="sr-only">Unread</span>
+                        </span>
+                        <span class="text-white font-semibold group-hover:text-blue-300 transition-colors" x-text="item.title"></span>
+                    </span>
+                    <span class="block text-sm text-gray-400 mt-0.5" x-show="item.body" x-text="item.body"></span>
+                    <span class="block text-xs text-gray-500 mt-1">
+                        <span x-text="item.label"></span> · <span x-text="window.parker.formatDate(item.updated_at)"></span>
+                    </span>
+                </button>
+
+                <div class="flex items-start gap-1 flex-shrink-0">
+                    <button
+                        type="button"
+                        x-show="!item.is_read"
+                        @click="markRead(item)"
+                        class="p-2 rounded-md text-gray-400 hover:text-white hover:bg-gray-700 transition-colors"
+                        title="Mark read"
+                        aria-label="Mark read"
+                    >{{ lucide_icon("circle-check", "h-4 w-4") }}</button>
+                    <button
+                        type="button"
+                        @click="remove(item)"
+                        class="p-2 rounded-md text-gray-400 hover:text-red-300 hover:bg-gray-700 transition-colors"
+                        title="Remove"
+                        aria-label="Remove"
+                    >{{ lucide_icon("trash-2", "h-4 w-4") }}</button>
+                </div>
+            </div>
+        </template>
+    </div>
+
+    <div class="mt-4 text-center" x-show="items.length < total">
+        <button
+            type="button"
+            @click="loadMore()"
+            :disabled="loading"
+            class="rounded-lg border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
+        >Load more</button>
+    </div>
+</div>
+
+<script>
+function notificationsPage() {
+    const PAGE_SIZE = 20;
+
+    return {
+        tab: 'all',
+        items: [],
+        total: 0,
+        page: 1,
+        unreadCount: 0,
+        loading: false,
+
+        init() {
+            this.load();
+        },
+
+        setTab(tab) {
+            if (this.tab === tab) return;
+            this.tab = tab;
+            this.load();
+        },
+
+        async load(append = false) {
+            this.loading = true;
+            if (!append) this.page = 1;
+            try {
+                const query = new URLSearchParams({ page: this.page, size: PAGE_SIZE });
+                if (this.tab === 'unread') query.set('unread_only', 'true');
+                const res = await fetch(window.parker.route('notifications.list', {}, query.toString()));
+                if (!res.ok) throw new Error('Failed to load notifications');
+                const data = await res.json();
+                this.items = append ? [...this.items, ...data.items] : data.items;
+                this.total = data.total;
+                this.unreadCount = data.unread_count;
+            } catch (error) {
+                console.error(error);
+                window.parker.showToast('Could not load notifications', 'error');
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        loadMore() {
+            this.page += 1;
+            this.load(true);
+        },
+
+        async openItem(item) {
+            await window.parker.notifications.open(item);
+        },
+
+        async markRead(item) {
+            if (await window.parker.notifications.markRead(item)) {
+                this.unreadCount = Math.max(0, this.unreadCount - 1);
+                window.parker.notifications.changed();
+            }
+        },
+
+        async remove(item) {
+            const res = await fetch(
+                window.parker.route('notifications.delete', { notification_id: item.id }),
+                { method: 'DELETE' }
+            );
+            if (!res.ok) {
+                window.parker.showToast('Could not remove notification', 'error');
+                return;
+            }
+            this.items = this.items.filter((row) => row.id !== item.id);
+            this.total = Math.max(0, this.total - 1);
+            if (!item.is_read) this.unreadCount = Math.max(0, this.unreadCount - 1);
+            window.parker.notifications.changed();
+        },
+
+        async markAllRead() {
+            const res = await fetch(window.parker.route('notifications.mark_all_read'), { method: 'POST' });
+            if (!res.ok) {
+                window.parker.showToast('Could not mark notifications as read', 'error');
+                return;
+            }
+            window.parker.notifications.changed();
+            this.load();
+        },
+
+        async clearRead() {
+            const confirmed = await window.parker.dialog.confirm(
+                'Clear read notifications?',
+                'Read notifications will be removed. Unread ones are kept.',
+                { isDestructive: true, confirmText: 'Clear' }
+            );
+            if (!confirmed) return;
+
+            const res = await fetch(window.parker.route('notifications.clear_read'), { method: 'DELETE' });
+            if (!res.ok) {
+                window.parker.showToast('Could not clear notifications', 'error');
+                return;
+            }
+            this.load();
+        },
+    };
+}
+</script>
+{% endblock %}
