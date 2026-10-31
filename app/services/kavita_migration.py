@@ -8,7 +8,7 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Collection, Dict, Optional
 
 from sqlalchemy.orm import Session
 
@@ -24,6 +24,14 @@ from app.models.user import User
 
 
 logger = logging.getLogger(__name__)
+
+SQLITE_HEADER = b"SQLite format 3\x00"
+REQUIRED_KAVITA_TABLES = ("AspNetUsers", "AppUserProgresses", "Series", "Volume", "Chapter", "MangaFile")
+KAVITA_DATABASE_HINT = "Upload the kavita.db file from your Kavita config folder."
+
+
+class InvalidKavitaDatabaseError(ValueError):
+    """Raised when an uploaded file is not a usable Kavita database."""
 
 
 @dataclass
@@ -63,6 +71,7 @@ class KavitaMigrationService:
         self.kavita_conn.row_factory = sqlite3.Row
 
         self.user_map: Dict[int, int] = {}
+        self.users_migrated = False
         self.comic_map: Dict[int, int] = {}
 
         self.mapping_stats = {
@@ -81,11 +90,36 @@ class KavitaMigrationService:
         if self.kavita_conn:
             self.kavita_conn.close()
 
+    def validate_database(self) -> None:
+        """Raise InvalidKavitaDatabaseError unless the file is SQLite with the tables migration reads."""
+        with self.kavita_db_path.open("rb") as db_file:
+            if db_file.read(len(SQLITE_HEADER)) != SQLITE_HEADER:
+                raise InvalidKavitaDatabaseError(f"This file isn't a Kavita database. {KAVITA_DATABASE_HINT}")
+
+        try:
+            rows = self.kavita_conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
+        except sqlite3.DatabaseError as exc:
+            raise InvalidKavitaDatabaseError(
+                f"This database file could not be read. {KAVITA_DATABASE_HINT}"
+            ) from exc
+
+        existing_tables = {row["name"] for row in rows}
+        missing_tables = [table for table in REQUIRED_KAVITA_TABLES if table not in existing_tables]
+        if len(missing_tables) == len(REQUIRED_KAVITA_TABLES):
+            raise InvalidKavitaDatabaseError(f"This file isn't a Kavita database. {KAVITA_DATABASE_HINT}")
+        if missing_tables:
+            raise InvalidKavitaDatabaseError(
+                f"This database is missing Kavita tables Parker needs ({', '.join(missing_tables)}). "
+                f"{KAVITA_DATABASE_HINT}"
+            )
+
     # ==========================================
     # PHASE 1: USER MIGRATION
     # ==========================================
 
-    def _build_user_migration_plan(self) -> list[KavitaUserMigrationPlan]:
+    def _build_user_migration_plan(
+        self, kavita_user_ids: Optional[Collection[int]] = None
+    ) -> list[KavitaUserMigrationPlan]:
         kavita_users = self.kavita_conn.execute("SELECT Id, UserName, Email FROM AspNetUsers").fetchall()
         admin_ids = self._get_admin_user_ids()
 
@@ -99,6 +133,9 @@ class KavitaMigrationService:
                 continue
 
             kavita_user_id = kavita_user["Id"]
+            if kavita_user_ids is not None and kavita_user_id not in kavita_user_ids:
+                continue
+
             plan.append(
                 KavitaUserMigrationPlan(
                     kavita_user_id=kavita_user_id,
@@ -111,11 +148,9 @@ class KavitaMigrationService:
 
         return plan
 
-    def preview_migration(self, username_limit: int = 25) -> dict[str, object]:
+    def preview_migration(self) -> dict[str, object]:
         """Build a read-only summary of the changes a migration could make."""
-        if username_limit < 1:
-            raise ValueError("username_limit must be at least 1")
-
+        self.validate_database()
         user_plan = self._build_user_migration_plan()
         self.map_comics()
 
@@ -138,28 +173,17 @@ class KavitaMigrationService:
 
             progress_by_user[kavita_user_id] += 1
 
-        new_users = [entry for entry in user_plan if entry.parker_user is None]
-        matched_existing_users = [entry for entry in user_plan if entry.parker_user is not None]
-        existing_users_with_progress = [
-            entry for entry in matched_existing_users if progress_by_user[entry.kavita_user_id] > 0
-        ]
-
-        def username_summary(entries: list[KavitaUserMigrationPlan]) -> dict[str, object]:
-            usernames = sorted((entry.username for entry in entries), key=str.lower)
-            return {
-                "count": len(usernames),
-                "usernames": usernames[:username_limit],
-                "truncated": len(usernames) > username_limit,
-            }
-
         return {
-            "users": {
-                "new": username_summary(new_users),
-                "existing": {
-                    "matched_count": len(matched_existing_users),
-                    "with_importable_progress": username_summary(existing_users_with_progress),
-                },
-            },
+            "users": [
+                {
+                    "kavita_user_id": entry.kavita_user_id,
+                    "username": entry.username,
+                    "is_new": entry.parker_user is None,
+                    "is_admin": entry.is_admin,
+                    "importable_progress": progress_by_user[entry.kavita_user_id],
+                }
+                for entry in sorted(user_plan, key=lambda entry: entry.username.lower())
+            ],
             "progress": {
                 "source_records": total_progress_records,
                 "importable_records": total_progress_records - skipped_progress_records,
@@ -168,9 +192,16 @@ class KavitaMigrationService:
             "mapping": self.mapping_stats.copy(),
         }
 
-    def migrate_users(self, strategy: str = "temp-password") -> Optional[str]:
+    def migrate_users(
+        self,
+        strategy: str = "temp-password",
+        kavita_user_ids: Optional[Collection[int]] = None,
+    ) -> Optional[str]:
         """
         Migrate users from Kavita.
+
+        Only users in kavita_user_ids are migrated when it is given; otherwise all users are.
+        Progress is later imported only for migrated users.
 
         Supported strategy:
         - temp-password: create new users with random temporary passwords and
@@ -181,9 +212,10 @@ class KavitaMigrationService:
 
         logger.info("Starting user migration")
 
+        self.users_migrated = True
         created_credentials = []
 
-        for user_plan in self._build_user_migration_plan():
+        for user_plan in self._build_user_migration_plan(kavita_user_ids):
             username = user_plan.username
             email = user_plan.email
             k_id = user_plan.kavita_user_id
@@ -526,7 +558,7 @@ class KavitaMigrationService:
 
     def migrate_progress(self) -> Dict[str, int]:
         """Migrate reading progress for mapped users and comics."""
-        if not self.user_map:
+        if not self.users_migrated and not self.user_map:
             self.migrate_users(strategy="temp-password")
         if not self.comic_map:
             self.map_comics()

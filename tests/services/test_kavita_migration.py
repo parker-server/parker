@@ -1,11 +1,13 @@
 import sqlite3
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from app.models.comic import Volume
 from app.models.reading_progress import ReadingProgress
 from app.models.series import Series
 from app.models.user import User
-from app.services.kavita_migration import KavitaMigrationService
+from app.services.kavita_migration import InvalidKavitaDatabaseError, KavitaMigrationService
 from tests.factories import create_comic, create_library_with_root
 
 
@@ -132,6 +134,119 @@ def test_migrate_users_creates_admin_and_syncs_library_permissions(db, tmp_path)
     assert [lib.name for lib in reader_user.accessible_libraries] == ["Main Library"]
 
 
+def test_migrate_users_only_imports_selected_users_and_their_progress(db, tmp_path):
+    lib, _, volume = _seed_parker_series(db, prefix="kselect")
+    comic = create_comic(
+        db, volume, lib.active_root, "select.cbz",
+        number="1",
+        title="Selected",
+        filename="select.cbz",
+        page_count=10,
+    )
+    db.commit()
+
+    kavita_path = _create_kavita_db(tmp_path, include_mapping_tables=False)
+    conn = sqlite3.connect(kavita_path)
+    cur = conn.cursor()
+    cur.executemany(
+        "INSERT INTO AspNetUsers (Id, UserName, Email) VALUES (?, ?, ?)",
+        [
+            (1, "picked-reader", "picked@example.com"),
+            (2, "skipped-reader", "skipped@example.com"),
+        ],
+    )
+    cur.executemany(
+        "INSERT INTO AppUserProgresses (AppUserId, ChapterId, PagesRead, LastModified) VALUES (?, ?, ?, ?)",
+        [
+            (1, 100, 3, "2026-01-01 10:00:00"),
+            (2, 100, 5, "2026-01-02 10:00:00"),
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+    service = KavitaMigrationService(db=db, kavita_db_path=str(kavita_path))
+    service.comic_map = {100: comic.id}
+    try:
+        csv_data = service.migrate_users(strategy="temp-password", kavita_user_ids=[1])
+        stats = service.migrate_progress()
+    finally:
+        service.close()
+
+    assert csv_data is not None
+    assert "picked-reader" in csv_data
+    assert "skipped-reader" not in csv_data
+    assert db.query(User).filter(User.username == "skipped-reader").first() is None
+
+    picked_user = db.query(User).filter(User.username == "picked-reader").one()
+    assert stats["inserted"] == 1
+    assert stats["skipped"] == 1
+    db.flush()
+    assert [progress.user_id for progress in db.query(ReadingProgress).all()] == [picked_user.id]
+
+
+def test_migrate_progress_imports_nothing_after_empty_user_selection(db, tmp_path):
+    kavita_path = _create_kavita_db(tmp_path, include_mapping_tables=False)
+    conn = sqlite3.connect(kavita_path)
+    cur = conn.cursor()
+    cur.execute("INSERT INTO AspNetUsers (Id, UserName, Email) VALUES (?, ?, ?)", (1, "reader", None))
+    cur.execute(
+        "INSERT INTO AppUserProgresses (AppUserId, ChapterId, PagesRead, LastModified) VALUES (?, ?, ?, ?)",
+        (1, 100, 3, "2026-01-01 10:00:00"),
+    )
+    conn.commit()
+    conn.close()
+
+    service = KavitaMigrationService(db=db, kavita_db_path=str(kavita_path))
+    service.comic_map = {100: 1}
+    try:
+        csv_data = service.migrate_users(strategy="temp-password", kavita_user_ids=[])
+        stats = service.migrate_progress()
+    finally:
+        service.close()
+
+    assert csv_data is None
+    assert db.query(User).filter(User.username == "reader").first() is None
+    assert stats["inserted"] == 0
+    assert stats["mapped_users"] == 0
+
+
+def _write_other_sqlite_db(path, tables):
+    conn = sqlite3.connect(path)
+    for table in tables:
+        conn.execute(f"CREATE TABLE {table} (Id INTEGER PRIMARY KEY)")
+    conn.commit()
+    conn.close()
+
+
+@pytest.mark.parametrize(
+    ("setup", "expected_message"),
+    [
+        (lambda path: path.write_bytes(b"hello, this is not a database"), "This file isn't a Kavita database."),
+        (lambda path: path.write_bytes(b""), "This file isn't a Kavita database."),
+        (lambda path: _write_other_sqlite_db(path, ["Foo"]), "This file isn't a Kavita database."),
+        (
+            lambda path: _write_other_sqlite_db(path, ["AspNetUsers", "AppUserProgresses"]),
+            "missing Kavita tables Parker needs (Series, Volume, Chapter, MangaFile)",
+        ),
+    ],
+    ids=["text-file", "empty-file", "other-sqlite", "partial-kavita"],
+)
+def test_preview_migration_rejects_files_that_are_not_kavita_databases(db, tmp_path, setup, expected_message):
+    db_path = tmp_path / "upload.db"
+    setup(db_path)
+
+    service = KavitaMigrationService(db=db, kavita_db_path=str(db_path))
+    try:
+        with pytest.raises(InvalidKavitaDatabaseError) as exc_info:
+            service.preview_migration()
+    finally:
+        service.close()
+
+    assert expected_message in str(exc_info.value)
+    assert "Upload the kavita.db file from your Kavita config folder." in str(exc_info.value)
+
+
 def test_preview_migration_summarizes_new_and_existing_users_with_progress(db, tmp_path, monkeypatch):
     existing_user = User(
         username="existing-reader",
@@ -143,7 +258,7 @@ def test_preview_migration_summarizes_new_and_existing_users_with_progress(db, t
     db.add(existing_user)
     db.commit()
 
-    kavita_path = _create_kavita_db(tmp_path, include_mapping_tables=False)
+    kavita_path = _create_kavita_db(tmp_path)
     conn = sqlite3.connect(kavita_path)
     cur = conn.cursor()
     cur.executemany(
@@ -182,19 +297,22 @@ def test_preview_migration_summarizes_new_and_existing_users_with_progress(db, t
     finally:
         service.close()
 
-    assert preview["users"]["new"] == {
-        "count": 1,
-        "usernames": ["new-reader"],
-        "truncated": False,
-    }
-    assert preview["users"]["existing"] == {
-        "matched_count": 1,
-        "with_importable_progress": {
-            "count": 1,
-            "usernames": ["existing-reader"],
-            "truncated": False,
+    assert preview["users"] == [
+        {
+            "kavita_user_id": 1,
+            "username": "existing-reader",
+            "is_new": False,
+            "is_admin": False,
+            "importable_progress": 1,
         },
-    }
+        {
+            "kavita_user_id": 2,
+            "username": "new-reader",
+            "is_new": True,
+            "is_admin": False,
+            "importable_progress": 1,
+        },
+    ]
     assert preview["progress"] == {
         "source_records": 4,
         "importable_records": 2,

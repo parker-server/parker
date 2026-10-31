@@ -16,17 +16,22 @@ from app.models.user import User
 
 
 PREVIEW_PAYLOAD = {
-    "users": {
-        "new": {"count": 1, "usernames": ["new-user"], "truncated": False},
-        "existing": {
-            "matched_count": 1,
-            "with_importable_progress": {
-                "count": 1,
-                "usernames": ["existing-user"],
-                "truncated": False,
-            },
+    "users": [
+        {
+            "kavita_user_id": 1,
+            "username": "existing-user",
+            "is_new": False,
+            "is_admin": False,
+            "importable_progress": 1,
         },
-    },
+        {
+            "kavita_user_id": 2,
+            "username": "new-user",
+            "is_new": True,
+            "is_admin": False,
+            "importable_progress": 1,
+        },
+    ],
     "progress": {"source_records": 3, "importable_records": 2, "skipped_records": 1},
     "mapping": {"mapped_total": 2},
 }
@@ -187,7 +192,7 @@ def test_migration_preview_stages_database_and_run_returns_csv(admin_client, mon
         def preview_migration(self):
             return PREVIEW_PAYLOAD
 
-        def migrate_users(self, strategy="temp-password"):
+        def migrate_users(self, strategy="temp-password", kavita_user_ids=None):
             return "username,temporary_password,email,role\nuser1,pwd,test@example.com,User\n"
 
         def migrate_progress(self):
@@ -250,6 +255,45 @@ def test_migration_preview_discard_removes_staged_database(admin_client, monkeyp
     assert run_response.status_code == 409
 
 
+@pytest.mark.parametrize(
+    ("run_data", "expected_user_ids"),
+    [
+        ({"kavita_user_ids": ["1", "3"]}, [1, 3]),
+        ({}, None),
+    ],
+)
+def test_migration_run_passes_selected_kavita_user_ids(admin_client, monkeypatch, run_data, expected_user_ids):
+    class FakeMigrationService:
+        received_user_ids = []
+
+        def __init__(self, db, kavita_db_path):
+            pass
+
+        def preview_migration(self):
+            return PREVIEW_PAYLOAD
+
+        def migrate_users(self, strategy="temp-password", kavita_user_ids=None):
+            self.received_user_ids.append(kavita_user_ids)
+            return None
+
+        def migrate_progress(self):
+            return {"inserted": 0, "updated": 0, "skipped": 0}
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr("app.api.migration.KavitaMigrationService", FakeMigrationService)
+
+    preview = _create_preview(admin_client)
+    response = admin_client.post(
+        "/api/migration/run",
+        data={"preview_token": preview["preview_token"], **run_data},
+    )
+
+    assert response.status_code == 200
+    assert FakeMigrationService.received_user_ids == [expected_user_ids]
+
+
 def test_migration_run_returns_json_when_no_csv(admin_client, monkeypatch):
     class FakeMigrationService:
         def __init__(self, db, kavita_db_path):
@@ -258,7 +302,7 @@ def test_migration_run_returns_json_when_no_csv(admin_client, monkeypatch):
         def preview_migration(self):
             return PREVIEW_PAYLOAD
 
-        def migrate_users(self, strategy="temp-password"):
+        def migrate_users(self, strategy="temp-password", kavita_user_ids=None):
             return None
 
         def migrate_progress(self):
@@ -286,7 +330,7 @@ def test_migration_run_rolls_back_when_progress_phase_fails(admin_client, db, mo
         def preview_migration(self):
             return PREVIEW_PAYLOAD
 
-        def migrate_users(self, strategy="temp-password"):
+        def migrate_users(self, strategy="temp-password", kavita_user_ids=None):
             self.db.add(
                 User(
                     username="rollback-user",
@@ -317,6 +361,25 @@ def test_migration_run_rolls_back_when_progress_phase_fails(admin_client, db, mo
     assert rolled_back is None
 
 
+@pytest.mark.parametrize(
+    "content",
+    [b"hello, this is not a database", b""],
+    ids=["text-file", "empty-file"],
+)
+def test_migration_preview_rejects_non_kavita_upload_with_400(admin_client, migration_cache, content):
+    response = admin_client.post(
+        "/api/migration/preview",
+        data={"user_strategy": "temp-password"},
+        files={"kavita_db_file": ("kavita.db", content, "application/octet-stream")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == (
+        "This file isn't a Kavita database. Upload the kavita.db file from your Kavita config folder."
+    )
+    assert list(migration_cache.glob("*.db")) == []
+
+
 def test_migration_preview_maps_file_not_found_to_404(admin_client, monkeypatch):
     class MissingKavitaDbService:
         def __init__(self, db, kavita_db_path):
@@ -339,7 +402,7 @@ def test_migration_run_reraises_http_exception_from_inner_flow(admin_client, mon
         def preview_migration(self):
             return PREVIEW_PAYLOAD
 
-        def migrate_users(self, strategy="temp-password"):
+        def migrate_users(self, strategy="temp-password", kavita_user_ids=None):
             raise HTTPException(status_code=418, detail="teapot")
 
         def migrate_progress(self):
@@ -367,7 +430,7 @@ def test_migration_run_ignores_permission_error_while_cleaning_staged_file(admin
         def preview_migration(self):
             return PREVIEW_PAYLOAD
 
-        def migrate_users(self, strategy="temp-password"):
+        def migrate_users(self, strategy="temp-password", kavita_user_ids=None):
             return None
 
         def migrate_progress(self):
