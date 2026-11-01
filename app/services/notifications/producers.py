@@ -26,7 +26,7 @@ from app.models.series import Series
 from app.models.user import User
 from app.services.notifications.service import NotificationService
 from app.services.settings_service import SettingsService
-from app.services.version_check import parse_version
+from app.services.version_check import UPDATE_CHECK_SETTING, get_version_check_status, parse_version
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +34,7 @@ WHATS_NEW_FILE = Path(__file__).resolve().parents[2] / "data" / "whats_new.json"
 WHATS_NEW_LAST_VERSION_SETTING = "notifications.whats_new_last_version"
 WHATS_NEW_AUDIENCES = ("all", "admin")
 YEAR_IN_REVIEW_LAST_YEAR_SETTING = "notifications.year_in_review_last_year"
+UPDATE_LAST_VERSION_SETTING = "notifications.update_last_version"
 # Year in Review goes out on the first daily check on or after this day in
 # December. A January check still sends it for the previous year.
 YEAR_IN_REVIEW_START_DAY = 15
@@ -327,6 +328,52 @@ def announce_year_in_review(db: Session, today: date) -> int:
     return notified
 
 
+def announce_update_available(db: Session, today: date, current_version: Optional[str] = None) -> int:
+    """
+    Tell admins once about each newer Parker release found by the version check.
+
+    The check contacts GitHub at most every few hours (its result is cached), and
+    not at all when update checks or notifications are turned off.
+    """
+    service = NotificationService(db)
+    if not service.is_enabled():
+        return 0
+
+    settings_service = SettingsService(db)
+    if settings_service.get(UPDATE_CHECK_SETTING) is False:
+        return 0
+    last_raw = settings_service.get(UPDATE_LAST_VERSION_SETTING)
+    if last_raw is None:
+        logger.warning("Update notification skipped: %s is missing", UPDATE_LAST_VERSION_SETTING)
+        return 0
+
+    current_version = current_version or settings.version
+    status = get_version_check_status(current_version)
+    latest = parse_version(status.latest_version)
+    if not status.update_available or latest is None:
+        return 0
+    last = parse_version(last_raw)
+    if last is not None and last >= latest:
+        return 0
+
+    admin_ids = [
+        user_id for (user_id,) in (
+            db.query(User.id)
+            .filter(User.is_superuser == True, User.is_active == True)  # noqa: E712
+            .all()
+        )
+    ]
+    notified = service.notify(
+        "admin_update_available",
+        admin_ids,
+        data={"version": status.latest_version, "current_version": current_version},
+        group_key="admin:update",
+    )
+    settings_service.update(UPDATE_LAST_VERSION_SETTING, status.latest_version)
+    logger.info("Told %s admins about Parker %s", notified, status.latest_version)
+    return notified
+
+
 def cleanup_old_notifications(db: Session, today: date) -> int:
     return NotificationService(db).cleanup_old_notifications()
 
@@ -347,6 +394,7 @@ STARTUP_PRODUCERS: list[StartupProducer] = [
 
 DAILY_CHECKS: list[DailyCheck] = [
     announce_year_in_review,
+    announce_update_available,
     cleanup_old_notifications,
 ]
 

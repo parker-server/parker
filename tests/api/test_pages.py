@@ -399,6 +399,24 @@ def test_admin_version_check_endpoint_reports_update(admin_client, monkeypatch):
     assert payload["latest_url"] == "https://github.com/parker-server/parker/tree/v9.9.9"
 
 
+def test_admin_version_check_endpoint_skips_github_when_checks_are_off(admin_client, db, monkeypatch):
+    from app.models.setting import SystemSetting
+
+    def should_not_run(current_version):
+        raise AssertionError("GitHub should not be contacted when update checks are off")
+
+    monkeypatch.setattr("app.api.stats.get_version_check_status", should_not_run)
+    db.add(SystemSetting(key="server.update_check_enabled", value="false", category="server", data_type="bool"))
+    db.commit()
+
+    response = admin_client.get("/api/stats/version-check")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "disabled"
+    assert payload["update_available"] is False
+
+
 def test_admin_build_commit_hash_prefers_environment(monkeypatch):
     from app.core import build_info
 

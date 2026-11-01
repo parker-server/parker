@@ -41,6 +41,10 @@ def mock_background_services():
     library_watcher.start = MagicMock()
     library_watcher.stop = MagicMock()
 
+    # Startup notifications use the real database and may contact GitHub.
+    import app.main as main_module
+    main_module._run_startup_notifications = MagicMock()
+
 
 # --- FIXTURE END ---
 

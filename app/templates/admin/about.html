@@ -74,6 +74,11 @@
                             class="text-amber-300 text-sm font-semibold"
                         >Latest tag <span x-text="latestTag"></span> found</span>
                         <span x-show="unavailable" x-cloak class="text-gray-400 text-sm">Unable to check latest tag</span>
+                        <span
+                            x-show="checked && !loading && result?.status === 'disabled'"
+                            x-cloak
+                            class="text-gray-400 text-sm"
+                        >Update checks are off</span>
                     </div>
 
                     <div>

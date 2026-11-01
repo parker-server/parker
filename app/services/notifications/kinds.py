@@ -47,6 +47,13 @@ def _render_year_in_review(count: int, data: dict[str, Any]) -> tuple[str, Optio
     )
 
 
+def _render_update_available(count: int, data: dict[str, Any]) -> tuple[str, Optional[str]]:
+    return (
+        f"Parker {data['version']} is available",
+        f"This server is running {data['current_version']}.",
+    )
+
+
 KINDS: dict[str, NotificationKind] = {
     kind.key: kind
     for kind in (
@@ -73,6 +80,15 @@ KINDS: dict[str, NotificationKind] = {
             icon="sparkles",
             render=_render_whats_new,
             link=lambda data: "/whats-new",
+        ),
+        NotificationKind(
+            key="admin_update_available",
+            label="Parker updates",
+            description="When a newer Parker release is available.",
+            icon="download",
+            render=_render_update_available,
+            link=lambda data: "/admin/about",
+            admin_only=True,
         ),
     )
 }
