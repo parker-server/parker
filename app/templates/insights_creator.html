@@ -137,7 +137,7 @@
         </div>
 
         <div x-show="!loading && !errorMessage && data && data.pair_count > 0" x-cloak class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px]">
-            <div class="px-4 md:px-6 pt-4 md:pt-5 pb-6">
+            <div class="px-4 md:px-6 pt-4 md:pt-5 pb-6 xl:grid xl:grid-rows-[auto_1fr]">
                 <div class="mb-4 rounded-xl border border-gray-700 bg-gray-900/50 px-4 py-3">
                     <div class="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center md:justify-between">
                         <div class="text-sm text-gray-300">
@@ -163,7 +163,7 @@
                     </div>
                 </div>
 
-                <div class="max-h-[70vh] overflow-auto overscroll-contain touch-pan-x touch-pan-y pb-2">
+                <div class="max-h-[70vh] xl:min-h-full overflow-auto overscroll-contain touch-pan-x touch-pan-y pb-2">
                     <table class="table-fixed min-w-[640px] md:min-w-[720px] border-separate [border-spacing:0.5rem]">
                         <thead>
                             <tr>
