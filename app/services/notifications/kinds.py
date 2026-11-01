@@ -34,9 +34,38 @@ def _render_whats_new(count: int, data: dict[str, Any]) -> tuple[str, Optional[s
     return title, f"{first_title}, and {count - 1} more"
 
 
+def _render_follow_arrivals(count: int, data: dict[str, Any]) -> tuple[str, Optional[str]]:
+    volume_name = f"{data['series_name']} Vol {data['volume_number']}"
+    return f"{count} new issue{'s' if count != 1 else ''} in {volume_name}", None
+
+
+def _render_year_in_review(count: int, data: dict[str, Any]) -> tuple[str, Optional[str]]:
+    year = data["year"]
+    return (
+        f"Your {year} Year in Review is ready",
+        f"See your favorite series and reading milestones from {year}.",
+    )
+
+
 KINDS: dict[str, NotificationKind] = {
     kind.key: kind
     for kind in (
+        NotificationKind(
+            key="follow_arrivals",
+            label="New issues in followed volumes",
+            description="When a scan adds issues to a volume you follow.",
+            icon="book-open",
+            render=_render_follow_arrivals,
+            link=lambda data: f"/volumes/{data['volume_id']}",
+        ),
+        NotificationKind(
+            key="year_in_review",
+            label="Year in Review",
+            description="When your Year in Review is ready in December.",
+            icon="party-popper",
+            render=_render_year_in_review,
+            link=lambda data: f"/user/year-in-review?year={data['year']}",
+        ),
         NotificationKind(
             key="whats_new",
             label="What's new in Parker",

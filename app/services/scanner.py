@@ -26,6 +26,7 @@ from app.services.sidecar_service import SidecarService
 from app.services.reading_list import ReadingListService
 from app.services.collection import CollectionService
 from app.services.cbl_source_service import CBLSourceService, CBLSourceError
+from app.services.notifications import ScanInfo, run_scan_producers
 
 
 class LibraryScanner:
@@ -69,6 +70,11 @@ class LibraryScanner:
         self.reconciled_series.clear()
 
         start_time = time.time()
+        scan_info = ScanInfo(
+            library_id=self.library.id,
+            started_at=datetime.now(timezone.utc),
+            first_scan=self.library.last_scanned is None,
+        )
 
         # 0. Prefetch existing comics for roots this scan can actually see.
         self.logger.debug("Pre-fetching existing file list for parallel scan...")
@@ -287,6 +293,12 @@ class LibraryScanner:
                 library_root.last_scanned_at = scanned_at
                 library_root.last_scan_error = None
         self.db.commit()
+
+        # Notifications are best-effort and must never fail the scan.
+        try:
+            run_scan_producers(self.db, scan_info)
+        except Exception as exc:
+            self.logger.error(f"Scan notifications failed for library {self.library.id}: {exc}")
 
         elapsed = round(time.time() - start_time, 2)
 

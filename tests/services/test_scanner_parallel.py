@@ -1,5 +1,6 @@
 import multiprocessing
 import zipfile
+from datetime import datetime, timezone
 from queue import Empty
 from types import SimpleNamespace
 
@@ -20,6 +21,9 @@ from app.models import (
     Series,
     Volume,
 )
+from app.models.interactions import UserVolumeFollow
+from app.models.notification import Notification
+from app.models.user import User
 from app.services.scanner import LibraryScanner
 from tests.factories import create_comic, create_library_with_root
 
@@ -683,6 +687,83 @@ def test_scan_parallel_real_pool_and_writer_smoke(monkeypatch, tmp_path):
     finally:
         verify_db.close()
         engine.dispose()
+
+
+def test_scan_parallel_notifies_followers_about_new_issues(monkeypatch, tmp_path):
+    library_path = tmp_path / "library"
+    _create_cbz_with_comicinfo(library_path / "one.cbz", series="Follow Series", number="1", title="One")
+
+    db_path = tmp_path / "follow-scan.db"
+    db_url = f"sqlite:///{db_path.as_posix()}"
+    monkeypatch.setenv("DATABASE_URL", db_url)
+
+    spawn_ctx = multiprocessing.get_context("spawn")
+    monkeypatch.setattr(scanner_module, "Queue", spawn_ctx.Queue)
+    monkeypatch.setattr(scanner_module.multiprocessing, "Process", spawn_ctx.Process)
+    monkeypatch.setattr(scanner_module.multiprocessing, "Pool", spawn_ctx.Pool)
+
+    engine = create_engine(db_url, connect_args={"check_same_thread": False, "timeout": 60})
+    SessionLocal = sessionmaker(autoflush=False, bind=engine)
+    Base.metadata.create_all(bind=engine)
+
+    db = SessionLocal()
+    try:
+        library = create_library_with_root(db, "Follow Scan", str(library_path))
+        follower = User(username="follower", email="follower@example.com", hashed_password="x", is_superuser=True)
+        db.add(follower)
+        db.commit()
+
+        # The first scan of a library is a backfill and notifies nobody.
+        LibraryScanner(library, db).scan_parallel(force=False, worker_limit=1)
+        volume = db.query(Volume).one()
+        db.add(UserVolumeFollow(user_id=follower.id, volume_id=volume.id))
+        db.commit()
+        assert db.query(Notification).count() == 0
+
+        _create_cbz_with_comicinfo(library_path / "two.cbz", series="Follow Series", number="2", title="Two")
+        result = LibraryScanner(library, db).scan_parallel(force=False, worker_limit=1)
+
+        assert result["imported"] == 1
+        notification = db.query(Notification).one()
+        assert notification.user_id == follower.id
+        assert notification.title == "1 new issue in Follow Series Vol 1"
+        assert notification.link == f"/volumes/{volume.id}"
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def test_scan_parallel_survives_failing_notifications(monkeypatch, tmp_path):
+    library_path = tmp_path / "library"
+    unchanged = _create_file(library_path / "only.cbz")
+    library_root = SimpleNamespace(id=1, path=str(library_path))
+    existing = [
+        SimpleNamespace(
+            library_root_id=1, relative_path="only.cbz",
+            file_modified_at=unchanged.stat().st_mtime + 30,
+        ),
+    ]
+    db = DummyDB(existing, library_root=library_root)
+    library = SimpleNamespace(name="Test", id=7, last_scanned=datetime(2026, 1, 1, tzinfo=timezone.utc))
+    scanner = LibraryScanner(library, db)
+    scanner._reconcile_sidecars = lambda *_args, **_kwargs: None
+    scanner._cleanup_missing_files = lambda *_args, **_kwargs: 0
+    _disable_container_cleanup(scanner)
+    monkeypatch.setattr(scanner_module, "get_cached_setting", lambda _key, default=0: default)
+
+    calls = []
+
+    def broken(session, scan_info):
+        calls.append(scan_info)
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(scanner_module, "run_scan_producers", broken)
+
+    result = scanner.scan_parallel(force=False, worker_limit=1)
+
+    assert result["skipped"] == 1
+    assert calls[0].library_id == 7
+    assert calls[0].first_scan is False
 
 
 def test_scan_parallel_self_heals_legacy_comic_missing_root_stamp(monkeypatch, tmp_path):

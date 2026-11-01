@@ -207,6 +207,23 @@ def get_series_age_restriction(user, series_model=Series):
     # "Show me Series where NOT(Has Any Banned Comic)"
     return not_(series_model.volumes.any(Volume.comics.any(banned_condition)))
 
+
+def filter_series_query_to_user(query, user):
+    """
+    Limit a query that joins Series to series the user can see: their libraries
+    and their age rating.
+    """
+    if not user.is_superuser:
+        allowed_ids = [library.id for library in user.accessible_libraries]
+        query = query.filter(Series.library_id.in_(allowed_ids))
+
+    age_filter = get_series_age_restriction(user)
+    if age_filter is not None:
+        query = query.filter(age_filter)
+
+    return query
+
+
 def get_banned_comic_condition(user):
     """
     Returns a SQLAlchemy BinaryExpression representing 'Banned Content' for this user.

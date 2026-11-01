@@ -9,7 +9,7 @@ from collections import defaultdict
 
 from app.core.settings_loader import get_cached_setting
 from app.api.deps import CurrentUser, PaginatedResponse, PaginationParams, SessionDep
-from app.core.comic_helpers import get_format_filters, get_smart_cover, get_series_age_restriction, get_thumbnail_url, pick_series_cover
+from app.core.comic_helpers import filter_series_query_to_user, get_format_filters, get_smart_cover, get_series_age_restriction, get_thumbnail_url, pick_series_cover
 from app.models.comic import Comic, Volume
 from app.models.interactions import UserComicRating
 from app.models.interactions import UserLibraryPin
@@ -854,14 +854,7 @@ def get_following_arrivals(
         .filter(is_plain)
         .filter(not_started_or_read)
     )
-
-    if not current_user.is_superuser:
-        allowed_ids = [lib.id for lib in current_user.accessible_libraries]
-        query = query.filter(Series.library_id.in_(allowed_ids))
-
-    age_filter = get_series_age_restriction(current_user)
-    if age_filter is not None:
-        query = query.filter(age_filter)
+    query = filter_series_query_to_user(query, current_user)
 
     results = (
         query.order_by(

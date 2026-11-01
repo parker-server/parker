@@ -366,6 +366,15 @@ class SettingsService:
             "label": "Last Announced Version",
             "is_hidden": True,
         },
+        {
+            # Internal: the last year whose Year in Review was announced.
+            "key": "notifications.year_in_review_last_year",
+            "value": "0",
+            "category": "system",
+            "data_type": "int",
+            "label": "Last Announced Year in Review",
+            "is_hidden": True,
+        },
 
 
     ]

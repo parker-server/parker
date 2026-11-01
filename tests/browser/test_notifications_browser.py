@@ -1,10 +1,15 @@
+from datetime import datetime, timezone
+
 import pytest
 
 from app.core.security import create_access_token
 from app.core.templates import templates
+from app.models.comic import Volume
+from app.models.interactions import UserVolumeFollow
 from app.models.notification import Notification
 from app.models.setting import SystemSetting
 from app.models.user import User
+from app.services.notifications.producers import ScanInfo, notify_follow_arrivals
 from app.services.notifications.service import NOTIFICATIONS_ENABLED_SETTING, NotificationService
 
 
@@ -86,6 +91,47 @@ def test_bell_shows_count_and_opens_notification(page, browser_server, notificat
     page.locator("text=What's New in Parker").wait_for()
     page.wait_for_load_state("networkidle")
     assert page.locator("[data-testid='notification-count']").is_hidden()
+
+
+@pytest.mark.browser
+def test_follow_arrival_opens_the_volume(page, browser_server, notifications_state):
+    seed = browser_server["seed"]
+    session = browser_server["db_factory"]()
+    try:
+        volume = session.get(Volume, seed["volume_id"])
+        follow = UserVolumeFollow(user_id=seed["user_id"], volume_id=volume.id)
+        session.add(follow)
+        session.commit()
+        # Every seeded issue counts as new for a scan that started before they were added.
+        notify_follow_arrivals(session, ScanInfo(
+            library_id=volume.series.library_id,
+            started_at=datetime(2000, 1, 1, tzinfo=timezone.utc),
+            first_scan=False,
+        ))
+    finally:
+        session.close()
+
+    try:
+        _sign_in(page, notifications_state["token"])
+        page.goto(f"{browser_server['base_url']}/", wait_until="networkidle")
+        page.locator("[data-testid='notification-count']").wait_for(state="visible")
+
+        page.locator("[data-testid='notification-bell']").click()
+        item = page.locator("[data-testid='notification-item']")
+        item.wait_for(state="visible")
+        assert f"new issues in {seed['series_name']} Vol 1" in item.inner_text()
+
+        item.click()
+        page.wait_for_url(f"**/volumes/{seed['volume_id']}")
+        page.wait_for_load_state("networkidle")
+        assert page.locator("[data-testid='notification-count']").is_hidden()
+    finally:
+        session = browser_server["db_factory"]()
+        try:
+            session.query(UserVolumeFollow).filter_by(user_id=seed["user_id"], volume_id=seed["volume_id"]).delete()
+            session.commit()
+        finally:
+            session.close()
 
 
 @pytest.mark.browser

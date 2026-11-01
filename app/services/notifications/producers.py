@@ -7,15 +7,22 @@ keep one failing producer from stopping the others or the caller.
 """
 import json
 import logging
+from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.core.comic_helpers import filter_series_query_to_user, get_format_filters
+from app.models.comic import Comic, Volume
+from app.models.interactions import UserVolumeFollow
 from app.models.library import Library
+from app.models.reading_progress import ReadingProgress
+from app.models.series import Series
 from app.models.user import User
 from app.services.notifications.service import NotificationService
 from app.services.settings_service import SettingsService
@@ -26,6 +33,13 @@ logger = logging.getLogger(__name__)
 WHATS_NEW_FILE = Path(__file__).resolve().parents[2] / "data" / "whats_new.json"
 WHATS_NEW_LAST_VERSION_SETTING = "notifications.whats_new_last_version"
 WHATS_NEW_AUDIENCES = ("all", "admin")
+YEAR_IN_REVIEW_LAST_YEAR_SETTING = "notifications.year_in_review_last_year"
+# Year in Review goes out on the first daily check on or after this day in
+# December. A January check still sends it for the previous year.
+YEAR_IN_REVIEW_START_DAY = 15
+# A scan adding more plain issues than this to followed volumes is treated as a
+# bulk import, not new issues followers are waiting for.
+FOLLOW_ARRIVALS_BULK_LIMIT = 500
 
 Version = tuple[int, int, int]
 
@@ -160,7 +174,158 @@ def _notify_whats_new(db: Session, entries: list[WhatsNewEntry], version_label: 
     return notified
 
 
+# --- Follow arrivals ---
+
+@dataclass(frozen=True)
+class ScanInfo:
+    """What scan producers need to know about a finished library scan."""
+    library_id: int
+    started_at: datetime
+    first_scan: bool
+
+
+def notify_follow_arrivals(db: Session, scan: ScanInfo) -> int:
+    """
+    Tell followers about plain issues a scan added to volumes they follow.
+
+    Each follower gets one notification per volume, and only for volumes they
+    can see. A library's first scan and very large batches are skipped, since
+    those are backfills rather than new issues.
+    """
+    if scan.first_scan:
+        logger.info("Follow arrivals skipped: first scan of library %s", scan.library_id)
+        return 0
+
+    service = NotificationService(db)
+    if not service.is_enabled():
+        return 0
+
+    is_plain, _, _ = get_format_filters()
+    followed_volume_ids = db.query(UserVolumeFollow.volume_id).distinct()
+    arrivals = (
+        db.query(Comic.volume_id, func.count(Comic.id))
+        .join(Volume, Volume.id == Comic.volume_id)
+        .join(Series, Series.id == Volume.series_id)
+        .filter(Series.library_id == scan.library_id)
+        .filter(Comic.created_at >= scan.started_at)
+        .filter(Comic.volume_id.in_(followed_volume_ids))
+        .filter(is_plain)
+        .group_by(Comic.volume_id)
+        .all()
+    )
+    if not arrivals:
+        return 0
+
+    counts = {volume_id: count for volume_id, count in arrivals}
+    total = sum(counts.values())
+    if total > FOLLOW_ARRIVALS_BULK_LIMIT:
+        logger.info(
+            "Follow arrivals skipped: %s new issues in %s followed volumes looks like a bulk import",
+            total, len(counts),
+        )
+        return 0
+
+    follows = (
+        db.query(UserVolumeFollow.volume_id, User)
+        .join(User, User.id == UserVolumeFollow.user_id)
+        .filter(UserVolumeFollow.volume_id.in_(counts))
+        .filter(User.is_active == True)  # noqa: E712
+        .all()
+    )
+    users_by_id: dict[int, User] = {}
+    volume_ids_by_user: dict[int, list[int]] = defaultdict(list)
+    for volume_id, user in follows:
+        users_by_id[user.id] = user
+        volume_ids_by_user[user.id].append(volume_id)
+
+    # Library access and age rating apply per series, so a follower sees all of
+    # a volume's new issues or none of them.
+    user_ids_by_volume: dict[int, list[int]] = defaultdict(list)
+    for user_id, volume_ids in volume_ids_by_user.items():
+        visible = filter_series_query_to_user(
+            db.query(Volume.id)
+            .join(Series, Series.id == Volume.series_id)
+            .filter(Volume.id.in_(volume_ids)),
+            users_by_id[user_id],
+        )
+        for (volume_id,) in visible.all():
+            user_ids_by_volume[volume_id].append(user_id)
+
+    if not user_ids_by_volume:
+        return 0
+
+    volumes = (
+        db.query(Volume.id, Volume.volume_number, Series.name)
+        .join(Series, Series.id == Volume.series_id)
+        .filter(Volume.id.in_(user_ids_by_volume))
+        .all()
+    )
+    notified = 0
+    for volume_id, volume_number, series_name in volumes:
+        notified += service.notify(
+            "follow_arrivals",
+            user_ids_by_volume[volume_id],
+            data={"volume_id": volume_id, "series_name": series_name, "volume_number": volume_number},
+            group_key=f"follow:volume:{volume_id}",
+            count=counts[volume_id],
+        )
+    return notified
+
+
 # --- Daily checks ---
+
+def year_in_review_year(today: date) -> Optional[int]:
+    """The year whose review should be announced today, or None outside the season."""
+    if today.month == 12 and today.day >= YEAR_IN_REVIEW_START_DAY:
+        return today.year
+    if today.month == 1:
+        return today.year - 1
+    return None
+
+
+def announce_year_in_review(db: Session, today: date) -> int:
+    """Tell users who finished a comic this year that their Year in Review is ready, once a year."""
+    year = year_in_review_year(today)
+    if year is None:
+        return 0
+
+    service = NotificationService(db)
+    if not service.is_enabled():
+        return 0
+
+    settings_service = SettingsService(db)
+    last_year = settings_service.get(YEAR_IN_REVIEW_LAST_YEAR_SETTING)
+    if last_year is None:
+        logger.warning("Year in Review skipped: %s is missing", YEAR_IN_REVIEW_LAST_YEAR_SETTING)
+        return 0
+    if last_year >= year:
+        return 0
+
+    user_ids = [
+        user_id for (user_id,) in (
+            db.query(ReadingProgress.user_id)
+            .join(User, User.id == ReadingProgress.user_id)
+            .filter(User.is_active == True)  # noqa: E712
+            .filter(ReadingProgress.completed == True)  # noqa: E712
+            .filter(ReadingProgress.last_read_at >= datetime(year, 1, 1))
+            .filter(ReadingProgress.last_read_at < datetime(year + 1, 1, 1))
+            .group_by(ReadingProgress.user_id)
+            .all()
+        )
+    ]
+    notified = 0
+    if user_ids:
+        notified = service.notify(
+            "year_in_review",
+            user_ids,
+            data={"year": year},
+            group_key=f"year_in_review:{year}",
+        )
+
+    settings_service.update(YEAR_IN_REVIEW_LAST_YEAR_SETTING, year)
+    logger.info("Announced the %s Year in Review to %s users", year, notified)
+    return notified
+
 
 def cleanup_old_notifications(db: Session, today: date) -> int:
     return NotificationService(db).cleanup_old_notifications()
@@ -168,14 +333,20 @@ def cleanup_old_notifications(db: Session, today: date) -> int:
 
 # --- Hooks ---
 
+ScanProducer = Callable[[Session, ScanInfo], Any]
 StartupProducer = Callable[[Session], Any]
 DailyCheck = Callable[[Session, date], Any]
+
+SCAN_PRODUCERS: list[ScanProducer] = [
+    notify_follow_arrivals,
+]
 
 STARTUP_PRODUCERS: list[StartupProducer] = [
     announce_whats_new,
 ]
 
 DAILY_CHECKS: list[DailyCheck] = [
+    announce_year_in_review,
     cleanup_old_notifications,
 ]
 
@@ -187,6 +358,10 @@ def _run_each(hook_name: str, funcs: list[Callable[..., Any]], db: Session, *arg
         except Exception:
             db.rollback()
             logger.exception("Notification %s step %s failed", hook_name, func.__name__)
+
+
+def run_scan_producers(db: Session, scan: ScanInfo) -> None:
+    _run_each("scan", SCAN_PRODUCERS, db, scan)
 
 
 def run_startup_producers(db: Session) -> None:

@@ -2,7 +2,7 @@
 
 ## Status
 
-Phase 1 is split into two pull requests. The first (notification center and What's New) is built on `feature/notifications`. The second (follow arrivals and Year in Review) is not started. Open questions are listed at the end.
+Phase 1 is split into two pull requests. The first (notification center and What's New) is built on `feature/notifications`. The second (follow arrivals and Year in Review) is built on `feature/notifications-follows`, stacked on the first. Open questions are listed at the end.
 
 ## Goal
 
@@ -42,7 +42,7 @@ The first uses are:
 
 | Kind | Audience | Produced when | Example | Icon | Phase |
 | --- | --- | --- | --- | --- | --- |
-| `follow_arrivals` | Readers | A scan adds plain issues to a volume the user follows | "3 new issues in Saga (2012)" | `book-open` | 1 |
+| `follow_arrivals` | Readers | A scan adds plain issues to a volume the user follows | "3 new issues in Saga Vol 1" | `book-open` | 1 |
 | `whats_new` | All users (admin entries for admins only) | Parker starts on a version with new What's New entries | "New in Parker 0.1.50: report problems with a comic" | `sparkles` | 1 |
 | `year_in_review` | Users who finished a comic this year | Mid-December, once per year | "Your 2026 Year in Review is ready" | `party-popper` (as the dashboard banner) | 1 |
 | `problem_resolved` | Reporter | An admin resolves or dismisses their report | "Your report on Saga #12 was resolved" | `circle-check` | 2 |
@@ -136,7 +136,7 @@ There are four triggers. Three are single hooks holding a list of producers:
 | Startup | `run_startup_producers()` | What's New | |
 | Direct | The feature calls its producer inline | | Problem resolved, admin new report or request, admin announcements |
 
-- `scan_info` carries what producers need from the scan: library ID, scan start time, whether it was the library's first scan, and the IDs of comics it created.
+- `scan_info` (`ScanInfo`) carries what producers need from the scan: library ID, scan start time, and whether it was the library's first scan. Comics are written by a separate writer process, so the scanner does not know which IDs it created; producers find a scan's comics by `created_at` on or after the scan start.
 - A new scan, daily or startup producer is one more entry in that hook's list. The scanner and scheduler are not touched again.
 - Each producer runs in its own `try/except`. A failing producer is logged and never fails the scan, the startup or the other producers.
 - Calendar producers take `today: date` instead of reading the clock, so tests can pin the date.
@@ -220,8 +220,8 @@ A small package keeps the registry, the core and the built-in producers apart wi
 ### Follow Arrivals
 
 - **When**: after a library scan, next to the existing CBL rebuild loop in `Scanner` (`app/services/scanner.py`). A failure is logged and never fails the scan.
-- **What**: plain issues (`get_format_filters()`) created since the scan started, in volumes that have followers. This starts from `UserVolumeFollow` rows (few), not from all comics, so it stays cheap on the 73k-comic server database.
-- **Access**: each follower is notified only about comics they can see, using the same library and age-rating filters as `get_following_arrivals()` in `app/api/home.py`. That filter logic should be shared rather than copied.
+- **What**: plain issues (`get_format_filters()`) in the scanned library created since the scan started, in volumes that have followers. This starts from `UserVolumeFollow` rows (few), not from all comics, so it stays cheap on the 73k-comic server database.
+- **Access**: each follower is notified only about comics they can see, using `filter_series_query_to_user()` in `app/core/comic_helpers.py`, which `get_following_arrivals()` in `app/api/home.py` also uses. Library access and age rating apply per series, so a follower sees all of a volume's new issues or none.
 - **Grouping**: one notification per user per volume, group key `follow:volume:{volume_id}`. While it is unread, later arrivals update its count, title and timestamp. Once read, the next arrival starts a new one.
 - **Link**: the volume page.
 - **Bulk imports**: a large batch of comics appearing at once is a backfill, not "new issues" a follower is waiting for. The producer skips:
@@ -229,6 +229,7 @@ A small package keeps the registry, the core and the built-in producers apart wi
   - any scan that adds more than 500 comics to followed volumes in total (a constant in the service, not a setting)
 
   Skipped batches are logged with their size. Kavita migration and library relocation do not create comic rows, so they need no rule of their own. Grouping also limits the damage if a large batch gets through: each volume still produces only one notification per user.
+- **Known limitation, accepted**: renaming or moving a comic file within a library makes the scanner delete the old row and create a new one, so followers are told about it as a new issue. The "New from Following" home rail behaves the same way, since both go by `created_at`. Large reorganizations are caught by the bulk-import skip. Recognizing a moved file as the same comic would need the scanner to match files by content, which is a scanner change out of scope here.
 
 ### What's New
 
@@ -318,7 +319,7 @@ System settings:
 | --- | --- | --- | --- |
 | `notifications.retention_days` | int | `30` | Read notifications older than this are deleted |
 | `notifications.whats_new_last_version` | string | Installed version | Internal; not shown on the settings page |
-| `notifications.year_in_review_last_year` | int | Empty | Internal; not shown on the settings page |
+| `notifications.year_in_review_last_year` | int | `0` | Internal; not shown on the settings page |
 
 User preferences, on `/user/settings`: one on/off toggle per kind the user can receive, built from the kind registry. Defaults are on for every kind. The user chose to follow a volume or report a problem, so hearing back is expected. Phase 1 shows one toggle per kind for the in-app channel; the stored shape already allows a toggle per channel later.
 
