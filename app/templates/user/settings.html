@@ -65,6 +65,35 @@
     </div>
 
 
+    {% if notifications_enabled %}
+    <div id="notifications" class="bg-gray-800 rounded-lg p-8 border border-gray-700 shadow-xl mb-5 scroll-mt-24">
+        <div class="flex items-center justify-between gap-4 mb-4 border-b border-gray-700 pb-2">
+            <h2 class="text-xl font-bold text-white">Notifications</h2>
+            <a href="{{ url('/user/notifications') }}" class="text-sm text-gray-400 hover:text-white transition-colors">View notifications</a>
+        </div>
+
+        <div class="space-y-5">
+            <template x-for="kind in notificationKinds" :key="kind.key">
+                <div class="flex items-start gap-4">
+                    <div class="flex items-center h-6">
+                        <input
+                            :id="`notification_kind_${kind.key}`"
+                            type="checkbox"
+                            x-model="kind.enabled"
+                            x-on:change="updateNotificationKind(kind)"
+                            class="w-5 h-5 bg-gray-900 border-gray-600 rounded text-blue-600 focus:ring-blue-500 focus:ring-offset-gray-800"
+                        >
+                    </div>
+                    <div>
+                        <label :for="`notification_kind_${kind.key}`" class="font-medium text-white" x-text="kind.label"></label>
+                        <p class="text-gray-400 text-sm mt-1" x-text="kind.description"></p>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+    {% endif %}
+
     {% if opds_enabled %}
     <div class="bg-gray-800 rounded-lg p-8 border border-gray-700 shadow-xl mb-5">
         <h2 class="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">OPDS Access</h2>
@@ -169,6 +198,7 @@ function userSettings() {
         messageStatus: '',
         messageColor: 'text-green-400',
         preferences: {},
+        notificationKinds: [],
 
         async init() {
             try {
@@ -178,6 +208,29 @@ function userSettings() {
                 }
             } catch(e) { console.error("Failed to get user preferences", e); }
 
+            {% if notifications_enabled %}
+            try {
+                const res = await fetch(window.parker.route('notifications.preferences'));
+                if (res.ok) {
+                    this.notificationKinds = (await res.json()).kinds;
+                }
+            } catch(e) { console.error("Failed to get notification preferences", e); }
+            {% endif %}
+        },
+        async updateNotificationKind(kind) {
+            try {
+                const res = await fetch(window.parker.route('notifications.update_preferences'), {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ kinds: { [kind.key]: kind.enabled } })
+                });
+                if (!res.ok) throw new Error('Failed to update notification preferences');
+                window.parker.showToast("Settings updated", "success");
+            } catch(e) {
+                console.error(e);
+                kind.enabled = !kind.enabled;
+                window.parker.showToast("Failed to update settings", "error");
+            }
         },
         async updatePreferences() {
             try {

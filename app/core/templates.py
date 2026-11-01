@@ -7,6 +7,7 @@ from jinja2 import TemplateRuntimeError
 from app.config import settings
 from app.core.settings_loader import get_cached_setting
 from app.core.utils import get_route_map
+from app.services.notifications.kinds import FALLBACK_ICON, KINDS
 
 templates = Jinja2Templates(directory="app/templates")
 
@@ -60,6 +61,14 @@ templates.env.globals["base_url"] = settings.clean_base_url
 templates.env.globals["routes"] = route_map_injector
 templates.env.globals["get_system_setting"] = get_cached_setting
 templates.env.globals["template_error"] = template_error
+
+
+def notification_icon_names() -> list[str]:
+    """Icons the notification bell and page need: one per kind, plus the fallback."""
+    return sorted({kind.icon for kind in KINDS.values()} | {FALLBACK_ICON})
+
+
+templates.env.globals["notification_icon_names"] = notification_icon_names
 
 # --- Context Processors (Dynamic Data) ---
 def inject_ui_settings(request):

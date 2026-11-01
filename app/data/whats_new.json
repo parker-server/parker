@@ -1,0 +1,30 @@
+[
+  {
+    "version": "0.1.48",
+    "audience": "all",
+    "title": "Notifications",
+    "body": "Parker can now let you know when there's something new. Look for the bell at the top of the page. You can choose what you hear about in Account Settings.",
+    "link": "/user/settings"
+  },
+  {
+    "version": "0.1.48",
+    "audience": "all",
+    "title": "Faster timelines",
+    "body": "Character and team timelines load much faster, especially for big names like Batman and Wolverine.",
+    "link": "/timelines"
+  },
+  {
+    "version": "0.1.48",
+    "audience": "admin",
+    "title": "Notification settings",
+    "body": "Turn notifications off for everyone under Settings > Features. Read notifications are deleted after 30 days; change this under Settings > System.",
+    "link": "/admin/settings"
+  },
+  {
+    "version": "0.1.48",
+    "audience": "admin",
+    "title": "Choose which Kavita users to import",
+    "body": "The Kavita migration now lists every Kavita user, and you pick which ones to bring over with their reading progress.",
+    "link": "/admin/migration"
+  }
+]

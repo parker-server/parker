@@ -1,0 +1,193 @@
+{% from "partials/lucide_icon.html" import lucide_icon %}
+
+{# Kind icons are drawn once here so notification rows built in the browser can reuse them. #}
+{% for icon_name in notification_icon_names() %}
+<template data-notification-icon="{{ icon_name }}">{{ lucide_icon(icon_name, "h-4 w-4 flex-shrink-0") }}</template>
+{% endfor %}
+
+<div
+    x-data="notificationBell"
+    x-show="enabled"
+    x-cloak
+    class="relative"
+    @click.outside="open = false"
+    @keydown.escape.window="open = false"
+>
+    <button
+        type="button"
+        @click="toggle()"
+        class="relative p-2 rounded-full text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
+        aria-haspopup="true"
+        :aria-expanded="open.toString()"
+        :aria-label="count > 0 ? `Notifications, ${count} unread` : 'Notifications'"
+        data-testid="notification-bell"
+    >
+        {{ lucide_icon("bell", "h-5 w-5") }}
+        <span
+            x-show="count > 0"
+            x-text="count > 9 ? '9+' : count"
+            class="absolute -top-0.5 -right-0.5 min-w-[1.125rem] h-[1.125rem] px-1 rounded-full bg-blue-600 text-[10px] font-bold leading-[1.125rem] text-white text-center"
+            data-testid="notification-count"
+        ></span>
+    </button>
+
+    <div
+        x-show="open"
+        x-transition.opacity.duration.150ms
+        class="fixed left-4 right-4 top-16 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden"
+        data-testid="notification-dropdown"
+    >
+        <div class="flex items-center justify-between px-4 py-3 border-b border-gray-800">
+            <h2 class="text-sm font-bold text-white">Notifications</h2>
+            <button
+                type="button"
+                x-show="count > 0"
+                @click="markAllRead()"
+                class="text-xs font-semibold text-blue-400 hover:text-blue-300"
+            >
+                Mark all read
+            </button>
+        </div>
+
+        <div class="max-h-[60vh] overflow-y-auto">
+            <p x-show="loading && items.length === 0" class="px-4 py-6 text-sm text-gray-400 text-center">Loading...</p>
+            <p x-show="!loading && items.length === 0" class="px-4 py-6 text-sm text-gray-400 text-center">You're all caught up.</p>
+
+            <template x-for="item in items" :key="item.id">
+                <button
+                    type="button"
+                    @click="openItem(item)"
+                    class="w-full text-left flex gap-3 px-4 py-3 border-b border-gray-800 last:border-b-0 hover:bg-gray-800 transition-colors"
+                    :class="item.is_read ? 'opacity-70' : ''"
+                    data-testid="notification-item"
+                >
+                    <span class="mt-0.5 text-blue-300" x-html="window.parker.notifications.iconHtml(item.icon)"></span>
+                    <span class="min-w-0 flex-1">
+                        <span class="block text-sm font-semibold text-white" x-text="item.title"></span>
+                        <span class="block text-sm text-gray-400 line-clamp-2" x-show="item.body" x-text="item.body"></span>
+                        <span class="block text-xs text-gray-500 mt-1" x-text="window.parker.formatDate(item.updated_at)"></span>
+                    </span>
+                    <span x-show="!item.is_read" class="mt-1.5 h-2 w-2 rounded-full bg-blue-500 flex-shrink-0">
+                        <span class="sr-only">Unread</span>
+                    </span>
+                </button>
+            </template>
+        </div>
+
+        <a href="{{ url('/user/notifications') }}" class="block px-4 py-2.5 text-center text-sm font-semibold text-gray-300 hover:text-white bg-gray-800/60 border-t border-gray-800">
+            View all
+        </a>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('alpine:init', () => {
+        const CHANGED_EVENT = 'parker:notifications-changed';
+
+        // Shared by the bell and the notifications page.
+        window.parker.notifications = {
+            CHANGED_EVENT,
+
+            iconHtml(name) {
+                const template = document.querySelector(`template[data-notification-icon="${name}"]`)
+                    || document.querySelector('template[data-notification-icon="info"]');
+                return template ? template.innerHTML : '';
+            },
+
+            changed() {
+                window.dispatchEvent(new CustomEvent(CHANGED_EVENT));
+            },
+
+            async markRead(item) {
+                if (item.is_read) return true;
+                const res = await fetch(
+                    window.parker.route('notifications.mark_read', { notification_id: item.id }),
+                    { method: 'POST' }
+                );
+                if (!res.ok) return false;
+                item.is_read = true;
+                return true;
+            },
+
+            async open(item) {
+                await this.markRead(item);
+                this.changed();
+                if (item.link) {
+                    window.location.href = window.parker.url(item.link);
+                }
+            },
+        };
+
+        Alpine.data('notificationBell', () => ({
+            enabled: false,
+            open: false,
+            loading: false,
+            count: 0,
+            items: [],
+
+            init() {
+                this.refreshCount();
+                document.addEventListener('visibilitychange', () => {
+                    if (document.visibilityState === 'visible') this.refreshCount();
+                });
+                window.addEventListener(CHANGED_EVENT, () => this.refreshCount());
+            },
+
+            async refreshCount() {
+                if (!window.parker.storage.has('token')) {
+                    this.enabled = false;
+                    return;
+                }
+                try {
+                    const res = await fetch(window.parker.route('notifications.unread_count'));
+                    if (!res.ok) {
+                        this.enabled = false;
+                        return;
+                    }
+                    const data = await res.json();
+                    this.enabled = true;
+                    this.count = data.count;
+                } catch (error) {
+                    console.error('Failed to load notification count:', error);
+                }
+            },
+
+            toggle() {
+                this.open = !this.open;
+                if (this.open) this.load();
+            },
+
+            async load() {
+                this.loading = true;
+                try {
+                    const res = await fetch(window.parker.route('notifications.list', {}, 'size=10'));
+                    if (!res.ok) return;
+                    const data = await res.json();
+                    this.items = data.items;
+                    this.count = data.unread_count;
+                } catch (error) {
+                    console.error('Failed to load notifications:', error);
+                } finally {
+                    this.loading = false;
+                }
+            },
+
+            async openItem(item) {
+                const wasUnread = !item.is_read;
+                await window.parker.notifications.open(item);
+                if (wasUnread && item.is_read) this.count = Math.max(0, this.count - 1);
+            },
+
+            async markAllRead() {
+                const res = await fetch(window.parker.route('notifications.mark_all_read'), { method: 'POST' });
+                if (!res.ok) {
+                    window.parker.showToast('Could not mark notifications as read', 'error');
+                    return;
+                }
+                this.items.forEach((item) => { item.is_read = true; });
+                this.count = 0;
+                window.parker.notifications.changed();
+            },
+        }));
+    });
+</script>

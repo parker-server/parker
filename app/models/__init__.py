@@ -22,6 +22,7 @@ from app.models.smart_list import SmartList
 from app.models.activity_log import ActivityLog
 from app.models.external_review import ExternalReviewLookup, ExternalReview
 from app.models.promoted_rail import PromotedRail
+from app.models.notification import Notification
 
 # This ensures all models are loaded before relationships are configured
 __all__ = [
@@ -41,6 +42,7 @@ __all__ = [
     'CoverMural', 'CoverMuralItem',
     'ExternalReviewLookup', 'ExternalReview',
     'PromotedRail',
+    'Notification',
 
 ]
 

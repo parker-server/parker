@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% from "partials/lucide_icon.html" import lucide_icon %}
+
+{% block title %}What's New - Parker{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto" x-data="whatsNewPage()">
+
+    <div class="flex items-center gap-3 mb-2">
+        <span class="text-blue-300">{{ lucide_icon("sparkles", "h-7 w-7 flex-shrink-0") }}</span>
+        <h1 class="text-3xl font-bold text-white">What's New in Parker</h1>
+    </div>
+    <p class="text-gray-400 mb-8">You're running Parker <span class="font-mono text-gray-300">v{{ app_version }}</span>.</p>
+
+    <p x-show="loading" class="text-gray-400">Loading...</p>
+    <p x-show="!loading && versions.length === 0" x-cloak class="text-gray-400">Nothing to show yet. New features will appear here after Parker is updated.</p>
+
+    <div class="space-y-8">
+        <template x-for="group in versions" :key="group.version">
+            <section data-testid="whats-new-version">
+                <h2 class="text-sm font-bold uppercase tracking-wider text-gray-500 mb-3" x-text="`Parker ${group.version}`"></h2>
+                <div class="space-y-3">
+                    <template x-for="entry in group.entries" :key="entry.title">
+                        <article class="bg-gray-800 rounded-lg border border-gray-700 p-5 shadow-lg">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <h3 class="text-lg font-semibold text-white" x-text="entry.title"></h3>
+                                <span
+                                    x-show="entry.audience === 'admin'"
+                                    class="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider text-amber-200"
+                                >Admin</span>
+                            </div>
+                            <p class="text-gray-300 mt-1" x-show="entry.body" x-text="entry.body"></p>
+                            <a
+                                x-show="entry.link"
+                                :href="entry.link ? window.parker.url(entry.link) : '#'"
+                                class="inline-block mt-3 text-sm font-semibold text-blue-400 hover:text-blue-300"
+                            >Take a look &rarr;</a>
+                        </article>
+                    </template>
+                </div>
+            </section>
+        </template>
+    </div>
+</div>
+
+<script>
+function whatsNewPage() {
+    return {
+        loading: true,
+        versions: [],
+
+        async init() {
+            try {
+                const res = await fetch(window.parker.route('whats_new.list'));
+                if (!res.ok) throw new Error('Failed to load What\'s New');
+                const entries = await res.json();
+
+                // Entries arrive newest version first; group them in that order.
+                const groups = [];
+                for (const entry of entries) {
+                    let group = groups[groups.length - 1];
+                    if (!group || group.version !== entry.version) {
+                        group = { version: entry.version, entries: [] };
+                        groups.push(group);
+                    }
+                    group.entries.push(entry);
+                }
+                this.versions = groups;
+            } catch (error) {
+                console.error(error);
+                window.parker.showToast("Could not load What's New", 'error');
+            } finally {
+                this.loading = false;
+            }
+        },
+    };
+}
+</script>
+{% endblock %}

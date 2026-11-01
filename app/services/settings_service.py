@@ -223,6 +223,18 @@ class SettingsService:
             "unit_label": "day",
         },
         {
+            "key": "notifications.retention_days",
+            "value": "30",
+            "category": "system",
+            "data_type": "int",
+            "label": "Read Notification Retention (Days)",
+            "description": "Delete read notifications older than this many days. Unread notifications are kept for 90 days.",
+            "display_group": "Scheduled Tasks",
+            "min_value": 1,
+            "validation_label": "Read notification retention",
+            "unit_label": "day",
+        },
+        {
             "key": "system.parallel_metadata_processing",
             "value": "false",
             "category": "system",
@@ -336,6 +348,23 @@ class SettingsService:
             "label": "Enable External Critic Reviews",
             "description": "Fetch and cache attributed critic review summaries from supported external sources when users view an issue.",
             "display_group": "External Reviews",
+        },
+        {
+            "key": "features.notifications_enabled",
+            "value": "true",
+            "category": "features",
+            "data_type": "bool",
+            "label": "Enable Notifications",
+            "description": "Shows the notification bell and lets Parker tell users about things like new features. Turning this off hides the bell and stops new notifications.",
+        },
+        {
+            # Internal: the last version whose What's New entries were announced.
+            "key": "notifications.whats_new_last_version",
+            "value": "",
+            "category": "system",
+            "data_type": "string",
+            "label": "Last Announced Version",
+            "is_hidden": True,
         },
 
 
