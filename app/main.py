@@ -23,6 +23,7 @@ from app.core.security import (
     is_password_change_known_not_required,
     remember_password_change_not_required,
 )
+from app.core.build_info import get_build_commit_hash
 from app.core.templates import templates
 from app.database import engine, Base
 from app.config import settings, debug_print_settings
@@ -136,6 +137,9 @@ async def lifespan(app: FastAPI):
         is_manager = True
 
         logger.info(f"Worker {worker_pid} acquired Manager Lock. Starting Watcher, Scan Manager & Scheduler...")
+
+        build_commit = get_build_commit_hash()
+        logger.info(f"Parker v{settings.version} (commit: {build_commit[:7] if build_commit else 'unknown'})")
 
         try:
             with SessionLocal() as diagnostics_db:

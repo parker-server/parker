@@ -429,6 +429,29 @@ def test_admin_build_commit_hash_prefers_environment(monkeypatch):
         build_info.get_build_commit_hash.cache_clear()
 
 
+def test_startup_logs_version_and_build_commit(monkeypatch, db, caplog):
+    from fastapi.testclient import TestClient
+
+    from app.config import settings
+
+    monkeypatch.setattr("app.main.get_build_commit_hash", lambda: "feedface1234")
+    # Act as the manager worker even if a running dev server holds the lock,
+    # without touching the real database.
+    monkeypatch.setattr("app.main.portalocker.lock", lambda *args: None)
+    monkeypatch.setattr("app.main.log_startup_diagnostics", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.main.refresh_query_planner_statistics", lambda *args, **kwargs: False)
+    app.state.skip_admin_bootstrap = True
+
+    try:
+        with caplog.at_level("INFO", logger="app"):
+            with TestClient(app):
+                pass
+    finally:
+        app.state.skip_admin_bootstrap = False
+
+    assert f"Parker v{settings.version} (commit: feedfac)" in caplog.text
+
+
 def test_admin_diagnostics_page_exposes_support_snapshot_actions(admin_client):
     response = admin_client.get("/admin/diagnostics")
 
