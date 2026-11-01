@@ -1,5 +1,6 @@
 import os
 import multiprocessing
+import threading
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -65,6 +66,16 @@ from app.routers import opds
 #logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 logger = log_config.setup_logging("INFO")
+
+
+def _run_startup_notifications() -> None:
+    try:
+        with SessionLocal() as notifications_db:
+            run_startup_producers(notifications_db)
+            run_notification_checks(notifications_db)
+    except Exception as exc:
+        logger.warning("Startup notification work failed: %s", exc)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -154,13 +165,10 @@ async def lifespan(app: FastAPI):
         scheduler_service.start()
 
         # Announce What's New after an upgrade and run the daily notification
-        # checks once, in case the server was off when they were due.
-        try:
-            with SessionLocal() as notifications_db:
-                run_startup_producers(notifications_db)
-                run_notification_checks(notifications_db)
-        except Exception as exc:
-            logger.warning("Startup notification work failed: %s", exc)
+        # checks once, in case the server was off when they were due. The update
+        # check contacts GitHub, so this runs in the background to keep startup
+        # fast on servers without internet access.
+        threading.Thread(target=_run_startup_notifications, name="startup-notifications", daemon=True).start()
 
     except:
         # Lock is held by another worker.

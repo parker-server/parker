@@ -1,5 +1,6 @@
 import json
 from datetime import date, datetime, timedelta, timezone
+from typing import Optional
 
 import pytest
 
@@ -17,6 +18,7 @@ from app.services.notifications.producers import (
     WHATS_NEW_FILE,
     ScanInfo,
     WhatsNewEntry,
+    announce_update_available,
     announce_whats_new,
     announce_year_in_review,
     load_whats_new_entries,
@@ -29,6 +31,7 @@ from app.services.notifications.producers import (
 )
 from app.services.notifications.service import NotificationService
 from app.services.settings_service import SettingsService
+from app.services.version_check import VersionCheckStatus
 from tests.factories import create_comic, create_library_with_root
 
 
@@ -38,6 +41,7 @@ SAMPLE_DATA = {
     "follow_arrivals": {"volume_id": 12, "series_name": "Saga", "volume_number": 1},
     "year_in_review": {"year": 2026},
     "whats_new": {"version": "0.1.48", "first_title": "Notifications"},
+    "admin_update_available": {"version": "0.1.49", "current_version": "0.1.48"},
 }
 
 
@@ -73,6 +77,30 @@ def _notify(db, user_ids, count=1, group_key=None, data=None):
         group_key=group_key,
         count=count,
     )
+
+
+def _version_status(latest: Optional[str], current: str = "0.1.48") -> VersionCheckStatus:
+    return VersionCheckStatus(
+        current_version=current,
+        latest_tag=f"v{latest}" if latest else None,
+        latest_version=latest,
+        update_available=latest is not None and latest != current,
+        status="update_available" if latest is not None and latest != current else "current",
+        checked_at="2026-11-01T09:00:00+00:00",
+    )
+
+
+@pytest.fixture(autouse=True)
+def github_releases(monkeypatch):
+    """Stand in for the GitHub version check so no test contacts GitHub."""
+    state = {"latest": None, "calls": 0}
+
+    def fake_status(current_version):
+        state["calls"] += 1
+        return _version_status(state["latest"], current_version)
+
+    monkeypatch.setattr(producers, "get_version_check_status", fake_status)
+    return state
 
 
 @pytest.fixture
@@ -306,7 +334,7 @@ def test_preferences_default_on_and_update(db, test_kind):
 
     reader_keys = ["follow_arrivals", "year_in_review", "whats_new"]
     assert [kind["key"] for kind in service.preferences_for(reader)] == reader_keys
-    assert {kind["key"] for kind in service.preferences_for(admin)} == {*reader_keys, test_kind.key}
+    assert {kind["key"] for kind in service.preferences_for(admin)} == {*reader_keys, "admin_update_available", test_kind.key}
     assert all(kind["enabled"] for kind in service.preferences_for(reader))
 
     service.update_preferences(reader, {"whats_new": False})
@@ -799,3 +827,91 @@ def test_year_in_review_skips_when_setting_row_is_missing(db, follow_library):
 def test_daily_check_sends_year_in_review(db, review_readers):
     run_notification_checks(db, today=date(2026, 12, 15))
     assert db.query(Notification).filter_by(kind="year_in_review").count() == 1
+
+
+# --- Update available ---
+
+TODAY = date(2026, 11, 1)
+
+
+def _update_notice_version(db) -> str:
+    return SettingsService(db).get("notifications.update_last_version")
+
+
+def test_update_available_notifies_active_admins_once(seeded_settings, github_releases):
+    db = seeded_settings
+    admin = _user(db, "admin", admin=True)
+    _user(db, "inactive_admin", admin=True, active=False)
+    _user(db, "reader")
+    github_releases["latest"] = "0.1.49"
+
+    assert announce_update_available(db, TODAY, current_version="0.1.48") == 1
+
+    rows = db.query(Notification).all()
+    assert [row.user_id for row in rows] == [admin.id]
+    assert rows[0].title == "Parker 0.1.49 is available"
+    assert rows[0].body == "This server is running 0.1.48."
+    assert rows[0].link == "/admin/about"
+    assert _update_notice_version(db) == "0.1.49"
+
+    assert announce_update_available(db, TODAY + timedelta(days=1), current_version="0.1.48") == 0
+    assert db.query(Notification).count() == 1
+
+
+def test_update_available_replaces_an_unread_notice_with_the_newer_release(seeded_settings, github_releases):
+    db = seeded_settings
+    admin = _user(db, "admin", admin=True)
+    github_releases["latest"] = "0.1.49"
+    announce_update_available(db, TODAY, current_version="0.1.48")
+
+    github_releases["latest"] = "0.1.50"
+    assert announce_update_available(db, TODAY, current_version="0.1.48") == 1
+
+    rows = db.query(Notification).filter_by(user_id=admin.id).all()
+    assert len(rows) == 1
+    assert rows[0].title == "Parker 0.1.50 is available"
+    assert _update_notice_version(db) == "0.1.50"
+
+
+def test_update_available_does_nothing_when_up_to_date(seeded_settings, github_releases):
+    db = seeded_settings
+    _user(db, "admin", admin=True)
+    github_releases["latest"] = "0.1.48"
+
+    assert announce_update_available(db, TODAY, current_version="0.1.48") == 0
+    assert db.query(Notification).count() == 0
+    assert _update_notice_version(db) == ""
+
+
+def test_update_available_skips_github_when_checks_or_notifications_are_off(seeded_settings, github_releases):
+    db = seeded_settings
+    _user(db, "admin", admin=True)
+    github_releases["latest"] = "0.1.49"
+
+    _set_setting(db, "server.update_check_enabled", "false")
+    assert announce_update_available(db, TODAY, current_version="0.1.48") == 0
+
+    _set_setting(db, "server.update_check_enabled", "true")
+    _set_setting(db, "features.notifications_enabled", "false")
+    assert announce_update_available(db, TODAY, current_version="0.1.48") == 0
+
+    assert github_releases["calls"] == 0
+    assert db.query(Notification).count() == 0
+
+
+def test_update_available_skips_when_setting_row_is_missing(db, github_releases):
+    _user(db, "admin", admin=True)
+    github_releases["latest"] = "0.1.49"
+
+    assert announce_update_available(db, TODAY, current_version="0.1.48") == 0
+    assert github_releases["calls"] == 0
+
+
+def test_daily_check_sends_update_available(seeded_settings, github_releases):
+    db = seeded_settings
+    _user(db, "admin", admin=True)
+    github_releases["latest"] = "99.0.0"
+
+    run_notification_checks(db, today=TODAY)
+
+    assert db.query(Notification).filter_by(kind="admin_update_available").count() == 1

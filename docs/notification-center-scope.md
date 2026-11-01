@@ -2,7 +2,7 @@
 
 ## Status
 
-Phase 1 is split into two pull requests. The first (notification center and What's New) is built on `feature/notifications`. The second (follow arrivals and Year in Review) is built on `feature/notifications-follows`, stacked on the first. Open questions are listed at the end.
+Phase 1 is split into two pull requests. The first (notification center and What's New) is built on `feature/notifications`. The second (follow arrivals and Year in Review) is built on `feature/notifications-follows`, stacked on the first. Both are merged. The `admin_update_available` kind, planned for phase 2, is built on `feature/update-notifications`; see [Update Available](#update-available). Open questions are listed at the end.
 
 ## Goal
 
@@ -49,7 +49,7 @@ The first uses are:
 | `request_fulfilled` | Supporters | A requested comic arrives and the supporter can see it | "Saga #67 is now in the library" | `library` | 2 |
 | `admin_problem_new` | Admins | A new problem report is created | "New problem report: missing pages in Saga #12" | `triangle-alert` | 2 |
 | `admin_request_new` | Admins | A new request target is created | "New request: Saga #67 (2 supporters)" | `clipboard-list` | 2 |
-| `admin_update_available` | Admins | The version check finds a newer release not yet notified | "Parker 0.1.51 is available" | `download` | 2 |
+| `admin_update_available` | Admins | The version check finds a newer release not yet notified | "Parker 0.1.51 is available" | `download` | 1 |
 
 Every icon above already exists in `partials/lucide_icon.html`. A `server_announcement` kind (see [Open Questions](#open-questions)) would add `megaphone`.
 
@@ -277,7 +277,16 @@ The Year in Review page (`/user/year-in-review?year=YYYY`) and its dashboard ban
 
 ### Admin Kinds (phase 2)
 
-Problem reports and requests call `notify()` for all admins when they are created, with group keys (`admin:problems`, `admin:requests`) so a busy day is one notification with a count. `admin_update_available` is created by the version check in `app/services/version_check.py` when it finds a version newer than the last one it notified about.
+Problem reports and requests call `notify()` for all admins when they are created, with group keys (`admin:problems`, `admin:requests`) so a busy day is one notification with a count. `admin_update_available` is described under [Update Available](#update-available).
+
+### Update Available
+
+- **When**: the daily notification check calls `get_version_check_status()` from `app/services/version_check.py`, the same cached check behind the admin dashboard and About page badges. Its result is cached for 6 hours, so this adds at most one GitHub request a day. It also runs in the startup pass, which runs in a background thread so an offline server doesn't wait on the GitHub timeout.
+- **Off switch**: `server.update_check_enabled` (**Check for Updates**, Settings → Server, default on). When it is off, neither the daily check nor the dashboard and About badges contact GitHub, and About shows "Update checks are off". Nothing is checked while notifications are off either.
+- **Once per release**: a hidden `notifications.update_last_version` setting records the newest release admins were told about. Only a newer release notifies again.
+- **Who**: active admins.
+- **Grouping**: group key `admin:update`, so a newer release replaces an unread notice instead of adding a second one.
+- **Link**: `/admin/about`, which shows the release with its GitHub link. Notification links are app paths, so the GitHub page is not linked directly.
 
 ## Data Model
 
@@ -320,6 +329,8 @@ System settings:
 | `notifications.retention_days` | int | `30` | Read notifications older than this are deleted |
 | `notifications.whats_new_last_version` | string | Installed version | Internal; not shown on the settings page |
 | `notifications.year_in_review_last_year` | int | `0` | Internal; not shown on the settings page |
+| `notifications.update_last_version` | string | Empty | Internal; not shown on the settings page |
+| `server.update_check_enabled` | bool | `true` | **Check for Updates**: the daily update check and the admin dashboard and About badges |
 
 User preferences, on `/user/settings`: one on/off toggle per kind the user can receive, built from the kind registry. Defaults are on for every kind. The user chose to follow a volume or report a problem, so hearing back is expected. Phase 1 shows one toggle per kind for the in-app channel; the stored shape already allows a toggle per channel later.
 
@@ -334,9 +345,8 @@ The job calls the daily hook list described in [Producers and Triggers](#produce
 Phase 1 checks:
 
 - Year in Review
+- Update available (see [Update Available](#update-available))
 - Retention (below)
-
-Phase 2 can move `admin_update_available` here instead of tying it to the version check being opened.
 
 ## Retention
 
@@ -396,7 +406,6 @@ All return 404 when `features.notifications_enabled` is off, except `/api/whats-
 
 - `problem_resolved` and `admin_problem_new` when Problem Reports lands
 - `request_fulfilled` and `admin_request_new` when Comic Requests lands
-- `admin_update_available` from the version check
 
 ### Phase 3 (Optional): Outgoing Webhook
 

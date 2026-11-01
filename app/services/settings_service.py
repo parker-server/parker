@@ -341,6 +341,12 @@ class SettingsService:
             "description": "Lets users download original comic files from the web UI and OPDS. Turn off per user in Users. OPDS readers need downloads to open comics. Admins can always download."
         },
         {
+            "key": "server.update_check_enabled", "value": "true",
+            "category": "server", "data_type": "bool",
+            "label": "Check for Updates",
+            "description": "Checks GitHub for a newer Parker release once a day and notifies admins, and shows update badges on the admin dashboard and About page. Turning this off stops Parker contacting GitHub for updates."
+        },
+        {
             "key": "integrations.external_reviews.enabled",
             "value": "false",
             "category": "server",
@@ -373,6 +379,15 @@ class SettingsService:
             "category": "system",
             "data_type": "int",
             "label": "Last Announced Year in Review",
+            "is_hidden": True,
+        },
+        {
+            # Internal: the last newer release admins were told about.
+            "key": "notifications.update_last_version",
+            "value": "",
+            "category": "system",
+            "data_type": "string",
+            "label": "Last Announced Update",
             "is_hidden": True,
         },
 

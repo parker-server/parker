@@ -1,4 +1,3 @@
-import asyncio
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, case, desc
@@ -13,7 +12,12 @@ from app.models.tags import Genre, comic_genres
 from app.models.user import User
 from app.models.reading_progress import ReadingProgress
 from app.services.startup_diagnostics import build_support_snapshot, collect_startup_diagnostics
-from app.services.version_check import get_version_check_status
+from app.services.settings_service import SettingsService
+from app.services.version_check import (
+    UPDATE_CHECK_SETTING,
+    disabled_version_check_status,
+    get_version_check_status,
+)
 
 router = APIRouter()
 
@@ -53,11 +57,14 @@ async def get_startup_support_snapshot(
 
 
 @router.get("/version-check", name="version_check")
-async def get_version_check(admin: AdminUser):
+def get_version_check(db: SessionDep, admin: AdminUser):
     """
     Check whether a newer Parker version tag is available upstream.
     """
-    status = await asyncio.to_thread(get_version_check_status, settings.version)
+    if SettingsService(db).get(UPDATE_CHECK_SETTING) is False:
+        return disabled_version_check_status(settings.version).to_dict()
+
+    status = get_version_check_status(settings.version)
     return status.to_dict()
 
 

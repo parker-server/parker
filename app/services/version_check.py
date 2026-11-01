@@ -26,6 +26,7 @@ VERSION_CHECK_TIMEOUT = httpx.Timeout(connect=2.0, read=3.0, write=2.0, pool=2.0
 SEMVER_TAG_PATTERN = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
 VERSION_CHECK_CACHE_FILE = settings.cache_dir / "version_check.json"
 VERSION_CHECK_LOCK_FILE = settings.cache_dir / "version_check.lock"
+UPDATE_CHECK_SETTING = "server.update_check_enabled"
 
 logger = logging.getLogger(__name__)
 
@@ -316,3 +317,15 @@ def get_version_check_status(current_version: str, force_refresh: bool = False) 
     except (OSError, portalocker.exceptions.LockException) as exc:
         logger.warning("Unable to use version-check cache lock: %s", exc)
         return _refresh_version_check_status(current_version)
+
+
+def disabled_version_check_status(current_version: str) -> VersionCheckStatus:
+    """Status reported when the admin has turned update checks off; GitHub is not contacted."""
+    return VersionCheckStatus(
+        current_version=current_version,
+        latest_tag=None,
+        latest_version=None,
+        update_available=False,
+        status="disabled",
+        checked_at=_checked_at(),
+    )
