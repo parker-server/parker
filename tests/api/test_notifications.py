@@ -77,12 +77,13 @@ def test_cannot_touch_another_users_notification(auth_client, db, admin_user):
 def test_preferences_round_trip(auth_client, db, normal_user):
     response = auth_client.get("/api/notifications/preferences")
     assert response.status_code == 200
-    assert response.json()["kinds"][0]["key"] == "whats_new"
-    assert response.json()["kinds"][0]["enabled"] is True
+    enabled = {kind["key"]: kind["enabled"] for kind in response.json()["kinds"]}
+    assert enabled == {"follow_arrivals": True, "year_in_review": True, "whats_new": True}
 
     response = auth_client.put("/api/notifications/preferences", json={"kinds": {"whats_new": False}})
     assert response.status_code == 200
-    assert response.json()["kinds"][0]["enabled"] is False
+    enabled = {kind["key"]: kind["enabled"] for kind in response.json()["kinds"]}
+    assert enabled == {"follow_arrivals": True, "year_in_review": True, "whats_new": False}
 
     db.refresh(normal_user)
     assert normal_user.notification_preferences == {"whats_new": {"in_app": False}}

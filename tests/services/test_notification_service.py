@@ -1,31 +1,42 @@
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
 from app.core.templates import templates
+from app.models.comic import Comic, Volume
+from app.models.interactions import UserVolumeFollow
 from app.models.notification import Notification
+from app.models.reading_progress import ReadingProgress
+from app.models.series import Series
 from app.models.setting import SystemSetting
 from app.models.user import User
 from app.services.notifications import producers
 from app.services.notifications.kinds import KINDS, NotificationKind
 from app.services.notifications.producers import (
     WHATS_NEW_FILE,
+    ScanInfo,
     WhatsNewEntry,
     announce_whats_new,
+    announce_year_in_review,
     load_whats_new_entries,
+    notify_follow_arrivals,
     run_notification_checks,
+    run_scan_producers,
     run_startup_producers,
     whats_new_for_user,
+    year_in_review_year,
 )
 from app.services.notifications.service import NotificationService
 from app.services.settings_service import SettingsService
-from tests.factories import create_library_with_root
+from tests.factories import create_comic, create_library_with_root
 
 
 # Sample data for every registered kind. A new kind must add an entry here, which
 # makes sure its render and link functions are exercised.
 SAMPLE_DATA = {
+    "follow_arrivals": {"volume_id": 12, "series_name": "Saga", "volume_number": 1},
+    "year_in_review": {"year": 2026},
     "whats_new": {"version": "0.1.48", "first_title": "Notifications"},
 }
 
@@ -109,6 +120,21 @@ def test_whats_new_render_wording():
         "Notifications",
     )
     assert render(4, {"version": "0.1.48", "first_title": "Notifications"})[1] == "Notifications, and 3 more"
+
+
+def test_follow_arrivals_and_year_in_review_wording():
+    follow = KINDS["follow_arrivals"]
+    data = SAMPLE_DATA["follow_arrivals"]
+    assert follow.render(1, data) == ("1 new issue in Saga Vol 1", None)
+    assert follow.render(3, data) == ("3 new issues in Saga Vol 1", None)
+    assert follow.link(data) == "/volumes/12"
+
+    review = KINDS["year_in_review"]
+    assert review.render(1, {"year": 2026}) == (
+        "Your 2026 Year in Review is ready",
+        "See your favorite series and reading milestones from 2026.",
+    )
+    assert review.link({"year": 2026}) == "/user/year-in-review?year=2026"
 
 
 # --- notify() ---
@@ -278,14 +304,16 @@ def test_preferences_default_on_and_update(db, test_kind):
     admin = _user(db, "admin", admin=True)
     service = NotificationService(db)
 
-    assert [kind["key"] for kind in service.preferences_for(reader)] == ["whats_new"]
-    assert {kind["key"] for kind in service.preferences_for(admin)} == {"whats_new", test_kind.key}
-    assert service.preferences_for(reader)[0]["enabled"] is True
+    reader_keys = ["follow_arrivals", "year_in_review", "whats_new"]
+    assert [kind["key"] for kind in service.preferences_for(reader)] == reader_keys
+    assert {kind["key"] for kind in service.preferences_for(admin)} == {*reader_keys, test_kind.key}
+    assert all(kind["enabled"] for kind in service.preferences_for(reader))
 
     service.update_preferences(reader, {"whats_new": False})
     db.refresh(reader)
     assert reader.notification_preferences == {"whats_new": {"in_app": False}}
-    assert service.preferences_for(reader)[0]["enabled"] is False
+    enabled = {kind["key"]: kind["enabled"] for kind in service.preferences_for(reader)}
+    assert enabled == {"follow_arrivals": True, "year_in_review": True, "whats_new": False}
 
     with pytest.raises(ValueError):
         service.update_preferences(reader, {test_kind.key: True})  # admin-only
@@ -510,3 +538,264 @@ def test_daily_checks_receive_today(db, monkeypatch):
     run_notification_checks(db, today=datetime(2026, 12, 15).date())
 
     assert calls == [datetime(2026, 12, 15).date()]
+
+
+def test_failing_scan_producer_does_not_stop_others(db, monkeypatch, caplog):
+    calls = []
+    scan = ScanInfo(library_id=1, started_at=SCAN_START, first_scan=False)
+
+    def broken(session, scan_info):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(producers, "SCAN_PRODUCERS", [broken, lambda session, scan_info: calls.append(scan_info)])
+
+    run_scan_producers(db, scan)
+
+    assert calls == [scan]
+    assert "Notification scan step broken failed" in caplog.text
+
+
+# --- Follow arrivals ---
+
+SCAN_START = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
+
+
+def _volume(db, library, series_name: str, *, volume_number: int = 1) -> Volume:
+    series = Series(name=series_name, library=library)
+    volume = Volume(series=series, volume_number=volume_number)
+    db.add_all([series, volume])
+    db.flush()
+    return volume
+
+
+def _issue(db, volume: Volume, number: str, *, created_at=None, **kwargs) -> Comic:
+    return create_comic(
+        db,
+        volume,
+        volume.series.library.active_root,
+        f"{volume.series.name}-{volume.id}-{number}-{kwargs.get('format') or 'issue'}.cbz",
+        number=number,
+        filename=f"{volume.series.name}-{number}.cbz",
+        created_at=created_at or SCAN_START + timedelta(minutes=5),
+        **kwargs,
+    )
+
+
+def _follow(db, user: User, volume: Volume) -> None:
+    db.add(UserVolumeFollow(user_id=user.id, volume_id=volume.id, followed_at=SCAN_START - timedelta(days=30)))
+    db.commit()
+
+
+def _scan(library, *, first_scan: bool = False) -> ScanInfo:
+    return ScanInfo(library_id=library.id, started_at=SCAN_START, first_scan=first_scan)
+
+
+@pytest.fixture
+def follow_library(db):
+    library = create_library_with_root(db, "follow-lib", "/tmp/follow-lib")
+    db.commit()
+    return library
+
+
+def test_follow_arrivals_notifies_followers_once_per_volume(db, follow_library):
+    reader = _user(db, "reader")
+    reader.accessible_libraries.append(follow_library)
+    other = _user(db, "other")
+    other.accessible_libraries.append(follow_library)
+    saga = _volume(db, follow_library, "Saga")
+    paper = _volume(db, follow_library, "Paper Girls")
+    _follow(db, reader, saga)
+    _follow(db, reader, paper)
+    _issue(db, saga, "1", created_at=SCAN_START - timedelta(days=1))  # From an earlier scan
+    _issue(db, saga, "2")
+    _issue(db, saga, "3")
+    _issue(db, saga, "1", format="Annual")  # Not a plain issue
+    _issue(db, paper, "5")
+    db.commit()
+
+    assert notify_follow_arrivals(db, _scan(follow_library)) == 2
+
+    rows = {row.link: row for row in db.query(Notification).filter_by(user_id=reader.id)}
+    assert rows[f"/volumes/{saga.id}"].title == "2 new issues in Saga Vol 1"
+    assert rows[f"/volumes/{saga.id}"].group_key == f"follow:volume:{saga.id}"
+    assert rows[f"/volumes/{paper.id}"].title == "1 new issue in Paper Girls Vol 1"
+    assert db.query(Notification).filter_by(user_id=other.id).count() == 0
+
+
+def test_follow_arrivals_groups_later_scans_until_read(db, follow_library):
+    reader = _user(db, "reader", admin=True)
+    saga = _volume(db, follow_library, "Saga")
+    _follow(db, reader, saga)
+    _issue(db, saga, "2")
+    db.commit()
+    notify_follow_arrivals(db, _scan(follow_library))
+
+    later = SCAN_START + timedelta(days=7)
+    _issue(db, saga, "3", created_at=later + timedelta(minutes=1))
+    _issue(db, saga, "4", created_at=later + timedelta(minutes=1))
+    db.commit()
+    notify_follow_arrivals(db, ScanInfo(library_id=follow_library.id, started_at=later, first_scan=False))
+
+    rows = db.query(Notification).filter_by(user_id=reader.id).all()
+    assert len(rows) == 1
+    assert rows[0].count == 3
+    assert rows[0].title == "3 new issues in Saga Vol 1"
+
+
+def test_follow_arrivals_respects_library_access_and_age_rating(db, follow_library):
+    hidden_library = create_library_with_root(db, "hidden-lib", "/tmp/hidden-lib")
+    no_access = _user(db, "no_access")
+    no_access.accessible_libraries.append(hidden_library)
+    teen = _user(db, "teen")
+    teen.max_age_rating = "Teen"
+    teen.accessible_libraries.append(follow_library)
+    admin = _user(db, "admin", admin=True)
+    mature = _volume(db, follow_library, "Mature Book")
+    _issue(db, mature, "1", created_at=SCAN_START - timedelta(days=1), age_rating="Mature 17+")
+    _issue(db, mature, "2", age_rating="Mature 17+")
+    for user in (no_access, teen, admin):
+        _follow(db, user, mature)
+
+    assert notify_follow_arrivals(db, _scan(follow_library)) == 1
+    assert [row.user_id for row in db.query(Notification)] == [admin.id]
+
+
+def test_follow_arrivals_only_counts_the_scanned_library(db, follow_library):
+    other_library = create_library_with_root(db, "other-lib", "/tmp/other-lib")
+    admin = _user(db, "admin", admin=True)
+    elsewhere = _volume(db, other_library, "Elsewhere")
+    _follow(db, admin, elsewhere)
+    _issue(db, elsewhere, "1")
+    db.commit()
+
+    assert notify_follow_arrivals(db, _scan(follow_library)) == 0
+
+
+def test_follow_arrivals_skips_first_scan_and_bulk_imports(db, follow_library, monkeypatch, caplog):
+    admin = _user(db, "admin", admin=True)
+    saga = _volume(db, follow_library, "Saga")
+    _follow(db, admin, saga)
+    for number in range(1, 5):
+        _issue(db, saga, str(number))
+    db.commit()
+
+    assert notify_follow_arrivals(db, _scan(follow_library, first_scan=True)) == 0
+
+    monkeypatch.setattr(producers, "FOLLOW_ARRIVALS_BULK_LIMIT", 3)
+    caplog.set_level("INFO")
+    assert notify_follow_arrivals(db, _scan(follow_library)) == 0
+    assert "4 new issues in 1 followed volumes looks like a bulk import" in caplog.text
+    assert db.query(Notification).count() == 0
+
+    monkeypatch.setattr(producers, "FOLLOW_ARRIVALS_BULK_LIMIT", 4)
+    assert notify_follow_arrivals(db, _scan(follow_library)) == 1
+
+
+def test_follow_arrivals_does_nothing_when_feature_is_off(db, follow_library):
+    admin = _user(db, "admin", admin=True)
+    saga = _volume(db, follow_library, "Saga")
+    _follow(db, admin, saga)
+    _issue(db, saga, "1")
+    _set_setting(db, "features.notifications_enabled", "false")
+
+    assert notify_follow_arrivals(db, _scan(follow_library)) == 0
+    assert db.query(Notification).count() == 0
+
+
+# --- Year in Review ---
+
+def _finished(db, user: User, volume: Volume, read_at: datetime, *, completed: bool = True) -> None:
+    comic = _issue(db, volume, f"r{db.query(Comic).count() + 1}")
+    db.add(ReadingProgress(
+        user_id=user.id,
+        comic_id=comic.id,
+        current_page=19 if completed else 3,
+        total_pages=20,
+        completed=completed,
+        last_read_at=read_at,
+    ))
+    db.commit()
+
+
+@pytest.fixture
+def review_readers(seeded_settings, follow_library):
+    db = seeded_settings
+    volume = _volume(db, follow_library, "Saga")
+    reader = _user(db, "reader")
+    _finished(db, reader, volume, datetime(2026, 3, 1))
+    _finished(db, reader, volume, datetime(2026, 4, 1))
+    last_year_only = _user(db, "last_year_only")
+    _finished(db, last_year_only, volume, datetime(2025, 6, 1))
+    unfinished = _user(db, "unfinished")
+    _finished(db, unfinished, volume, datetime(2026, 5, 1), completed=False)
+    inactive = _user(db, "inactive", active=False)
+    _finished(db, inactive, volume, datetime(2026, 5, 1))
+    return {"reader": reader, "last_year_only": last_year_only, "volume": volume}
+
+
+def _review_year(db) -> int:
+    return SettingsService(db).get("notifications.year_in_review_last_year")
+
+
+def test_year_in_review_season_dates():
+    assert year_in_review_year(date(2026, 12, 14)) is None
+    assert year_in_review_year(date(2026, 12, 15)) == 2026
+    assert year_in_review_year(date(2026, 12, 31)) == 2026
+    assert year_in_review_year(date(2027, 1, 31)) == 2026
+    assert year_in_review_year(date(2027, 2, 1)) is None
+    assert year_in_review_year(date(2026, 6, 1)) is None
+
+
+def test_year_in_review_waits_for_december_15(db, review_readers):
+    assert announce_year_in_review(db, date(2026, 12, 14)) == 0
+    assert db.query(Notification).count() == 0
+    assert _review_year(db) == 0
+
+
+def test_year_in_review_sends_once_to_users_who_finished_a_comic(db, review_readers):
+    reader = review_readers["reader"]
+
+    assert announce_year_in_review(db, date(2026, 12, 15)) == 1
+
+    rows = db.query(Notification).all()
+    assert [row.user_id for row in rows] == [reader.id]
+    assert rows[0].title == "Your 2026 Year in Review is ready"
+    assert rows[0].link == "/user/year-in-review?year=2026"
+    assert _review_year(db) == 2026
+
+    assert announce_year_in_review(db, date(2026, 12, 16)) == 0
+    assert announce_year_in_review(db, date(2027, 1, 5)) == 0
+    assert db.query(Notification).count() == 1
+
+
+def test_year_in_review_january_run_covers_a_missed_december(db, review_readers):
+    assert announce_year_in_review(db, date(2026, 1, 10)) == 1
+    assert [row.user_id for row in db.query(Notification)] == [review_readers["last_year_only"].id]
+    assert _review_year(db) == 2025
+
+
+def test_year_in_review_not_sent_after_january(db, review_readers):
+    assert announce_year_in_review(db, date(2027, 2, 1)) == 0
+    assert db.query(Notification).count() == 0
+
+
+def test_year_in_review_waits_while_feature_is_off(db, review_readers):
+    _set_setting(db, "features.notifications_enabled", "false")
+    assert announce_year_in_review(db, date(2026, 12, 15)) == 0
+    assert _review_year(db) == 0
+
+    _set_setting(db, "features.notifications_enabled", "true")
+    assert announce_year_in_review(db, date(2026, 12, 20)) == 1
+
+
+def test_year_in_review_skips_when_setting_row_is_missing(db, follow_library):
+    volume = _volume(db, follow_library, "Saga")
+    reader = _user(db, "reader")
+    _finished(db, reader, volume, datetime(2026, 3, 1))
+
+    assert announce_year_in_review(db, date(2026, 12, 15)) == 0
+
+
+def test_daily_check_sends_year_in_review(db, review_readers):
+    run_notification_checks(db, today=date(2026, 12, 15))
+    assert db.query(Notification).filter_by(kind="year_in_review").count() == 1

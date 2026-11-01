@@ -32,6 +32,8 @@ https://github.com/parker-server/parker/wiki/Getting-Started
 
 - **Notifications**
   - Navbar bell with an unread count and a dropdown of recent notifications, plus a full notifications page with mark read, remove, and clear read
+  - New issues in followed volumes: after a scan, followers get one notification per volume ("3 new issues in Saga Vol 1"), only for comics they can see. A library's first scan and scans adding more than 500 issues to followed volumes are treated as bulk imports and skipped
+  - A Year in Review notification from December 15 (or in January, if the server was off) for users who finished a comic that year, sent once per year
   - A What's New notification after Parker is updated, linking to a What's New page with reader-facing highlights (admin-only highlights for admins)
   - Per-user on/off choices for each kind of notification in Account Settings
   - Site-wide **Enable Notifications** setting under Settings → Features, and configurable retention for read notifications
