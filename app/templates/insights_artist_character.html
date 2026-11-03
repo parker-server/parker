@@ -52,7 +52,7 @@
         </div>
     </div>
 
-    <div class="bg-gray-800/90 border border-gray-700 rounded-2xl shadow-2xl overflow-hidden">
+    <div class="bg-gray-800/90 border border-gray-700 rounded-2xl shadow-2xl overflow-clip">
         <div class="px-4 md:px-6 py-5 border-b border-gray-700 bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900">
             <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                 <div>
@@ -123,7 +123,7 @@
         </div>
 
         <div x-show="!loading && !errorMessage && data && data.pair_count > 0" x-cloak class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px]">
-            <div class="px-4 md:px-6 pt-4 md:pt-5 pb-6 xl:grid xl:grid-rows-[auto_1fr]">
+            <div class="px-4 md:px-6 pt-4 md:pt-5 pb-6">
                 <div class="mb-4 rounded-xl border border-gray-700 bg-gray-900/50 px-4 py-3">
                     <div class="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center md:justify-between">
                         <div class="text-sm text-gray-300">
@@ -149,7 +149,7 @@
                     </div>
                 </div>
 
-                <div class="max-h-[70vh] xl:min-h-full overflow-auto overscroll-contain touch-pan-x touch-pan-y pb-2">
+                <div class="max-h-[70vh] xl:max-h-[calc(100vh-6rem)] xl:sticky xl:top-20 overflow-auto overscroll-contain touch-pan-x touch-pan-y pb-2">
                     <table class="table-fixed min-w-[640px] md:min-w-[720px] border-separate [border-spacing:0.5rem]">
                         <thead>
                             <tr>

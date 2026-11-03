@@ -58,7 +58,7 @@ def _grid_metrics(page, base_url: str) -> dict:
 
 
 @pytest.mark.browser
-def test_chemistry_grid_fills_the_space_beside_top_team_ups_on_desktop(
+def test_chemistry_grid_stays_in_view_beside_top_team_ups_on_desktop(
         page,
         browser_server,
         browser_db_factory,
@@ -69,11 +69,26 @@ def test_chemistry_grid_fills_the_space_beside_top_team_ups_on_desktop(
     with _co_appearing_characters(browser_db_factory, browser_seed_data, 12):
         metrics = _grid_metrics(page, browser_server["base_url"])
 
-    # The grid is taller than 70% of the window, so it should stretch to line
-    # up with the last Top Team-Ups card and scroll for the rest.
+        # Scroll the page to the last Top Team-Ups card; the grid should follow
+        # so its column headers stay visible just below the nav bar.
+        scrolled = page.evaluate(
+            """() => {
+                const lastTeamUp = [...document.querySelectorAll('aside button')].pop();
+                window.scrollBy(0, lastTeamUp.getBoundingClientRect().bottom - window.innerHeight);
+                const grid = document.querySelector('table').parentElement.getBoundingClientRect();
+                const header = document.querySelector('thead th:last-child').getBoundingClientRect();
+                const nav = document.querySelector('nav').getBoundingClientRect();
+                return {gridTop: grid.top, gridBottom: grid.bottom, headerTop: header.top, navBottom: nav.bottom};
+            }"""
+        )
+
+    # The grid uses more than the old 70% of the window but still fits on
+    # screen, scrolling inside for the rest.
     assert metrics["gridHeight"] > 900 * 0.7
-    assert abs(metrics["gridBottom"] - metrics["lastTeamUpBottom"]) <= 2
     assert metrics["gridContentHeight"] > metrics["gridHeight"]
+    assert scrolled["gridTop"] >= scrolled["navBottom"]
+    assert scrolled["gridBottom"] <= 900
+    assert scrolled["navBottom"] <= scrolled["headerTop"] < 900
 
 
 @pytest.mark.browser
