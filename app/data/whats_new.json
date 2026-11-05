@@ -4,7 +4,7 @@
     "audience": "all",
     "title": "Notifications",
     "body": "Parker can now let you know when new issues arrive in volumes you follow, when your Year in Review is ready, and when Parker gets new features. Look for the bell at the top of the page. You can choose what you hear about in Account Settings.",
-    "link": "/user/settings"
+    "link": "/user/settings#notifications"
   },
   {
     "version": "0.1.48",
@@ -18,14 +18,14 @@
     "audience": "admin",
     "title": "Update notifications",
     "body": "Parker now checks for new releases once a day and lets admins know. Turn Check for Updates off under Settings > Server to stop Parker contacting GitHub.",
-    "link": "/admin/settings"
+    "link": "/admin/settings#server.update_check_enabled"
   },
   {
     "version": "0.1.48",
     "audience": "admin",
     "title": "Notification settings",
     "body": "Turn notifications off for everyone under Settings > Features. Read notifications are deleted after 30 days; change this under Settings > System.",
-    "link": "/admin/settings"
+    "link": "/admin/settings#features.notifications_enabled"
   },
   {
     "version": "0.1.48",

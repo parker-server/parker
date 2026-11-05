@@ -36,6 +36,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
   - A Year in Review notification from December 15 (or in January, if the server was off) for users who finished a comic that year, sent once per year
   - A What's New notification after Parker is updated, linking to a What's New page with reader-facing highlights (admin-only highlights for admins)
   - An admin notification when a newer Parker release is available, checked once a day. Turn **Check for Updates** off under Settings → Server to stop Parker contacting GitHub, which also hides the update badges on the admin dashboard and About page
+  - Admin Settings deep links: `/admin/settings#server` opens a settings category and `/admin/settings#server.update_check_enabled` jumps to and highlights a single setting, so What's New entries can point straight at a new option
   - Per-user on/off choices for each kind of notification in Account Settings
   - Site-wide **Enable Notifications** setting under Settings → Features, and configurable retention for read notifications
 
