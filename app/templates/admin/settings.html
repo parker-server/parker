@@ -71,7 +71,7 @@
 
     <template x-for="category in categoryList" :key="category">
         <section
-            class="mb-6 overflow-hidden rounded-2xl border border-gray-800 bg-gray-900/80 shadow-lg"
+            class="mb-6 scroll-mt-24 overflow-hidden rounded-2xl border border-gray-800 bg-gray-900/80 shadow-lg"
             :id="categoryAnchor(category)"
         >
             <button
@@ -111,7 +111,11 @@
 
                             <div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
                                 <template x-for="setting in group.settings" :key="setting.key">
-                                    <div class="rounded-xl border border-gray-700 bg-gray-950/70 p-4">
+                                    <div
+                                        class="scroll-mt-24 rounded-xl border bg-gray-950/70 p-4 transition-colors duration-500"
+                                        :class="highlightedSetting === setting.key ? 'border-blue-400 ring-2 ring-blue-400/40' : 'border-gray-700'"
+                                        :id="settingAnchor(setting.key)"
+                                    >
                                         <div class="flex flex-col gap-3">
                                             <div>
                                                 <div>
@@ -243,6 +247,7 @@ function settingsManager() {
         settings: {},
         categoryList: [],
         openSections: {},
+        highlightedSetting: null,
         coverPreview: {
             key: null,
             url: '',
@@ -269,6 +274,10 @@ function settingsManager() {
 
             this.categoryList = Object.keys(this.settings);
             this.initializeSections();
+
+            // Deep links: #<category> opens a section, #<setting key> jumps to one setting.
+            this.jumpToHash();
+            window.addEventListener('hashchange', () => this.jumpToHash());
         },
 
         /**
@@ -322,15 +331,46 @@ function settingsManager() {
             return `settings-category-${category}`;
         },
 
-        jumpToCategory(category) {
+        settingAnchor(key) {
+            return `setting-${key}`;
+        },
+
+        jumpToCategory(category, anchor = this.categoryAnchor(category)) {
             this.openSections[category] = true;
 
             this.$nextTick(() => {
-                const target = document.getElementById(this.categoryAnchor(category));
+                const target = document.getElementById(anchor);
                 if (target) {
                     target.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 }
             });
+        },
+
+        jumpToHash() {
+            const target = decodeURIComponent(window.location.hash.slice(1));
+            if (!target) return;
+
+            if (this.categoryList.includes(target)) {
+                this.jumpToCategory(target);
+                return;
+            }
+
+            const category = this.categoryList.find(name =>
+                (this.settings[name] || []).some(setting => setting.key === target)
+            );
+            if (!category) return;
+
+            // A setting hidden by its parent setting falls back to its section.
+            if (!this.visibleSettings(category).some(setting => setting.key === target)) {
+                this.jumpToCategory(category);
+                return;
+            }
+
+            this.highlightedSetting = target;
+            this.jumpToCategory(category, this.settingAnchor(target));
+            setTimeout(() => {
+                if (this.highlightedSetting === target) this.highlightedSetting = null;
+            }, 4000);
         },
 
         toggleSection(category) {

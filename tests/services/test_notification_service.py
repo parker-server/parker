@@ -431,6 +431,18 @@ def test_shipped_whats_new_file_is_valid():
     assert len(load_whats_new_entries()) == len(raw)
 
 
+def test_shipped_whats_new_settings_links_point_at_real_targets():
+    # /admin/settings#<target> must name a settings category or a visible setting key.
+    categories = {definition["category"] for definition in SettingsService.DEFAULTS}
+    visible_keys = {
+        definition["key"] for definition in SettingsService.DEFAULTS if not definition.get("is_hidden")
+    }
+    for entry in load_whats_new_entries():
+        path, _, target = (entry.link or "").partition("#")
+        if path == "/admin/settings" and target:
+            assert target in categories | visible_keys, f"{entry.title}: unknown settings target #{target}"
+
+
 def test_load_whats_new_skips_invalid_entries_and_sorts(tmp_path):
     path = tmp_path / "whats_new.json"
     path.write_text(json.dumps([

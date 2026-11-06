@@ -145,7 +145,7 @@
                                 <label for="new_can_download" class="text-gray-300 text-sm leading-tight select-none">Allow downloading comic files (web and OPDS)</label>
                             </div>
                             {% if not downloads_enabled %}
-                            <p data-downloads-disabled-note class="text-xs text-amber-400 ml-6 -mt-1">Downloads are turned off site-wide in <a :href="window.parker.route('admin.settings')" class="underline hover:text-amber-300">Settings</a>, so this has no effect until they're turned back on.</p>
+                            <p data-downloads-disabled-note class="text-xs text-amber-400 ml-6 -mt-1">Downloads are turned off site-wide in <a :href="window.parker.route('admin.settings') + '#server.downloads_enabled'" class="underline hover:text-amber-300">Settings</a>, so this has no effect until they're turned back on.</p>
                             {% endif %}
                         </div>
                     </div>
@@ -249,7 +249,7 @@
                                 <label for="edit_can_download" class="text-gray-300 text-sm leading-tight select-none">Allow downloading comic files (web and OPDS)</label>
                             </div>
                             {% if not downloads_enabled %}
-                            <p data-downloads-disabled-note class="text-xs text-amber-400 ml-6 -mt-1">Downloads are turned off site-wide in <a :href="window.parker.route('admin.settings')" class="underline hover:text-amber-300">Settings</a>, so this has no effect until they're turned back on.</p>
+                            <p data-downloads-disabled-note class="text-xs text-amber-400 ml-6 -mt-1">Downloads are turned off site-wide in <a :href="window.parker.route('admin.settings') + '#server.downloads_enabled'" class="underline hover:text-amber-300">Settings</a>, so this has no effect until they're turned back on.</p>
                             {% endif %}
 
                             <p x-show="editingUser.is_superuser" class="text-xs text-blue-400 mt-1">Admins are exempt from age and download restrictions.</p>

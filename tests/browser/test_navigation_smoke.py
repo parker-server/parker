@@ -332,7 +332,7 @@ def test_admin_user_form_notes_when_downloads_are_off_site_wide(page, browser_se
         note = page.locator("[data-downloads-disabled-note]:visible")
         note.wait_for()
         assert "turned off site-wide" in note.inner_text()
-        assert note.get_by_role("link", name="Settings").get_attribute("href") == "/admin/settings"
+        assert note.get_by_role("link", name="Settings").get_attribute("href") == "/admin/settings#server.downloads_enabled"
     finally:
         _set_downloads_enabled(browser_server, True)
 
