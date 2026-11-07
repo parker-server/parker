@@ -1,7 +1,9 @@
 from app.models.comic import Volume
+from app.models.interactions import UserReadingListPin
 from app.models.reading_progress import ReadingProgress
 from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.series import Series
+from app.services.reading_list import ReadingListService
 from tests.factories import create_comic, create_library_with_root
 
 
@@ -389,3 +391,137 @@ def test_rename_404_for_missing_list(admin_client):
     response = admin_client.patch("/api/reading-lists/999999", json={"name": "Whatever"})
 
     assert response.status_code == 404
+
+
+def _create_visible_reading_list(db, user, *, prefix: str, name: str, issue_count: int = 2):
+    library, _, volume = _create_series_graph(
+        db,
+        lib_name=f"{prefix}-lib",
+        series_name=f"{prefix} Series",
+        prefix=prefix,
+    )
+    comics = [
+        _create_comic(db, volume_id=volume.id, prefix=prefix, number=str(index), year=2020 + index)
+        for index in range(1, issue_count + 1)
+    ]
+    reading_list = ReadingList(name=name, source="manual")
+    db.add(reading_list)
+    db.flush()
+    db.add_all([
+        ReadingListItem(reading_list_id=reading_list.id, comic_id=comic.id, position=float(index))
+        for index, comic in enumerate(comics, start=1)
+    ])
+    user.accessible_libraries.append(library)
+    db.commit()
+    return reading_list, comics
+
+
+def test_pin_and_unpin_reading_list_are_idempotent_and_reported(auth_client, db, normal_user):
+    reading_list, _ = _create_visible_reading_list(db, normal_user, prefix="rl-pin", name="Pin Me")
+
+    detail = auth_client.get(f"/api/reading-lists/{reading_list.id}")
+    assert detail.json()["pinned"] is False
+
+    for _ in range(2):
+        pinned = auth_client.post(f"/api/reading-lists/{reading_list.id}/pin")
+        assert pinned.status_code == 200
+        assert pinned.json() == {"reading_list_id": reading_list.id, "pinned": True}
+
+    assert db.query(UserReadingListPin).filter_by(user_id=normal_user.id).count() == 1
+    assert auth_client.get(f"/api/reading-lists/{reading_list.id}").json()["pinned"] is True
+    listed = auth_client.get("/api/reading-lists/?page=1&size=10").json()["items"]
+    assert [(item["name"], item["pinned"]) for item in listed] == [("Pin Me", True)]
+
+    for _ in range(2):
+        unpinned = auth_client.delete(f"/api/reading-lists/{reading_list.id}/pin")
+        assert unpinned.status_code == 200
+        assert unpinned.json() == {"reading_list_id": reading_list.id, "pinned": False}
+
+    assert db.query(UserReadingListPin).filter_by(user_id=normal_user.id).count() == 0
+    assert auth_client.get(f"/api/reading-lists/{reading_list.id}").json()["pinned"] is False
+
+
+def test_pin_reading_list_rejects_lists_the_user_cannot_open(auth_client, db, normal_user):
+    missing = auth_client.post("/api/reading-lists/999999/pin")
+    assert missing.status_code == 404
+
+    # No access to the library holding the list's only issue
+    _, _, hidden_volume = _create_series_graph(
+        db,
+        lib_name="rl-pin-hidden-lib",
+        series_name="RL Pin Hidden Series",
+        prefix="rl-pin-hidden",
+    )
+    hidden_comic = _create_comic(db, volume_id=hidden_volume.id, prefix="rl-pin-hidden", number="1", year=2020)
+    hidden_list = ReadingList(name="Hidden Pin List", source="manual")
+    db.add(hidden_list)
+    db.flush()
+    db.add(ReadingListItem(reading_list_id=hidden_list.id, comic_id=hidden_comic.id, position=1))
+    db.commit()
+
+    hidden = auth_client.post(f"/api/reading-lists/{hidden_list.id}/pin")
+    assert hidden.status_code == 404
+
+    # Age-restricted content blocks the whole list, like the detail page
+    restricted_list, restricted_comics = _create_visible_reading_list(
+        db, normal_user, prefix="rl-pin-mature", name="Mature Pin List", issue_count=1
+    )
+    restricted_comics[0].age_rating = "Mature 17+"
+    normal_user.max_age_rating = "Teen"
+    normal_user.allow_unknown_age_ratings = False
+    db.commit()
+
+    restricted = auth_client.post(f"/api/reading-lists/{restricted_list.id}/pin")
+    assert restricted.status_code == 403
+
+    assert db.query(UserReadingListPin).filter_by(user_id=normal_user.id).count() == 0
+
+
+def test_unpin_clears_pin_even_when_list_is_no_longer_visible(auth_client, db, normal_user):
+    reading_list, comics = _create_visible_reading_list(db, normal_user, prefix="rl-unpin-hidden", name="Gone Dark")
+    assert auth_client.post(f"/api/reading-lists/{reading_list.id}/pin").status_code == 200
+
+    normal_user.accessible_libraries.clear()
+    db.commit()
+
+    response = auth_client.delete(f"/api/reading-lists/{reading_list.id}/pin")
+
+    assert response.status_code == 200
+    assert db.query(UserReadingListPin).filter_by(user_id=normal_user.id).count() == 0
+
+
+def test_deleting_reading_list_removes_its_pins(admin_client, db, normal_user):
+    reading_list, _ = _create_visible_reading_list(db, normal_user, prefix="rl-pin-delete", name="Delete Pinned")
+    db.add(UserReadingListPin(user_id=normal_user.id, reading_list_id=reading_list.id))
+    db.commit()
+
+    response = admin_client.delete(f"/api/reading-lists/{reading_list.id}")
+
+    assert response.status_code == 200
+    assert db.query(UserReadingListPin).count() == 0
+
+
+def test_empty_comicinfo_list_cleanup_removes_its_pins(db, normal_user):
+    reading_list = ReadingList(name="Empty ComicInfo Pinned", source="comicinfo")
+    db.add(reading_list)
+    db.flush()
+    db.add(UserReadingListPin(user_id=normal_user.id, reading_list_id=reading_list.id))
+    db.commit()
+
+    ReadingListService(db).cleanup_empty_lists()
+    db.commit()
+
+    assert db.query(ReadingList).filter_by(name="Empty ComicInfo Pinned").first() is None
+    assert db.query(UserReadingListPin).count() == 0
+
+
+def test_deleting_user_removes_their_reading_list_pins(db, normal_user):
+    reading_list, _ = _create_visible_reading_list(db, normal_user, prefix="rl-pin-user-delete", name="User Delete Pinned")
+    db.add(UserReadingListPin(user_id=normal_user.id, reading_list_id=reading_list.id))
+    db.commit()
+
+    db.delete(normal_user)
+    db.commit()
+
+    assert db.query(UserReadingListPin).count() == 0
+    assert db.get(ReadingList, reading_list.id) is not None

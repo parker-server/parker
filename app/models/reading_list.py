@@ -24,6 +24,9 @@ class ReadingList(Base):
     items = relationship("ReadingListItem", back_populates="reading_list",
                          cascade="all, delete-orphan", order_by="ReadingListItem.position")
 
+    # Per-user Home pins; removed with the list
+    pins = relationship("UserReadingListPin", back_populates="reading_list", cascade="all, delete-orphan")
+
 
 class ReadingListItem(Base):
     """A comic in a reading list with a specific position/order"""

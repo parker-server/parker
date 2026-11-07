@@ -232,3 +232,37 @@ def test_recent_series_rail_view_all_opens_the_matching_series_browser(
     page.get_by_role("heading", name=heading, exact=True).wait_for()
     assert page.url.endswith(f"/series/recent/{kind}")
     page.locator(f'a[href="/series/{seed["series_id"]}"]').wait_for()
+
+
+@pytest.mark.browser
+def test_pinned_reading_list_card_opens_reader_and_unpins(page, browser_server):
+    seed = browser_server["seed"]
+    list_url = f"{browser_server['base_url']}/reading-lists/{seed['reading_list_id']}"
+
+    page.goto(list_url, wait_until="networkidle")
+    page.get_by_role("heading", name=seed["reading_list_name"]).wait_for()
+    with page.expect_response(lambda response: response.url.endswith("/pin") and response.request.method == "POST"):
+        page.get_by_role("button", name="Pin to Home").click()
+    page.get_by_role("button", name="Pinned to Home").wait_for()
+
+    page.goto(f"{browser_server['base_url']}/", wait_until="networkidle")
+    page.get_by_role("heading", name="Pinned Reading Lists").wait_for()
+    card = page.get_by_test_id("pinned-reading-list-card")
+    assert card.count() == 1
+    assert card.get_by_role("link", name=seed["reading_list_name"]).is_visible()
+    assert card.get_by_text("1 / 3 read").is_visible()
+
+    card.get_by_title(f"Continue {seed['reading_list_name']}").click()
+    page.wait_for_url(f"**/reader/{seed['in_progress_comic_id']}*")
+    page.locator(".reader-container").wait_for()
+    page.locator(".nav-zone.center").click()
+    page.locator(".reader-toolbar").filter(has_text=seed["reading_list_name"]).first.wait_for()
+
+    page.goto(list_url, wait_until="networkidle")
+    with page.expect_response(lambda response: response.url.endswith("/pin") and response.request.method == "DELETE"):
+        page.get_by_role("button", name="Pinned to Home").click()
+    page.get_by_role("button", name="Pin to Home").wait_for()
+
+    page.goto(f"{browser_server['base_url']}/", wait_until="networkidle")
+    page.get_by_role("heading", name="Jump Back In").wait_for()
+    assert not page.get_by_role("heading", name="Pinned Reading Lists").is_visible()

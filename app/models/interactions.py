@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, Boolean, ForeignKey, DateTime, CheckConstraint
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import backref, relationship
 from datetime import datetime, timezone
 from app.database import Base
 
@@ -58,6 +58,25 @@ class UserLibraryPin(Base):
 
     user = relationship("User", backref="library_pins")
     library = relationship("Library", backref="user_pins")
+
+
+class UserReadingListPin(Base):
+    """
+    Junction table for User <-> ReadingList home-page pins.
+    SQLite foreign keys aren't enforced, so cleanup relies on the ORM cascades below.
+    """
+    __tablename__ = "user_reading_list_pins"
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    reading_list_id = Column(Integer, ForeignKey("reading_lists.id", ondelete="CASCADE"), primary_key=True)
+    pinned_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    user = relationship("User", backref=backref("reading_list_pins", cascade="all, delete-orphan"))
+    reading_list = relationship("ReadingList", back_populates="pins")
 
 
 class UserComicRating(Base):

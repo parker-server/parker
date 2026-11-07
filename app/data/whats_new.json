@@ -1,5 +1,12 @@
 [
   {
+    "version": "0.1.49",
+    "audience": "all",
+    "title": "Pin reading lists to Home",
+    "body": "Open a reading list and choose Pin to Home. Each pinned list gets a card on your Home page that opens at your next unread issue and shows how far through the list you are. Finished lists step aside until new issues are added.",
+    "link": "/reading-lists"
+  },
+  {
     "version": "0.1.48",
     "audience": "all",
     "title": "Notifications",

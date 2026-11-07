@@ -62,6 +62,14 @@
                         {% endcall %}
                     </template>
 
+                    <template x-if="rail.key === 'pinned_reading_lists'">
+                        {% call rail(title="Pinned Reading Lists", icon="book-open", icon_class="text-green-300", action_label="Browse Reading Lists", action_href_expr="window.parker.route('pages.reading_lists')") %}
+                            <template x-for="pinnedList in pinnedReadingLists" :key="pinnedList.reading_list_id">
+                                {% include "partials/reading_list_progress_card.html" %}
+                            </template>
+                        {% endcall %}
+                    </template>
+
                     <template x-if="rail.key === 'pinned_libraries'">
                         <section class="space-y-12">
                             <div class="flex items-center justify-between border-b border-gray-700 pb-2">
@@ -433,6 +441,7 @@ function homePage(bootstrap = {}) {
         resumeComics: [],
         followingArrivals: [],
         pinnedLibraryRails: [],
+        pinnedReadingLists: [],
         smartLists: [],
         popularSeries: [],
         promotedRailItems: {},
@@ -456,6 +465,7 @@ function homePage(bootstrap = {}) {
             trending: false,
             resume: false,
             following: false,
+            pinnedReadingLists: false,
             pinnedLibraries: false,
             smartLists: false,
             popular: false,
@@ -507,6 +517,7 @@ function homePage(bootstrap = {}) {
                 { key: 'resume', title: 'Jump Back In', hint: 'Continue books already in progress.', visible: true },
                 { key: 'following_arrivals', title: 'New from Following', hint: 'New issues from followed volumes.', visible: true },
                 { key: 'up_next', title: 'Up Next', hint: 'Next unread issues from recent reads.', visible: true },
+                { key: 'pinned_reading_lists', title: 'Pinned Reading Lists', hint: 'Managed by reading list pins.', visible: true },
                 { key: 'pinned_libraries', title: 'Pinned Libraries', hint: 'Managed by pinned libraries.', visible: true },
                 { key: 'smart_lists', title: 'Smart Lists', hint: 'Managed by smart-list dashboard settings.', visible: true },
                 { key: 'want_to_read', title: 'Want to Read', hint: 'Series you have starred.', visible: true },
@@ -531,6 +542,7 @@ function homePage(bootstrap = {}) {
                 resume: 'resume',
                 following_arrivals: 'following',
                 up_next: 'onDeck',
+                pinned_reading_lists: 'pinnedReadingLists',
                 pinned_libraries: 'pinnedLibraries',
                 smart_lists: 'smartLists',
                 want_to_read: 'starred',
@@ -558,6 +570,7 @@ function homePage(bootstrap = {}) {
                 resume: this.resumeComics.length > 0,
                 following_arrivals: this.followingArrivals.length > 0,
                 up_next: this.onDeckSeries.length > 0,
+                pinned_reading_lists: this.pinnedReadingLists.length > 0,
                 pinned_libraries: this.pinnedLibraryRails.length > 0,
                 smart_lists: this.smartLists.length > 0,
                 want_to_read: this.starredSeries.length > 0,
@@ -596,6 +609,7 @@ function homePage(bootstrap = {}) {
                 resume: () => this.fetchResume(),
                 following_arrivals: () => this.fetchFollowingArrivals(),
                 up_next: () => this.fetchOnDeck(),
+                pinned_reading_lists: () => this.fetchPinnedReadingLists(),
                 pinned_libraries: () => this.fetchPinnedLibraries(),
                 smart_lists: () => this.fetchSmartLists(),
                 want_to_read: () => this.fetchStarred(),
@@ -786,6 +800,15 @@ function homePage(bootstrap = {}) {
                 if (res.ok) this.followingArrivals = await res.json();
             } catch(e) { console.error(e); }
             finally { this.loading.following = false; }
+        },
+
+        async fetchPinnedReadingLists() {
+            this.loading.pinnedReadingLists = true;
+            try {
+                const res = await fetch(window.parker.route('home.pinned_reading_lists'));
+                if (res.ok) this.pinnedReadingLists = await res.json();
+            } catch(e) { console.error(e); }
+            finally { this.loading.pinnedReadingLists = false; }
         },
 
         async fetchPinnedLibraries() {

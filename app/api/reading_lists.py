@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import joinedload, aliased
 from sqlalchemy import func, select, not_
@@ -13,6 +14,7 @@ from app.models.library import Library
 from app.models.tags import Character, Team, Location
 from app.models.credits import Person
 from app.models.reading_list import ReadingList, ReadingListItem
+from app.models.interactions import UserReadingListPin
 from app.models.cbl_source import CBLSource
 from app.schemas.reading_list import (
     ReadingListCBLSource,
@@ -36,6 +38,15 @@ SOURCE_LABELS = {
 
 def _source_label(source: str) -> str:
     return SOURCE_LABELS.get(source, source)
+
+
+def filter_visible_reading_list_items(query, current_user):
+    """Limit a ReadingListItem query (already joined to Series and Library) to items the user can open."""
+    query = query.filter(Library.parse_reading_lists == True)
+    if not current_user.is_superuser:
+        allowed_ids = [lib.id for lib in current_user.accessible_libraries]
+        query = query.filter(Series.library_id.in_(allowed_ids))
+    return query
 
 
 @router.get("/", response_model=PaginatedResponse[ReadingListListItem], name="list")
@@ -96,6 +107,14 @@ async def list_reading_lists(db: SessionDep,
         .limit(params.size) \
         .all()
 
+    page_list_ids = [rl.id for rl, _v_count in results]
+    pinned_ids = {
+        row[0] for row in db.query(UserReadingListPin.reading_list_id).filter(
+            UserReadingListPin.user_id == current_user.id,
+            UserReadingListPin.reading_list_id.in_(page_list_ids),
+        ).all()
+    } if page_list_ids else set()
+
     # 4. Format Results
     items = []
     for rl, v_count in results:
@@ -108,6 +127,7 @@ async def list_reading_lists(db: SessionDep,
             comic_count=v_count,
             created_at=rl.created_at,
             updated_at=rl.updated_at,
+            pinned=rl.id in pinned_ids,
         ))
 
     return {
@@ -146,10 +166,8 @@ async def get_reading_list(list_id: int, db: SessionDep, current_user: CurrentUs
     # Eager load relationships to prevent N+1
     query = db.query(ReadingListItem).join(Comic).join(Volume).join(Series).join(Library) \
         .options(joinedload(ReadingListItem.comic).joinedload(Comic.volume).joinedload(Volume.series)) \
-        .filter(ReadingListItem.reading_list_id == list_id, Library.parse_reading_lists == True)
-
-    if allowed_ids is not None:
-        query = query.filter(Series.library_id.in_(allowed_ids))
+        .filter(ReadingListItem.reading_list_id == list_id)
+    query = filter_visible_reading_list_items(query, current_user)
 
     items = query.order_by(ReadingListItem.position).all()
 
@@ -221,7 +239,63 @@ async def get_reading_list(list_id: int, db: SessionDep, current_user: CurrentUs
         details=details,
         resume_to=ReaderResumeTarget(comic_id=resume_comic_id, status=resume_status),
         cbl_source=cbl_source_payload,
+        pinned=_get_pin(db, current_user.id, reading_list.id) is not None,
     )
+
+
+def _get_pin(db: SessionDep, user_id: int, list_id: int) -> UserReadingListPin | None:
+    return db.query(UserReadingListPin).filter(
+        UserReadingListPin.user_id == user_id,
+        UserReadingListPin.reading_list_id == list_id,
+    ).first()
+
+
+def _get_pinnable_list(db: SessionDep, current_user: CurrentUser, list_id: int) -> ReadingList:
+    """Users can only pin lists they could open."""
+    check_container_restriction(
+        db, current_user,
+        ReadingListItem,
+        ReadingListItem.reading_list_id,
+        list_id,
+        "Reading list"
+    )
+
+    reading_list = db.query(ReadingList).filter(ReadingList.id == list_id).first()
+    if not reading_list:
+        raise HTTPException(status_code=404, detail="Reading list not found")
+
+    visible_item = db.query(ReadingListItem.id).join(Comic).join(Volume).join(Series).join(Library) \
+        .filter(ReadingListItem.reading_list_id == list_id)
+    if filter_visible_reading_list_items(visible_item, current_user).first() is None:
+        raise HTTPException(status_code=404, detail="Reading list not found")
+
+    return reading_list
+
+
+@router.post("/{list_id}/pin", name="pin")
+async def pin_reading_list(list_id: int, db: SessionDep, current_user: CurrentUser):
+    reading_list = _get_pinnable_list(db, current_user, list_id)
+
+    if _get_pin(db, current_user.id, reading_list.id) is None:
+        db.add(UserReadingListPin(
+            user_id=current_user.id,
+            reading_list_id=reading_list.id,
+            pinned_at=datetime.now(timezone.utc),
+        ))
+        db.commit()
+
+    return {"reading_list_id": reading_list.id, "pinned": True}
+
+
+@router.delete("/{list_id}/pin", name="unpin")
+async def unpin_reading_list(list_id: int, db: SessionDep, current_user: CurrentUser):
+    # Unpinning skips the visibility check so users can always clear an old pin
+    pin = _get_pin(db, current_user.id, list_id)
+    if pin is not None:
+        db.delete(pin)
+        db.commit()
+
+    return {"reading_list_id": list_id, "pinned": False}
 
 
 @router.patch("/{list_id}", response_model=ReadingListRenameResponse, name="rename")
