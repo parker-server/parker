@@ -1,0 +1,24 @@
+{# Home card for a pinned reading list: cover of the next issue, list progress. Expects `pinnedList` in scope. #}
+<div class="w-40 flex-shrink-0" data-testid="pinned-reading-list-card">
+    <a :href="window.parker.readerRoute(pinnedList.next.comic_id, `context_type=reading_list&context_id=${pinnedList.reading_list_id}`, { includeReturnTo: false })"
+       class="block group relative"
+       :title="`Continue ${pinnedList.name}`">
+        <div class="aspect-[2/3] bg-gray-700 rounded-lg overflow-hidden relative shadow-md transition-all duration-200 group-hover:scale-[1.02]">
+            <img :src="pinnedList.next.thumbnail_path" :alt="`${pinnedList.next.series} #${pinnedList.next.number}`" class="w-full h-full object-cover" loading="lazy">
+
+            <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent px-2 pb-2 pt-8 pointer-events-none">
+                <div class="text-[10px] uppercase tracking-wider font-bold text-green-300" x-text="{ new: 'Start', in_progress: 'Continue' }[pinnedList.next.status] || 'Up next'"></div>
+                <div class="text-xs text-white font-semibold truncate" x-text="`${pinnedList.next.series} #${pinnedList.next.number}`"></div>
+            </div>
+        </div>
+    </a>
+
+    <a :href="window.parker.route('pages.reading_list_detail', { reading_list_id: pinnedList.reading_list_id })"
+       class="mt-2 block text-sm font-bold text-gray-100 hover:text-green-400 transition-colors truncate"
+       x-text="pinnedList.name"></a>
+
+    <div class="mt-1.5 w-full bg-gray-700 rounded-full h-1.5" role="progressbar" aria-valuemin="0" :aria-valuemax="pinnedList.total" :aria-valuenow="pinnedList.completed">
+        <div class="bg-green-500 h-1.5 rounded-full" :style="`width: ${Math.round((pinnedList.completed / pinnedList.total) * 100)}%`"></div>
+    </div>
+    <div class="mt-1 text-xs text-gray-400" x-text="`${pinnedList.completed} / ${pinnedList.total} read`"></div>
+</div>

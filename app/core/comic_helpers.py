@@ -585,6 +585,17 @@ def get_container_resume_target(
         .all()
     )
 
+    return resolve_container_resume_target(ordered_comic_ids, progress_records)
+
+
+def resolve_container_resume_target(
+        ordered_comic_ids: list[int],
+        progress_records: list[ReadingProgress],
+) -> tuple[int | None, str]:
+    """Pick the Continue target from already-loaded progress records for the container's comics."""
+    if not ordered_comic_ids:
+        return None, "new"
+
     if not progress_records:
         return ordered_comic_ids[0], "new"
 

@@ -5,7 +5,8 @@ from app.api.deps import get_current_user
 from app.api.home import HOME_RAIL_KEYS, format_home_item
 from app.main import app
 from app.models.comic import Comic, Volume
-from app.models.interactions import UserComicRating, UserLibraryPin, UserVolumeFollow
+from app.models.interactions import UserComicRating, UserLibraryPin, UserReadingListPin, UserVolumeFollow
+from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.reading_progress import ReadingProgress
 from app.models.series import Series
 from app.models.user import User
@@ -1479,3 +1480,136 @@ def test_home_popular_hides_inaccessible_libraries(auth_client, db, normal_user)
     assert len(payload) == 4
     assert {item["id"] for item in payload} == visible_ids
     assert hidden_series.id not in {item["id"] for item in payload}
+
+
+def _create_pinned_reading_list(db, user, *, name: str, issue_count: int, pinned_at: datetime, library=None):
+    if library is None:
+        library, _, volume = _create_series_graph(db, lib_name=f"{name}-lib", series_name=f"{name} Series")
+        _grant_library_access(user, library)
+    else:
+        series = Series(name=f"{name} Series", library=library)
+        volume = Volume(series=series, volume_number=1)
+        db.add_all([series, volume])
+        db.flush()
+
+    comics = [
+        _add_comic(db, volume, number=str(index), title=f"{name} {index}", page_count=20)
+        for index in range(1, issue_count + 1)
+    ]
+    reading_list = ReadingList(name=name, source="manual")
+    db.add(reading_list)
+    db.flush()
+    db.add_all([
+        ReadingListItem(reading_list_id=reading_list.id, comic_id=comic.id, position=float(index))
+        for index, comic in enumerate(comics, start=1)
+    ])
+    db.add(UserReadingListPin(user_id=user.id, reading_list_id=reading_list.id, pinned_at=pinned_at))
+    db.flush()
+    return reading_list, comics
+
+
+def _mark_read(db, user, comic, *, at: datetime, completed: bool = True, page: int = 19):
+    db.add(ReadingProgress(
+        user_id=user.id,
+        comic_id=comic.id,
+        current_page=page,
+        total_pages=20,
+        completed=completed,
+        last_read_at=at,
+    ))
+
+
+def test_home_pinned_reading_lists_anchor_at_next_issue_and_order_by_activity(auth_client, db, normal_user):
+    base = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    untouched_old, untouched_old_comics = _create_pinned_reading_list(
+        db, normal_user, name="Untouched Old Pin", issue_count=2, pinned_at=base)
+    untouched_new, _ = _create_pinned_reading_list(
+        db, normal_user, name="Untouched New Pin", issue_count=2, pinned_at=base + timedelta(minutes=5))
+    continuing, continuing_comics = _create_pinned_reading_list(
+        db, normal_user, name="Continuing", issue_count=3, pinned_at=base + timedelta(minutes=1))
+    mid_issue, mid_issue_comics = _create_pinned_reading_list(
+        db, normal_user, name="Mid Issue", issue_count=3, pinned_at=base + timedelta(minutes=2))
+    finished, finished_comics = _create_pinned_reading_list(
+        db, normal_user, name="Finished", issue_count=2, pinned_at=base + timedelta(minutes=3))
+
+    _mark_read(db, normal_user, continuing_comics[0], at=base + timedelta(days=1))
+    _mark_read(db, normal_user, mid_issue_comics[0], at=base + timedelta(days=2))
+    _mark_read(db, normal_user, mid_issue_comics[1], at=base + timedelta(days=3), completed=False, page=5)
+    for comic in finished_comics:
+        _mark_read(db, normal_user, comic, at=base + timedelta(days=4))
+    db.commit()
+
+    response = auth_client.get("/api/home/pinned-reading-lists")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [card["name"] for card in payload] == ["Mid Issue", "Continuing", "Untouched Old Pin", "Untouched New Pin"]
+
+    by_name = {card["name"]: card for card in payload}
+    assert by_name["Mid Issue"]["reading_list_id"] == mid_issue.id
+    assert (by_name["Mid Issue"]["completed"], by_name["Mid Issue"]["total"]) == (1, 3)
+    assert by_name["Mid Issue"]["next"]["comic_id"] == mid_issue_comics[1].id
+    assert by_name["Mid Issue"]["next"]["status"] == "in_progress"
+
+    assert (by_name["Continuing"]["completed"], by_name["Continuing"]["total"]) == (1, 3)
+    assert by_name["Continuing"]["next"]["comic_id"] == continuing_comics[1].id
+    assert by_name["Continuing"]["next"]["status"] == "continue"
+    assert by_name["Continuing"]["next"]["series"] == "Continuing Series"
+    assert by_name["Continuing"]["next"]["number"] == "2"
+    assert by_name["Continuing"]["next"]["thumbnail_path"]
+
+    assert by_name["Untouched Old Pin"]["next"]["comic_id"] == untouched_old_comics[0].id
+    assert by_name["Untouched Old Pin"]["next"]["status"] == "new"
+    assert by_name["Untouched Old Pin"]["completed"] == 0
+    assert by_name["Untouched Old Pin"]["last_read_at"] is None
+    assert untouched_new.id == by_name["Untouched New Pin"]["reading_list_id"]
+
+    # The card agrees with the list page's Continue button
+    detail = auth_client.get(f"/api/reading-lists/{continuing.id}").json()
+    assert detail["resume_to"]["comic_id"] == by_name["Continuing"]["next"]["comic_id"]
+
+    # Finished lists stay pinned but leave the rail until they gain unread issues
+    assert finished.id not in [card["reading_list_id"] for card in payload]
+    assert db.query(UserReadingListPin).filter_by(reading_list_id=finished.id).count() == 1
+
+    extra = _add_comic(db, finished_comics[0].volume, number="3", title="Finished 3", page_count=20)
+    db.add(ReadingListItem(reading_list_id=finished.id, comic_id=extra.id, position=3.0))
+    db.commit()
+
+    refreshed = auth_client.get("/api/home/pinned-reading-lists").json()
+    finished_card = next(card for card in refreshed if card["reading_list_id"] == finished.id)
+    assert (finished_card["completed"], finished_card["total"]) == (2, 3)
+    assert finished_card["next"]["comic_id"] == extra.id
+
+
+def test_home_pinned_reading_lists_skip_lists_the_user_cannot_open(auth_client, db, normal_user):
+    base = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    visible, _ = _create_pinned_reading_list(db, normal_user, name="Visible Pin", issue_count=1, pinned_at=base)
+
+    no_access_library = create_library_with_root(db, "No Access Pin Lib", "/tmp/no-access-pin-lib")
+    _create_pinned_reading_list(
+        db, normal_user, name="No Access Pin", issue_count=1, pinned_at=base, library=no_access_library)
+
+    parse_off, _ = _create_pinned_reading_list(db, normal_user, name="Parse Off Pin", issue_count=1, pinned_at=base)
+    parse_off_library = db.query(Series).filter_by(name="Parse Off Pin Series").one().library
+    parse_off_library.parse_reading_lists = False
+
+    _, mature_comics = _create_pinned_reading_list(db, normal_user, name="Mature Pin", issue_count=2, pinned_at=base)
+    mature_comics[1].age_rating = "Mature 17+"
+
+    normal_user.max_age_rating = "Teen"
+    normal_user.allow_unknown_age_ratings = True
+    db.commit()
+
+    response = auth_client.get("/api/home/pinned-reading-lists")
+
+    assert response.status_code == 200
+    assert [card["reading_list_id"] for card in response.json()] == [visible.id]
+    assert parse_off.id not in [card["reading_list_id"] for card in response.json()]
+
+
+def test_home_pinned_reading_lists_empty_without_pins(auth_client):
+    response = auth_client.get("/api/home/pinned-reading-lists")
+
+    assert response.status_code == 200
+    assert response.json() == []

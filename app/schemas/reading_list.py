@@ -25,6 +25,7 @@ class ReadingListListItem(BaseModel):
     comic_count: int
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    pinned: bool = False
 
 
 class ReadingListComic(BaseModel):
@@ -70,3 +71,4 @@ class ReadingListDetailResponse(BaseModel):
     details: ReadingListMetadataDetails
     resume_to: ReaderResumeTarget
     cbl_source: ReadingListCBLSource | None = None
+    pinned: bool = False

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import Float, and_, or_
+from sqlalchemy import Float, and_, not_, or_
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.sql.expression import func, desc, cast
 from typing import Annotated, Any, List, Literal
@@ -9,10 +9,12 @@ from collections import defaultdict
 
 from app.core.settings_loader import get_cached_setting
 from app.api.deps import CurrentUser, PaginatedResponse, PaginationParams, SessionDep
-from app.core.comic_helpers import filter_series_query_to_user, get_format_filters, get_smart_cover, get_series_age_restriction, get_thumbnail_url, pick_series_cover
+from app.core.comic_helpers import filter_series_query_to_user, get_banned_comic_condition, get_format_filters, get_smart_cover, get_series_age_restriction, get_thumbnail_url, pick_series_cover, resolve_container_resume_target
 from app.models.comic import Comic, Volume
 from app.models.interactions import UserComicRating
 from app.models.interactions import UserLibraryPin
+from app.models.interactions import UserReadingListPin
+from app.models.reading_list import ReadingList, ReadingListItem
 from app.models.interactions import UserVolumeFollow
 from app.models.library import Library
 from app.models.series import Series
@@ -22,6 +24,7 @@ from app.schemas.search import ComicSearchItem
 from app.schemas.search import SearchRequest
 from app.core.comic_helpers import REVERSE_NUMBERING_SERIES
 from app.api.promoted_rails import get_active_promoted_rails, is_promoted_rail_active
+from app.api.reading_lists import filter_visible_reading_list_items
 from app.models.promoted_rail import PromotedRail
 from app.services.search import SearchService
 
@@ -32,6 +35,7 @@ HOME_RAIL_DEFINITIONS = (
     {"key": "resume", "title": "Jump Back In", "hint": "Continue books already in progress."},
     {"key": "following_arrivals", "title": "New from Following", "hint": "New issues from followed volumes."},
     {"key": "up_next", "title": "Up Next", "hint": "Next unread issues from recent reads."},
+    {"key": "pinned_reading_lists", "title": "Pinned Reading Lists", "hint": "Managed by reading list pins."},
     {"key": "pinned_libraries", "title": "Pinned Libraries", "hint": "Managed by pinned libraries."},
     {"key": "smart_lists", "title": "Smart Lists", "hint": "Managed by smart-list dashboard settings."},
     {"key": "want_to_read", "title": "Want to Read", "hint": "Series you have starred."},
@@ -48,6 +52,7 @@ HOME_RAIL_DEFINITION_BY_KEY = {definition["key"]: definition for definition in H
 HOME_RAIL_DEFAULT_INDEX = {key: index for index, key in enumerate(HOME_RAIL_KEYS)}
 PROMOTED_RAIL_INSERT_AFTER_KEY = "following_arrivals"
 PROMOTED_RAIL_HOME_LIMIT = 12
+PINNED_READING_LIST_HOME_LIMIT = 24
 
 
 class HomeRailLayoutEntry(BaseModel):
@@ -941,6 +946,105 @@ def get_pinned_libraries(
         })
 
     return rails
+
+
+@router.get("/pinned-reading-lists", response_model=List[dict], name="pinned_reading_lists")
+def get_pinned_reading_lists(
+        db: SessionDep,
+        current_user: CurrentUser,
+        limit: int = PINNED_READING_LIST_HOME_LIMIT,
+):
+    """
+    Get one card per pinned reading list, anchored at the user's next issue in that list.
+    Finished lists are left out but stay pinned, so they return if the list gains unread issues.
+    Lists the user can't currently open are skipped.
+    """
+    limit = max(1, min(limit, PINNED_READING_LIST_HOME_LIMIT))
+
+    pins_query = (
+        db.query(UserReadingListPin, ReadingList)
+        .join(ReadingList, UserReadingListPin.reading_list_id == ReadingList.id)
+        .filter(UserReadingListPin.user_id == current_user.id)
+    )
+
+    banned_condition = get_banned_comic_condition(current_user)
+    if banned_condition is not None:
+        pins_query = pins_query.filter(
+            not_(ReadingList.items.any(ReadingListItem.comic.has(banned_condition)))
+        )
+
+    pins = pins_query.all()
+    if not pins:
+        return []
+
+    # All visible items for every pinned list, in reading order (one query)
+    items_query = (
+        db.query(ReadingListItem.reading_list_id, Comic.id, Comic.number, Comic.updated_at, Series.name)
+        .join(Comic, ReadingListItem.comic_id == Comic.id)
+        .join(Volume, Comic.volume_id == Volume.id)
+        .join(Series, Volume.series_id == Series.id)
+        .join(Library, Series.library_id == Library.id)
+        .filter(ReadingListItem.reading_list_id.in_([reading_list.id for _pin, reading_list in pins]))
+    )
+    items_query = filter_visible_reading_list_items(items_query, current_user)
+
+    ordered_ids_by_list: dict[int, list[int]] = defaultdict(list)
+    comic_info: dict[int, dict] = {}
+    for list_id, comic_id, number, updated_at, series_name in items_query.order_by(
+            ReadingListItem.reading_list_id, ReadingListItem.position).all():
+        ordered_ids_by_list[list_id].append(comic_id)
+        comic_info[comic_id] = {"number": number, "updated_at": updated_at, "series": series_name}
+
+    if not comic_info:
+        return []
+
+    # The user's progress for all of those comics (one query)
+    progress_by_comic_id = {
+        progress.comic_id: progress
+        for progress in db.query(ReadingProgress).filter(
+            ReadingProgress.user_id == current_user.id,
+            ReadingProgress.comic_id.in_(list(comic_info)),
+        ).all()
+    }
+
+    cards = []
+    for pin, reading_list in pins:
+        ordered_ids = ordered_ids_by_list.get(reading_list.id)
+        if not ordered_ids:
+            continue
+
+        progress_records = [progress_by_comic_id[cid] for cid in ordered_ids if cid in progress_by_comic_id]
+        completed = sum(1 for progress in progress_records if progress.completed)
+        if completed >= len(ordered_ids):
+            continue
+
+        next_comic_id, status = resolve_container_resume_target(ordered_ids, progress_records)
+        next_comic = comic_info[next_comic_id]
+
+        cards.append({
+            "reading_list_id": reading_list.id,
+            "name": reading_list.name,
+            "total": len(ordered_ids),
+            "completed": completed,
+            "last_read_at": max((progress.last_read_at for progress in progress_records), default=None),
+            "pinned_at": pin.pinned_at,
+            "next": {
+                "comic_id": next_comic_id,
+                "series": next_comic["series"],
+                "number": next_comic["number"],
+                "thumbnail_path": get_thumbnail_url(next_comic_id, next_comic["updated_at"]),
+                "status": status,
+            },
+        })
+
+    # Lists read most recently first, then lists not started yet in pin order
+    started = sorted((card for card in cards if card["last_read_at"]), key=lambda card: card["last_read_at"], reverse=True)
+    not_started = sorted((card for card in cards if not card["last_read_at"]), key=lambda card: card["pinned_at"])
+
+    return [
+        {key: value for key, value in card.items() if key != "pinned_at"}
+        for card in (started + not_started)[:limit]
+    ]
 
 
 @router.get("/trending", response_model=List[dict], name="trending")

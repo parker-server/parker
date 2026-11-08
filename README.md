@@ -57,6 +57,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
   - Anonymous aggregate social insights such as reader counts and `Popular with Others`
   - `Continue Reading`, `Jump Back In`, `Trending`, and `New from Following`
   - Pinned library rails for recently updated series from favorite libraries
+  - Pinned reading lists on Home, each opening at your next unread issue with a progress bar
   - Per-user Home rail customization for reordering or hiding discovery rails
   - Admin-scheduled Featured Rails backed by Advanced Search, shown as series discovery cards with matching-issue handoffs and per-user hide controls
   - Library Timeline for character and team histories generated from embedded metadata
