@@ -114,7 +114,7 @@
                                         <a :href="window.parker.route('pages.search', {}, `smart_list_id=${listId}`)" class="text-xs text-blue-400 hover:text-white transition-colors">View All</a>
                                     </div>
 
-                                    <div class="flex gap-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                                    <div class="flex gap-4 overflow-x-auto pb-6 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent" data-selection-group>
                                         <template x-for="comic in items" :key="comic.id">
                                             <div class="w-40 flex-shrink-0">
                                                 {% include "partials/comic_card.html" %}

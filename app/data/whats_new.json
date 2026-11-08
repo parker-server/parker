@@ -7,6 +7,12 @@
     "link": "/reading-lists"
   },
   {
+    "version": "0.1.49",
+    "audience": "all",
+    "title": "Easier selecting",
+    "body": "Once you've ticked a comic, clicking any other cover selects it too, instead of opening the reader. Hold Shift and click to select every issue in between. Clear your selection to go back to reading."
+  },
+  {
     "version": "0.1.48",
     "audience": "all",
     "title": "Notifications",

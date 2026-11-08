@@ -394,6 +394,45 @@ def test_navigation_click_continues_when_preflight_refresh_hangs(page, browser_s
 
 
 @pytest.mark.browser
+def test_selecting_comic_cards_skips_navigation_refresh(page, browser_server):
+    seed = browser_server["seed"]
+    expired_access_token = create_access_token(
+        subject="browser-user",
+        expires_delta=timedelta(seconds=-30),
+    )
+    refresh_token = create_refresh_token(subject="browser-user")
+    volume_url = f"{browser_server['base_url']}/volumes/{seed['volume_id']}"
+
+    page.route("**/api/auth/refresh", lambda route: None)
+    page.goto(volume_url, wait_until="networkidle")
+    first = page.locator(f'[data-selection-card][data-comic-id="{seed["completed_comic_id"]}"]')
+    second = page.locator(f'[data-selection-card][data-comic-id="{seed["active_comic_id"]}"]')
+    first.wait_for()
+
+    page.evaluate(
+        """
+        ({ expiredAccessToken, refreshToken }) => {
+            window.parker.auth.navigationRefreshTimeoutMs = 50;
+            window.parker.storage.setString('token', expiredAccessToken);
+            window.parker.storage.setString('refresh_token', refreshToken);
+            window.parker.storage.setString('lastActivityAt', String(Math.floor(Date.now() / 1000)));
+        }
+        """,
+        {
+            "expiredAccessToken": expired_access_token,
+            "refreshToken": refresh_token,
+        },
+    )
+
+    first.get_by_test_id("comic-select-toggle").click()
+    second.locator("a").first.click()
+    page.wait_for_timeout(300)
+
+    assert page.url == volume_url
+    assert page.evaluate("Alpine.store('batch').count") == 2
+
+
+@pytest.mark.browser
 def test_idle_session_clears_instead_of_refreshing(page, browser_server):
     expired_access_token = create_access_token(
         subject="browser-user",
