@@ -215,6 +215,12 @@
         return true;
     };
 
+    // Comic card clicks that select the comic instead of opening it (see comic_card.html).
+    const isSelectionClick = (target) => {
+        if (!target.closest('[data-selection-card]')) return false;
+        return Boolean(target.closest('[data-selection-toggle]')) || Boolean(window.Alpine?.store('batch')?.active);
+    };
+
     const prepareNavigation = async (event) => {
         if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
             return;
@@ -222,6 +228,7 @@
 
         const anchor = event.target instanceof Element ? event.target.closest('a') : null;
         if (!shouldPrepareNavigation(anchor)) return;
+        if (isSelectionClick(event.target)) return;
 
         const token = storage.getString('token');
         const refreshToken = storage.getString('refresh_token');
@@ -535,6 +542,7 @@ document.addEventListener('alpine:init', () => {
 
         items: new Set(), // Stores "comic:1", "series:2", etc.
         readCount: 0, // Tracks how many selected items are already read
+        anchorId: null, // Last comic card clicked, where a shift-click range starts
 
         // Helpers
         get count() { return this.items.size; },
@@ -548,17 +556,46 @@ document.addEventListener('alpine:init', () => {
             return this.items.has(`${type}:${id}`);
         },
 
+        add(id, type = 'comic', isRead = false) {
+            const key = `${type}:${id}`;
+            if (this.items.has(key)) return;
+            this.items.add(key);
+            if (isRead) this.readCount++;
+        },
+
+        remove(id, type = 'comic', isRead = false) {
+            const key = `${type}:${id}`;
+            if (!this.items.has(key)) return;
+            this.items.delete(key);
+            if (isRead) this.readCount--;
+        },
+
         // Helper: Toggle selection
         toggle(id, type = 'comic', isRead = false) {
-            const key = `${type}:${id}`;
-            if (this.items.has(key)) {
-                this.items.delete(key);
-                if (isRead) this.readCount--; // Decrement if removing a read item
+            if (this.has(id, type)) this.remove(id, type, isRead);
+            else this.add(id, type, isRead);
+        },
+
+        // Selects or deselects a comic card. With extendRange (shift-click), every card between the
+        // last card clicked and this one, in the same grid or rail, takes this card's new state.
+        selectCard(cardEl, id, isRead = false, extendRange = false) {
+            const group = cardEl.closest('[data-selection-group]');
+            const cards = group ? Array.from(group.querySelectorAll('[data-selection-card]')) : [];
+            const from = cards.findIndex(card => Number(card.dataset.comicId) === this.anchorId);
+            const to = cards.indexOf(cardEl);
+
+            if (extendRange && from !== -1 && to !== -1) {
+                const select = !this.has(id);
+                cards.slice(Math.min(from, to), Math.max(from, to) + 1).forEach(card => {
+                    const cardId = Number(card.dataset.comicId);
+                    const cardRead = card.dataset.read === 'true';
+                    if (select) this.add(cardId, 'comic', cardRead);
+                    else this.remove(cardId, 'comic', cardRead);
+                });
+            } else {
+                this.toggle(id, 'comic', isRead);
             }
-            else {
-                this.items.add(key);
-                if (isRead) this.readCount++; // Increment if adding a read item
-            }
+            this.anchorId = id;
         },
 
         // Helper: Sorts selection into API-ready arrays
@@ -578,7 +615,7 @@ document.addEventListener('alpine:init', () => {
             return result;
         },
 
-        clear() { this.items.clear(); this.readCount = 0; }
+        clear() { this.items.clear(); this.readCount = 0; this.anchorId = null; }
     });
 
 

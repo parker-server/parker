@@ -14,6 +14,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
   - Admin folder browser for selecting server-side library paths under `COMICS_PATH`
   - Multi-root libraries with explicit add, disable, relocate, and remove controls
   - Reading Lists, Collections, Story Arcs, Stacks, Smart Lists, Cover Murals
+  - Multi-select comics to add to Stacks or Cover Murals or mark read: once one is picked, clicking any cover selects it, and shift-click selects a range
   - CBL-derived reading lists from uploaded files, direct HTTPS imports, and the DieselTech catalog
   - Volume-level `Following` for future issue tracking by run
   - Optional single-volume series shortcut to open the volume detail page directly

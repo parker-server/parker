@@ -1,4 +1,8 @@
 <div class="relative select-none"
+     data-selection-card
+     :data-comic-id="comic.id"
+     :data-read="isRead ? 'true' : 'false'"
+     x-on:mousedown="if ($event.shiftKey) $event.preventDefault()"
      x-data="{
         isRead: comic.read,
         get readerQueryParams() {
@@ -10,6 +14,16 @@
             return !(typeof readingList !== 'undefined' || typeof collection !== 'undefined');
         },
         get isSelected() { return $store.batch && $store.batch.has(comic.id, 'comic'); },
+        selectCard(e) {
+            $store.batch.selectCard($root, comic.id, this.isRead, e.shiftKey);
+        },
+        onCoverClick(e) {
+            // While selecting (or on shift-click), the cover selects instead of opening the reader.
+            // Ctrl/Cmd-click still opens the comic in a new tab.
+            if (e.ctrlKey || e.metaKey || !(e.shiftKey || $store.batch.active)) return;
+            e.preventDefault();
+            this.selectCard(e);
+        },
         updateStatus(e) {
             // Check if my ID was included in the batch
             if (e.detail.ids.includes(comic.id)) {
@@ -22,14 +36,17 @@
 
      }" @comics-updated.window="updateStatus($event)">
 
-    <a :href="window.parker.readerRoute(comic.id, readerQueryParams, { includeReturnTo: includeReaderReturnTo })" class="block group relative cursor-pointer">
+    <a :href="window.parker.readerRoute(comic.id, readerQueryParams, { includeReturnTo: includeReaderReturnTo })" class="block group relative cursor-pointer"
+       x-on:click="onCoverClick($event)">
 
         <div class="aspect-[2/3] bg-gray-700 rounded-lg overflow-hidden relative shadow-md transition-all duration-200 group-hover:scale-[1.02]"
              :class="isSelected ? 'ring-4 ring-blue-500/80 scale-[0.98]' : ''">
 
             <div class="absolute top-2 left-2 z-40 cursor-pointer transition-opacity duration-200"
                  :class="($store.batch.active || isSelected) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
-                 x-on:click.prevent.stop="$store.batch.toggle(comic.id, 'comic', comic.read)">
+                 data-selection-toggle
+                 data-testid="comic-select-toggle"
+                 x-on:click.prevent.stop="selectCard($event)">
 
                 <div class="w-6 h-6 rounded-full border-2 flex items-center justify-center shadow-lg transition-all duration-200 bg-black/40 backdrop-blur-sm"
                      :class="isSelected ? 'bg-blue-600 border-blue-600 scale-110' : 'border-white/70 hover:bg-black/60'">

@@ -766,3 +766,62 @@ def test_search_too_long_for_the_address_is_kept_behind_a_state_key(page, browse
     _series_result_card(page, browser_server).wait_for()
     assert page.locator("[data-result-mode='series']").get_attribute("aria-pressed") == "true"
     assert page.locator(".space-y-4 > div").count() == 41
+
+
+def _selection_card(page, comic_id):
+    return page.locator(f'[data-selection-card][data-comic-id="{comic_id}"]')
+
+
+def _selection_count(page):
+    return page.evaluate("Alpine.store('batch').count")
+
+
+@pytest.mark.browser
+def test_volume_detail_shift_click_selects_a_range_of_issues(page, browser_server):
+    seed = browser_server["seed"]
+    volume_url = f"{browser_server['base_url']}/volumes/{seed['volume_id']}"
+    page.goto(volume_url, wait_until="networkidle")
+
+    first = _selection_card(page, seed["completed_comic_id"])
+    second = _selection_card(page, seed["active_comic_id"])
+    third = _selection_card(page, seed["in_progress_comic_id"])
+    first.wait_for()
+
+    first.get_by_test_id("comic-select-toggle").click()
+    assert _selection_count(page) == 1
+    page.get_by_role("button", name="Mark Unread").wait_for()
+
+    third.locator("a").first.click(modifiers=["Shift"])
+    assert _selection_count(page) == 3
+    assert page.url == volume_url
+    assert len(page.context.pages) == 1
+    page.get_by_role("button", name="Mark Read").wait_for()
+
+    # Shift-clicking a selected issue deselects the range back to the last one clicked.
+    second.locator("a").first.click(modifiers=["Shift"])
+    assert _selection_count(page) == 1
+    assert page.evaluate(f"Alpine.store('batch').has({seed['completed_comic_id']})")
+
+
+@pytest.mark.browser
+def test_volume_detail_cover_click_selects_while_selecting(page, browser_server):
+    seed = browser_server["seed"]
+    volume_url = f"{browser_server['base_url']}/volumes/{seed['volume_id']}"
+    page.goto(volume_url, wait_until="networkidle")
+
+    first = _selection_card(page, seed["completed_comic_id"])
+    second = _selection_card(page, seed["active_comic_id"])
+    first.wait_for()
+
+    first.get_by_test_id("comic-select-toggle").click()
+    second.locator("a").first.click()
+    assert _selection_count(page) == 2
+    assert page.url == volume_url
+
+    second.locator("a").first.click()
+    assert _selection_count(page) == 1
+    assert page.url == volume_url
+
+    page.evaluate("Alpine.store('batch').clear()")
+    second.locator("a").first.click()
+    page.wait_for_url(f"**/reader/{seed['active_comic_id']}**")
