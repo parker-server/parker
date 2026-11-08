@@ -1,8 +1,10 @@
 import pytest
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
+from app.models.comic import Comic
 from app.models.promoted_rail import PromotedRail
+from app.models.reading_progress import ReadingProgress
 
 
 def _visible_home_rail_keys(page):
@@ -266,3 +268,54 @@ def test_pinned_reading_list_card_opens_reader_and_unpins(page, browser_server):
     page.goto(f"{browser_server['base_url']}/", wait_until="networkidle")
     page.get_by_role("heading", name="Jump Back In").wait_for()
     assert not page.get_by_role("heading", name="Pinned Reading Lists").is_visible()
+
+
+@pytest.mark.browser
+def test_home_shift_click_range_stays_within_one_rail(page, browser_server, browser_db_factory):
+    seed = browser_server["seed"]
+    # Jump Back In lists in-progress comics, most recently read first: #1, #2, #3.
+    rail_order = [seed["completed_comic_id"], seed["active_comic_id"], seed["in_progress_comic_id"]]
+    rated_comic_id = seed["active_comic_id"]
+
+    session = browser_db_factory()
+    try:
+        session.query(ReadingProgress).delete()
+        now = datetime.now(timezone.utc)
+        for minutes_ago, comic_id in enumerate(rail_order):
+            session.add(
+                ReadingProgress(
+                    user_id=seed["user_id"],
+                    comic_id=comic_id,
+                    current_page=1,
+                    total_pages=3,
+                    completed=False,
+                    last_read_at=now - timedelta(minutes=minutes_ago),
+                )
+            )
+        session.get(Comic, rated_comic_id).community_rating = 4.5
+        session.commit()
+
+        page.goto(f"{browser_server['base_url']}/", wait_until="networkidle")
+        jump_back_in = page.locator("section").filter(has=page.get_by_role("heading", name="Jump Back In"))
+        acclaimed = page.locator("section").filter(has=page.get_by_role("heading", name="Critically Acclaimed"))
+
+        def card(rail, comic_id):
+            return rail.locator(f'[data-selection-card][data-comic-id="{comic_id}"]')
+
+        def selected_ids():
+            return sorted(page.evaluate("Array.from(Alpine.store('batch').payload.comic_ids)"))
+
+        card(jump_back_in, rail_order[0]).get_by_test_id("comic-select-toggle").click()
+        card(jump_back_in, rail_order[2]).locator("a").first.click(modifiers=["Shift"])
+        assert selected_ids() == sorted(rail_order)
+        assert page.url == f"{browser_server['base_url']}/"
+
+        # The last comic clicked is in Jump Back In, so a shift-click in another rail selects only that comic.
+        page.evaluate("Alpine.store('batch').clear()")
+        card(jump_back_in, rail_order[0]).get_by_test_id("comic-select-toggle").click()
+        card(acclaimed, rated_comic_id).locator("a").first.click(modifiers=["Shift"])
+        assert selected_ids() == sorted([rail_order[0], rated_comic_id])
+    finally:
+        session.get(Comic, rated_comic_id).community_rating = None
+        session.commit()
+        session.close()
