@@ -45,7 +45,7 @@ def ensure_progress_write_access(db: SessionDep, current_user: CurrentUser, comi
     raise HTTPException(status_code=404, detail=f"Comic {comic_id} not found")
 
 @router.get("/on-deck", name="on_deck_progress")
-async def get_on_deck_progress(
+def get_on_deck_progress(
         current_user: CurrentUser,
         service: Annotated[ReadingProgressService, Depends(get_progress_service)],
         limit: int = 10
@@ -100,7 +100,7 @@ async def get_on_deck_progress(
     return results
 
 @router.get("/{comic_id}", name="comic_progress")
-async def get_comic_progress(comic_id: int,
+def get_comic_progress(comic_id: int,
                              service: Annotated[ReadingProgressService, Depends(get_progress_service)]):
     """Get reading progress for a specific comic"""
 
@@ -122,7 +122,7 @@ async def get_comic_progress(comic_id: int,
 
 
 @router.post("/{comic_id}", name="update")
-async def update_comic_progress(
+def update_comic_progress(
         comic_id: int,
         request: UpdateProgressRequest,
         service: Annotated[ReadingProgressService, Depends(get_progress_service)],
@@ -172,7 +172,7 @@ async def update_comic_progress(
 
 
 @router.post("/{comic_id}/mark-read", name="mark_comic_as_read")
-async def mark_comic_as_read(comic_id: int,
+def mark_comic_as_read(comic_id: int,
                              service: Annotated[ReadingProgressService, Depends(get_progress_service)],
                              db: SessionDep,
                              current_user: CurrentUser):
@@ -198,7 +198,7 @@ async def mark_comic_as_read(comic_id: int,
 
 
 @router.delete("/{comic_id}", name="mark_comic_as_unread")
-async def mark_comic_as_unread(comic_id: int,
+def mark_comic_as_unread(comic_id: int,
                                service: Annotated[ReadingProgressService, Depends(get_progress_service)],
                                db: SessionDep):
     """Mark a comic as unread (remove progress)"""
@@ -220,7 +220,7 @@ async def mark_comic_as_unread(comic_id: int,
 
 
 @router.get("/", name="recent_progress")
-async def get_recent_progress(
+def get_recent_progress(
         current_user: CurrentUser,
         service: Annotated[ReadingProgressService, Depends(get_progress_service)],
         filter: Annotated[str, Query(pattern="^(recent|in_progress|completed)$")] = "recent",

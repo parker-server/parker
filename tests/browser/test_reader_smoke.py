@@ -1,8 +1,13 @@
-import pytest
-from sqlalchemy import select
+import threading
+import time
 
+import pytest
+from sqlalchemy import func, select
+
+from app.models.activity_log import ActivityLog
 from app.models.bookmark import Bookmark
 from app.models.reading_progress import ReadingProgress
+from app.services.reading_progress import ReadingProgressService
 
 TALL_SCROLL_PAGE_BYTES = b"""
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="3200" viewBox="0 0 1200 3200">
@@ -366,6 +371,73 @@ def test_reader_fit_width_scrolls_tall_pages_and_preserves_edge_navigation(page,
         () => document.querySelector('.reader-container')?._x_dataStack?.[0]?.currentPage === 1
         """
     )
+
+
+@pytest.mark.browser
+def test_reader_sends_one_progress_save_at_a_time(page, browser_server, monkeypatch):
+    seed = browser_server["seed"]
+    comic_id = seed["active_comic_id"]
+    original_update_progress = ReadingProgressService.update_progress
+    lock = threading.Lock()
+    calls = {"active": 0, "max_active": 0, "finished": 0}
+
+    def slow_update_progress(self, *args, **kwargs):
+        with lock:
+            calls["active"] += 1
+            calls["max_active"] = max(calls["max_active"], calls["active"])
+        try:
+            # Hold each save open long enough for the next page turn to overlap it.
+            time.sleep(0.3)
+            return original_update_progress(self, *args, **kwargs)
+        finally:
+            with lock:
+                calls["active"] -= 1
+                calls["finished"] += 1
+
+    monkeypatch.setattr(ReadingProgressService, "update_progress", slow_update_progress)
+
+    session = browser_server["db_factory"]()
+    try:
+        session.query(ActivityLog).filter(ActivityLog.comic_id == comic_id).delete()
+        session.commit()
+    finally:
+        session.close()
+
+    reader_state = "document.querySelector('.reader-container')._x_dataStack[0]"
+    page.goto(f"{browser_server['base_url']}/reader/{comic_id}", wait_until="networkidle")
+    page.wait_for_function(f"{reader_state}.meta.page_count === 3")
+    page.keyboard.press("ArrowRight")
+    page.keyboard.press("ArrowRight")
+
+    page.wait_for_function(f"{reader_state}.currentPage === 2")
+    page.wait_for_function(
+        f"!{reader_state}.isProgressSaveInFlight && {reader_state}.pendingProgressPage === null",
+        timeout=15000,
+    )
+
+    session = browser_server["db_factory"]()
+    try:
+        progress = session.scalar(
+            select(ReadingProgress).where(
+                ReadingProgress.user_id == seed["user_id"],
+                ReadingProgress.comic_id == comic_id,
+            )
+        )
+        assert progress is not None
+        saved_page, completed = progress.current_page, progress.completed
+        pages_logged = session.scalar(
+            select(func.sum(ActivityLog.pages_read)).where(ActivityLog.comic_id == comic_id)
+        )
+        session.query(ActivityLog).filter(ActivityLog.comic_id == comic_id).delete()
+        session.commit()
+    finally:
+        session.close()
+
+    assert calls["finished"] == 2
+    assert calls["max_active"] == 1
+    assert saved_page == 2
+    assert completed is True
+    assert pages_logged == 2
 
 
 @pytest.mark.browser
