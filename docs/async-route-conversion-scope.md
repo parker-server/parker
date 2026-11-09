@@ -2,13 +2,13 @@
 
 ## Status
 
-Planned for its own release. Counts come from an AST scan of `app/` on 2026-10-30, after 0.1.46.
+Planned for its own release. Counts come from an AST scan of `app/` on 2026-10-30, after 0.1.46, re-run on 2026-11-08 while 0.1.49 was in progress.
 
 ## Goal
 
 Make a function `async def` only when it awaits something. Every route that never awaits becomes plain `def`, so its blocking database calls run in the threadpool instead of on the event loop.
 
-180 of the 204 `async def` functions under `app/` never await anything, so `async` gains them nothing. 124 of those 180 also make blocking database calls on the event loop, the same pattern behind the 0.1.45 outage, when scrolling the Batman Vol 1 cover gallery through Cloudflare froze the site.
+178 of the 201 `async def` functions under `app/` never await anything, so `async` gains them nothing. 121 of those 178 also make blocking database calls on the event loop, the same pattern behind the 0.1.45 outage, when scrolling the Batman Vol 1 cover gallery through Cloudflare froze the site.
 
 ## Non-Goals
 
@@ -35,7 +35,7 @@ Async functions that never await, by module:
 
 | Module | Never await | Use the database |
 | --- | ---: | ---: |
-| `routers/pages.py` | 36 | 7 |
+| `routers/pages.py` | 37 | 7 |
 | `routers/admin.py` | 20 | 3 |
 | `api/libraries.py` | 17 | 16 |
 | `api/users.py` | 12 | 11 |
@@ -44,41 +44,40 @@ Async functions that never await, by module:
 | `api/series.py` | 8 | 8 |
 | `api/reports.py` | 7 | 7 |
 | `api/progress.py` | 6 | 5 |
+| `api/reading_lists.py` | 6 | 6 |
 | `api/jobs.py` | 5 | 5 |
 | `api/volumes.py` | 5 | 5 |
 | `api/bookmarks.py` | 4 | 4 |
-| `api/reading_lists.py` | 4 | 4 |
 | `api/stats.py` | 4 | 4 |
 | `main.py` | 4 | 2 |
 | `api/auth.py` | 3 | 2 |
 | `api/cbl_sources.py` | 3 | 3 |
 | `api/collections.py` | 3 | 3 |
 | `api/deps.py` | 3 | 0 |
-| `api/insights.py` | 3 | 3 |
 | `api/saved_searches.py` | 3 | 3 |
 | `api/tasks.py` | 3 | 2 |
 | `api/search.py` | 2 | 2 |
-| `api/timelines.py` | 2 | 2 |
 | `api/batch.py` | 1 | 1 |
 | `api/people.py` | 1 | 1 |
 | `api/reader.py` | 1 | 1 |
-| **Total** | **180** | **124** |
+| **Total** | **178** | **121** |
 
-The API modules carry most of the risk: in `libraries.py`, `opds.py`, `users.py`, `series.py` and `comics.py` nearly every async function hits the database. `pages.py` and `admin.py` have the most async functions, but most only render templates, so only 10 of their 56 make database calls.
+Changes since the first scan: `api/insights.py` (3) and `api/timelines.py` (2) are converted and no longer counted. New async routes added since then: `whats_new_page` in `pages.py`, and `pin_reading_list` and `unpin_reading_list` in `reading_lists.py`.
+
+The API modules carry most of the risk: in `libraries.py`, `opds.py`, `users.py`, `series.py` and `comics.py` nearly every async function hits the database. `pages.py` and `admin.py` have the most async functions, but most only render templates, so only 10 of their 57 make database calls.
 
 These modules already use plain `def` throughout: `home.py` (32 functions), `cover_murals.py` (23), `promoted_rails.py` (11), `pull_lists.py` (10) and `smart_lists.py` (7).
 
-How the counts were made: a function counts as using the database if it takes a `db` argument or calls `db.`, `session.` or `.query`. Templates rendered by `pages.py` may also query through lazy loads, so 124 is a lower bound.
+How the counts were made: a function counts as using the database if it takes a `db` argument or calls `db.`, `session.` or `.query`. Templates rendered by `pages.py` may also query through lazy loads, so 121 is a lower bound.
 
-## The 24 That Do Await
+## The 23 That Do Await
 
-17 are correctly `async`. The other 7 are admin-only CBL and upload routes.
+16 are correctly `async`. The other 7 are admin-only CBL and upload routes.
 
 | Functions | Count | What they await | Verdict |
 | --- | ---: | --- | --- |
 | External HTTP clients in `app/services/`: CBL catalog (7), CBL source (3), ComicBookRoundup (3), enrichment (1), external reviews lookup (1) | 15 | `httpx.AsyncClient` requests | Correct as they are |
 | `enforce_required_password_change` (`main.py`) | 1 | `call_next`, with its query in the threadpool | Correct; middleware must be async |
-| `get_version_check` (`stats.py`) | 1 | `asyncio.to_thread` for the slow part | Correct; already the right pattern |
 | `upload_avatar` (`users.py`), `upload_cbl_source` (`cbl_sources.py`) | 2 | `await file.read()` | Rework: plain `def` and read `file.file` directly |
 | `import_cbl_source_from_url`, `refresh_cbl_source` (`cbl_sources.py`), `import_catalog_file` (`cbl_catalog.py`) | 3 | HTTP downloads, then rebuild and commit | Rework: database work on the event loop, and the connection is held while the download runs |
 | `browse_catalog`, `preview_catalog_file` (`cbl_catalog.py`) | 2 | GitHub fetch of the catalog | Rework: no queries of their own, but the admin check's query leaves the request's connection checked out for the whole GitHub fetch |
@@ -89,14 +88,15 @@ All 7 are rare admin actions, so they are low risk. The fix for the HTTP ones is
 
 Batches, busiest pages first. Run the related tests after each batch.
 
-- [ ] `routers/pages.py` (36)
+- [ ] `routers/pages.py` (37)
 - [ ] `api/series.py` (8), `api/comics.py` (8), `api/volumes.py` (5), `api/progress.py` (6), `api/reader.py` (1)
 - [ ] `routers/opds.py` (12)
 - [ ] `api/libraries.py` (17), `api/users.py` (12)
 - [ ] `routers/admin.py` (20), `api/reports.py` (7), `api/jobs.py` (5), `api/tasks.py` (3), `api/stats.py` (4)
-- [ ] The rest of `app/api/`: bookmarks, reading lists, collections, saved searches, auth, search, batch, people, CBL sources (24)
+- [ ] The rest of `app/api/`: bookmarks, reading lists, collections, saved searches, auth, search, batch, people, CBL sources (26)
 - [x] `api/insights.py` (3), converted early with the chemistry query speed-up
 - [x] `api/timelines.py` (2), converted early with the timeline query speed-up
+- [x] `get_version_check` (`stats.py`), now plain `def` after the release notification work
 - [ ] The 7 CBL and upload routes from the table above
 - [ ] Full test suite
 
@@ -124,6 +124,10 @@ Only module- and class-level state is shared. Local variables, the request's DB 
 - Scan name caches (`person_cache`, `collection_cache`): one per service object, not shared.
 - CBL catalog cache (`CBLCatalogService._cache`): shared at class level, but its routes stay `async`; a race would only fetch twice.
 - Password-change cache (`core/security.py`): used on the event loop, plus single dict operations from the admin endpoints.
+- Library watcher (`services/watcher.py`): `refresh_watches` compares its watch list with the database, then adds or removes watches. Its 6 callers in `libraries.py` are `async`, so today they never overlap. Once converted, two library edits at once could add the same folder twice (every change scanned twice, with an extra watch never removed) or both remove the same one (an error). Fixed ahead of the conversion with a lock around `refresh_watches`.
+- Chemistry cache (`api/insights.py`) and version check cache (`services/version_check.py`): already locked.
+- Class-level dicts (`SettingsService.DEFAULTS`, `SchedulerService._TASK_REGISTRY`, `CreditService.ROLE_MAPPING`): never changed after startup.
+- Scan job queue (`scan_manager.add_*_task`): checks for an existing job, then adds one. This can already race across the 4 workers; the worst case is a duplicate job from a near-simultaneous double click.
 
 `home.py`, `cover_murals.py`, pull lists and smart lists already run in threads today. So this is a check while converting, not a known problem: any converted function that changes module-level state needs a lock, or must be harmless when two requests race.
 
