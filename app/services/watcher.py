@@ -147,6 +147,8 @@ class LibraryEventHandler(FileSystemEventHandler):
 
 class LibraryWatcher:
     _instance = None
+    # Library routes can call refresh_watches from several threads at once.
+    _refresh_lock = threading.Lock()
 
     def __new__(cls):
         if cls._instance is None:
@@ -182,6 +184,10 @@ class LibraryWatcher:
 
     def refresh_watches(self):
         """Sync active watches with the Database"""
+        with self._refresh_lock:
+            self._refresh_watches()
+
+    def _refresh_watches(self):
         db = SessionLocal()
         try:
             # 1. Get all libraries that should be watched

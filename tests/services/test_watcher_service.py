@@ -1,3 +1,4 @@
+import threading
 import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock, call
@@ -383,6 +384,36 @@ def test_refresh_watches_closes_session_when_query_raises(monkeypatch):
         inst.refresh_watches()
 
     db.close.assert_called_once()
+
+
+def test_concurrent_refresh_watches_schedules_root_once(monkeypatch):
+    inst = _watcher_instance()
+
+    db = MagicMock()
+    q = db.query.return_value
+    q.options.return_value = q
+    q.filter.return_value = q
+    q.all.return_value = [SimpleNamespace(id=5, active_roots=[SimpleNamespace(id=50, path="/library/five")])]
+
+    monkeypatch.setattr(watcher, "SessionLocal", lambda: db)
+    monkeypatch.setattr(watcher, "get_cached_setting", lambda key, default: 60)
+    monkeypatch.setattr(watcher, "LibraryEventHandler", MagicMock(return_value=MagicMock()))
+
+    def slow_schedule(handler, path, recursive):
+        # Give the other thread time to reach its own check for this root.
+        time.sleep(0.1)
+        return "watch"
+
+    inst.observer.schedule.side_effect = slow_schedule
+
+    threads = [threading.Thread(target=inst.refresh_watches) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    inst.observer.schedule.assert_called_once()
+    assert list(inst.watches.keys()) == [(5, 50)]
 
 
 def test_real_watchdog_event_queues_scan_for_new_archive(monkeypatch, tmp_path):
