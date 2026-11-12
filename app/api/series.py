@@ -170,7 +170,7 @@ def bulk_serialize_series(series_list: List[Series], db, current_user) -> List[d
 
 
 @router.get("/{series_id}", response_model=SeriesDetailResponse, name="detail")
-async def get_series_detail(series: SeriesDep, db: SessionDep, current_user: CurrentUser):
+def get_series_detail(series: SeriesDep, db: SessionDep, current_user: CurrentUser):
     """
     Get series summary.
     OPTIMIZED:
@@ -459,7 +459,7 @@ async def get_series_detail(series: SeriesDep, db: SessionDep, current_user: Cur
 
 
 @router.get("/{series_id}/details", name="details")
-async def get_series_metadata_details(
+def get_series_metadata_details(
         series: SeriesDep,
         db: SessionDep,
         current_user: CurrentUser,
@@ -478,7 +478,7 @@ async def get_series_metadata_details(
 
 # ... (Keep the rest of the file: get_series_issues, list_series, etc.) ...
 @router.get("/{series_id}/issues", response_model=PaginatedResponse, name="issues")
-async def get_series_issues(
+def get_series_issues(
         current_user: CurrentUser,
         series: SeriesDep,
         params: Annotated[PaginationParams, Depends()],
@@ -571,7 +571,7 @@ async def get_series_issues(
 
 
 @router.get("/", response_model=PaginatedResponse, name="list")
-async def list_series(
+def list_series(
         db: SessionDep, current_user: CurrentUser, params: Annotated[PaginationParams, Depends()],
         only_starred: bool = False, sort_by: Annotated[str, Query(pattern="^(name|created|updated)$")] = "name",
         sort_desc: bool = False
@@ -637,7 +637,7 @@ async def list_series(
 
 
 @router.post("/{series_id}/star", name="star")
-async def star_series(series: SeriesDep, db: SessionDep, current_user: CurrentUser):
+def star_series(series: SeriesDep, db: SessionDep, current_user: CurrentUser):
     _assert_series_allowed_for_user(series, db, current_user)
 
     # Get or create preference
@@ -654,7 +654,7 @@ async def star_series(series: SeriesDep, db: SessionDep, current_user: CurrentUs
 
 
 @router.delete("/{series_id}/star", name="unstar")
-async def unstar_series(series: SeriesDep, db: SessionDep, current_user: CurrentUser):
+def unstar_series(series: SeriesDep, db: SessionDep, current_user: CurrentUser):
     _assert_series_allowed_for_user(series, db, current_user)
 
     pref = db.query(UserSeries).filter_by(user_id=current_user.id, series_id=series.id).first()
@@ -666,7 +666,7 @@ async def unstar_series(series: SeriesDep, db: SessionDep, current_user: Current
 
 
 @router.post("/{series_id}/thumbnails", name="regenerate_thumbnails")
-async def regenerate_thumbnails(series_id: int, background_tasks: BackgroundTasks, db: SessionDep, admin: AdminUser):
+def regenerate_thumbnails(series_id: int, background_tasks: BackgroundTasks, db: SessionDep, admin: AdminUser):
     series = db.get(Series, series_id)
     if not series: raise HTTPException(404)
 
@@ -693,7 +693,7 @@ async def regenerate_thumbnails(series_id: int, background_tasks: BackgroundTask
 
 
 @router.get("/{series_id}/recommendations", name="recommendations")
-async def get_series_recommendations(series_id: int, db: SessionDep, user: CurrentUser, limit: int = 10):
+def get_series_recommendations(series_id: int, db: SessionDep, user: CurrentUser, limit: int = 10):
     source_query = db.query(Series).filter(Series.id == series_id)
     if not user.is_superuser:
         allowed_ids = [l.id for l in user.accessible_libraries]

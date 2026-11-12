@@ -254,7 +254,7 @@ def get_followed_volumes(
 
 
 @router.get("/{volume_id}", response_model=VolumeDetailResponse, name="detail")
-async def get_volume_detail(volume: VolumeDep, db: SessionDep, current_user: CurrentUser):
+def get_volume_detail(volume: VolumeDep, db: SessionDep, current_user: CurrentUser):
     """
     Get volume summary with categorized counts.
     OPTIMIZED: Uses UNION ALL to fetch all metadata lists (writers, characters, etc) in 1 query.
@@ -452,7 +452,7 @@ async def get_volume_detail(volume: VolumeDep, db: SessionDep, current_user: Cur
 
 
 @router.get("/{volume_id}/details", name="details")
-async def get_volume_metadata_details(
+def get_volume_metadata_details(
         volume: VolumeDep,
         db: SessionDep,
         current_user: CurrentUser,
@@ -466,7 +466,7 @@ async def get_volume_metadata_details(
 
 
 @router.post("/{volume_id}/follow", name="follow")
-async def follow_volume(volume: VolumeDep, db: SessionDep, current_user: CurrentUser):
+def follow_volume(volume: VolumeDep, db: SessionDep, current_user: CurrentUser):
     _assert_volume_allowed_for_user(volume.id, db, current_user)
 
     follow = db.query(UserVolumeFollow).filter(
@@ -487,7 +487,7 @@ async def follow_volume(volume: VolumeDep, db: SessionDep, current_user: Current
 
 
 @router.delete("/{volume_id}/follow", name="unfollow")
-async def unfollow_volume(volume: VolumeDep, db: SessionDep, current_user: CurrentUser):
+def unfollow_volume(volume: VolumeDep, db: SessionDep, current_user: CurrentUser):
     _assert_volume_allowed_for_user(volume.id, db, current_user)
 
     follow = db.query(UserVolumeFollow).filter(
@@ -503,7 +503,7 @@ async def unfollow_volume(volume: VolumeDep, db: SessionDep, current_user: Curre
 
 
 @router.get("/{volume_id}/issues", response_model=PaginatedResponse, name="issues")
-async def get_volume_issues(
+def get_volume_issues(
         current_user: CurrentUser,
         volume_id: int,
         params: Annotated[PaginationParams, Depends()],

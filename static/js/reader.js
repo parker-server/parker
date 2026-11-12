@@ -216,6 +216,8 @@
             isHoveringBar: false,
             fitWidthPointerZone: null,
             isIncognito: false,
+            isProgressSaveInFlight: false,
+            pendingProgressPage: null,
             contextType: null,
             contextId: null,
             storyArc: null,
@@ -1375,23 +1377,62 @@
                 this.beginBookmarkDetour(pageIndex);
             },
 
-            async updateProgress(force = false) {
+            updateProgress(force = false) {
                 if (this.isIncognito || (this.isBookmarkDetourActive && !force)) {
                     return;
                 }
 
+                // Send one save at a time. Overlapping saves can count pages twice in the
+                // activity log, or finish out of order and leave progress a page behind.
+                // Page turns during a save collapse into one save of the latest page.
+                this.pendingProgressPage = this.currentPage;
+                if (!this.isProgressSaveInFlight) {
+                    void this.sendPendingProgress();
+                }
+            },
+
+            async sendPendingProgress() {
+                this.isProgressSaveInFlight = true;
+                try {
+                    while (this.pendingProgressPage !== null) {
+                        const pageIndex = this.pendingProgressPage;
+                        this.pendingProgressPage = null;
+                        await this.sendProgress(pageIndex);
+                    }
+                } finally {
+                    this.isProgressSaveInFlight = false;
+                }
+            },
+
+            async sendProgress(pageIndex) {
                 const params = new URLSearchParams();
                 this.appendReaderContextParams(params, { includeProgressContext: true });
 
-                fetch(window.parker.route('progress.comic_progress', { comic_id: this.comicId }, params.toString()), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ current_page: this.currentPage, total_pages: this.meta.page_count })
-                });
+                try {
+                    await fetch(window.parker.route('progress.comic_progress', { comic_id: this.comicId }, params.toString()), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ current_page: pageIndex, total_pages: this.meta.page_count }),
+                        keepalive: true,
+                    });
 
-                if (this.currentPage === this.meta.page_count - 1) {
-                    fetch(`/api/progress/${this.comicId}/mark-read`, { method: 'POST' });
+                    if (pageIndex === this.meta.page_count - 1) {
+                        await fetch(`/api/progress/${this.comicId}/mark-read`, { method: 'POST', keepalive: true });
+                    }
+                } catch (error) {
+                    // Saves are best effort; the next page turn saves again.
                 }
+            },
+
+            sendPendingProgressOnExit() {
+                // Leaving mid-save would drop the queued page, so send it now.
+                if (this.pendingProgressPage === null) {
+                    return;
+                }
+
+                const pageIndex = this.pendingProgressPage;
+                this.pendingProgressPage = null;
+                void this.sendProgress(pageIndex);
             },
 
             toggleFullscreen() {

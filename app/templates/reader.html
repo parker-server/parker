@@ -20,6 +20,7 @@
 <div class="reader-container" x-data="window.createReader({ comicId: {{ comic_id }} })" tabindex="0"
      :class="{ 'scroll-mode': isScrollMode }"
      x-on:keydown.window="handleKey($event)"
+     x-on:pagehide.window="sendPendingProgressOnExit()"
      x-on:scroll.passive="handleScroll()"
      x-on:touchstart="handleTouchStart($event)"
      x-on:touchend="handleTouchEnd($event)">

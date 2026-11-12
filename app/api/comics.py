@@ -108,7 +108,7 @@ def _external_reviews_enabled(db: Session) -> bool:
     return bool(SettingsService(db).get(EXTERNAL_REVIEWS_ENABLED_SETTING))
 
 @router.post("/search", response_model=SearchResponse, name="search")
-async def search_comics(request: SearchRequest, db: SessionDep, current_user: CurrentUser):
+def search_comics(request: SearchRequest, db: SessionDep, current_user: CurrentUser):
     """
     Search comics with complex filters
 
@@ -132,7 +132,7 @@ async def search_comics(request: SearchRequest, db: SessionDep, current_user: Cu
     return results
 
 @router.post("/search/series", response_model=SeriesSearchResponse, name="search_series")
-async def search_series(request: SearchRequest, db: SessionDep, current_user: CurrentUser):
+def search_series(request: SearchRequest, db: SessionDep, current_user: CurrentUser):
     """
     Search with the same filters as /search, but return one result per series
     that has matching issues, with how many of its issues matched.
@@ -154,7 +154,7 @@ async def search_series(request: SearchRequest, db: SessionDep, current_user: Cu
     }
 
 @router.get("/{comic_id}", response_model=ComicDetailResponse, name="detail")
-async def get_comic(comic_id: int, db: SessionDep, current_user: CurrentUser):
+def get_comic(comic_id: int, db: SessionDep, current_user: CurrentUser):
     """
     Get a specific comic with all metadata.
     OPTIMIZED: Uses 'selectinload' for lists to prevent Cartesian Product explosion.
@@ -318,7 +318,7 @@ async def get_comic(comic_id: int, db: SessionDep, current_user: CurrentUser):
 
 
 @router.put("/{comic_id}/rating", name="set_rating")
-async def set_comic_rating(
+def set_comic_rating(
         comic: ComicDep,
         payload: ComicRatingUpdate,
         db: SessionDep,
@@ -346,7 +346,7 @@ async def set_comic_rating(
 
 
 @router.delete("/{comic_id}/rating", name="delete_rating")
-async def delete_comic_rating(
+def delete_comic_rating(
         comic: ComicDep,
         db: SessionDep,
         current_user: CurrentUser
@@ -366,7 +366,7 @@ async def delete_comic_rating(
 
 
 @router.get("/{comic_id}/external-reviews", response_model=ExternalReviewsResponse, name="external_reviews")
-async def get_external_reviews(
+def get_external_reviews(
         comic: ComicDep,
         db: SessionDep,
         current_user: CurrentUser,
@@ -605,7 +605,7 @@ def download_comic(comic: ComicDep, db: SessionDep, current_user: CurrentUser):
 
 
 @router.get("/random/backgrounds", name="random_backgrounds")
-async def get_random_backgrounds(
+def get_random_backgrounds(
         db: SessionDep,
         current_user: CurrentUser,
         limit: int = 20
@@ -648,7 +648,7 @@ async def get_random_backgrounds(
 
 
 @router.get("/covers/manifest", name="cover_manifest")
-async def get_cover_manifest(
+def get_cover_manifest(
         db: SessionDep,
         current_user: CurrentUser,
         context_type: Literal["series", "volume", "reading_list", "collection", "pull_list"],

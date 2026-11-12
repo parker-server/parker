@@ -138,6 +138,17 @@ def _remove_volume(browser_server, volume_id):
         session.close()
 
 
+def _remove_comic(browser_server, comic_id):
+    session = browser_server["db_factory"]()
+    try:
+        comic = session.get(Comic, comic_id)
+        if comic is not None:
+            session.delete(comic)
+            session.commit()
+    finally:
+        session.close()
+
+
 def _remove_extra_detail_characters(browser_server, names):
     session = browser_server["db_factory"]()
     try:
@@ -514,23 +525,26 @@ def test_home_following_arrival_appears_after_import_and_clears_after_reading(pa
 
     new_issue_id, new_issue_title = _insert_following_arrival(browser_server)
 
-    page.reload(wait_until="networkidle")
-    rail = page.locator("div").filter(has=page.get_by_role("heading", name="New from Following")).first
-    page.get_by_role("heading", name="New from Following").wait_for()
-    rail.locator(f"text={new_issue_title}").first.wait_for()
+    try:
+        page.reload(wait_until="networkidle")
+        rail = page.locator("div").filter(has=page.get_by_role("heading", name="New from Following")).first
+        page.get_by_role("heading", name="New from Following").wait_for()
+        rail.locator(f"text={new_issue_title}").first.wait_for()
 
-    rail.locator(f'a[href*="/reader/{new_issue_id}"]').first.click()
-    page.wait_for_url(f"**/reader/{new_issue_id}*")
-    page.locator(".reader-container").wait_for()
-    page.keyboard.press("ArrowRight")
-    page.wait_for_timeout(300)
+        rail.locator(f'a[href*="/reader/{new_issue_id}"]').first.click()
+        page.wait_for_url(f"**/reader/{new_issue_id}*")
+        page.locator(".reader-container").wait_for()
+        page.keyboard.press("ArrowRight")
+        page.wait_for_timeout(300)
 
-    page.goto(f"{browser_server['base_url']}/", wait_until="networkidle")
-    assert page.get_by_role("heading", name="New from Following").count() == 0
+        page.goto(f"{browser_server['base_url']}/", wait_until="networkidle")
+        assert page.get_by_role("heading", name="New from Following").count() == 0
 
-    resume_rail = page.locator("div").filter(has=page.get_by_role("heading", name="Jump Back In")).first
-    page.get_by_role("heading", name="Jump Back In").wait_for()
-    resume_rail.locator(f"text={new_issue_title}").first.wait_for()
+        resume_rail = page.locator("div").filter(has=page.get_by_role("heading", name="Jump Back In")).first
+        page.get_by_role("heading", name="Jump Back In").wait_for()
+        resume_rail.locator(f"text={new_issue_title}").first.wait_for()
+    finally:
+        _remove_comic(browser_server, new_issue_id)
 
 
 def _series_issue_count(browser_server):

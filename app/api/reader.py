@@ -36,7 +36,7 @@ def natural_sort_key(s):
             for text in re.split('([0-9]+)', str(s))]
 
 @router.get("/{comic_id}/read-init", name="init")
-async def get_comic_reader_init(comic_id: int,
+def get_comic_reader_init(comic_id: int,
                                 db: SessionDep,
                                 current_user: CurrentUser,
                                 # Context Parameters

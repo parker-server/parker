@@ -88,8 +88,8 @@ All 7 are rare admin actions, so they are low risk. The fix for the HTTP ones is
 
 Batches, busiest pages first. Run the related tests after each batch.
 
-- [ ] `routers/pages.py` (37)
-- [ ] `api/series.py` (8), `api/comics.py` (8), `api/volumes.py` (5), `api/progress.py` (6), `api/reader.py` (1)
+- [x] `routers/pages.py` (37)
+- [x] `api/series.py` (8), `api/comics.py` (8), `api/volumes.py` (5), `api/progress.py` (6), `api/reader.py` (1)
 - [ ] `routers/opds.py` (12)
 - [ ] `api/libraries.py` (17), `api/users.py` (12)
 - [ ] `routers/admin.py` (20), `api/reports.py` (7), `api/jobs.py` (5), `api/tasks.py` (3), `api/stats.py` (4)
@@ -128,6 +128,8 @@ Only module- and class-level state is shared. Local variables, the request's DB 
 - Chemistry cache (`api/insights.py`) and version check cache (`services/version_check.py`): already locked.
 - Class-level dicts (`SettingsService.DEFAULTS`, `SchedulerService._TASK_REGISTRY`, `CreditService.ROLE_MAPPING`): never changed after startup.
 - Scan job queue (`scan_manager.add_*_task`): checks for an existing job, then adds one. This can already race across the 4 workers; the worst case is a duplicate job from a near-simultaneous double click.
+- Reading progress saves (`api/progress.py`): the reader sent a save on every page turn without waiting for the last one. Two overlapping saves for one comic both read the old page, so the activity log counted pages twice, and the saves could finish out of order and leave progress a page behind. This could already happen across workers. Fixed with the conversion: the reader now sends one save at a time and folds page turns made during a save into one save of the latest page.
+- Star, follow and rating writes: the same "look up, then add" pattern, but each table's primary key stops duplicates, so the worst case is an error on a double click.
 
 `home.py`, `cover_murals.py`, pull lists and smart lists already run in threads today. So this is a check while converting, not a known problem: any converted function that changes module-level state needs a lock, or must be harmless when two requests race.
 

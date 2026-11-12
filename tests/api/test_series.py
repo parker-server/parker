@@ -1245,7 +1245,6 @@ def test_series_thumbnails_background_task_handles_errors(admin_client, db, monk
 
 
 def test_series_issues_sort_order_none_uses_reverse_numbering_rule(db, normal_user):
-    import asyncio
     from app.api.deps import PaginationParams
     from app.api.series import get_series_issues
 
@@ -1288,29 +1287,25 @@ def test_series_issues_sort_order_none_uses_reverse_numbering_rule(db, normal_us
 
     params = PaginationParams(page=1, size=20)
 
-    reverse_payload = asyncio.run(
-        get_series_issues(
-            current_user=normal_user,
-            series=reverse_series,
-            params=params,
-            db=db,
-            type="all",
-            read_filter="all",
-            sort_order=None,
-        )
+    reverse_payload = get_series_issues(
+        current_user=normal_user,
+        series=reverse_series,
+        params=params,
+        db=db,
+        type="all",
+        read_filter="all",
+        sort_order=None,
     )
     assert [row["number"] for row in reverse_payload["items"]] == ["2", "1"]
 
-    normal_payload = asyncio.run(
-        get_series_issues(
-            current_user=normal_user,
-            series=normal_series,
-            params=params,
-            db=db,
-            type="all",
-            read_filter="all",
-            sort_order=None,
-        )
+    normal_payload = get_series_issues(
+        current_user=normal_user,
+        series=normal_series,
+        params=params,
+        db=db,
+        type="all",
+        read_filter="all",
+        sort_order=None,
     )
     assert [row["number"] for row in normal_payload["items"]] == ["1", "2"]
 

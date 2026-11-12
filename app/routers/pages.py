@@ -33,7 +33,7 @@ def _shuffled_login_static_cover_urls(base_url: str) -> list[str]:
 
 # Frontend routes
 @router.get("/", response_class=HTMLResponse, name="home")
-async def home(request: Request, db: SessionDep, user: CurrentUser):
+def home(request: Request, db: SessionDep, user: CurrentUser):
     """Home page - Library browser"""
     startup_notice = None
 
@@ -60,20 +60,20 @@ async def home(request: Request, db: SessionDep, user: CurrentUser):
 
 
 @router.get("/reader/{comic_id}", response_class=HTMLResponse, name="reader")
-async def reader(request: Request, comic_id: int, user: CurrentUser):
+def reader(request: Request, comic_id: int, user: CurrentUser):
     """Comic reader"""
     return templates.TemplateResponse(request=request, name="reader.html", context={
         "comic_id": comic_id
     })
 
 @router.get("/search", response_class=HTMLResponse, name="search")
-async def search(request: Request, user: CurrentUser):
+def search(request: Request, user: CurrentUser):
     """Search page"""
     return templates.TemplateResponse(request=request, name="search.html")
 
 
 @router.get("/people/{person_id}", response_class=HTMLResponse, name="person_detail")
-async def person_detail(request: Request, person_id: int, user: CurrentUser):
+def person_detail(request: Request, person_id: int, user: CurrentUser):
     """Person detail page"""
     return templates.TemplateResponse(request=request, name="people/detail.html", context={
         "person_id": person_id
@@ -81,72 +81,72 @@ async def person_detail(request: Request, person_id: int, user: CurrentUser):
 
 
 @router.get("/insights", response_class=HTMLResponse, name="insights")
-async def insights(request: Request, user: CurrentUser):
+def insights(request: Request, user: CurrentUser):
     """Insights landing page"""
     return templates.TemplateResponse(request=request, name="insights.html")
 
 
 @router.get("/timelines", response_class=HTMLResponse, name="timelines")
-async def timelines(request: Request, user: CurrentUser):
+def timelines(request: Request, user: CurrentUser):
     """Library timeline page"""
     return templates.TemplateResponse(request=request, name="timelines.html")
 
 
 @router.get("/insights/creator-chemistry", response_class=HTMLResponse, name="insights_creator_chemistry")
-async def insights_creator_chemistry(request: Request, user: CurrentUser):
+def insights_creator_chemistry(request: Request, user: CurrentUser):
     """Creator collaboration insights page"""
     return templates.TemplateResponse(request=request, name="insights_creator.html")
 
 
 @router.get("/insights/character-chemistry", response_class=HTMLResponse, name="insights_character_chemistry")
-async def insights_character_chemistry(request: Request, user: CurrentUser):
+def insights_character_chemistry(request: Request, user: CurrentUser):
     """Character co-appearance insights page"""
     return templates.TemplateResponse(request=request, name="insights_character.html")
 
 
 @router.get("/insights/writer-character", response_class=HTMLResponse, name="insights_writer_character")
-async def insights_writer_character(request: Request, user: CurrentUser):
+def insights_writer_character(request: Request, user: CurrentUser):
     """Writer to character insights page"""
     return templates.TemplateResponse(request=request, name="insights_writer_character.html")
 
 
 @router.get("/insights/artist-character", response_class=HTMLResponse, name="insights_artist_character")
-async def insights_artist_character(request: Request, user: CurrentUser):
+def insights_artist_character(request: Request, user: CurrentUser):
     """Artist to character insights page"""
     return templates.TemplateResponse(request=request, name="insights_artist_character.html")
 
 @router.get("/collections", response_class=HTMLResponse, name="collections")
-async def collections_view(request: Request, user: CurrentUser):
+def collections_view(request: Request, user: CurrentUser):
     """Collections page"""
     return templates.TemplateResponse(request=request, name="collections/collections.html")
 
 @router.get("/collections/{collection_id}", response_class=HTMLResponse, name="collection_detail")
-async def collection_detail(request: Request, collection_id: int, user: CurrentUser):
+def collection_detail(request: Request, collection_id: int, user: CurrentUser):
     return templates.TemplateResponse(request=request, name="collections/collection_detail.html",
                                       context={"collection_id": collection_id})
 
 @router.get("/reading-lists", response_class=HTMLResponse, name="reading_lists")
-async def reading_lists_view(request: Request, user: CurrentUser):
+def reading_lists_view(request: Request, user: CurrentUser):
     """Reading lists page"""
     return templates.TemplateResponse(request=request, name="reading_lists/reading_lists.html")
 
 @router.get("/reading-lists/{reading_list_id}", response_class=HTMLResponse, name="reading_list_detail")
-async def reading_list_detail(request: Request, reading_list_id: int, user: CurrentUser):
+def reading_list_detail(request: Request, reading_list_id: int, user: CurrentUser):
     return templates.TemplateResponse(request=request, name="reading_lists/reading_list_detail.html", context={
         "reading_list_id": reading_list_id
     })
 
 @router.get("/continue-reading", response_class=HTMLResponse, name="continue_reading")
-async def continue_reading(request: Request, user: CurrentUser):
+def continue_reading(request: Request, user: CurrentUser):
     """Continue reading page"""
     return templates.TemplateResponse(request=request, name="continue_reading.html")
 
 @router.get("/libraries", response_class=HTMLResponse, name="libraries")
-async def libraries_page(request: Request):
+def libraries_page(request: Request):
     return templates.TemplateResponse(request=request, name="libraries/index.html")
 
 @router.get("/libraries/{library_id}", response_class=HTMLResponse, name="library_detail")
-async def library_view(request: Request, library: LibraryDep, user: CurrentUser):
+def library_view(request: Request, library: LibraryDep, user: CurrentUser):
     """View a specific library"""
     return templates.TemplateResponse(request=request, name="libraries/library.html", context={
         "library_id": library.id
@@ -154,7 +154,7 @@ async def library_view(request: Request, library: LibraryDep, user: CurrentUser)
 
 
 @router.get("/series/recent/{kind}", response_class=HTMLResponse, name="recent_series")
-async def recent_series_page(
+def recent_series_page(
         request: Request,
         user: CurrentUser,
         kind: Literal["added", "updated"],
@@ -178,7 +178,7 @@ async def recent_series_page(
 
 
 @router.get("/series/{series_id}", response_class=HTMLResponse, name="series_detail")
-async def series_detail(
+def series_detail(
         request: Request,
         series: SeriesDep,
         db: SessionDep,
@@ -211,7 +211,7 @@ async def series_detail(
 
 
 @router.get("/volumes/{volume_id}", response_class=HTMLResponse, name="volume_detail")
-async def volume_detail(request: Request, volume: VolumeDep, db: SessionDep, user: CurrentUser):
+def volume_detail(request: Request, volume: VolumeDep, db: SessionDep, user: CurrentUser):
     """Volume detail view"""
 
     # Find the "Smart Cover" to use for colors/background
@@ -224,7 +224,7 @@ async def volume_detail(request: Request, volume: VolumeDep, db: SessionDep, use
     })
 
 @router.get("/comics/{comic_id}", response_class=HTMLResponse, name="comic_detail")
-async def comic_detail(request: Request, comic: ComicDep, db: SessionDep, user: CurrentUser):
+def comic_detail(request: Request, comic: ComicDep, db: SessionDep, user: CurrentUser):
     """
     Comic detail page.
     Fetches basic metadata server-side for Open Graph tags and Hero Backgrounds.
@@ -237,7 +237,7 @@ async def comic_detail(request: Request, comic: ComicDep, db: SessionDep, user: 
     })
 
 @router.get("/login", response_class=HTMLResponse, name="login")
-async def login_page(request: Request, db: SessionDep):
+def login_page(request: Request, db: SessionDep):
 
     svc = SettingsService(db)
     login_background_style = svc.get("ui.login_background_style")
@@ -270,11 +270,11 @@ async def login_page(request: Request, db: SessionDep):
     return templates.TemplateResponse(request=request, name="login_full.html", context=context)
 
 @router.get("/stacks", response_class=HTMLResponse, name="stacks")
-async def stacks_index(request: Request, user: CurrentUser):
+def stacks_index(request: Request, user: CurrentUser):
     return templates.TemplateResponse(request=request, name="pull_lists/index.html")
 
 @router.get("/stacks/{list_id}", response_class=HTMLResponse, name="stack_detail")
-async def stack_detail(request: Request, list_id: int, user: CurrentUser):
+def stack_detail(request: Request, list_id: int, user: CurrentUser):
     # We pass the ID to the template; Alpine handles the data fetching
     return templates.TemplateResponse(request=request, name="pull_lists/detail.html", context={
         "list_id": list_id
@@ -282,36 +282,36 @@ async def stack_detail(request: Request, list_id: int, user: CurrentUser):
 
 
 @router.get("/cover-murals", response_class=HTMLResponse, name="cover_murals")
-async def cover_murals_index(request: Request, user: CurrentUser):
+def cover_murals_index(request: Request, user: CurrentUser):
     return templates.TemplateResponse(request=request, name="cover_murals/index.html")
 
 
 @router.get("/cover-murals/{mural_id}", response_class=HTMLResponse, name="cover_mural_detail")
-async def cover_mural_detail(request: Request, mural_id: int, user: CurrentUser):
+def cover_mural_detail(request: Request, mural_id: int, user: CurrentUser):
     return templates.TemplateResponse(request=request, name="cover_murals/detail.html", context={
         "mural_id": mural_id
     })
 
 
 @router.get("/pull-lists", name="pull_lists_legacy")
-async def pull_lists_legacy_redirect(request: Request, user: CurrentUser):
+def pull_lists_legacy_redirect(request: Request, user: CurrentUser):
     return RedirectResponse(url=request.url_for("stacks"), status_code=307)
 
 
 @router.get("/pull-lists/{list_id}", name="pull_list_detail_legacy")
-async def pull_list_detail_legacy_redirect(request: Request, list_id: int, user: CurrentUser):
+def pull_list_detail_legacy_redirect(request: Request, list_id: int, user: CurrentUser):
     return RedirectResponse(url=request.url_for("stack_detail", list_id=list_id), status_code=307)
 
 @router.get("/user/dashboard", response_class=HTMLResponse, name="user_dashboard")
-async def dashboard(request: Request, user: CurrentUser):
+def dashboard(request: Request, user: CurrentUser):
     return templates.TemplateResponse(request=request, name="user/dashboard.html")
 
 @router.get("/user/following", response_class=HTMLResponse, name="user_following")
-async def following_page(request: Request, user: CurrentUser):
+def following_page(request: Request, user: CurrentUser):
     return templates.TemplateResponse(request=request, name="user/following.html")
 
 @router.get("/user/settings", response_class=HTMLResponse, name="user_settings")
-async def settings_page(request: Request, db: SessionDep, user: CurrentUser):
+def settings_page(request: Request, db: SessionDep, user: CurrentUser):
     opds_enabled = bool(SettingsService(db).get("server.opds_enabled"))
     return templates.TemplateResponse(
         request=request,
@@ -329,21 +329,21 @@ def notifications_page(request: Request, db: SessionDep, user: CurrentUser):
     return templates.TemplateResponse(request=request, name="user/notifications.html")
 
 @router.get("/whats-new", response_class=HTMLResponse, name="whats_new")
-async def whats_new_page(request: Request, user: CurrentUser):
+def whats_new_page(request: Request, user: CurrentUser):
     return templates.TemplateResponse(request=request, name="whats_new.html")
 
 @router.get("/user/opds-keys", response_class=HTMLResponse, name="user_opds_keys")
-async def opds_keys_page(request: Request, db: SessionDep, user: CurrentUser):
+def opds_keys_page(request: Request, db: SessionDep, user: CurrentUser):
     if not SettingsService(db).get("server.opds_enabled"):
         raise HTTPException(status_code=404, detail="OPDS keys not found")
     return templates.TemplateResponse(request=request, name="user/opds_keys.html")
 
 @router.get("/user/change-password", response_class=HTMLResponse, name="force_password_change")
-async def force_password_change_page(request: Request, user: CurrentUser):
+def force_password_change_page(request: Request, user: CurrentUser):
     return templates.TemplateResponse(request=request, name="user/force_password_change.html")
 
 @router.get("/user/year-in-review", response_class=HTMLResponse, name="user_year_in_review")
-async def year_in_review_page(request: Request, user: CurrentUser):
+def year_in_review_page(request: Request, user: CurrentUser):
     return templates.TemplateResponse(request=request, name="user/year_in_review.html")
 
 
@@ -358,7 +358,7 @@ COVER_BROWSER_CONTEXT_LABELS = {
 
 
 @router.get("/browse/{context_type}/{context_id}", response_class=HTMLResponse, name="cover_browser")
-async def cover_browser_page(
+def cover_browser_page(
         request: Request,
         context_type: str,
         context_id: int,
@@ -378,6 +378,6 @@ async def cover_browser_page(
     })
 
 @router.get("/404", response_class=HTMLResponse, name="404")
-async def dashboard(request: Request):
+def not_found_page(request: Request):
     return templates.TemplateResponse(request=request, name="status_codes/404.html")
 
