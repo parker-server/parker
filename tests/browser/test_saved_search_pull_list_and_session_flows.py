@@ -433,6 +433,46 @@ def test_selecting_comic_cards_skips_navigation_refresh(page, browser_server):
 
 
 @pytest.mark.browser
+def test_login_after_stale_idle_session_keeps_new_session(page, browser_server):
+    page.goto(f"{browser_server['base_url']}/login?next=/search", wait_until="networkidle")
+
+    # A session that ended without clearSession (e.g. the access cookie expired
+    # and the server redirected to /login) leaves an old activity timestamp behind.
+    page.evaluate(
+        """
+        () => {
+            const staleActivityAt = Math.floor(Date.now() / 1000) - (3 * 60 * 60);
+            window.parker.storage.setString('token', 'old-token');
+            window.parker.storage.setString('refresh_token', 'old-refresh-token');
+            window.parker.storage.setString('lastActivityAt', String(staleActivityAt));
+        }
+        """
+    )
+
+    page.locator("#username").fill("browser-user")
+    page.locator("#password").fill("browser-pass")
+    page.get_by_role("button", name="Sign in").click()
+
+    page.wait_for_url("**/search")
+    page.get_by_role("heading", name="Advanced Search").wait_for()
+
+    session_state = page.evaluate(
+        """
+        () => ({
+            token: window.parker.storage.getString('token'),
+            refreshToken: window.parker.storage.getString('refresh_token'),
+            idleExpired: window.parker.auth.isIdleExpired(),
+            hasAccessCookie: document.cookie.includes('access_token=')
+        })
+        """
+    )
+    assert session_state["token"] not in (None, "old-token")
+    assert session_state["refreshToken"] not in (None, "old-refresh-token")
+    assert session_state["idleExpired"] is False
+    assert session_state["hasAccessCookie"] is True
+
+
+@pytest.mark.browser
 def test_idle_session_clears_instead_of_refreshing(page, browser_server):
     expired_access_token = create_access_token(
         subject="browser-user",

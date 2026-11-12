@@ -324,6 +324,10 @@ function loginCycler() {
                 // Store Refresh Token (Long-lived)
                 window.parker.storage.setString('refresh_token', data.refresh_token);
 
+                // Start the idle clock fresh. A stale timestamp left by an earlier
+                // session would make app.js treat this new session as idle and clear it.
+                window.parker.storage.setString('lastActivityAt', String(Math.floor(Date.now() / 1000)));
+
                 // Store Token for Server-Side Rendering (HTML Routes)
                 document.cookie = `access_token=${data.access_token}; path=/; max-age=${data.lifetime_in_seconds}; SameSite=Lax`;
 
