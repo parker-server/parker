@@ -10,6 +10,7 @@ from app.config import settings
 from app.core.comic_helpers import DOWNLOADS_ENABLED_SETTING
 from app.core.build_info import get_build_commit_hash
 from app.core.templates import templates
+from app.services.problem_reports import problem_reports_enabled
 from app.services.settings_service import SettingsService
 from app.services.startup_diagnostics import build_support_snapshot, collect_startup_diagnostics
 from app.models.promoted_rail import PromotedRail
@@ -37,6 +38,7 @@ async def admin_users_page(request: Request, admin_user: AdminUser, db: SessionD
     downloads_enabled = SettingsService(db).get(DOWNLOADS_ENABLED_SETTING) is not False
     return templates.TemplateResponse(request=request, name="admin/users.html", context={
         "downloads_enabled": downloads_enabled,
+        "problem_reports_enabled": problem_reports_enabled(db),
     })
 
 @router.get("/libraries", response_class=HTMLResponse, name="libraries", tags=['admin'])
@@ -88,6 +90,13 @@ async def admin_reports_duplicates_page(request: Request, admin_user: AdminUser)
 async def admin_reports_corrupt_page(request: Request, admin_user: AdminUser):
     """Serve the Admin Duplicates report page"""
     return templates.TemplateResponse(request=request, name="admin/reports/corrupt.html")
+
+@router.get("/problems", response_class=HTMLResponse, name="problems", tags=['admin'])
+def admin_problems_page(request: Request, admin_user: AdminUser, db: SessionDep):
+    """Serve the Admin Problems page: reader-reported problems with comics."""
+    return templates.TemplateResponse(request=request, name="admin/problems.html", context={
+        "problem_reports_enabled": problem_reports_enabled(db),
+    })
 
 @router.get("/migration", response_class=HTMLResponse, name="migration", tags=['admin'])
 async def admin_migration_page(request: Request, admin_user: AdminUser):

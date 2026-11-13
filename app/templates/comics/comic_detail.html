@@ -96,6 +96,21 @@
                         </button>
                     </div>
 
+                    {% if can_report %}
+                    <button
+                        type="button"
+                        x-data="problemReportTrigger({{ comic_id }})"
+                        x-on:problem-reports-changed.window="handleProblemReportsChanged($event.detail)"
+                        x-on:click="$dispatch('open-problem-report', { comicId: comicId, comicName: comic ? `${comic.series} #${comic.number}` : '', pageCount: comic?.page_count || 0 })"
+                        data-report-problem
+                        title="Report a problem with this comic"
+                        class="relative inline-flex items-center justify-center gap-2 py-2 px-4 rounded-lg text-sm text-gray-400 hover:text-amber-200 hover:bg-amber-500/10 transition-colors border border-transparent hover:border-amber-500/30">
+                        {{ lucide_icon("triangle-alert", "h-4 w-4 flex-shrink-0") }}
+                        <span x-text="openReportCount ? 'You reported a problem' : 'Report a Problem'"></span>
+                        <span x-show="openReportCount" x-cloak data-report-problem-dot class="h-2 w-2 rounded-full bg-amber-400"></span>
+                    </button>
+                    {% endif %}
+
                     <template x-if="comic?.is_admin">
                         <button
                             type="button"
@@ -588,6 +603,10 @@
         </template>
     </div>
 </div>
+
+{% if can_report %}
+{% include "partials/problem_report_modal.html" %}
+{% endif %}
 
 <script>
 function comicDetail() {

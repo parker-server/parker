@@ -183,6 +183,7 @@
             showSpineShadow: false,
             showGoto: false,
             showBookmarks: false,
+            showProblemReport: false,
             gotoInputValue: 1,
             bookmarkLabelValue: '',
             bookmarkSearchQuery: '',
@@ -311,6 +312,7 @@
                         || this.showSettings
                         || this.showShortcuts
                         || this.showBookmarks
+                        || this.showProblemReport
                         || this.showGoto
                         || this.isScrubbing
                         || this.isHoveringScrubber
@@ -1446,6 +1448,11 @@
             },
 
             handleKey(event) {
+                // The report modal handles its own keys, including Escape.
+                if (this.showProblemReport) {
+                    return;
+                }
+
                 if (this.showGoto) {
                     if (event.key === 'Escape') {
                         this.closeGoto();
@@ -1554,6 +1561,33 @@
                         this.exitReader();
                         break;
                 }
+            },
+
+            openProblemReport() {
+                this.showGoto = false;
+                this.showBookmarks = false;
+                this.showSettings = false;
+                this.showShortcuts = false;
+                this.showToolbarMenu = false;
+                this.showProblemReport = true;
+                this.hideMagnifier();
+                window.dispatchEvent(new CustomEvent('open-problem-report', {
+                    detail: {
+                        comicId: this.comicId,
+                        comicName: this.meta.series_name ? `${this.meta.series_name} #${this.meta.number}` : '',
+                        pageIndex: this.currentPage,
+                        pageCount: this.meta.page_count
+                    }
+                }));
+            },
+
+            closeProblemReport() {
+                if (!this.showProblemReport) {
+                    return;
+                }
+
+                this.showProblemReport = false;
+                this.resetControlFocus();
             },
 
             openGoto() {

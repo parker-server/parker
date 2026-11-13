@@ -54,6 +54,20 @@ def _render_update_available(count: int, data: dict[str, Any]) -> tuple[str, Opt
     )
 
 
+def _render_problem_resolved(count: int, data: dict[str, Any]) -> tuple[str, Optional[str]]:
+    if count > 1:
+        return f"{count} of your problem reports were closed", None
+    outcome = "resolved" if data.get("status") == "resolved" else "dismissed"
+    return f"Your report on {data['comic_name']} was {outcome}", data.get("note") or None
+
+
+def _render_admin_problem_new(count: int, data: dict[str, Any]) -> tuple[str, Optional[str]]:
+    latest = f"{data['category_label']} in {data['comic_name']}"
+    if count > 1:
+        return f"{count} new problem reports", f"Latest: {latest}"
+    return f"New problem report: {latest}", None
+
+
 KINDS: dict[str, NotificationKind] = {
     kind.key: kind
     for kind in (
@@ -80,6 +94,23 @@ KINDS: dict[str, NotificationKind] = {
             icon="sparkles",
             render=_render_whats_new,
             link=lambda data: "/whats-new",
+        ),
+        NotificationKind(
+            key="problem_resolved",
+            label="Problem reports",
+            description="When an admin resolves or dismisses a problem you reported.",
+            icon="circle-check",
+            render=_render_problem_resolved,
+            link=lambda data: "/user/problems",
+        ),
+        NotificationKind(
+            key="admin_problem_new",
+            label="New problem reports",
+            description="When a reader reports a problem with a comic.",
+            icon="triangle-alert",
+            render=_render_admin_problem_new,
+            link=lambda data: "/admin/problems",
+            admin_only=True,
         ),
         NotificationKind(
             key="admin_update_available",

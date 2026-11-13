@@ -42,6 +42,8 @@ SAMPLE_DATA = {
     "year_in_review": {"year": 2026},
     "whats_new": {"version": "0.1.48", "first_title": "Notifications"},
     "admin_update_available": {"version": "0.1.49", "current_version": "0.1.48"},
+    "problem_resolved": {"comic_name": "Saga #12", "status": "resolved", "note": "Replaced the file"},
+    "admin_problem_new": {"comic_name": "Saga #12", "category_label": "Missing pages"},
 }
 
 
@@ -332,16 +334,16 @@ def test_preferences_default_on_and_update(db, test_kind):
     admin = _user(db, "admin", admin=True)
     service = NotificationService(db)
 
-    reader_keys = ["follow_arrivals", "year_in_review", "whats_new"]
+    reader_keys = ["follow_arrivals", "year_in_review", "whats_new", "problem_resolved"]
     assert [kind["key"] for kind in service.preferences_for(reader)] == reader_keys
-    assert {kind["key"] for kind in service.preferences_for(admin)} == {*reader_keys, "admin_update_available", test_kind.key}
+    assert {kind["key"] for kind in service.preferences_for(admin)} == {*reader_keys, "admin_update_available", "admin_problem_new", test_kind.key}
     assert all(kind["enabled"] for kind in service.preferences_for(reader))
 
     service.update_preferences(reader, {"whats_new": False})
     db.refresh(reader)
     assert reader.notification_preferences == {"whats_new": {"in_app": False}}
     enabled = {kind["key"]: kind["enabled"] for kind in service.preferences_for(reader)}
-    assert enabled == {"follow_arrivals": True, "year_in_review": True, "whats_new": False}
+    assert enabled == {"follow_arrivals": True, "year_in_review": True, "whats_new": False, "problem_resolved": True}
 
     with pytest.raises(ValueError):
         service.update_preferences(reader, {test_kind.key: True})  # admin-only

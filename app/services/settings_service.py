@@ -364,6 +364,14 @@ class SettingsService:
             "description": "Shows the notification bell and lets Parker tell users about things like new features. Turning this off hides the bell and stops new notifications.",
         },
         {
+            "key": "features.problem_reports_enabled",
+            "value": "true",
+            "category": "features",
+            "data_type": "bool",
+            "label": "Enable Problem Reports",
+            "description": "Lets readers report a problem with a comic, such as missing pages or a bad scan, from the reader and the comic page. Turn off per user in Users. Turning this off hides the report buttons; existing reports stay under Admin > Problems.",
+        },
+        {
             # Internal: the last version whose What's New entries were announced.
             "key": "notifications.whats_new_last_version",
             "value": "",

@@ -71,6 +71,9 @@ class DummyDB:
     def commit(self):
         self.commit_calls += 1
 
+    def rollback(self):
+        pass
+
 
 class FakeQueue:
     def __init__(self, initial_get_items=None):
@@ -220,7 +223,7 @@ def test_scan_parallel_orchestrates_pool_writer_and_summary(monkeypatch, tmp_pat
             file_modified_at=unchanged.stat().st_mtime + 30,
         ),
         SimpleNamespace(
-            library_root_id=1, relative_path="changed.cbz",
+            id=7, library_root_id=1, relative_path="changed.cbz",
             file_modified_at=changed.stat().st_mtime - 30,
         ),
     ]

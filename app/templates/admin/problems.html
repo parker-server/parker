@@ -1,0 +1,396 @@
+{% extends "base.html" %}
+{% from "partials/lucide_icon.html" import lucide_icon %}
+
+{% block title %}Problems - Parker{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto" x-data="adminProblems()" data-admin-problems>
+
+    {% from "partials/admin_header.html" import admin_header %}
+    {{ admin_header(
+        title="Problems",
+        description="Problems readers reported with comics. Parker never closes a report on its own.",
+        refresh_func="load()",
+        loading_var="loading",
+        stats_var="openCount",
+        stats_label="open",
+        stats_condition="openCount > 0"
+    ) }}
+
+    {% if not problem_reports_enabled %}
+    <div data-problem-reports-disabled-banner class="mb-6 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+        Problem reports are turned off, so readers can't send new ones. You can still work through these.
+        <a :href="window.parker.route('admin.settings') + '#features.problem_reports_enabled'" class="underline hover:text-amber-100">Turn them on in Settings</a>.
+    </div>
+    {% endif %}
+
+    <div class="mb-6 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div class="inline-flex rounded-lg border border-gray-700 bg-gray-900 p-1" role="tablist">
+            <template x-for="tab in tabs" :key="tab.key">
+                <button type="button" role="tab"
+                        :aria-selected="(status === tab.key).toString()"
+                        :data-problems-tab="tab.key"
+                        x-on:click="setStatus(tab.key)"
+                        class="rounded-md px-4 py-1.5 text-sm font-bold transition-colors"
+                        :class="status === tab.key ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white'"
+                        x-text="tab.label"></button>
+            </template>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3">
+            <select x-model="category" x-on:change="load()" data-problems-category-filter
+                    class="rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none">
+                <option value="">All categories</option>
+                <template x-for="option in categories" :key="option.key">
+                    <option :value="option.key" x-text="option.label"></option>
+                </template>
+            </select>
+            <label class="inline-flex items-center gap-2 text-sm text-gray-300">
+                <input type="checkbox" x-model="fileChangedOnly" x-on:change="load()" data-problems-file-changed-filter
+                       class="rounded bg-gray-700 border-gray-600 text-blue-600 focus:ring-blue-500">
+                File updated since report
+            </label>
+        </div>
+    </div>
+
+    <div x-show="selectedGroups.length" x-cloak data-problems-batch-bar
+         class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-3">
+        <span class="text-sm text-blue-100" x-text="`${selectedReportIds.length} report${selectedReportIds.length === 1 ? '' : 's'} selected`"></span>
+        <div class="flex flex-wrap gap-2">
+            <template x-if="status === 'open'">
+                <div class="flex gap-2">
+                    <button type="button" x-on:click="startAction('resolve', selectedGroups)" data-problems-batch-resolve
+                            class="inline-flex items-center gap-1.5 rounded bg-green-700 px-3 py-1.5 text-sm font-bold text-white hover:bg-green-600">
+                        {{ lucide_icon("circle-check", "h-4 w-4 flex-shrink-0") }} Resolve
+                    </button>
+                    <button type="button" x-on:click="startAction('dismiss', selectedGroups)" data-problems-batch-dismiss
+                            class="inline-flex items-center gap-1.5 rounded bg-gray-700 px-3 py-1.5 text-sm font-bold text-white hover:bg-gray-600">
+                        {{ lucide_icon("circle-x", "h-4 w-4 flex-shrink-0") }} Dismiss
+                    </button>
+                </div>
+            </template>
+            <template x-if="status !== 'open'">
+                <button type="button" x-on:click="startAction('reopen', selectedGroups)" data-problems-batch-reopen
+                        class="inline-flex items-center gap-1.5 rounded bg-gray-700 px-3 py-1.5 text-sm font-bold text-white hover:bg-gray-600">
+                    {{ lucide_icon("refresh-cw", "h-4 w-4 flex-shrink-0") }} Reopen
+                </button>
+            </template>
+            <button type="button" x-on:click="selected = []" class="rounded px-3 py-1.5 text-sm text-gray-300 hover:text-white">Clear</button>
+        </div>
+    </div>
+
+    <div x-show="loading && !groups.length" class="flex justify-center py-20">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+    </div>
+
+    <div x-show="!loading && groups.length === 0" style="display: none;" data-problems-empty
+         class="bg-gray-800 rounded-lg p-12 text-center border border-gray-700">
+        {{ lucide_icon("circle-check", "mx-auto mb-4 h-12 w-12 text-green-300") }}
+        <h2 class="text-2xl font-bold text-white mb-2" x-text="status === 'open' ? 'Nothing to fix' : 'No closed reports'"></h2>
+        <p class="text-gray-400" x-text="status === 'open' ? 'No open problem reports match these filters.' : 'Resolved and dismissed reports will show up here.'"></p>
+    </div>
+
+    <div x-show="groups.length > 0" style="display: none;" class="space-y-3">
+        <label class="inline-flex cursor-pointer select-none items-center gap-2 px-1 text-xs text-gray-400 hover:text-gray-200" data-problems-select-all>
+            <input type="checkbox" :checked="allSelected" x-on:change="toggleAll($event.target.checked)"
+                   class="rounded bg-gray-700 border-gray-600 text-blue-600 focus:ring-blue-500">
+            <span>Select all</span>
+        </label>
+
+        <template x-for="group in groups" :key="group.key">
+            <div class="overflow-hidden rounded-lg border bg-gray-800 shadow-lg"
+                 :class="isSelected(group) ? 'border-blue-500/60' : 'border-gray-700'"
+                 data-problem-group>
+                <div class="flex flex-col gap-4 p-4 sm:flex-row sm:items-start">
+                    <div class="flex items-start gap-3">
+                        <input type="checkbox" :checked="isSelected(group)" x-on:change="toggle(group)" aria-label="Select"
+                               class="mt-1 rounded bg-gray-700 border-gray-600 text-blue-600 focus:ring-blue-500">
+                        <template x-if="!group.comic_removed">
+                            <a :href="window.parker.route('pages.comic_detail', { comic_id: group.comic_id })" class="block h-24 w-16 flex-shrink-0 overflow-hidden rounded border border-gray-700 bg-gray-900">
+                                <img :src="window.parker.route('comics.thumbnail', { comic_id: group.comic_id }, 'width=128&height=192')" alt="" loading="lazy" class="h-full w-full object-cover">
+                            </a>
+                        </template>
+                        <template x-if="group.comic_removed">
+                            <div class="flex h-24 w-16 flex-shrink-0 items-center justify-center rounded border border-dashed border-gray-600 bg-gray-900 text-gray-500">
+                                {{ lucide_icon("circle-x", "h-6 w-6") }}
+                            </div>
+                        </template>
+                    </div>
+
+                    <div class="min-w-0 flex-1">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <h3 class="truncate text-lg font-bold text-white" x-text="group.comic_name" :title="group.comic_label"></h3>
+                            <span class="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-bold text-amber-200" x-text="group.category_label"></span>
+                            <span x-show="group.count > 1" class="rounded-full bg-gray-700 px-2 py-0.5 text-xs font-bold text-gray-200" x-text="`${group.count} reports`"></span>
+                            <span x-show="group.status !== 'open'"
+                                  class="rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide"
+                                  :class="group.status === 'resolved' ? 'bg-green-500/15 text-green-300' : 'bg-gray-600/40 text-gray-300'"
+                                  x-text="group.status"></span>
+                        </div>
+                        <div class="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-400">
+                            <span x-show="group.page_index !== null" x-text="`Page ${group.page_index + 1}`"></span>
+                            <span x-text="`Reported ${ageLabel(group.created_at)}`"></span>
+                            <span x-show="group.file_changed" data-problem-file-changed class="inline-flex items-center gap-1 text-sky-300">
+                                {{ lucide_icon("refresh-cw", "h-3.5 w-3.5 flex-shrink-0") }} File updated since report
+                            </span>
+                            <span x-show="group.comic_removed" data-problem-comic-removed class="inline-flex items-center gap-1 text-red-300">
+                                {{ lucide_icon("circle-x", "h-3.5 w-3.5 flex-shrink-0") }} Comic removed
+                            </span>
+                        </div>
+                        <p x-show="group.comic_removed" class="mt-1 truncate text-xs text-gray-500" x-text="group.comic_label"></p>
+                        <p x-show="group.reports[0].message" class="mt-2 text-sm text-gray-300 break-words" x-text="`“${group.reports[0].message}”`"></p>
+
+                        <button type="button" x-on:click="toggleExpanded(group)" data-problem-expand
+                                class="mt-2 text-xs font-bold text-blue-300 hover:text-white"
+                                x-text="isExpanded(group) ? 'Hide details' : (group.count > 1 ? `Show all ${group.count} reports` : 'Show details')"></button>
+                    </div>
+
+                    <div class="flex flex-wrap gap-2 sm:flex-col sm:items-stretch">
+                        <template x-if="!group.comic_removed">
+                            <a :href="readerHref(group)" target="_blank" data-problem-open-reader
+                               class="inline-flex items-center justify-center gap-1.5 rounded bg-gray-700 px-3 py-1.5 text-sm text-white hover:bg-gray-600">
+                                {{ lucide_icon("book-open", "h-4 w-4 flex-shrink-0") }}
+                                <span x-text="group.page_index !== null ? `Open at page ${group.page_index + 1}` : 'Open in reader'"></span>
+                            </a>
+                        </template>
+                        <template x-if="!group.comic_removed">
+                            <a :href="window.parker.route('pages.comic_detail', { comic_id: group.comic_id })" target="_blank"
+                               class="inline-flex items-center justify-center gap-1.5 rounded bg-gray-700 px-3 py-1.5 text-sm text-white hover:bg-gray-600">
+                                Open comic
+                            </a>
+                        </template>
+                        <template x-if="group.status === 'open'">
+                            <button type="button" x-on:click="startAction('resolve', [group])" data-problem-resolve
+                                    class="inline-flex items-center justify-center gap-1.5 rounded bg-green-700 px-3 py-1.5 text-sm font-bold text-white hover:bg-green-600">
+                                {{ lucide_icon("circle-check", "h-4 w-4 flex-shrink-0") }} Resolve
+                            </button>
+                        </template>
+                        <template x-if="group.status === 'open'">
+                            <button type="button" x-on:click="startAction('dismiss', [group])" data-problem-dismiss
+                                    class="inline-flex items-center justify-center gap-1.5 rounded bg-gray-700 px-3 py-1.5 text-sm font-bold text-white hover:bg-gray-600">
+                                {{ lucide_icon("circle-x", "h-4 w-4 flex-shrink-0") }} Dismiss
+                            </button>
+                        </template>
+                        <template x-if="group.status !== 'open'">
+                            <button type="button" x-on:click="startAction('reopen', [group])" data-problem-reopen
+                                    class="inline-flex items-center justify-center gap-1.5 rounded bg-gray-700 px-3 py-1.5 text-sm font-bold text-white hover:bg-gray-600">
+                                {{ lucide_icon("refresh-cw", "h-4 w-4 flex-shrink-0") }} Reopen
+                            </button>
+                        </template>
+                    </div>
+                </div>
+
+                <div x-show="isExpanded(group)" x-cloak class="border-t border-gray-700 bg-gray-900/40" data-problem-details>
+                    <template x-for="report in group.reports" :key="report.id">
+                        <div class="border-b border-gray-800 px-4 py-3 text-sm last:border-b-0">
+                            <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                                <span class="font-bold text-white" x-text="report.reporter || 'Deleted user'"></span>
+                                <span class="text-xs text-gray-500" x-text="ageLabel(report.created_at)"></span>
+                                <span x-show="report.page_index !== null" class="text-xs text-gray-400" x-text="`Page ${report.page_index + 1}`"></span>
+                                <span x-show="report.file_changed_at" class="text-xs text-sky-300">File updated since</span>
+                            </div>
+                            <p x-show="report.message" class="mt-1 text-gray-300 break-words" x-text="report.message"></p>
+                            <p x-show="!report.message" class="mt-1 text-gray-500 italic">No details given.</p>
+                            <p x-show="report.admin_note" class="mt-1 text-xs text-gray-400 break-words"
+                               x-text="`Note${report.resolved_by ? ' from ' + report.resolved_by : ''}: ${report.admin_note}`"></p>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </template>
+    </div>
+
+    <!-- Resolve / dismiss / reopen with an optional note -->
+    <div x-show="pendingAction" x-cloak data-problems-action-modal
+         class="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+         x-on:click.self="cancelAction()" x-on:keydown.escape.window="cancelAction()">
+        <div class="w-full max-w-md rounded-lg border border-gray-700 bg-gray-900 p-6 shadow-2xl">
+            <h3 class="text-lg font-bold text-white" x-text="actionTitle()"></h3>
+            <p class="mt-1 text-sm text-gray-400" x-text="actionDescription()"></p>
+            <template x-if="pendingAction && pendingAction.action !== 'reopen'">
+                <div class="mt-4">
+                    <label for="problem-admin-note" class="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-400">
+                        Note for the reporter <span class="font-normal normal-case text-gray-500">(optional)</span>
+                    </label>
+                    <textarea id="problem-admin-note" rows="3" x-model="actionNote" maxlength="1000" data-problems-action-note
+                              placeholder="e.g. Replaced with a better scan"
+                              class="w-full rounded border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"></textarea>
+                </div>
+            </template>
+            <div class="mt-5 flex justify-end gap-3">
+                <button type="button" x-on:click="cancelAction()" class="px-4 py-2 text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors">Cancel</button>
+                <button type="button" x-on:click="confirmAction()" :disabled="busy" data-problems-action-confirm
+                        class="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold rounded transition-colors"
+                        x-text="actionConfirmLabel()"></button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function adminProblems() {
+    const ACTION_LABELS = {
+        resolve: { title: 'Resolve', confirm: 'Resolve' },
+        dismiss: { title: 'Dismiss', confirm: 'Dismiss' },
+        reopen: { title: 'Reopen', confirm: 'Reopen' },
+    };
+
+    return {
+        tabs: [
+            { key: 'open', label: 'Open' },
+            { key: 'closed', label: 'Closed' },
+        ],
+        status: 'open',
+        category: '',
+        fileChangedOnly: false,
+        categories: [],
+        groups: [],
+        openCount: 0,
+        loading: false,
+        busy: false,
+        selected: [],
+        expanded: [],
+        pendingAction: null,
+        actionNote: '',
+
+        init() {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('status') === 'closed') this.status = 'closed';
+            this.load();
+        },
+
+        async load() {
+            this.loading = true;
+            try {
+                const query = new URLSearchParams({ status: this.status });
+                if (this.category) query.set('category', this.category);
+                if (this.fileChangedOnly) query.set('file_changed', 'true');
+                const res = await fetch(window.parker.route('problems.queue', {}, query.toString()));
+                if (!res.ok) throw new Error('Failed to load problems');
+                const data = await res.json();
+                this.groups = data.groups;
+                this.openCount = data.open_count;
+                this.categories = data.categories;
+                const keys = new Set(this.groups.map((group) => group.key));
+                this.selected = this.selected.filter((key) => keys.has(key));
+            } catch (e) {
+                console.error(e);
+                window.parker.showToast('Could not load problems', 'error');
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        setStatus(status) {
+            if (this.status === status) return;
+            this.status = status;
+            this.selected = [];
+            this.expanded = [];
+            this.load();
+        },
+
+        isSelected(group) { return this.selected.includes(group.key); },
+        toggle(group) {
+            this.selected = this.isSelected(group)
+                ? this.selected.filter((key) => key !== group.key)
+                : [...this.selected, group.key];
+        },
+        get allSelected() {
+            return this.groups.length > 0 && this.selected.length === this.groups.length;
+        },
+        toggleAll(checked) {
+            this.selected = checked ? this.groups.map((group) => group.key) : [];
+        },
+        get selectedGroups() {
+            return this.groups.filter((group) => this.selected.includes(group.key));
+        },
+        get selectedReportIds() {
+            return this.selectedGroups.flatMap((group) => group.report_ids);
+        },
+
+        isExpanded(group) { return this.expanded.includes(group.key); },
+        toggleExpanded(group) {
+            this.expanded = this.isExpanded(group)
+                ? this.expanded.filter((key) => key !== group.key)
+                : [...this.expanded, group.key];
+        },
+
+        readerHref(group) {
+            // Incognito so checking a report doesn't move the admin's own reading progress.
+            const query = new URLSearchParams({ incognito: 'true' });
+            if (group.page_index !== null) query.set('page', group.page_index);
+            return window.parker.route('pages.reader', { comic_id: group.comic_id }, query.toString());
+        },
+
+        ageLabel(value) {
+            if (!value) return '';
+            const text = String(value);
+            const date = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(text) ? text : `${text}Z`);
+            const seconds = Math.max(0, Math.round((Date.now() - date.getTime()) / 1000));
+            if (seconds < 60) return 'just now';
+            const minutes = Math.round(seconds / 60);
+            if (minutes < 60) return `${minutes} min ago`;
+            const hours = Math.round(minutes / 60);
+            if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+            const days = Math.round(hours / 24);
+            if (days < 60) return `${days} day${days === 1 ? '' : 's'} ago`;
+            return date.toLocaleDateString();
+        },
+
+        startAction(action, groups) {
+            const reportIds = groups.flatMap((group) => group.report_ids);
+            if (!reportIds.length) return;
+            this.actionNote = '';
+            this.pendingAction = { action, reportIds, groupCount: groups.length };
+        },
+
+        cancelAction() {
+            this.pendingAction = null;
+        },
+
+        actionTitle() {
+            if (!this.pendingAction) return '';
+            const count = this.pendingAction.reportIds.length;
+            return `${ACTION_LABELS[this.pendingAction.action].title} ${count} report${count === 1 ? '' : 's'}?`;
+        },
+
+        actionDescription() {
+            if (!this.pendingAction) return '';
+            if (this.pendingAction.action === 'reopen') return 'They move back to Open, and the file-updated hint is cleared.';
+            return 'Each reporter is told, with your note if you add one.';
+        },
+
+        actionConfirmLabel() {
+            return this.pendingAction ? ACTION_LABELS[this.pendingAction.action].confirm : '';
+        },
+
+        async confirmAction() {
+            if (!this.pendingAction || this.busy) return;
+            const { action, reportIds } = this.pendingAction;
+            this.busy = true;
+            try {
+                const res = await fetch(window.parker.route('problems.batch'), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ report_ids: reportIds, action, note: this.actionNote.trim() || null })
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    window.parker.showToast(typeof data.detail === 'string' ? data.detail : 'Could not update reports', 'error');
+                    return;
+                }
+                window.parker.showToast(`${data.updated} report${data.updated === 1 ? '' : 's'} updated`, 'success');
+                this.pendingAction = null;
+                this.selected = [];
+                await this.load();
+            } catch (e) {
+                console.error(e);
+                window.parker.showToast('Could not update reports', 'error');
+            } finally {
+                this.busy = false;
+            }
+        },
+    };
+}
+</script>
+{% endblock %}

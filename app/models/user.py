@@ -36,6 +36,7 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     is_superuser = Column(Boolean, default=False)
     can_download = Column(Boolean, default=True, nullable=False)
+    can_report = Column(Boolean, default=True, nullable=False)
 
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     last_login = Column(DateTime, nullable=True)
@@ -63,6 +64,19 @@ class User(Base):
 
     # In-app notifications for the user.
     notifications = relationship("Notification", cascade="all, delete-orphan")
+
+    # Problem reports the user made, and ones they resolved as an admin. Both are kept
+    # when the user is deleted, with user_id or resolved_by_id cleared.
+    problem_reports = relationship(
+        "ProblemReport",
+        foreign_keys="ProblemReport.user_id",
+        back_populates="user",
+    )
+    resolved_problem_reports = relationship(
+        "ProblemReport",
+        foreign_keys="ProblemReport.resolved_by_id",
+        back_populates="resolved_by",
+    )
 
     # Use cascade="all, delete-orphan" so that if a user is deleted, their logs are wiped too
     activity_logs = relationship("ActivityLog", back_populates="user", cascade="all, delete-orphan")

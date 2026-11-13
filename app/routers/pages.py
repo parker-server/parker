@@ -13,6 +13,7 @@ from app.models.comic import Comic, Volume
 from app.core.login_effects import get_active_effect
 from app.core.login_backgrounds import SOLID_COLORS, STATIC_COVERS
 from app.services.notifications import NotificationService
+from app.services.problem_reports import problem_reports_enabled, user_can_report
 from app.services.settings_service import SettingsService
 from app.services.startup_diagnostics import (
     build_home_startup_notice,
@@ -60,10 +61,11 @@ def home(request: Request, db: SessionDep, user: CurrentUser):
 
 
 @router.get("/reader/{comic_id}", response_class=HTMLResponse, name="reader")
-def reader(request: Request, comic_id: int, user: CurrentUser):
+def reader(request: Request, comic_id: int, db: SessionDep, user: CurrentUser):
     """Comic reader"""
     return templates.TemplateResponse(request=request, name="reader.html", context={
-        "comic_id": comic_id
+        "comic_id": comic_id,
+        "can_report": user_can_report(user, db),
     })
 
 @router.get("/search", response_class=HTMLResponse, name="search")
@@ -234,6 +236,7 @@ def comic_detail(request: Request, comic: ComicDep, db: SessionDep, user: Curren
         "comic_id": comic.id,
         "comic": comic,
         "can_download": user_can_download(user, db),
+        "can_report": user_can_report(user, db),
     })
 
 @router.get("/login", response_class=HTMLResponse, name="login")
@@ -303,8 +306,10 @@ def pull_list_detail_legacy_redirect(request: Request, list_id: int, user: Curre
     return RedirectResponse(url=request.url_for("stack_detail", list_id=list_id), status_code=307)
 
 @router.get("/user/dashboard", response_class=HTMLResponse, name="user_dashboard")
-def dashboard(request: Request, user: CurrentUser):
-    return templates.TemplateResponse(request=request, name="user/dashboard.html")
+def dashboard(request: Request, db: SessionDep, user: CurrentUser):
+    return templates.TemplateResponse(request=request, name="user/dashboard.html", context={
+        "problem_reports_enabled": problem_reports_enabled(db),
+    })
 
 @router.get("/user/following", response_class=HTMLResponse, name="user_following")
 def following_page(request: Request, user: CurrentUser):
@@ -327,6 +332,12 @@ def notifications_page(request: Request, db: SessionDep, user: CurrentUser):
     if not NotificationService(db).is_enabled():
         raise HTTPException(status_code=404, detail="Notifications are turned off")
     return templates.TemplateResponse(request=request, name="user/notifications.html")
+
+@router.get("/user/problems", response_class=HTMLResponse, name="user_problems")
+def problem_reports_page(request: Request, db: SessionDep, user: CurrentUser):
+    if not problem_reports_enabled(db):
+        raise HTTPException(status_code=404, detail="Problem reports are turned off")
+    return templates.TemplateResponse(request=request, name="user/problems.html")
 
 @router.get("/whats-new", response_class=HTMLResponse, name="whats_new")
 def whats_new_page(request: Request, user: CurrentUser):

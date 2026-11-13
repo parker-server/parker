@@ -1,5 +1,19 @@
 [
   {
+    "version": "0.1.50",
+    "audience": "all",
+    "title": "Report a problem with a comic",
+    "body": "Spotted missing pages, a bad scan or the wrong comic? Use the warning icon in the reader or on the comic page to let your admin know. The reader fills in the page you're on. You'll get a notification when it's dealt with, and you can follow your reports on the My Reports page, linked from your dashboard.",
+    "link": "/user/problems"
+  },
+  {
+    "version": "0.1.50",
+    "audience": "admin",
+    "title": "Problem reports",
+    "body": "Readers can now report problems with comics. Work through them under Admin > Problems, where you can open the reader at the reported page and resolve or dismiss reports with a note for the reader. Turn reporting off for everyone under Settings > Features, or for one user in Users.",
+    "link": "/admin/settings#features.problem_reports_enabled"
+  },
+  {
     "version": "0.1.49",
     "audience": "all",
     "title": "Pin reading lists to Home",

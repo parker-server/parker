@@ -78,12 +78,12 @@ def test_preferences_round_trip(auth_client, db, normal_user):
     response = auth_client.get("/api/notifications/preferences")
     assert response.status_code == 200
     enabled = {kind["key"]: kind["enabled"] for kind in response.json()["kinds"]}
-    assert enabled == {"follow_arrivals": True, "year_in_review": True, "whats_new": True}
+    assert enabled == {"follow_arrivals": True, "year_in_review": True, "whats_new": True, "problem_resolved": True}
 
     response = auth_client.put("/api/notifications/preferences", json={"kinds": {"whats_new": False}})
     assert response.status_code == 200
     enabled = {kind["key"]: kind["enabled"] for kind in response.json()["kinds"]}
-    assert enabled == {"follow_arrivals": True, "year_in_review": True, "whats_new": False}
+    assert enabled == {"follow_arrivals": True, "year_in_review": True, "whats_new": False, "problem_resolved": True}
 
     db.refresh(normal_user)
     assert normal_user.notification_preferences == {"whats_new": {"in_app": False}}

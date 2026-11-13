@@ -27,6 +27,7 @@ from app.services.reading_list import ReadingListService
 from app.services.collection import CollectionService
 from app.services.cbl_source_service import CBLSourceService, CBLSourceError
 from app.services.notifications import ScanInfo, run_scan_producers
+from app.services.problem_reports import ProblemReportService
 
 
 class LibraryScanner:
@@ -96,6 +97,8 @@ class LibraryScanner:
         tasks = []
         scanned_keys = set()
         skipped = 0
+        # Known comics whose file really changed (not just forced), for problem reports.
+        changed_comic_ids: list[int] = []
         discovered_cbl_files: list[tuple] = []
 
         for library_root, library_path in root_paths:
@@ -130,6 +133,8 @@ class LibraryScanner:
                         continue
 
                     # changed file -> update
+                    if not existing.file_modified_at or existing.file_modified_at < file_mtime:
+                        changed_comic_ids.append(existing.id)
                     tasks.append({
                         "file_path": file_path_str,
                         "library_root_id": library_root.id,
@@ -284,6 +289,15 @@ class LibraryScanner:
                 self.cbl_source_service.rebuild(cbl_source.id)
             except Exception as exc:
                 self.logger.error(f"Failed to rebuild CBL source {cbl_source.id}: {exc}")
+
+        # A changed file usually means the admin replaced a reported bad file.
+        # Record it as a hint on open reports; never close them, never fail the scan.
+        if changed_comic_ids and not fatal_error:
+            try:
+                ProblemReportService(self.db).mark_file_changed(changed_comic_ids)
+            except Exception as exc:
+                self.db.rollback()
+                self.logger.error(f"Failed to flag problem reports for changed files: {exc}")
 
         # Update library scan time, unless the writer failed and the scan is incomplete
         if not fatal_error:
