@@ -56,7 +56,7 @@ The keys are stored; labels live in one place in the service so the modal and th
 
 ### Modal Fields
 
-- **Category** (required): radio list, as in Seerr.
+- **Category** (required): radio list as in Seerr or dropdown as we have more options.
 - **Page** (optional): number input, prefilled from the reader. Hidden for `metadata` and `wrong_comic`, where it does not help.
 - **Details** (required only for `other`, otherwise optional): free text, capped at 1,000 characters.
 
