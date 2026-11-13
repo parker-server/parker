@@ -290,15 +290,6 @@ class LibraryScanner:
             except Exception as exc:
                 self.logger.error(f"Failed to rebuild CBL source {cbl_source.id}: {exc}")
 
-        # A changed file usually means the admin replaced a reported bad file.
-        # Record it as a hint on open reports; never close them, never fail the scan.
-        if changed_comic_ids and not fatal_error:
-            try:
-                ProblemReportService(self.db).mark_file_changed(changed_comic_ids)
-            except Exception as exc:
-                self.db.rollback()
-                self.logger.error(f"Failed to flag problem reports for changed files: {exc}")
-
         # Update library scan time, unless the writer failed and the scan is incomplete
         if not fatal_error:
             scanned_at = datetime.now(timezone.utc)
@@ -307,6 +298,16 @@ class LibraryScanner:
                 library_root.last_scanned_at = scanned_at
                 library_root.last_scan_error = None
         self.db.commit()
+
+        # A changed file usually means the admin replaced a reported bad file.
+        # Record it as a hint on open reports; never close them, never fail the scan.
+        # Runs after the scan's commit so a rollback here only undoes this update.
+        if changed_comic_ids and not fatal_error:
+            try:
+                ProblemReportService(self.db).mark_file_changed(changed_comic_ids)
+            except Exception as exc:
+                self.db.rollback()
+                self.logger.error(f"Failed to flag problem reports for changed files: {exc}")
 
         # Notifications are best-effort and must never fail the scan.
         try:

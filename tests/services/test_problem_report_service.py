@@ -4,6 +4,7 @@ import app.services.scanner as scanner_module
 from app.models.comic import Volume
 from app.models.notification import Notification
 from app.models.problem_report import ProblemReport
+from app.models.reading_list import ReadingList
 from app.models.series import Series
 from app.models.setting import SystemSetting
 from app.models.user import User
@@ -442,6 +443,11 @@ def test_scan_flags_open_reports_only_for_changed_files(monkeypatch, db, tmp_pat
 def test_scan_survives_problem_report_hook_failure(monkeypatch, db, tmp_path, normal_user):
     scanner, changed, _ = _scanner_for(db, tmp_path)
     ProblemReportService(db).submit(normal_user, changed, "broken")
+    # The scan's own end-of-scan cleanup must not be undone by the hook failing,
+    # so use the real empty-list cleanup that _scanner_for stubs out.
+    del scanner.reading_list_service.cleanup_empty_lists
+    db.add(ReadingList(name="Empty ComicInfo List", source="comicinfo"))
+    db.commit()
     _patch_scanner(monkeypatch, {"summary": True, "imported": 0, "updated": 1, "errors": 0, "skipped": 0})
 
     def _explode(self, comic_ids):
@@ -453,3 +459,5 @@ def test_scan_survives_problem_report_hook_failure(monkeypatch, db, tmp_path, no
 
     assert result["fatal_error"] is None
     assert scanner.library.last_scanned is not None
+    db.expire_all()
+    assert db.query(ReadingList).filter(ReadingList.name == "Empty ComicInfo List").count() == 0
