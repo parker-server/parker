@@ -209,3 +209,32 @@ def test_my_reports_page_and_dashboard_card_follow_the_setting(auth_client, db):
     assert auth_client.get("/user/problems").status_code == 404
     assert "data-my-problem-reports-card" not in auth_client.get("/user/dashboard").text
 
+
+def _assert_kept_without_comic(db, report_id, label):
+    db.expire_all()
+    kept = db.get(ProblemReport, report_id)
+    assert kept is not None
+    assert kept.comic_id is None
+    assert kept.comic_label == label
+
+
+def test_deleting_a_library_or_root_keeps_its_reports(admin_client, db, normal_user):
+    # SQLite foreign keys are off, so these deletes must go through the ORM for
+    # reports to be kept. A bulk delete would leave them pointing at nothing.
+    service = ProblemReportService(db)
+    in_library = _seed_comic(db, name="Library")
+    library_report, _ = service.submit(normal_user, in_library, "broken")
+    library_id = in_library.volume.series.library_id
+    in_root = _seed_comic(db, name="Root")
+    root_report, _ = service.submit(normal_user, in_root, "broken")
+    root = in_root.library_root
+
+    assert admin_client.delete(f"/api/libraries/{library_id}").status_code == 200
+    _assert_kept_without_comic(db, library_report.id, library_report.comic_label)
+
+    response = admin_client.delete(
+        f"/api/libraries/{root.library_id}/roots/{root.id}", params={"delete_comics": "true"},
+    )
+    assert response.status_code == 200, response.text
+    _assert_kept_without_comic(db, root_report.id, root_report.comic_label)
+
