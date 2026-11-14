@@ -2,7 +2,14 @@
 
 ## Status
 
-Draft. Not started. Open questions are listed at the end; the phase 1 shape below does not depend on them.
+Phase 1 is built on `feature/problem-reports`, using the notification center (`problem_resolved` and `admin_problem_new`) since it has landed. The open questions at the end were settled as recommended. Differences from the plan below:
+
+- The admin nav has no separate badge. Admins hear about new reports through the notification bell, and the admin dashboard card shows the open count.
+- A closed report's admin note is shown in the modal's "Earlier reports" list and in My Reports, rather than "once", since the notification center now handles telling the reporter.
+- My Reports is its own page (`/user/problems`) rather than a dashboard section, so a long list does not push the dashboard down. The dashboard has a small card with the open count, like the Following card, shown only once the user has made a report.
+- Reopening a report, or the reader reporting the same problem again, clears the "File updated since report" hint, since it was about a fix that did not work.
+- With the setting off, the two problem report notification kinds are hidden from notification preferences and are not sent, through a `feature_setting` on the notification kind registry.
+- Deleting a user keeps their reports, open and closed, shown as from "Deleted user". The problem with the comic is still real, so the report is not lost. The username is not kept; the message is.
 
 ## Goal
 
@@ -56,7 +63,7 @@ The keys are stored; labels live in one place in the service so the modal and th
 
 ### Modal Fields
 
-- **Category** (required): radio list as in Seerr or dropdown as we have more options.
+- **Category** (required): a dropdown. Seerr uses radio buttons, but it has only a few choices; seven radio rows made the modal too tall.
 - **Page** (optional): number input, prefilled from the reader. Hidden for `metadata` and `wrong_comic`, where it does not help.
 - **Details** (required only for `other`, otherwise optional): free text, capped at 1,000 characters.
 
@@ -82,7 +89,7 @@ When a scan updates a comic that has open reports, the admin usually replaced th
 - The admin queue shows these as "File updated since report", with a filter for them.
 - As with the CBL rebuild loop, a failure here is logged and never fails the scan.
 
-When a comic is deleted (its file is gone), its reports are kept. `comic_id` is set to null and the report keeps a short label (series, number, path) captured when it was created, so the admin can still tell what it was about. The queue shows these as "Comic removed". This also covers an admin replacing a file under a new name, where the old comic row is deleted and a new one is created.
+When a comic is deleted (its file is gone), its reports are kept. `comic_id` is set to null and the report keeps a short label (series, number, path) captured when it was created, so the admin can still tell what it was about. The queue shows these as "Comic removed". Reports are kept the same way when the reporter's account is deleted: `user_id` is set to null and the queue shows "Deleted user". This also covers an admin replacing a file under a new name, where the old comic row is deleted and a new one is created.
 
 ## Privacy and Access
 
@@ -101,7 +108,7 @@ New model in `app/models/problem_report.py`, plus an Alembic migration.
 | `id` | Integer PK | |
 | `comic_id` | FK `comics.id`, nullable, `SET NULL`, indexed | Null after the comic is deleted |
 | `comic_label` | String | Series, number and relative path at creation, for display after deletion |
-| `user_id` | FK `users.id`, `CASCADE`, indexed | |
+| `user_id` | FK `users.id`, nullable, `SET NULL`, indexed | Null after the reporter's account is deleted |
 | `category` | String | One of the category keys |
 | `page_index` | Integer, nullable | Zero-based, matching the reader; shown one-based |
 | `message` | Text, nullable | |
@@ -149,7 +156,7 @@ New `app/api/problem_reports.py`, following the existing router, `SessionDep` an
 
 - **Report modal**: one shared partial in `app/templates/partials/`, used by the reader and the comic page, modelled on the existing modals (for example `add_pull_list_modal.html`).
 - **Comic page and reader**: if the user already has an open report on this comic, the icon shows a dot and the modal lists it with **Withdraw**. A resolved report shows its admin note once.
-- **My Reports**: a section on the user dashboard (`/user/dashboard`) with Open and Closed tabs.
+- **My Reports**: its own page (`/user/problems`) with Open and Closed tabs, linked from a card on the user dashboard.
 - **Admin Problems page** (`app/templates/admin/problems.html`):
   - Grouped rows: comic cover, series and number, category, report count, newest page number, age.
   - Flags: "File updated since report", "Comic removed".
@@ -163,7 +170,7 @@ New `app/api/problem_reports.py`, following the existing router, `SessionDep` an
 
 Problem reports add no badge or "seen" tracking of their own. Notifications belong to the [Notification Center](notification-center-scope.md).
 
-- **Without the notification center**, the reporter sees the outcome where they already look: the dot and modal on the comic page and in the reader, and the My Reports section.
+- **Without the notification center**, the reporter sees the outcome where they already look: the dot and modal on the comic page and in the reader, and the My Reports page.
 - **With the notification center**, resolving or dismissing a report also sends `problem_resolved` to the reporter, and a new report sends `admin_problem_new` to admins. New reports can also go to the notification center's outgoing webhook when that is built.
 
 Problem reports do not depend on the notification center, and can ship before or after it.
@@ -177,7 +184,7 @@ Problem reports do not depend on the notification center, and can ship before or
 - Report modal on the comic page and in the reader
 - Admin Problems page with resolve, dismiss and reopen
 - Scanner hook for `file_changed_at`, and keeping reports when comics are deleted
-- My Reports section
+- My Reports page
 - `problem_resolved` and `admin_problem_new` notifications, if the notification center has landed
 
 ### Phase 2: Polish

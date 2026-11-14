@@ -42,6 +42,8 @@ SAMPLE_DATA = {
     "year_in_review": {"year": 2026},
     "whats_new": {"version": "0.1.48", "first_title": "Notifications"},
     "admin_update_available": {"version": "0.1.49", "current_version": "0.1.48"},
+    "problem_resolved": {"comic_name": "Saga #12", "status": "resolved", "note": "Replaced the file"},
+    "admin_problem_new": {"comic_name": "Saga #12", "category_label": "Missing pages"},
 }
 
 
@@ -220,6 +222,40 @@ def test_admin_only_kind_reaches_admins_only(db, test_kind):
     assert db.query(Notification).one().user_id == admin.id
 
 
+def test_feature_kind_is_hidden_and_not_sent_while_its_feature_is_off(db, monkeypatch):
+    kind = NotificationKind(
+        key="feature_test",
+        label="Feature test",
+        description="For tests.",
+        icon="info",
+        render=lambda count, data: (f"{count} things", None),
+        link=lambda data: None,
+        feature_setting="features.test_feature_enabled",
+    )
+    monkeypatch.setitem(KINDS, kind.key, kind)
+    reader = _user(db, "reader", preferences={"feature_test": {"in_app": False}})
+    other = _user(db, "other")
+    service = NotificationService(db)
+
+    # A missing setting counts as on.
+    assert "feature_test" in [item["key"] for item in service.preferences_for(reader)]
+    assert service.notify(kind.key, [other.id], data={}) == 1
+
+    _set_setting(db, "features.test_feature_enabled", "false")
+    assert "feature_test" not in [item["key"] for item in service.preferences_for(reader)]
+    assert service.notify(kind.key, [other.id], data={}) == 0
+    with pytest.raises(ValueError):
+        service.update_preferences(reader, {"feature_test": True})
+
+    # Saving other switches while it is hidden keeps the reader's choice for it.
+    service.update_preferences(reader, {"whats_new": False})
+    _set_setting(db, "features.test_feature_enabled", "true")
+    db.refresh(reader)
+    enabled = {item["key"]: item["enabled"] for item in service.preferences_for(reader)}
+    assert enabled["feature_test"] is False
+    assert enabled["whats_new"] is False
+
+
 def test_grouping_updates_unread_and_starts_new_after_read(db):
     user = _user(db, "reader")
     service = NotificationService(db)
@@ -332,16 +368,16 @@ def test_preferences_default_on_and_update(db, test_kind):
     admin = _user(db, "admin", admin=True)
     service = NotificationService(db)
 
-    reader_keys = ["follow_arrivals", "year_in_review", "whats_new"]
+    reader_keys = ["follow_arrivals", "year_in_review", "whats_new", "problem_resolved"]
     assert [kind["key"] for kind in service.preferences_for(reader)] == reader_keys
-    assert {kind["key"] for kind in service.preferences_for(admin)} == {*reader_keys, "admin_update_available", test_kind.key}
+    assert {kind["key"] for kind in service.preferences_for(admin)} == {*reader_keys, "admin_update_available", "admin_problem_new", test_kind.key}
     assert all(kind["enabled"] for kind in service.preferences_for(reader))
 
     service.update_preferences(reader, {"whats_new": False})
     db.refresh(reader)
     assert reader.notification_preferences == {"whats_new": {"in_app": False}}
     enabled = {kind["key"]: kind["enabled"] for kind in service.preferences_for(reader)}
-    assert enabled == {"follow_arrivals": True, "year_in_review": True, "whats_new": False}
+    assert enabled == {"follow_arrivals": True, "year_in_review": True, "whats_new": False, "problem_resolved": True}
 
     with pytest.raises(ValueError):
         service.update_preferences(reader, {test_kind.key: True})  # admin-only

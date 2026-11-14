@@ -40,6 +40,14 @@ https://github.com/parker-server/parker/wiki/Getting-Started
   - Admin Settings deep links: `/admin/settings#server` opens a settings category and `/admin/settings#server.update_check_enabled` jumps to and highlights a single setting, so What's New entries can point straight at a new option
   - Per-user on/off choices for each kind of notification in Account Settings
   - Site-wide **Enable Notifications** setting under Settings → Features, and configurable retention for read notifications
+  - Problem report notifications: admins hear about new reports (grouped into one notification on a busy day), and readers hear when their report is resolved or dismissed, with the admin's note
+
+- **Problem Reports**
+  - Readers report a problem with a comic they can open from the reader toolbar (with the current page filled in) or the comic page: bad scan, missing pages, pages out of order, won't open, wrong metadata, wrong comic, or other
+  - Reporting the same kind of problem again updates the open report; readers can withdraw open reports and follow their reports on the **My Reports** page (`/user/problems`), linked from a card on the dashboard
+  - Admin **Problems** page groups reports by comic and category, opens the reader at the reported page (in incognito), and resolves, dismisses or reopens one group or a selection, with an optional note for the reporter
+  - Reports never change files or metadata, and Parker never closes one on its own. When a scan picks up a changed file for a reported comic, the report is flagged **File updated since report**; reports on deleted comics are kept and marked **Comic removed**, and reports from deleted accounts are kept and shown as from **Deleted user**
+  - Site-wide **Enable Problem Reports** setting under Settings → Features, and a per-user **Allow reporting problems** permission in Users
 
 - **Reader**
   - Context‑aware navigation (series, volume, lists, story arcs)

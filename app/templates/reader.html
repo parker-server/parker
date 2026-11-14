@@ -21,6 +21,7 @@
      :class="{ 'scroll-mode': isScrollMode }"
      x-on:keydown.window="handleKey($event)"
      x-on:pagehide.window="sendPendingProgressOnExit()"
+     x-on:problem-report-closed.window="closeProblemReport()"
      x-on:scroll.passive="handleScroll()"
      x-on:touchstart="handleTouchStart($event)"
      x-on:touchend="handleTouchEnd($event)">
@@ -49,6 +50,11 @@
     {% include "reader/partials/_goto_modal.html" %}
     {% include "reader/partials/_bookmarks_modal.html" %}
 </div>
+
+{# Outside the reader so its taps and swipes don't turn pages. #}
+{% if can_report %}
+{% include "partials/problem_report_modal.html" %}
+{% endif %}
 {% endblock %}
 
 {% block extra_scripts %}

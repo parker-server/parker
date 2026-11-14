@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% from "partials/lucide_icon.html" import lucide_icon %}
+
+{% block title %}My Reports - Parker{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto space-y-6" x-data="myProblemReports()" data-my-problem-reports>
+    <div class="space-y-2">
+        <a :href="window.parker.route('pages.user_dashboard')" class="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors">
+            <span>&larr;</span>
+            <span>Back to Dashboard</span>
+        </a>
+        <h1 class="flex items-center gap-3 text-3xl md:text-4xl font-black text-white tracking-tight">
+            {{ lucide_icon("triangle-alert", "h-8 w-8 flex-shrink-0 text-amber-300") }} My Reports
+        </h1>
+        <p class="max-w-2xl text-gray-400">
+            Problems you've reported with comics, and what your admin did about them. Use the warning icon in the reader or on a comic's page to report one.
+        </p>
+    </div>
+
+    <div class="inline-flex rounded-lg border border-gray-700 bg-gray-900 p-1 text-sm" role="tablist">
+        <button type="button" role="tab" x-on:click="tab = 'open'" data-my-reports-tab="open"
+                :aria-selected="tab === 'open'"
+                :class="tab === 'open' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white'"
+                class="rounded-md px-4 py-1.5 font-bold" x-text="`Open (${openItems.length})`"></button>
+        <button type="button" role="tab" x-on:click="tab = 'closed'" data-my-reports-tab="closed"
+                :aria-selected="tab === 'closed'"
+                :class="tab === 'closed' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white'"
+                class="rounded-md px-4 py-1.5 font-bold" x-text="`Closed (${closedItems.length})`"></button>
+    </div>
+
+    <div x-show="loading" class="rounded-2xl border border-gray-800 bg-gray-900/70 p-10 text-center text-gray-400" x-cloak>
+        Loading your reports...
+    </div>
+
+    <div x-show="!loading" class="space-y-3" x-cloak>
+        <template x-for="report in visibleItems" :key="report.id">
+            <div class="rounded-xl border border-gray-700 bg-gray-800 px-4 py-3 shadow-lg" data-my-report>
+                <div class="flex items-start justify-between gap-3">
+                    <div class="min-w-0">
+                        <template x-if="!report.comic_removed">
+                            <a :href="window.parker.route('pages.comic_detail', { comic_id: report.comic_id })"
+                               class="block truncate font-bold text-white hover:text-blue-300" x-text="report.comic_name"></a>
+                        </template>
+                        <template x-if="report.comic_removed">
+                            <span class="block truncate font-bold text-gray-400" x-text="report.comic_name"></span>
+                        </template>
+                        <div class="mt-0.5 text-sm text-gray-400">
+                            <span x-text="report.category_label"></span><span x-show="report.page_index !== null" x-text="` · Page ${report.page_index + 1}`"></span><span x-text="` · ${formatDate(report.created_at)}`"></span>
+                        </div>
+                    </div>
+                    <span class="flex-shrink-0 rounded-full px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide"
+                          :class="{
+                              'bg-amber-500/15 text-amber-200': report.status === 'open',
+                              'bg-green-500/15 text-green-300': report.status === 'resolved',
+                              'bg-gray-600/40 text-gray-300': report.status === 'dismissed'
+                          }"
+                          x-text="report.status"></span>
+                </div>
+                <p x-show="report.message" class="mt-2 text-sm text-gray-300 break-words" x-text="report.message"></p>
+                <p x-show="report.admin_note" class="mt-2 rounded-lg bg-gray-900/70 px-3 py-2 text-sm text-gray-200 break-words" x-text="`Admin: ${report.admin_note}`"></p>
+                <div x-show="report.status === 'open'" class="mt-2 text-right">
+                    <button type="button" x-on:click="withdraw(report)" data-my-report-withdraw
+                            class="inline-flex items-center gap-1 text-xs font-bold text-gray-400 hover:text-red-300">
+                        {{ lucide_icon("trash-2", "h-3.5 w-3.5 flex-shrink-0") }} Withdraw
+                    </button>
+                </div>
+            </div>
+        </template>
+        <div x-show="!visibleItems.length" class="rounded-2xl border border-dashed border-gray-700 bg-gray-900/60 p-8 text-center text-gray-400"
+             x-text="tab === 'open' ? 'No open reports.' : 'No closed reports yet.'"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function myProblemReports() {
+    return {
+        items: [],
+        loading: true,
+        tab: 'open',
+
+        get openItems() { return this.items.filter((report) => report.status === 'open'); },
+        get closedItems() { return this.items.filter((report) => report.status !== 'open'); },
+        get visibleItems() { return this.tab === 'open' ? this.openItems : this.closedItems; },
+
+        async init() {
+            try {
+                const res = await fetch(window.parker.route('problems.mine'));
+                if (!res.ok) return;
+                this.items = (await res.json()).items;
+                if (!this.openItems.length && this.closedItems.length) this.tab = 'closed';
+            } catch (e) {
+                console.error(e);
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        formatDate(value) {
+            return window.parker.formatLocalDate(value, { year: 'numeric', month: 'short', day: 'numeric' });
+        },
+
+        async withdraw(report) {
+            const confirmed = await window.parker.dialog.confirm(
+                'Withdraw report?', `Withdraw your report on ${report.comic_name}?`, { isDestructive: true, confirmText: 'Withdraw' }
+            );
+            if (!confirmed) return;
+            const res = await fetch(window.parker.route('problems.withdraw', { report_id: report.id }), { method: 'DELETE' });
+            if (res.ok) {
+                this.items = this.items.filter((item) => item.id !== report.id);
+                window.parker.showToast('Report withdrawn', 'success');
+            } else {
+                window.parker.showToast('Could not withdraw the report', 'error');
+            }
+        },
+    };
+}
+</script>
+{% endblock %}

@@ -644,6 +644,27 @@
                 </a>
             </div>
 
+            {% if problem_reports_enabled %}
+            <!-- My Reports: shown once the user has reported a problem -->
+            <div x-data="{ openCount: 0, total: 0, async init() { try { const res = await fetch(window.parker.route('problems.mine')); if (!res.ok) return; const items = (await res.json()).items; this.total = items.length; this.openCount = items.filter((report) => report.status === 'open').length; } catch (e) { console.error(e); } } }"
+                 x-show="total" x-cloak data-my-problem-reports-card
+                 class="rounded-2xl border border-gray-700 bg-gradient-to-br from-amber-950/30 via-gray-900 to-gray-900 p-5 shadow-xl">
+                <div class="space-y-2">
+                    <div class="flex items-center gap-2">
+                        {{ lucide_icon("triangle-alert", "h-5 w-5 flex-shrink-0 text-amber-300") }}
+                        <h2 class="text-xl font-bold text-white">My Reports</h2>
+                    </div>
+                    <p class="text-sm text-gray-400" data-my-problem-reports-summary
+                       x-text="openCount ? `${openCount} open ${openCount === 1 ? 'report' : 'reports'} waiting on your admin.` : 'No open reports. See what your admin did about earlier ones.'"></p>
+                </div>
+
+                <a :href="window.parker.route('pages.user_problems')"
+                   class="mt-4 inline-flex w-full items-center justify-center rounded-full bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700 transition-colors">
+                    View My Reports
+                </a>
+            </div>
+            {% endif %}
+
             <!-- Stacks -->
             <div>
                 <div class="flex justify-between items-center mb-4">

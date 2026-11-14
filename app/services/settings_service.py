@@ -11,6 +11,10 @@ SERVER_DISPLAY_NAME_MAX_LENGTH = 32
 SCANNING_BATCH_WINDOW_MIN_SECONDS = 60
 SETTING_RUNTIME_METADATA_FIELDS = ("min_value", "display_group")
 
+# Declared here, next to its default, so problem reports and the notification
+# registry can both import it without importing each other.
+PROBLEM_REPORTS_ENABLED_SETTING = "features.problem_reports_enabled"
+
 
 class SettingValidationError(ValueError):
     """Raised when a setting value is syntactically invalid."""
@@ -362,6 +366,14 @@ class SettingsService:
             "data_type": "bool",
             "label": "Enable Notifications",
             "description": "Shows the notification bell and lets Parker tell users about things like new features. Turning this off hides the bell and stops new notifications.",
+        },
+        {
+            "key": PROBLEM_REPORTS_ENABLED_SETTING,
+            "value": "true",
+            "category": "features",
+            "data_type": "bool",
+            "label": "Enable Problem Reports",
+            "description": "Lets readers report a problem with a comic, such as missing pages or a bad scan, from the reader and the comic page. Turn off per user in Users. Turning this off hides the report buttons; existing reports stay under Admin > Problems.",
         },
         {
             # Internal: the last version whose What's New entries were announced.

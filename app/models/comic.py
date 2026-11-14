@@ -110,6 +110,8 @@ class Comic(Base):
     collection_items = relationship("CollectionItem", back_populates="comic", cascade="all, delete-orphan")
     reading_progress = relationship("ReadingProgress", back_populates="comic", cascade="all, delete-orphan")
     bookmarks = relationship("Bookmark", back_populates="comic", cascade="all, delete-orphan")
+    # No delete cascade: deleting a comic sets comic_id to null so its reports are kept.
+    problem_reports = relationship("ProblemReport", back_populates="comic")
     pull_list_items = relationship("PullListItem", back_populates="comic", cascade="all, delete-orphan")
     cover_mural_items = relationship("CoverMuralItem", back_populates="comic", cascade="all, delete-orphan")
     user_ratings = relationship("UserComicRating", back_populates="comic", cascade="all, delete-orphan")

@@ -3,6 +3,7 @@ import re
 from datetime import datetime, timezone
 from functools import lru_cache
 from sqlalchemy import func, or_, and_, not_, case, cast, Float
+from sqlalchemy.orm import joinedload
 from fastapi import HTTPException
 
 from app.api.deps import SessionDep
@@ -148,6 +149,37 @@ def assert_user_can_view_comic(comic: Comic, user, *, hide_denied: bool = False)
 
     if is_comic_age_restricted_for_user(comic, user):
         raise HTTPException(status_code=denied_status, detail=denied_detail)
+
+
+def ensure_comic_access(db, user, comic_id: int) -> Comic:
+    """
+    Load a comic the user can open, or raise.
+
+    Hidden libraries answer 404 and age-restricted comics 403. Used by features
+    that attach a user's own data to a comic, such as bookmarks and problem reports.
+    """
+    comic = (
+        db.query(Comic)
+        .options(joinedload(Comic.volume).joinedload(Volume.series))
+        .filter(Comic.id == comic_id)
+        .first()
+    )
+
+    if not comic:
+        raise HTTPException(status_code=404, detail=f"Comic {comic_id} not found")
+
+    if not user.is_superuser:
+        allowed_library_ids = {library.id for library in user.accessible_libraries}
+        if comic.volume.series.library_id not in allowed_library_ids:
+            raise HTTPException(status_code=404, detail=f"Comic {comic_id} not found")
+
+    comic_age_filter = get_comic_age_restriction(user)
+    if comic_age_filter is not None:
+        allowed = db.query(Comic.id).filter(Comic.id == comic_id, comic_age_filter).first()
+        if not allowed:
+            raise HTTPException(status_code=403, detail="Content restricted by age rating")
+
+    return comic
 
 
 def get_comic_age_restriction(user, comic_model=Comic):

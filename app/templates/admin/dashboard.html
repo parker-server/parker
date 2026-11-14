@@ -112,6 +112,35 @@
             <p class="text-sm text-gray-400">Analyze collection health, missing issues, and storage usage.</p>
         </a>
 
+        <a :href="window.parker.route('admin.problems')"
+           x-data="{
+               openCount: 0,
+               async init() {
+                   try {
+                       const res = await fetch(window.parker.route('problems.summary'));
+                       if (res.ok) this.openCount = (await res.json()).open_count;
+                   } catch (e) { console.error(e); }
+               }
+           }"
+           data-admin-problems-card
+           class="block bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-amber-400 rounded-lg p-6 transition-all group shadow-lg">
+            <div class="flex items-center justify-between mb-4">
+                <div class="w-12 h-12 bg-amber-900/30 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+                    {{ lucide_icon("triangle-alert", "h-6 w-6 text-amber-300") }}
+                </div>
+                {{ lucide_icon("arrow-right", "h-4 w-4 text-gray-500 group-hover:text-amber-300 transition-colors") }}
+            </div>
+            <div class="mb-2 flex flex-wrap items-center gap-2">
+                <h3 class="text-xl font-bold text-white">Problems</h3>
+                <span x-show="openCount > 0"
+                      x-cloak
+                      data-admin-problems-count
+                      class="inline-flex items-center rounded-full border border-amber-400/40 bg-amber-500/15 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-amber-200"
+                      x-text="`${openCount} open`"></span>
+            </div>
+            <p class="text-sm text-gray-400">Fix problems readers reported, like missing pages or bad scans.</p>
+        </a>
+
         <a :href="window.parker.route('admin.migration')" class="block bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-yellow-500 rounded-lg p-6 transition-all group shadow-lg">
             <div class="flex items-center justify-between mb-4">
                 <div class="w-12 h-12 bg-yellow-900/30 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">

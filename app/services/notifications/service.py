@@ -40,6 +40,12 @@ class NotificationService:
         value = SettingsService(self.db).get(NOTIFICATIONS_ENABLED_SETTING)
         return True if value is None else bool(value)
 
+    def feature_enabled(self, definition: NotificationKind) -> bool:
+        """False when the kind belongs to a feature that is turned off."""
+        if definition.feature_setting is None:
+            return True
+        return SettingsService(self.db).get(definition.feature_setting) is not False
+
     # --- Writing ---
 
     def notify(
@@ -58,7 +64,7 @@ class NotificationService:
         """
         definition = get_kind(kind)
         requested_ids = set(user_ids)
-        if not requested_ids or not self.is_enabled():
+        if not requested_ids or not self.is_enabled() or not self.feature_enabled(definition):
             return 0
 
         try:
@@ -209,11 +215,10 @@ class NotificationService:
 
     # --- Preferences ---
 
-    @staticmethod
-    def available_kinds(user: User) -> list[NotificationKind]:
+    def available_kinds(self, user: User) -> list[NotificationKind]:
         return [
             kind for kind in KINDS.values()
-            if user.is_superuser or not kind.admin_only
+            if (user.is_superuser or not kind.admin_only) and self.feature_enabled(kind)
         ]
 
     def preferences_for(self, user: User) -> list[dict[str, Any]]:

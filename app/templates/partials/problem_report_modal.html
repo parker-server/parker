@@ -1,0 +1,296 @@
+{#
+    Report a Problem modal, shared by the comic page and the reader.
+
+    Open it with a window event:
+        $dispatch('open-problem-report', { comicId, comicName, pageIndex, pageCount })
+    It sends 'problem-report-closed' when it closes and
+    'problem-reports-changed' ({ comicId, openCount }) after a report is sent or withdrawn.
+    Buttons can use problemReportTrigger(comicId) to show a dot for open reports.
+#}
+{% from "partials/lucide_icon.html" import lucide_icon %}
+<div x-data="problemReportModal()"
+     x-show="show"
+     style="display: none;"
+     data-problem-report-modal
+     x-on:open-problem-report.window="open($event.detail)"
+     x-on:keydown.escape.window="if (show) close()"
+     x-on:keydown.escape="close()"
+     class="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+     x-transition:enter="transition ease-out duration-200"
+     x-transition:enter-start="opacity-0"
+     x-transition:enter-end="opacity-100"
+     x-transition:leave="transition ease-in duration-100"
+     x-transition:leave-start="opacity-100"
+     x-transition:leave-end="opacity-0"
+     x-on:click.self="close()"
+     {# Keep the reader's page keys and swipes from acting while the modal is open. #}
+     x-on:keydown.stop
+     x-on:touchstart.stop
+     x-on:touchend.stop>
+
+    <div class="bg-gray-900 border border-gray-700 rounded-lg shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col text-left"
+         role="dialog" aria-modal="true" aria-labelledby="problem-report-title">
+
+        <div class="flex items-start justify-between gap-4 border-b border-gray-800 px-5 py-4">
+            <div class="min-w-0">
+                <h3 id="problem-report-title" class="flex items-center gap-2 text-lg font-bold text-white">
+                    {{ lucide_icon("triangle-alert", "h-5 w-5 flex-shrink-0 text-amber-400") }} Report a Problem
+                </h3>
+                <p class="mt-1 truncate text-sm text-gray-400" x-text="comicName"></p>
+            </div>
+            <button type="button" x-on:click="close()" class="text-gray-400 hover:text-white" aria-label="Close">&times;</button>
+        </div>
+
+        <div class="overflow-y-auto px-5 py-4 space-y-5">
+
+            <div x-show="loading" class="py-6 text-center">
+                <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500 mx-auto"></div>
+            </div>
+
+            <template x-if="!loading && openReports.length">
+                <div class="space-y-2" data-problem-report-open-list>
+                    <h4 class="text-xs font-bold uppercase tracking-wide text-gray-400">Your open reports</h4>
+                    <template x-for="report in openReports" :key="report.id">
+                        <div class="flex items-start justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+                            <div class="min-w-0 text-sm">
+                                <div class="font-semibold text-amber-100" x-text="report.category_label"></div>
+                                <div class="text-xs text-amber-200/70" x-show="report.page_index !== null" x-text="`Page ${report.page_index + 1}`"></div>
+                                <div class="mt-1 text-xs text-gray-300 break-words" x-show="report.message" x-text="report.message"></div>
+                            </div>
+                            <button type="button"
+                                    x-on:click="withdraw(report)"
+                                    :disabled="busy"
+                                    data-problem-report-withdraw
+                                    class="inline-flex flex-shrink-0 items-center gap-1 rounded px-2 py-1 text-xs font-bold text-gray-300 hover:bg-red-600/30 hover:text-white disabled:opacity-50">
+                                {{ lucide_icon("trash-2", "h-3.5 w-3.5 flex-shrink-0") }} Withdraw
+                            </button>
+                        </div>
+                    </template>
+                    <p class="text-xs text-gray-500">Reporting the same kind of problem again updates your open report.</p>
+                </div>
+            </template>
+
+            <template x-if="!loading && closedReports.length">
+                <div class="space-y-2" data-problem-report-closed-list>
+                    <h4 class="text-xs font-bold uppercase tracking-wide text-gray-400">Earlier reports</h4>
+                    <template x-for="report in closedReports" :key="report.id">
+                        <div class="rounded-lg border border-gray-700 bg-gray-800/60 px-3 py-2 text-sm">
+                            <div class="flex items-center justify-between gap-2">
+                                <span class="font-semibold text-gray-200" x-text="report.category_label"></span>
+                                <span class="rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide"
+                                      :class="report.status === 'resolved' ? 'bg-green-500/15 text-green-300' : 'bg-gray-600/40 text-gray-300'"
+                                      x-text="report.status"></span>
+                            </div>
+                            <div class="mt-1 text-xs text-gray-300 break-words" x-show="report.admin_note" x-text="`Admin: ${report.admin_note}`"></div>
+                        </div>
+                    </template>
+                </div>
+            </template>
+
+            <form x-show="!loading" x-on:submit.prevent="submit()" class="space-y-4" data-problem-report-form>
+                <div>
+                    <label for="problem-report-category" class="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-400">What's wrong?</label>
+                    <select id="problem-report-category" x-model="category" data-problem-report-category
+                            class="w-full rounded border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"
+                            :class="category ? 'text-white' : 'text-gray-400'">
+                        <option value="" disabled>Choose a problem</option>
+                        <template x-for="option in categories" :key="option.key">
+                            <option :value="option.key" x-text="option.label" class="text-white"></option>
+                        </template>
+                    </select>
+                </div>
+
+                <div x-show="usesPage">
+                    <label for="problem-report-page" class="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-400">Page <span class="font-normal normal-case text-gray-500">(optional)</span></label>
+                    <div class="flex items-center gap-2">
+                        <input id="problem-report-page" type="number" min="1" :max="pageCount || null" x-model="pageNumber"
+                               data-problem-report-page
+                               class="w-24 rounded border border-gray-700 bg-gray-800 px-3 py-2 text-white focus:border-blue-500 focus:outline-none">
+                        <span x-show="pageCount" class="text-sm text-gray-500" x-text="`of ${pageCount}`"></span>
+                    </div>
+                </div>
+
+                <div>
+                    <label for="problem-report-message" class="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-400">
+                        Details <span class="font-normal normal-case text-gray-500" x-text="requiresMessage ? '(required)' : '(optional)'"></span>
+                    </label>
+                    <textarea id="problem-report-message" rows="3" x-model="message" :maxlength="messageMaxLength"
+                              data-problem-report-message
+                              placeholder="Anything that helps the admin find and fix it"
+                              class="w-full rounded border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"></textarea>
+                    <div class="mt-1 text-right text-xs text-gray-500" x-text="`${message.length} / ${messageMaxLength}`"></div>
+                </div>
+
+                <div class="flex justify-end gap-3">
+                    <button type="button" x-on:click="close()" class="px-4 py-2 text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors">Cancel</button>
+                    <button type="submit" :disabled="!canSubmit"
+                            data-problem-report-submit
+                            class="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded transition-colors">
+                        Send Report
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function problemReportModal() {
+    return {
+        show: false,
+        loading: false,
+        busy: false,
+        categories: [],
+        messageMaxLength: 1000,
+        comicId: null,
+        comicName: '',
+        pageCount: 0,
+        reports: [],
+        category: '',
+        pageNumber: '',
+        message: '',
+
+        get selectedCategory() {
+            return this.categories.find((option) => option.key === this.category) || null;
+        },
+        get usesPage() {
+            return !this.selectedCategory || this.selectedCategory.uses_page;
+        },
+        get requiresMessage() {
+            return Boolean(this.selectedCategory?.requires_message);
+        },
+        get canSubmit() {
+            return !this.busy && Boolean(this.category) && (!this.requiresMessage || this.message.trim().length > 0);
+        },
+        get openReports() {
+            return this.reports.filter((report) => report.status === 'open');
+        },
+        get closedReports() {
+            return this.reports.filter((report) => report.status !== 'open').slice(0, 3);
+        },
+
+        async open(detail) {
+            this.comicId = detail.comicId;
+            this.comicName = detail.comicName || '';
+            this.pageCount = detail.pageCount || 0;
+            this.category = '';
+            this.message = '';
+            this.pageNumber = Number.isInteger(detail.pageIndex) ? String(detail.pageIndex + 1) : '';
+            this.reports = [];
+            this.show = true;
+            this.loading = true;
+            try {
+                await Promise.all([this.loadCategories(), this.loadReports()]);
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        close() {
+            if (!this.show) return;
+            this.show = false;
+            window.dispatchEvent(new CustomEvent('problem-report-closed'));
+        },
+
+        async loadCategories() {
+            if (this.categories.length) return;
+            try {
+                const res = await fetch(window.parker.route('problems.categories'));
+                if (!res.ok) return;
+                const data = await res.json();
+                this.categories = data.categories;
+                this.messageMaxLength = data.message_max_length;
+            } catch (e) { console.error(e); }
+        },
+
+        async loadReports() {
+            try {
+                const res = await fetch(window.parker.route('problems.comic', { comic_id: this.comicId }));
+                if (res.ok) this.reports = (await res.json()).items;
+            } catch (e) { console.error(e); }
+        },
+
+        announceChange() {
+            window.dispatchEvent(new CustomEvent('problem-reports-changed', {
+                detail: { comicId: this.comicId, openCount: this.openReports.length }
+            }));
+        },
+
+        async submit() {
+            if (!this.canSubmit) return;
+            const page = Number.parseInt(this.pageNumber, 10);
+            const payload = {
+                comic_id: this.comicId,
+                category: this.category,
+                page_index: this.usesPage && Number.isInteger(page) && page > 0 ? page - 1 : null,
+                message: this.message.trim() || null,
+            };
+
+            this.busy = true;
+            try {
+                const res = await fetch(window.parker.route('problems.create'), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    const detail = Array.isArray(data.detail) ? 'Please check the form' : data.detail;
+                    window.parker.showToast(detail || 'Could not send the report', 'error');
+                    return;
+                }
+                const others = this.reports.filter((report) => report.id !== data.report.id);
+                this.reports = [data.report, ...others];
+                this.announceChange();
+                window.parker.showToast(data.created ? 'Thanks! Your report was sent.' : 'Your report was updated.', 'success');
+                this.close();
+            } catch (e) {
+                console.error(e);
+                window.parker.showToast('Could not send the report', 'error');
+            } finally {
+                this.busy = false;
+            }
+        },
+
+        async withdraw(report) {
+            this.busy = true;
+            try {
+                const res = await fetch(window.parker.route('problems.withdraw', { report_id: report.id }), { method: 'DELETE' });
+                if (!res.ok) {
+                    window.parker.showToast('Could not withdraw the report', 'error');
+                    return;
+                }
+                this.reports = this.reports.filter((item) => item.id !== report.id);
+                this.announceChange();
+                window.parker.showToast('Report withdrawn', 'success');
+            } catch (e) {
+                console.error(e);
+            } finally {
+                this.busy = false;
+            }
+        },
+    };
+}
+
+// Keeps a report button's open-report dot in step with the modal.
+function problemReportTrigger(comicId) {
+    return {
+        openReportCount: 0,
+
+        async init() {
+            try {
+                const res = await fetch(window.parker.route('problems.comic', { comic_id: comicId }));
+                if (!res.ok) return;
+                const items = (await res.json()).items;
+                this.openReportCount = items.filter((report) => report.status === 'open').length;
+            } catch (e) { console.error(e); }
+        },
+
+        handleProblemReportsChanged(detail) {
+            if (detail && detail.comicId === comicId) {
+                this.openReportCount = detail.openCount;
+            }
+        },
+    };
+}
+</script>

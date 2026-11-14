@@ -56,6 +56,7 @@ from app.api import timelines
 from app.api import people
 from app.api import promoted_rails
 from app.api import notifications
+from app.api import problem_reports
 
 # Frontend Routes (HTML)
 from app.routers import pages, admin
@@ -397,6 +398,8 @@ app.include_router(cover_murals.router, prefix="/api/cover-murals", tags=["cover
 app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"])
 app.include_router(notifications.router, prefix="/api/notifications", tags=["notifications"])
 app.include_router(notifications.whats_new_router, prefix="/api/whats-new", tags=["whats-new"])
+app.include_router(problem_reports.router, prefix="/api/problems", tags=["problems"])
+app.include_router(problem_reports.admin_router, prefix="/api/problems", tags=["problems", "admin"])
 app.include_router(promoted_rails.router, prefix="/api/promoted-rails", tags=["promoted-rails", "admin"])
 
 # Pure admin routers

@@ -59,6 +59,7 @@ class UserCreateRequest(UserBase):
     max_age_rating: Optional[str] = None
     allow_unknown_age_ratings: bool = False
     can_download: bool = True
+    can_report: bool = True
 
 class UserUpdateRequest(UserBase):
     password: str | None = None
@@ -70,6 +71,7 @@ class UserUpdateRequest(UserBase):
     max_age_rating: Optional[str] = None
     allow_unknown_age_ratings: Optional[bool] = None
     can_download: Optional[bool] = None
+    can_report: Optional[bool] = None
 
 class UserListResponse(BaseModel):
     id: int
@@ -86,6 +88,7 @@ class UserListResponse(BaseModel):
     max_age_rating: Optional[str]
     allow_unknown_age_ratings: bool
     can_download: bool = True
+    can_report: bool = True
 
 class UserPasswordUpdateRequest(BaseModel):
     current_password: str
@@ -386,6 +389,7 @@ async def list_users(
             "max_age_rating": u.max_age_rating,
             "allow_unknown_age_ratings": u.allow_unknown_age_ratings,
             "can_download": u.can_download,
+            "can_report": u.can_report,
         })
 
 
@@ -424,6 +428,7 @@ async def create_user(
         max_age_rating=None if user_in.is_superuser else user_in.max_age_rating,
         allow_unknown_age_ratings=False if user_in.is_superuser else user_in.allow_unknown_age_ratings,
         can_download=user_in.can_download,
+        can_report=user_in.can_report,
     )
     db.add(user)
     db.commit()
@@ -462,6 +467,8 @@ async def update_user(
         forget_password_change_status(user.username)
     if updates.can_download is not None:
         user.can_download = updates.can_download
+    if updates.can_report is not None:
+        user.can_report = updates.can_report
 
     # Update Libraries (with superuser checks)
     if user.is_superuser:
