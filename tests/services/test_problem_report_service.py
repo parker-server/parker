@@ -313,6 +313,21 @@ def test_resolving_a_deleted_users_report_notifies_nobody(db, normal_user, admin
     assert db.query(Notification).count() == 0
 
 
+def test_resolving_while_the_feature_is_off_notifies_nobody(db, normal_user, admin_user):
+    # With reports off, My Reports is a 404, so a notification would lead nowhere.
+    comic = _seed_comic(db)
+    service = ProblemReportService(db)
+    report, _ = service.submit(normal_user, comic, "broken")
+    db.query(Notification).delete()
+    db.commit()
+    _set_setting(db, "features.problem_reports_enabled", "false")
+
+    service.apply([report.id], "resolve", admin_user, note="Fixed")
+
+    assert db.get(ProblemReport, report.id).status == "resolved"
+    assert db.query(Notification).count() == 0
+
+
 def test_list_for_user_hides_comics_the_user_can_no_longer_see(db, normal_user):
     visible = _seed_comic(db, name="Visible")
     hidden = _seed_comic(db, name="Hidden")

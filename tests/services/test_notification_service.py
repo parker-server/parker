@@ -30,6 +30,7 @@ from app.services.notifications.producers import (
     year_in_review_year,
 )
 from app.services.notifications.service import NotificationService
+from app.services.problem_reports import PROBLEM_REPORTS_ENABLED_SETTING
 from app.services.settings_service import SettingsService
 from app.services.version_check import VersionCheckStatus
 from tests.factories import create_comic, create_library_with_root
@@ -220,6 +221,45 @@ def test_admin_only_kind_reaches_admins_only(db, test_kind):
 
     assert NotificationService(db).notify(test_kind.key, [admin.id, reader.id], data={}) == 1
     assert db.query(Notification).one().user_id == admin.id
+
+
+def test_feature_kind_is_hidden_and_not_sent_while_its_feature_is_off(db, monkeypatch):
+    kind = NotificationKind(
+        key="feature_test",
+        label="Feature test",
+        description="For tests.",
+        icon="info",
+        render=lambda count, data: (f"{count} things", None),
+        link=lambda data: None,
+        feature_setting="features.test_feature_enabled",
+    )
+    monkeypatch.setitem(KINDS, kind.key, kind)
+    reader = _user(db, "reader", preferences={"feature_test": {"in_app": False}})
+    other = _user(db, "other")
+    service = NotificationService(db)
+
+    # A missing setting counts as on.
+    assert "feature_test" in [item["key"] for item in service.preferences_for(reader)]
+    assert service.notify(kind.key, [other.id], data={}) == 1
+
+    _set_setting(db, "features.test_feature_enabled", "false")
+    assert "feature_test" not in [item["key"] for item in service.preferences_for(reader)]
+    assert service.notify(kind.key, [other.id], data={}) == 0
+    with pytest.raises(ValueError):
+        service.update_preferences(reader, {"feature_test": True})
+
+    # Saving other switches while it is hidden keeps the reader's choice for it.
+    service.update_preferences(reader, {"whats_new": False})
+    _set_setting(db, "features.test_feature_enabled", "true")
+    db.refresh(reader)
+    enabled = {item["key"]: item["enabled"] for item in service.preferences_for(reader)}
+    assert enabled["feature_test"] is False
+    assert enabled["whats_new"] is False
+
+
+def test_problem_report_kinds_follow_the_problem_reports_setting():
+    assert KINDS["problem_resolved"].feature_setting == PROBLEM_REPORTS_ENABLED_SETTING
+    assert KINDS["admin_problem_new"].feature_setting == PROBLEM_REPORTS_ENABLED_SETTING
 
 
 def test_grouping_updates_unread_and_starts_new_after_read(db):

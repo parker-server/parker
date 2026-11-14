@@ -22,6 +22,10 @@ class NotificationKind:
     link: Callable[[dict[str, Any]], Optional[str]]
     admin_only: bool = False
     default_enabled: bool = True
+    # A bool setting that turns the kind's feature on and off. While it is off the
+    # kind is not sent and its switch is hidden from preferences. A missing
+    # setting counts as on.
+    feature_setting: Optional[str] = None
 
 
 def _render_whats_new(count: int, data: dict[str, Any]) -> tuple[str, Optional[str]]:
@@ -102,6 +106,7 @@ KINDS: dict[str, NotificationKind] = {
             icon="circle-check",
             render=_render_problem_resolved,
             link=lambda data: "/user/problems",
+            feature_setting="features.problem_reports_enabled",
         ),
         NotificationKind(
             key="admin_problem_new",
@@ -111,6 +116,7 @@ KINDS: dict[str, NotificationKind] = {
             render=_render_admin_problem_new,
             link=lambda data: "/admin/problems",
             admin_only=True,
+            feature_setting="features.problem_reports_enabled",
         ),
         NotificationKind(
             key="admin_update_available",

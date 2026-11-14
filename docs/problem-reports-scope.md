@@ -8,6 +8,7 @@ Phase 1 is built on `feature/problem-reports`, using the notification center (`p
 - A closed report's admin note is shown in the modal's "Earlier reports" list and in My Reports, rather than "once", since the notification center now handles telling the reporter.
 - My Reports is its own page (`/user/problems`) rather than a dashboard section, so a long list does not push the dashboard down. The dashboard has a small card with the open count, like the Following card, shown only once the user has made a report.
 - Reopening a report, or the reader reporting the same problem again, clears the "File updated since report" hint, since it was about a fix that did not work.
+- With the setting off, the two problem report notification kinds are hidden from notification preferences and are not sent, through a `feature_setting` on the notification kind registry.
 - Deleting a user keeps their reports, open and closed, shown as from "Deleted user". The problem with the comic is still real, so the report is not lost. The username is not kept; the message is.
 
 ## Goal
