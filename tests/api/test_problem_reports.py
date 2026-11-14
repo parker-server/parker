@@ -5,7 +5,7 @@ from app.models.problem_report import ProblemReport
 from app.models.series import Series
 from app.models.setting import SystemSetting
 from app.models.user import User
-from app.services.problem_reports import ProblemReportService
+from app.services.problem_reports import PROBLEM_REPORTS_ENABLED_SETTING, ProblemReportService
 from tests.factories import create_comic, create_library_with_root
 
 
@@ -27,7 +27,7 @@ def _seed_comic(db, user=None, *, name="Saga", age_rating=None, grant_access=Tru
 
 def _turn_off(db):
     db.add(SystemSetting(
-        key="features.problem_reports_enabled",
+        key=PROBLEM_REPORTS_ENABLED_SETTING,
         value="false",
         category="features",
         data_type="bool",

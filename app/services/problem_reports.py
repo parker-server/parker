@@ -19,11 +19,9 @@ from app.models.problem_report import ProblemReport
 from app.models.series import Series
 from app.models.user import User
 from app.services.notifications import NotificationService
-from app.services.settings_service import SettingsService
+from app.services.settings_service import PROBLEM_REPORTS_ENABLED_SETTING, SettingsService
 
 logger = logging.getLogger(__name__)
-
-PROBLEM_REPORTS_ENABLED_SETTING = "features.problem_reports_enabled"
 
 # Stored keys and the labels shown in the modal and the admin queue, in display order.
 CATEGORIES: dict[str, str] = {

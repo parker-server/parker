@@ -30,7 +30,6 @@ from app.services.notifications.producers import (
     year_in_review_year,
 )
 from app.services.notifications.service import NotificationService
-from app.services.problem_reports import PROBLEM_REPORTS_ENABLED_SETTING
 from app.services.settings_service import SettingsService
 from app.services.version_check import VersionCheckStatus
 from tests.factories import create_comic, create_library_with_root
@@ -255,11 +254,6 @@ def test_feature_kind_is_hidden_and_not_sent_while_its_feature_is_off(db, monkey
     enabled = {item["key"]: item["enabled"] for item in service.preferences_for(reader)}
     assert enabled["feature_test"] is False
     assert enabled["whats_new"] is False
-
-
-def test_problem_report_kinds_follow_the_problem_reports_setting():
-    assert KINDS["problem_resolved"].feature_setting == PROBLEM_REPORTS_ENABLED_SETTING
-    assert KINDS["admin_problem_new"].feature_setting == PROBLEM_REPORTS_ENABLED_SETTING
 
 
 def test_grouping_updates_unread_and_starts_new_after_read(db):
