@@ -4,6 +4,7 @@ from sqlalchemy import func, case, desc
 
 from app.api.deps import SessionDep, AdminUser
 from app.config import settings
+from app.core import setting_keys
 from app.core.build_info import get_build_commit_hash
 from app.models.comic import Comic, Volume
 from app.models.series import Series
@@ -14,7 +15,6 @@ from app.models.reading_progress import ReadingProgress
 from app.services.startup_diagnostics import build_support_snapshot, collect_startup_diagnostics
 from app.services.settings_service import SettingsService
 from app.services.version_check import (
-    UPDATE_CHECK_SETTING,
     disabled_version_check_status,
     get_version_check_status,
 )
@@ -61,7 +61,7 @@ def get_version_check(db: SessionDep, admin: AdminUser):
     """
     Check whether a newer Parker version tag is available upstream.
     """
-    if SettingsService(db).get(UPDATE_CHECK_SETTING) is False:
+    if SettingsService(db).get(setting_keys.SERVER_UPDATE_CHECK_ENABLED) is False:
         return disabled_version_check_status(settings.version).to_dict()
 
     status = get_version_check_status(settings.version)

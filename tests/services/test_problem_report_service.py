@@ -1,5 +1,6 @@
 import pytest
 
+from app.core import setting_keys
 import app.services.scanner as scanner_module
 from app.models.comic import Volume
 from app.models.notification import Notification
@@ -9,7 +10,6 @@ from app.models.series import Series
 from app.models.setting import SystemSetting
 from app.models.user import User
 from app.services.problem_reports import (
-    PROBLEM_REPORTS_ENABLED_SETTING,
     ProblemReportError,
     ProblemReportService,
     user_can_report,
@@ -321,7 +321,7 @@ def test_resolving_while_the_feature_is_off_notifies_nobody(db, normal_user, adm
     report, _ = service.submit(normal_user, comic, "broken")
     db.query(Notification).delete()
     db.commit()
-    _set_setting(db, PROBLEM_REPORTS_ENABLED_SETTING, "false")
+    _set_setting(db, setting_keys.FEATURES_PROBLEM_REPORTS_ENABLED, "false")
 
     service.apply([report.id], "resolve", admin_user, note="Fixed")
 
@@ -358,7 +358,7 @@ def test_user_can_report_respects_setting_and_user_flag(db, normal_user, admin_u
     assert user_can_report(normal_user, db) is False
     assert user_can_report(admin_user, db) is True
 
-    _set_setting(db, PROBLEM_REPORTS_ENABLED_SETTING, "false")
+    _set_setting(db, setting_keys.FEATURES_PROBLEM_REPORTS_ENABLED, "false")
     assert user_can_report(admin_user, db) is False
 
 

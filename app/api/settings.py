@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from typing import Dict, List, Any, Optional
 from app.api.deps import SessionDep, AdminUser, CurrentUser, get_current_user_optional
+from app.core import setting_keys
 from app.services.settings_service import SettingsService, SettingValidationError
 from app.core.settings_loader import get_cached_setting
 from app.services.scheduler import scheduler_service
@@ -9,7 +10,7 @@ from app.models.user import User
 
 router = APIRouter()
 
-PUBLIC_KEYS = [ "ui.background_style", "ui.pagination_mode", "ui.login_background_style", "ui.login_solid_color", "ui.login_static_cover" ]
+PUBLIC_KEYS = [ setting_keys.UI_BACKGROUND_STYLE, setting_keys.UI_PAGINATION_MODE, setting_keys.UI_LOGIN_BACKGROUND_STYLE, setting_keys.UI_LOGIN_SOLID_COLOR, setting_keys.UI_LOGIN_STATIC_COVER ]
 
 @router.get("/", response_model=Dict[str, List[SettingResponse]], status_code=200, name="list")
 def get_settings(db: SessionDep):
@@ -51,9 +52,8 @@ def update_setting(key: str, payload: SettingUpdate, db: SessionDep, admin: Admi
     try:
         setting = svc.update(key, payload.value)
 
-        # Dynamic check based on naming convention
-        # Captures 'system.task.backup.interval', 'system.task.something.interval', etc.
-        if key.startswith("system.task.") and key.endswith(".interval"):
+        # Any scheduled task's interval, such as system.task.backup.interval
+        if setting_keys.is_task_interval(key):
             scheduler_service.reschedule_jobs()
 
         return setting

@@ -11,6 +11,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, joinedload
 
 from app.config import settings
+from app.core import setting_keys
 from app.core.settings_loader import get_cached_setting
 from app.database import SessionLocal, engine
 from app.models.comic import Comic, Volume
@@ -418,12 +419,12 @@ class ThumbnailService:
         writer_proc.start()
 
         summary_timeout = int(
-            get_cached_setting("system.parallel_image_writer_summary_timeout_seconds", 180)
+            get_cached_setting(setting_keys.SYSTEM_PARALLEL_IMAGE_WRITER_SUMMARY_TIMEOUT_SECONDS, 180)
         )
         summary_timeout = max(10, summary_timeout)
 
         join_timeout = int(
-            get_cached_setting("system.parallel_image_writer_join_timeout_seconds", 30)
+            get_cached_setting(setting_keys.SYSTEM_PARALLEL_IMAGE_WRITER_JOIN_TIMEOUT_SECONDS, 30)
         )
         join_timeout = max(1, join_timeout)
 
@@ -437,7 +438,7 @@ class ThumbnailService:
                 self.logger.info(f"Using exactly {worker_limit} worker(s) for thumbnail generation")
 
         else:
-            requested_workers = int(get_cached_setting("system.parallel_image_workers", 0))
+            requested_workers = int(get_cached_setting(setting_keys.SYSTEM_PARALLEL_IMAGE_WORKERS, 0))
             self.logger.info(f"Requested {'(Auto)' if requested_workers <= 0 else requested_workers} worker(s) for parallel thumbnail generation")
 
             if requested_workers <= 0:

@@ -24,7 +24,6 @@ from app.services.comicbookroundup import (
 logger = logging.getLogger(__name__)
 
 COMICBOOKROUNDUP_PROVIDER = "comicbookroundup"
-EXTERNAL_REVIEWS_ENABLED_SETTING = "integrations.external_reviews.enabled"
 
 STATUS_PENDING = "pending"
 STATUS_MATCHED = "matched"

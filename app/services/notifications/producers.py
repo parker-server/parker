@@ -17,6 +17,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.core import setting_keys
 from app.core.comic_helpers import filter_series_query_to_user, get_format_filters
 from app.models.comic import Comic, Volume
 from app.models.interactions import UserVolumeFollow
@@ -26,15 +27,12 @@ from app.models.series import Series
 from app.models.user import User
 from app.services.notifications.service import NotificationService
 from app.services.settings_service import SettingsService
-from app.services.version_check import UPDATE_CHECK_SETTING, get_version_check_status, parse_version
+from app.services.version_check import get_version_check_status, parse_version
 
 logger = logging.getLogger(__name__)
 
 WHATS_NEW_FILE = Path(__file__).resolve().parents[2] / "data" / "whats_new.json"
-WHATS_NEW_LAST_VERSION_SETTING = "notifications.whats_new_last_version"
 WHATS_NEW_AUDIENCES = ("all", "admin")
-YEAR_IN_REVIEW_LAST_YEAR_SETTING = "notifications.year_in_review_last_year"
-UPDATE_LAST_VERSION_SETTING = "notifications.update_last_version"
 # Year in Review goes out on the first daily check on or after this day in
 # December. A January check still sends it for the previous year.
 YEAR_IN_REVIEW_START_DAY = 15
@@ -126,9 +124,9 @@ def announce_whats_new(
         return 0
 
     settings_service = SettingsService(db)
-    last_raw = settings_service.get(WHATS_NEW_LAST_VERSION_SETTING)
+    last_raw = settings_service.get(setting_keys.NOTIFICATIONS_WHATS_NEW_LAST_VERSION)
     if last_raw is None:
-        logger.warning("What's New skipped: %s is missing", WHATS_NEW_LAST_VERSION_SETTING)
+        logger.warning("What's New skipped: %s is missing", setting_keys.NOTIFICATIONS_WHATS_NEW_LAST_VERSION)
         return 0
 
     last = parse_version(last_raw)
@@ -147,7 +145,7 @@ def announce_whats_new(
     if new_entries:
         notified = _notify_whats_new(db, new_entries, current_label)
 
-    settings_service.update(WHATS_NEW_LAST_VERSION_SETTING, current_label)
+    settings_service.update(setting_keys.NOTIFICATIONS_WHATS_NEW_LAST_VERSION, current_label)
     if new_entries:
         logger.info("Announced %s What's New entries to %s users", len(new_entries), notified)
     return notified
@@ -295,9 +293,9 @@ def announce_year_in_review(db: Session, today: date) -> int:
         return 0
 
     settings_service = SettingsService(db)
-    last_year = settings_service.get(YEAR_IN_REVIEW_LAST_YEAR_SETTING)
+    last_year = settings_service.get(setting_keys.NOTIFICATIONS_YEAR_IN_REVIEW_LAST_YEAR)
     if last_year is None:
-        logger.warning("Year in Review skipped: %s is missing", YEAR_IN_REVIEW_LAST_YEAR_SETTING)
+        logger.warning("Year in Review skipped: %s is missing", setting_keys.NOTIFICATIONS_YEAR_IN_REVIEW_LAST_YEAR)
         return 0
     if last_year >= year:
         return 0
@@ -323,7 +321,7 @@ def announce_year_in_review(db: Session, today: date) -> int:
             group_key=f"year_in_review:{year}",
         )
 
-    settings_service.update(YEAR_IN_REVIEW_LAST_YEAR_SETTING, year)
+    settings_service.update(setting_keys.NOTIFICATIONS_YEAR_IN_REVIEW_LAST_YEAR, year)
     logger.info("Announced the %s Year in Review to %s users", year, notified)
     return notified
 
@@ -340,11 +338,11 @@ def announce_update_available(db: Session, today: date, current_version: Optiona
         return 0
 
     settings_service = SettingsService(db)
-    if settings_service.get(UPDATE_CHECK_SETTING) is False:
+    if settings_service.get(setting_keys.SERVER_UPDATE_CHECK_ENABLED) is False:
         return 0
-    last_raw = settings_service.get(UPDATE_LAST_VERSION_SETTING)
+    last_raw = settings_service.get(setting_keys.NOTIFICATIONS_UPDATE_LAST_VERSION)
     if last_raw is None:
-        logger.warning("Update notification skipped: %s is missing", UPDATE_LAST_VERSION_SETTING)
+        logger.warning("Update notification skipped: %s is missing", setting_keys.NOTIFICATIONS_UPDATE_LAST_VERSION)
         return 0
 
     current_version = current_version or settings.version
@@ -369,7 +367,7 @@ def announce_update_available(db: Session, today: date, current_version: Optiona
         data={"version": status.latest_version, "current_version": current_version},
         group_key="admin:update",
     )
-    settings_service.update(UPDATE_LAST_VERSION_SETTING, status.latest_version)
+    settings_service.update(setting_keys.NOTIFICATIONS_UPDATE_LAST_VERSION, status.latest_version)
     logger.info("Told %s admins about Parker %s", notified, status.latest_version)
     return notified
 

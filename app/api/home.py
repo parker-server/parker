@@ -7,6 +7,7 @@ from typing import Annotated, Any, List, Literal
 from datetime import datetime, timezone, timedelta
 from collections import defaultdict
 
+from app.core import setting_keys
 from app.core.settings_loader import get_cached_setting
 from app.api.deps import CurrentUser, PaginatedResponse, PaginationParams, SessionDep
 from app.core.comic_helpers import filter_series_query_to_user, get_banned_comic_condition, get_format_filters, get_smart_cover, get_series_age_restriction, get_thumbnail_url, pick_series_cover, resolve_container_resume_target
@@ -786,7 +787,7 @@ def get_resume_reading(
     """Get 'In Progress' issues, respecting library access, age restrictions, and staleness settings."""
 
     # 1. Calculate Cutoff
-    staleness_weeks = get_cached_setting("ui.on_deck.staleness_weeks", default=4)
+    staleness_weeks = get_cached_setting(setting_keys.UI_ON_DECK_STALENESS_WEEKS, default=4)
     cutoff_date = None
     if staleness_weeks > 0:
         cutoff_date = datetime.now(timezone.utc) - timedelta(weeks=staleness_weeks)
@@ -1108,7 +1109,7 @@ def get_up_next(
     """
 
     # 1. Calculate Cutoff (Reuse the same setting for consistency)
-    staleness_weeks = get_cached_setting("ui.on_deck.staleness_weeks", default=4)
+    staleness_weeks = get_cached_setting(setting_keys.UI_ON_DECK_STALENESS_WEEKS, default=4)
     cutoff_date = None
     if staleness_weeks > 0:
         cutoff_date = datetime.now(timezone.utc) - timedelta(weeks=staleness_weeks)

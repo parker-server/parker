@@ -1,7 +1,8 @@
 import xml.etree.ElementTree as ET
 from unittest.mock import patch
 
-from app.core.comic_helpers import DOWNLOADS_ENABLED_SETTING, user_can_download
+from app.core import setting_keys
+from app.core.comic_helpers import user_can_download
 from app.routers.opds import get_opds_download_filename
 from app.models.comic import Comic, Volume
 from app.models.series import Series
@@ -61,14 +62,14 @@ def test_user_can_download_respects_user_flag(db, normal_user):
 
 
 def test_user_can_download_respects_site_setting(db, normal_user):
-    _set_bool_setting(db, DOWNLOADS_ENABLED_SETTING, False)
+    _set_bool_setting(db, setting_keys.SERVER_DOWNLOADS_ENABLED, False)
 
     assert user_can_download(normal_user, db) is False
 
 
 def test_admin_can_always_download(db, admin_user):
     admin_user.can_download = False
-    _set_bool_setting(db, DOWNLOADS_ENABLED_SETTING, False)
+    _set_bool_setting(db, setting_keys.SERVER_DOWNLOADS_ENABLED, False)
 
     assert user_can_download(admin_user, db) is True
 
@@ -112,7 +113,7 @@ def test_web_download_blocked_for_user_without_permission(auth_client, db, norma
 
 def test_web_download_blocked_when_site_disabled(auth_client, db, normal_user, tmp_path):
     comic = _create_downloadable_comic(db, normal_user, tmp_path)
-    _set_bool_setting(db, DOWNLOADS_ENABLED_SETTING, False)
+    _set_bool_setting(db, setting_keys.SERVER_DOWNLOADS_ENABLED, False)
 
     response = auth_client.get(f"/api/comics/{comic.id}/download")
 
@@ -181,7 +182,7 @@ def test_opds_download_and_feed_links_follow_permission(client, db, normal_user,
 
 def test_opds_download_blocked_when_site_disabled(client, db, normal_user, tmp_path):
     _set_bool_setting(db, "server.opds_enabled", True)
-    _set_bool_setting(db, DOWNLOADS_ENABLED_SETTING, False)
+    _set_bool_setting(db, setting_keys.SERVER_DOWNLOADS_ENABLED, False)
     comic = _create_downloadable_comic(db, normal_user, tmp_path)
 
     assert _opds_get(client, normal_user, f"/opds/download/{comic.id}").status_code == 403
@@ -223,7 +224,7 @@ def test_admin_users_page_notes_when_downloads_are_off_site_wide(admin_client, d
     assert enabled.status_code == 200
     assert "data-downloads-disabled-note" not in enabled.text
 
-    _set_bool_setting(db, DOWNLOADS_ENABLED_SETTING, False)
+    _set_bool_setting(db, setting_keys.SERVER_DOWNLOADS_ENABLED, False)
 
     disabled = admin_client.get("/admin/users")
     assert disabled.status_code == 200

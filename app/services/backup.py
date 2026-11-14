@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from app.config import settings
+from app.core import setting_keys
 from app.core.settings_loader import get_system_setting
 from app.services.startup_diagnostics import resolve_sqlite_db_path
 
@@ -86,7 +87,7 @@ class BackupService:
         retention_days = 7  # Default
 
         # Use the loader helper to fetch safely without manual session management
-        retention_days = get_system_setting("backup.retention_days", 7)
+        retention_days = get_system_setting(setting_keys.BACKUP_RETENTION_DAYS, 7)
 
         # If 0, assume "Keep Forever"
         if retention_days <= 0:

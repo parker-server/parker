@@ -12,6 +12,7 @@ from PIL import Image
 
 from app.api.deps import PaginationParams, release_db_connection
 from app.api.opds_deps import OPDSUser, SessionDep
+from app.core import setting_keys
 from app.core.settings_loader import get_cached_setting
 from app.models import ComicCredit
 from app.models.collection import Collection, CollectionItem
@@ -651,7 +652,7 @@ async def opds_continue_reading(
         db: SessionDep,
         params: Annotated[PaginationParams, Depends()]
 ):
-    staleness_weeks = get_cached_setting("ui.on_deck.staleness_weeks", default=4)
+    staleness_weeks = get_cached_setting(setting_keys.UI_ON_DECK_STALENESS_WEEKS, default=4)
     cutoff_date = None
     if staleness_weeks > 0:
         cutoff_date = datetime.now(timezone.utc) - timedelta(weeks=staleness_weeks)

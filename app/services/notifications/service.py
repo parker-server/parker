@@ -4,6 +4,7 @@ from typing import Any, Iterable, Optional
 
 from sqlalchemy.orm import Session
 
+from app.core import setting_keys
 from app.models.notification import Notification
 from app.models.user import User
 from app.services.notifications.kinds import KINDS, NotificationKind, get_kind
@@ -11,8 +12,6 @@ from app.services.settings_service import SettingsService
 
 logger = logging.getLogger(__name__)
 
-NOTIFICATIONS_ENABLED_SETTING = "features.notifications_enabled"
-RETENTION_DAYS_SETTING = "notifications.retention_days"
 DEFAULT_RETENTION_DAYS = 30
 UNREAD_RETENTION_DAYS = 90
 IN_APP_CHANNEL = "in_app"
@@ -37,7 +36,7 @@ class NotificationService:
     # --- Settings ---
 
     def is_enabled(self) -> bool:
-        value = SettingsService(self.db).get(NOTIFICATIONS_ENABLED_SETTING)
+        value = SettingsService(self.db).get(setting_keys.FEATURES_NOTIFICATIONS_ENABLED)
         return True if value is None else bool(value)
 
     def feature_enabled(self, definition: NotificationKind) -> bool:
@@ -258,7 +257,7 @@ class NotificationService:
         ones older than UNREAD_RETENTION_DAYS. Runs even when notifications are off.
         """
         now = now or _utcnow()
-        retention_days = SettingsService(self.db).get(RETENTION_DAYS_SETTING)
+        retention_days = SettingsService(self.db).get(setting_keys.NOTIFICATIONS_RETENTION_DAYS)
         retention_days = max(1, int(retention_days or DEFAULT_RETENTION_DAYS))
 
         read_cutoff = now - timedelta(days=retention_days)

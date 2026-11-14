@@ -8,7 +8,7 @@ kind means adding an entry here and a producer that calls notify().
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
-from app.services.settings_service import PROBLEM_REPORTS_ENABLED_SETTING
+from app.core import setting_keys
 
 
 @dataclass(frozen=True)
@@ -108,7 +108,7 @@ KINDS: dict[str, NotificationKind] = {
             icon="circle-check",
             render=_render_problem_resolved,
             link=lambda data: "/user/problems",
-            feature_setting=PROBLEM_REPORTS_ENABLED_SETTING,
+            feature_setting=setting_keys.FEATURES_PROBLEM_REPORTS_ENABLED,
         ),
         NotificationKind(
             key="admin_problem_new",
@@ -118,7 +118,7 @@ KINDS: dict[str, NotificationKind] = {
             render=_render_admin_problem_new,
             link=lambda data: "/admin/problems",
             admin_only=True,
-            feature_setting=PROBLEM_REPORTS_ENABLED_SETTING,
+            feature_setting=setting_keys.FEATURES_PROBLEM_REPORTS_ENABLED,
         ),
         NotificationKind(
             key="admin_update_available",

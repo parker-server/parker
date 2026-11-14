@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 from app.api.deps import get_current_user
 from app.api.comics import filter_by_user_access, natural_sort_key
+from app.core import setting_keys
 from app.main import app
 from app.models.collection import Collection, CollectionItem
 from app.models.bookmark import Bookmark
@@ -20,7 +21,6 @@ from app.models.tags import Character, Genre, Location, Team
 from app.models.user import User
 from app.services.external_reviews import (
     COMICBOOKROUNDUP_PROVIDER,
-    EXTERNAL_REVIEWS_ENABLED_SETTING,
     STATUS_MATCHED,
     STATUS_NO_MATCH,
 )
@@ -482,7 +482,7 @@ def test_external_reviews_endpoint_queues_lazy_lookup_when_enabled(auth_client, 
     )
     normal_user.accessible_libraries.append(library)
     db.add(SystemSetting(
-        key=EXTERNAL_REVIEWS_ENABLED_SETTING,
+        key=setting_keys.INTEGRATIONS_EXTERNAL_REVIEWS_ENABLED,
         value="true",
         category="server",
         data_type="bool",
@@ -546,7 +546,7 @@ def test_external_reviews_endpoint_normalizes_old_matched_retry_without_refresh(
     )
     normal_user.accessible_libraries.append(library)
     db.add(SystemSetting(
-        key=EXTERNAL_REVIEWS_ENABLED_SETTING,
+        key=setting_keys.INTEGRATIONS_EXTERNAL_REVIEWS_ENABLED,
         value="true",
         category="server",
         data_type="bool",

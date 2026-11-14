@@ -17,6 +17,7 @@ from pathlib import Path
 
 import portalocker
 
+from app.core import setting_keys
 from app.core.settings_loader import get_system_setting
 from app.core.security import (
     get_redirect_url,
@@ -114,7 +115,7 @@ async def lifespan(app: FastAPI):
 
     # SETUP LOGGING
     # Each worker configures its own logger instance pointing to the same file.
-    log_level = get_system_setting("general.log_level", "INFO")
+    log_level = get_system_setting(setting_keys.GENERAL_LOG_LEVEL, "INFO")
     logger = log_config.setup_logging(log_level)
 
     worker_pid = os.getpid()

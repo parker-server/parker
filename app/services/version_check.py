@@ -26,7 +26,6 @@ VERSION_CHECK_TIMEOUT = httpx.Timeout(connect=2.0, read=3.0, write=2.0, pool=2.0
 SEMVER_TAG_PATTERN = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
 VERSION_CHECK_CACHE_FILE = settings.cache_dir / "version_check.json"
 VERSION_CHECK_LOCK_FILE = settings.cache_dir / "version_check.lock"
-UPDATE_CHECK_SETTING = "server.update_check_enabled"
 
 logger = logging.getLogger(__name__)
 

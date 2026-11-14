@@ -1,10 +1,11 @@
 import pytest
 
+from app.core import setting_keys
 from app.models.comic import Comic
 from app.models.problem_report import ProblemReport
 from app.models.setting import SystemSetting
 from app.models.user import User
-from app.services.problem_reports import PROBLEM_REPORTS_ENABLED_SETTING, ProblemReportService
+from app.services.problem_reports import ProblemReportService
 
 
 @pytest.fixture
@@ -15,7 +16,7 @@ def problem_reports_state(browser_server):
         session = browser_server["db_factory"]()
         try:
             session.query(ProblemReport).delete()
-            session.query(SystemSetting).filter(SystemSetting.key == PROBLEM_REPORTS_ENABLED_SETTING).delete()
+            session.query(SystemSetting).filter(SystemSetting.key == setting_keys.FEATURES_PROBLEM_REPORTS_ENABLED).delete()
             session.query(User).filter(User.username.in_(["problem-reporter", "problem-admin"])).delete()
             user = session.get(User, browser_server["seed"]["user_id"])
             user.can_report = True
@@ -173,7 +174,7 @@ def test_report_buttons_hidden_when_setting_is_off(page, browser_server, problem
     session = browser_server["db_factory"]()
     try:
         session.add(SystemSetting(
-            key=PROBLEM_REPORTS_ENABLED_SETTING, value="false", category="features", data_type="bool",
+            key=setting_keys.FEATURES_PROBLEM_REPORTS_ENABLED, value="false", category="features", data_type="bool",
         ))
         session.commit()
     finally:

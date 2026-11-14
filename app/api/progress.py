@@ -4,6 +4,7 @@ from typing import List, Optional, Annotated
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import joinedload
 
+from app.core import setting_keys
 from app.core.settings_loader import get_cached_setting
 from app.api.deps import SessionDep, CurrentUser, PaginationParams
 from app.models.reading_progress import ReadingProgress
@@ -56,7 +57,7 @@ def get_on_deck_progress(
     OPTIMIZED: Uses joinedload to prevent N+1 queries for Comic/Series data.
     """
     # Get Setting (Default 4 weeks)
-    staleness_weeks = get_cached_setting("ui.on_deck.staleness_weeks", default=4)
+    staleness_weeks = get_cached_setting(setting_keys.UI_ON_DECK_STALENESS_WEEKS, default=4)
 
     # Calculate Cutoff
     cutoff_date = None
