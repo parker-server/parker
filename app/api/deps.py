@@ -138,7 +138,7 @@ def get_current_user(
         raise credentials_exception
 
     # Templates read this to show the user's theme (app/core/templates.py).
-    request.state.user = user
+    request.state.appearance = user.appearance
     return user
 
 def get_current_user_optional(

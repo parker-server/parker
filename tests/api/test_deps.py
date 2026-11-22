@@ -116,12 +116,14 @@ def test_get_token_optional_paths():
 
 def test_get_current_user_valid_and_error_paths(db):
     user = _create_user(db, username="deps-user", email="deps-user@example.com")
+    user.appearance = {"theme": "noir"}
+    db.commit()
 
     token = _make_token(user.username)
     request = _make_request()
     resolved = deps.get_current_user(request=request, db=db, token=token)
     assert resolved.id == user.id
-    assert request.state.user is resolved
+    assert request.state.appearance == {"theme": "noir"}
 
     bad_payload = jwt.encode({"foo": "bar"}, settings.secret_key, algorithm=settings.algorithm)
     with pytest.raises(HTTPException) as missing_sub:

@@ -250,7 +250,7 @@ def browser_server(browser_db_factory, browser_seed_data, monkeypatch_session):
             _ = list(user.accessible_libraries)
             session.expunge(user)
             # Like get_current_user: templates read this for the user's theme.
-            request.state.user = user
+            request.state.appearance = user.appearance
             return user
         finally:
             session.close()

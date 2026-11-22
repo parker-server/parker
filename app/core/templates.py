@@ -79,9 +79,8 @@ def inject_ui_settings(request):
     This ensures changes in settings are reflected immediately.
     """
     # Set by get_current_user on pages that need a signed-in user.
-    user = getattr(request.state, "user", None)
     appearance = resolve_appearance(
-        user.appearance if user else None,
+        getattr(request.state, "appearance", None),
         user_themes_enabled=get_cached_setting(setting_keys.FEATURES_USER_THEMES_ENABLED) is not False,
         default_theme=get_cached_setting(setting_keys.UI_DEFAULT_THEME),
         default_accent=get_cached_setting(setting_keys.UI_DEFAULT_ACCENT),

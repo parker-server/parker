@@ -1405,11 +1405,11 @@ def test_series_page_background_uses_the_same_cover_as_the_series_api(admin_clie
 
 
 def _sign_in_with_request_state(user):
-    """Like get_current_user: keep the user on the request so templates can read their theme."""
+    """Like get_current_user: keep the user's appearance on the request so templates can read their theme."""
     from app.api.deps import get_current_user
 
     def current_user(request: Request):
-        request.state.user = user
+        request.state.appearance = user.appearance
         return user
 
     app.dependency_overrides[get_current_user] = current_user
