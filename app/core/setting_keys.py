@@ -20,6 +20,8 @@ UI_LOGIN_BACKGROUND_STYLE = "ui.login_background_style"
 UI_LOGIN_SOLID_COLOR = "ui.login_solid_color"
 UI_LOGIN_STATIC_COVER = "ui.login_static_cover"
 UI_BACKGROUND_STYLE = "ui.background_style"
+UI_DEFAULT_THEME = "ui.default_theme"
+UI_DEFAULT_ACCENT = "ui.default_accent"
 UI_PAGINATION_MODE = "ui.pagination_mode"
 UI_SERIES_ISSUE_VOLUME_DIVIDERS = "ui.series_issue_volume_dividers"
 UI_AUTO_REDIRECT_SINGLE_VOLUME_SERIES = "ui.auto_redirect_single_volume_series"
@@ -55,6 +57,7 @@ INTEGRATIONS_EXTERNAL_REVIEWS_ENABLED = "integrations.external_reviews.enabled"
 # Features
 FEATURES_NOTIFICATIONS_ENABLED = "features.notifications_enabled"
 FEATURES_PROBLEM_REPORTS_ENABLED = "features.problem_reports_enabled"
+FEATURES_USER_THEMES_ENABLED = "features.user_themes_enabled"
 
 
 def task_interval(job_id: str) -> str:

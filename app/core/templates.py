@@ -7,6 +7,7 @@ from jinja2 import TemplateRuntimeError
 from app.config import settings
 from app.core import setting_keys
 from app.core.settings_loader import get_cached_setting
+from app.core.themes import resolve_appearance
 from app.core.utils import get_route_map
 from app.services.notifications.kinds import FALLBACK_ICON, KINDS
 
@@ -77,8 +78,18 @@ def inject_ui_settings(request):
     Dynamically inject UI settings into every request.
     This ensures changes in settings are reflected immediately.
     """
+    # Set by get_current_user on pages that need a signed-in user.
+    user = getattr(request.state, "user", None)
+    appearance = resolve_appearance(
+        user.appearance if user else None,
+        user_themes_enabled=get_cached_setting(setting_keys.FEATURES_USER_THEMES_ENABLED) is not False,
+        default_theme=get_cached_setting(setting_keys.UI_DEFAULT_THEME),
+        default_accent=get_cached_setting(setting_keys.UI_DEFAULT_ACCENT),
+    )
     return {
-        "background_style": get_cached_setting(setting_keys.UI_BACKGROUND_STYLE)
+        "background_style": get_cached_setting(setting_keys.UI_BACKGROUND_STYLE),
+        "ui_theme": appearance["theme"],
+        "ui_accent": appearance["accent"],
     }
 
 # Register the processor by appending it to the list

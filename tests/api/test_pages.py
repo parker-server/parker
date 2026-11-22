@@ -1402,3 +1402,89 @@ def test_series_page_background_uses_the_same_cover_as_the_series_api(admin_clie
     assert response.status_code == 200
     assert f'const cid = "{hundred.id}";' in response.text
     assert admin_client.get(f"/api/series/{series.id}").json()["first_issue_id"] == hundred.id
+
+
+def _sign_in_with_request_state(user):
+    """Like get_current_user: keep the user on the request so templates can read their theme."""
+    from app.api.deps import get_current_user
+
+    def current_user(request: Request):
+        request.state.user = user
+        return user
+
+    app.dependency_overrides[get_current_user] = current_user
+
+
+def _theme_settings(monkeypatch, **values):
+    from app.core import setting_keys
+
+    settings = {
+        setting_keys.FEATURES_USER_THEMES_ENABLED: values.get("enabled", True),
+        setting_keys.UI_DEFAULT_THEME: values.get("default_theme", "default"),
+        setting_keys.UI_DEFAULT_ACCENT: values.get("default_accent", "blue"),
+    }
+    monkeypatch.setattr(
+        "app.core.templates.get_cached_setting",
+        lambda key, default=None: settings.get(key, default),
+    )
+
+
+def test_pages_render_the_users_theme(client, db, normal_user, monkeypatch):
+    normal_user.appearance = {"theme": "noir", "accent": "red"}
+    db.commit()
+    _sign_in_with_request_state(normal_user)
+    _theme_settings(monkeypatch)
+
+    response = client.get("/user/dashboard")
+
+    assert response.status_code == 200
+    assert '<html lang="en" data-theme="noir" data-accent="red">' in response.text
+
+
+def test_pages_use_the_server_default_when_user_themes_are_off(client, db, normal_user, monkeypatch):
+    normal_user.appearance = {"theme": "noir", "accent": "red"}
+    db.commit()
+    _sign_in_with_request_state(normal_user)
+    _theme_settings(monkeypatch, enabled=False, default_theme="midnight", default_accent="violet")
+
+    response = client.get("/user/dashboard")
+
+    assert '<html lang="en" data-theme="midnight" data-accent="violet">' in response.text
+
+
+def test_reader_always_uses_the_default_theme(client, db, normal_user, monkeypatch):
+    library = create_library_with_root(db, "Theme Library", "/tmp/theme-library")
+    series = Series(name="Theme Series", library=library)
+    volume = Volume(series=series, volume_number=1)
+    db.add_all([series, volume])
+    db.commit()
+    comic = create_comic(db, volume, library.active_root, "theme-reader.cbz", filename="theme-reader.cbz", page_count=2)
+    normal_user.appearance = {"theme": "noir", "accent": "red"}
+    normal_user.accessible_libraries.append(library)
+    db.commit()
+    _sign_in_with_request_state(normal_user)
+    _theme_settings(monkeypatch)
+
+    response = client.get(f"/reader/{comic.id}")
+
+    assert response.status_code == 200
+    assert '<html lang="en" data-theme="default" data-accent="blue">' in response.text
+
+
+def test_user_settings_shows_appearance_unless_user_themes_are_off(auth_client, db):
+    from app.core import setting_keys
+    from app.models.setting import SystemSetting
+
+    shown = auth_client.get("/user/settings")
+    assert 'id="appearance"' in shown.text
+    assert 'data-theme-option="newsprint"' in shown.text
+    assert 'data-accent-option="emerald"' in shown.text
+
+    db.add(SystemSetting(
+        key=setting_keys.FEATURES_USER_THEMES_ENABLED, value="false", category="features", data_type="bool",
+    ))
+    db.commit()
+
+    hidden = auth_client.get("/user/settings")
+    assert hidden.status_code == 200
+    assert 'id="appearance"' not in hidden.text

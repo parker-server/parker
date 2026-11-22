@@ -118,21 +118,23 @@ def test_get_current_user_valid_and_error_paths(db):
     user = _create_user(db, username="deps-user", email="deps-user@example.com")
 
     token = _make_token(user.username)
-    resolved = deps.get_current_user(db=db, token=token)
+    request = _make_request()
+    resolved = deps.get_current_user(request=request, db=db, token=token)
     assert resolved.id == user.id
+    assert request.state.user is resolved
 
     bad_payload = jwt.encode({"foo": "bar"}, settings.secret_key, algorithm=settings.algorithm)
     with pytest.raises(HTTPException) as missing_sub:
-        deps.get_current_user(db=db, token=bad_payload)
+        deps.get_current_user(request=_make_request(), db=db, token=bad_payload)
     assert missing_sub.value.status_code == 401
 
     with pytest.raises(HTTPException) as invalid_token:
-        deps.get_current_user(db=db, token="not-a-jwt")
+        deps.get_current_user(request=_make_request(), db=db, token="not-a-jwt")
     assert invalid_token.value.status_code == 401
 
     ghost_token = _make_token("missing-user")
     with pytest.raises(HTTPException) as missing_user:
-        deps.get_current_user(db=db, token=ghost_token)
+        deps.get_current_user(request=_make_request(), db=db, token=ghost_token)
     assert missing_user.value.status_code == 401
 
 

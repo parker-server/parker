@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 import pytest
 import uvicorn
+from fastapi import Request
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm import selectinload
@@ -238,7 +239,7 @@ def browser_server(browser_db_factory, browser_seed_data, monkeypatch_session):
         finally:
             session.close()
 
-    def override_get_current_user():
+    def override_get_current_user(request: Request):
         session = browser_db_factory()
         try:
             user = session.scalar(
@@ -248,6 +249,8 @@ def browser_server(browser_db_factory, browser_seed_data, monkeypatch_session):
             )
             _ = list(user.accessible_libraries)
             session.expunge(user)
+            # Like get_current_user: templates read this for the user's theme.
+            request.state.user = user
             return user
         finally:
             session.close()

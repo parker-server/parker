@@ -64,6 +64,68 @@
         </div>
     </div>
 
+    {% if user_themes_enabled %}
+    <div id="appearance" class="bg-gray-800 rounded-lg p-8 border border-gray-700 shadow-xl mb-5 scroll-mt-24">
+        <div class="flex items-center justify-between gap-4 mb-4 border-b border-gray-700 pb-2">
+            <h2 class="text-xl font-bold text-white">Appearance</h2>
+            <button type="button"
+                    x-show="hasCustomAppearance()" x-cloak
+                    @click="resetAppearance()"
+                    class="text-sm text-gray-400 hover:text-white transition-colors">
+                Reset to default
+            </button>
+        </div>
+
+        <p class="font-medium text-white">Theme</p>
+        <div class="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3" role="radiogroup" aria-label="Theme">
+            {% for value, label in themes.items() %}
+            <button type="button"
+                    role="radio"
+                    :aria-checked="currentTheme() === '{{ value }}'"
+                    @click="selectTheme('{{ value }}')"
+                    data-theme-option="{{ value }}"
+                    class="rounded-lg p-1.5 text-left transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+                    :class="currentTheme() === '{{ value }}' ? 'ring-2 ring-blue-500' : 'ring-1 ring-gray-700 hover:ring-gray-500'">
+                {# A small page mock drawn in this theme's own colors #}
+                <span data-theme="{{ value }}" class="block rounded-md bg-gray-900 p-2" aria-hidden="true">
+                    <span class="block h-2 rounded-sm bg-gray-800"></span>
+                    <span class="mt-2 flex gap-1.5">
+                        <span class="block h-9 w-6 rounded-sm bg-gray-700"></span>
+                        <span class="flex-1 space-y-1.5 pt-0.5">
+                            <span class="block h-1.5 rounded-sm bg-gray-300"></span>
+                            <span class="block h-1.5 w-2/3 rounded-sm bg-gray-500"></span>
+                            <span class="block h-2 w-1/2 rounded-sm bg-blue-500"></span>
+                        </span>
+                    </span>
+                </span>
+                <span class="mt-1.5 block px-0.5 text-sm font-medium text-white">
+                    {{ label }}{% if value == default_theme %} <span class="text-xs font-normal text-gray-500">(default)</span>{% endif %}
+                </span>
+            </button>
+            {% endfor %}
+        </div>
+
+        <p class="mt-6 font-medium text-white">Accent color</p>
+        <p class="text-gray-400 text-sm mt-1">Used for buttons, links and highlights.</p>
+        <div class="mt-3 flex flex-wrap gap-3" role="radiogroup" aria-label="Accent color">
+            {% for value, label in accents.items() %}
+            <button type="button"
+                    role="radio"
+                    :aria-checked="currentAccent() === '{{ value }}'"
+                    @click="selectAccent('{{ value }}')"
+                    data-accent="{{ value }}"
+                    data-accent-option="{{ value }}"
+                    title="{{ label }}{% if value == default_accent %} (default){% endif %}"
+                    aria-label="{{ label }}"
+                    class="h-9 w-9 rounded-full bg-blue-500 ring-offset-2 ring-offset-gray-800 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                    :class="currentAccent() === '{{ value }}' ? 'ring-2 ring-white' : 'hover:scale-110'">
+            </button>
+            {% endfor %}
+        </div>
+
+        <p class="mt-6 text-xs text-gray-500">Your theme follows you to every device you sign in on. The reader always uses the default colors.</p>
+    </div>
+    {% endif %}
 
     {% if notifications_enabled %}
     <div id="notifications" class="bg-gray-800 rounded-lg p-8 border border-gray-700 shadow-xl mb-5 scroll-mt-24">
@@ -197,8 +259,10 @@ function userSettings() {
         message: '',
         messageStatus: '',
         messageColor: 'text-green-400',
-        preferences: {},
+        preferences: { appearance: { theme: null, accent: null } },
         notificationKinds: [],
+        defaultTheme: {{ default_theme | tojson }},
+        defaultAccent: {{ default_accent | tojson }},
 
         async init() {
             try {
@@ -230,6 +294,48 @@ function userSettings() {
                 console.error(e);
                 kind.enabled = !kind.enabled;
                 window.parker.showToast("Failed to update settings", "error");
+            }
+        },
+        currentTheme() {
+            return this.preferences.appearance?.theme || this.defaultTheme;
+        },
+        currentAccent() {
+            return this.preferences.appearance?.accent || this.defaultAccent;
+        },
+        hasCustomAppearance() {
+            return Boolean(this.preferences.appearance?.theme || this.preferences.appearance?.accent);
+        },
+        selectTheme(theme) {
+            this.saveAppearance({ ...this.preferences.appearance, theme });
+        },
+        selectAccent(accent) {
+            this.saveAppearance({ ...this.preferences.appearance, accent });
+        },
+        resetAppearance() {
+            this.saveAppearance(null);
+        },
+        applyAppearance() {
+            // Show the change right away; the server renders it on every page from now on.
+            document.documentElement.dataset.theme = this.currentTheme();
+            document.documentElement.dataset.accent = this.currentAccent();
+        },
+        async saveAppearance(appearance) {
+            const previous = this.preferences.appearance;
+            this.preferences.appearance = appearance || { theme: null, accent: null };
+            this.applyAppearance();
+            try {
+                const res = await fetch(window.parker.route('users.update_preferences'), {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ appearance })
+                });
+                if (!res.ok) throw new Error('Failed to update appearance');
+                window.parker.showToast("Appearance updated", "success");
+            } catch(e) {
+                console.error(e);
+                this.preferences.appearance = previous;
+                this.applyAppearance();
+                window.parker.showToast("Failed to update appearance", "error");
             }
         },
         async updatePreferences() {

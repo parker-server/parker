@@ -10,6 +10,7 @@ from app.api.deps import SessionDep, ComicDep, VolumeDep, SeriesDep, LibraryDep,
 from app.config import settings
 from app.core.settings_loader import get_cached_setting
 from app.core.templates import templates
+from app.core.themes import ACCENTS, THEMES, resolve_appearance
 from app.models.comic import Comic, Volume
 from app.core.login_effects import get_active_effect
 from app.core.login_backgrounds import SOLID_COLORS, STATIC_COVERS
@@ -318,13 +319,26 @@ def following_page(request: Request, user: CurrentUser):
 
 @router.get("/user/settings", response_class=HTMLResponse, name="user_settings")
 def settings_page(request: Request, db: SessionDep, user: CurrentUser):
-    opds_enabled = bool(SettingsService(db).get(setting_keys.SERVER_OPDS_ENABLED))
+    settings_svc = SettingsService(db)
+    opds_enabled = bool(settings_svc.get(setting_keys.SERVER_OPDS_ENABLED))
+    server_appearance = resolve_appearance(
+        None,
+        user_themes_enabled=False,
+        default_theme=settings_svc.get(setting_keys.UI_DEFAULT_THEME),
+        default_accent=settings_svc.get(setting_keys.UI_DEFAULT_ACCENT),
+    )
     return templates.TemplateResponse(
         request=request,
         name="user/settings.html",
         context={
             "opds_enabled": opds_enabled,
             "notifications_enabled": NotificationService(db).is_enabled(),
+            # A missing setting counts as enabled, like other feature switches.
+            "user_themes_enabled": settings_svc.get(setting_keys.FEATURES_USER_THEMES_ENABLED) is not False,
+            "themes": THEMES,
+            "accents": ACCENTS,
+            "default_theme": server_appearance["theme"],
+            "default_accent": server_appearance["accent"],
         },
     )
 

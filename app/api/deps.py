@@ -108,6 +108,7 @@ async def get_token_optional(
 
 
 def get_current_user(
+        request: Request,
         db: Annotated[Session, Depends(get_db)],
         token: Annotated[str, Depends(get_token_hybrid)]
 ) -> User:
@@ -136,6 +137,8 @@ def get_current_user(
     if user is None:
         raise credentials_exception
 
+    # Templates read this to show the user's theme (app/core/templates.py).
+    request.state.user = user
     return user
 
 def get_current_user_optional(

@@ -14,6 +14,7 @@ from app.config import settings
 from app.core import setting_keys
 from app.core.comic_helpers import get_thumbnail_url, get_banned_comic_condition, get_series_age_restriction
 from app.core.security import verify_password, get_password_hash, forget_password_change_status
+from app.core.themes import ACCENTS, THEMES
 from app.models.comic import Comic, Volume
 from app.models.user import User
 from app.models.library import Library
@@ -100,9 +101,30 @@ class UserPreferencesResponse(BaseModel):
     social_insights_enabled: bool
     monthly_reading_goal: int
 
+class AppearanceUpdate(BaseModel):
+    # None means "use the server default".
+    theme: Optional[str] = None
+    accent: Optional[str] = None
+
+    @field_validator("theme")
+    @classmethod
+    def theme_must_exist(cls, value: Optional[str]) -> Optional[str]:
+        if value is not None and value not in THEMES:
+            raise ValueError(f"Unknown theme: {value}")
+        return value
+
+    @field_validator("accent")
+    @classmethod
+    def accent_must_exist(cls, value: Optional[str]) -> Optional[str]:
+        if value is not None and value not in ACCENTS:
+            raise ValueError(f"Unknown accent: {value}")
+        return value
+
 class UserPreferencesUpdateRequest(BaseModel):
     social_insights_enabled: Optional[bool] = None
     monthly_reading_goal: Optional[int] = Field(None, ge=1)
+    # Sending null resets the theme and accent to the server default.
+    appearance: Optional[AppearanceUpdate] = None
 
 
 @router.get("/me/dashboard", name="dashboard")
@@ -288,9 +310,11 @@ async def get_preferences(db: SessionDep, current_user: CurrentUser):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    appearance = user.appearance or {}
     return {
         "social_insights_enabled": user.social_insights_enabled,
         "monthly_reading_goal": current_user.monthly_reading_goal,
+        "appearance": {"theme": appearance.get("theme"), "accent": appearance.get("accent")},
     }
 
 @router.patch("/me/preferences", name="update_preferences")
@@ -305,6 +329,13 @@ async def update_preferences(payload: UserPreferencesUpdateRequest, db: SessionD
 
     if payload.monthly_reading_goal is not None:
         current_user.monthly_reading_goal = payload.monthly_reading_goal
+        have_settings_changed = True
+
+    if "appearance" in payload.model_fields_set:
+        if SettingsService(db).get(setting_keys.FEATURES_USER_THEMES_ENABLED) is False:
+            raise HTTPException(status_code=403, detail="User themes are turned off on this server.")
+        appearance = payload.appearance.model_dump(exclude_none=True) if payload.appearance else {}
+        current_user.appearance = appearance or None
         have_settings_changed = True
 
     if have_settings_changed:
