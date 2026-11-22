@@ -1101,3 +1101,13 @@ def test_opds_download_uses_issue_number_when_title_missing(client, db, normal_u
 
     assert response.status_code == 200
     assert 'filename="Titleless Series #2.cbz"' in response.headers["content-disposition"]
+
+
+def test_opds_routes_are_sync_so_they_run_in_the_threadpool():
+    # OPDS apps fetch many feeds and covers at once. An async route would run
+    # its blocking queries on the event loop and stall the whole worker.
+    import inspect
+    from app.routers.opds import router
+
+    async_routes = [route.path for route in router.routes if inspect.iscoroutinefunction(route.endpoint)]
+    assert async_routes == []

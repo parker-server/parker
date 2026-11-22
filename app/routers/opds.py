@@ -529,7 +529,7 @@ def get_opds_reading_list_entries(request: Request, rows: list[tuple[ReadingList
 
 # 1. ROOT: List Libraries
 @router.get("/", name="root")
-async def opds_root(request: Request, user: OPDSUser, db: SessionDep):
+def opds_root(request: Request, user: OPDSUser, db: SessionDep):
 
     # If Superuser, fetch ALL libraries. If regular user, use assigned.
     if user.is_superuser:
@@ -603,7 +603,7 @@ async def opds_root(request: Request, user: OPDSUser, db: SessionDep):
 
 # 2. LIBRARY: List Series
 @router.get("/libraries/{library_id}", name="library")
-async def opds_library(
+def opds_library(
         library_id: int,
         request: Request,
         user: OPDSUser,
@@ -646,7 +646,7 @@ async def opds_library(
 
 
 @router.get("/continue-reading", name="opds_continue_reading")
-async def opds_continue_reading(
+def opds_continue_reading(
         request: Request,
         user: OPDSUser,
         db: SessionDep,
@@ -752,7 +752,7 @@ def render_recent_opds_series_feed(
 
 
 @router.get("/recently-added", name="opds_recently_added")
-async def opds_recently_added(
+def opds_recently_added(
         request: Request,
         user: OPDSUser,
         db: SessionDep,
@@ -771,7 +771,7 @@ async def opds_recently_added(
 
 
 @router.get("/recently-updated", name="opds_recently_updated")
-async def opds_recently_updated(
+def opds_recently_updated(
         request: Request,
         user: OPDSUser,
         db: SessionDep,
@@ -789,7 +789,7 @@ async def opds_recently_updated(
 
 
 @router.get("/collections", name="opds_collections")
-async def opds_collections(
+def opds_collections(
         request: Request,
         user: OPDSUser,
         db: SessionDep,
@@ -825,7 +825,7 @@ async def opds_collections(
 
 
 @router.get("/collections/{collection_id}", name="opds_collection")
-async def opds_collection(
+def opds_collection(
         collection_id: int,
         request: Request,
         user: OPDSUser,
@@ -875,7 +875,7 @@ async def opds_collection(
 
 
 @router.get("/reading-lists", name="opds_reading_lists")
-async def opds_reading_lists(
+def opds_reading_lists(
         request: Request,
         user: OPDSUser,
         db: SessionDep,
@@ -911,7 +911,7 @@ async def opds_reading_lists(
 
 
 @router.get("/reading-lists/{list_id}", name="opds_reading_list")
-async def opds_reading_list(
+def opds_reading_list(
         list_id: int,
         request: Request,
         user: OPDSUser,
@@ -963,7 +963,7 @@ async def opds_reading_list(
 # 3. SERIES: List Comics (Flattening Volumes)
 
 @router.get("/series/{series_id}", name="series")
-async def opds_series(
+def opds_series(
         series_id: int,
         request: Request,
         user: OPDSUser,
@@ -1002,7 +1002,7 @@ async def opds_series(
 
 
 @router.get("/series/{series_id}/volumes", name="opds_series_volumes")
-async def opds_series_volumes(
+def opds_series_volumes(
         series_id: int,
         request: Request,
         user: OPDSUser,
@@ -1038,7 +1038,7 @@ async def opds_series_volumes(
 
 
 @router.get("/volumes/{volume_id}", name="opds_volume")
-async def opds_volume(
+def opds_volume(
         volume_id: int,
         request: Request,
         user: OPDSUser,
