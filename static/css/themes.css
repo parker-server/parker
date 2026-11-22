@@ -1,0 +1,42 @@
+/*
+ * Site theme colors.
+ *
+ * base.html points Tailwind's `gray` and `blue` scales at these variables, so
+ * every `bg-gray-*` / `text-blue-*` class follows the active theme. Values are
+ * space-separated RGB channels so Tailwind's opacity classes (`bg-gray-900/50`)
+ * keep working. The defaults below are Tailwind's own gray and blue.
+ */
+:root {
+    /* Neutral scale (Tailwind gray) */
+    --gray-50: 249 250 251;
+    --gray-100: 243 244 246;
+    --gray-200: 229 231 235;
+    --gray-300: 209 213 219;
+    --gray-400: 156 163 175;
+    --gray-500: 107 114 128;
+    --gray-600: 75 85 99;
+    --gray-650: 61 71 86;
+    --gray-700: 55 65 81;
+    --gray-750: 45 55 72;
+    --gray-800: 31 41 55;
+    --gray-900: 17 24 39;
+    --gray-950: 3 7 18;
+
+    /* Accent scale (Tailwind blue), used by every `blue-*` class */
+    --accent-50: 239 246 255;
+    --accent-100: 219 234 254;
+    --accent-200: 191 219 254;
+    --accent-300: 147 197 253;
+    --accent-400: 96 165 250;
+    --accent-500: 59 130 246;
+    --accent-600: 37 99 235;
+    --accent-700: 29 78 216;
+    --accent-800: 30 64 175;
+    --accent-900: 30 58 138;
+    --accent-950: 23 37 84;
+
+    /* Detail-page backdrop (partials/dynamic_background.html) */
+    --backdrop-base-top: 17 24 39;
+    --backdrop-base-bottom: 0 0 0;
+    --backdrop-overlay: 17 24 39;
+}

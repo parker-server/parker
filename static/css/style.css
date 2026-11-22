@@ -11,7 +11,7 @@ body {
 
 /* Navigation */
 .nav-link {
-    color: #9ca3af;
+    color: rgb(var(--gray-400));
     text-decoration: none;
     padding: 0.5rem 1rem;
     border-radius: 0.5rem;
@@ -20,12 +20,12 @@ body {
 
 .nav-link:hover {
     color: #fff;
-    background: rgba(59, 130, 246, 0.1);
+    background: rgb(var(--accent-500) / 0.1);
 }
 
 /* Buttons */
 .btn-primary {
-    background: #3b82f6;
+    background: rgb(var(--accent-500));
     color: white;
     padding: 0.5rem 1.5rem;
     border-radius: 0.5rem;
@@ -36,11 +36,11 @@ body {
 }
 
 .btn-primary:hover {
-    background: #2563eb;
+    background: rgb(var(--accent-600));
 }
 
 .btn-secondary {
-    background: #374151;
+    background: rgb(var(--gray-700));
     color: white;
     padding: 0.5rem 1.5rem;
     border-radius: 0.5rem;
@@ -51,7 +51,7 @@ body {
 }
 
 .btn-secondary:hover {
-    background: #4b5563;
+    background: rgb(var(--gray-600));
 }
 
 /* Comic cards */
@@ -72,7 +72,7 @@ body {
     background: transparent;
     border: none;
     border-bottom: 2px solid transparent;
-    color: #9ca3af;
+    color: rgb(var(--gray-400));
     cursor: pointer;
     transition: all 0.2s;
     font-weight: 500;
@@ -83,8 +83,8 @@ body {
 }
 
 .tab-button.active {
-    color: #3b82f6;
-    border-bottom-color: #3b82f6;
+    color: rgb(var(--accent-500));
+    border-bottom-color: rgb(var(--accent-500));
 }
 
 /* Modal */
@@ -102,7 +102,7 @@ body {
 }
 
 .modal-content {
-    background: #1f2937;
+    background: rgb(var(--gray-800));
     padding: 2rem;
     border-radius: 1rem;
     max-width: 500px;
@@ -117,16 +117,16 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-    background: #1f2937;
+    background: rgb(var(--gray-800));
 }
 
 ::-webkit-scrollbar-thumb {
-    background: #4b5563;
+    background: rgb(var(--gray-600));
     border-radius: 6px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: #6b7280;
+    background: rgb(var(--gray-500));
 }
 
 /* Transitions */
@@ -148,11 +148,11 @@ button:focus {
 
 /* Hover effects */
 .hover\:bg-gray-750:hover {
-    background-color: #2d3748;
+    background-color: rgb(var(--gray-750));
 }
 
 .hover\:bg-gray-650:hover {
-    background-color: #3d4756;
+    background-color: rgb(var(--gray-650));
 }
 
 /* Utility classes */

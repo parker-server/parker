@@ -21,8 +21,34 @@
 
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        // Theme colors: gray and blue read from the variables in themes.css.
+        // `blue-fixed` keeps Tailwind's own blue for pages with their own color identity.
+        (function () {
+            const steps = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950];
+            const scale = (prefix) => Object.fromEntries(
+                steps.map((step) => [step, `rgb(var(--${prefix}-${step}) / <alpha-value>)`])
+            );
+            tailwind.config = {
+                theme: {
+                    extend: {
+                        colors: {
+                            gray: scale('gray'),
+                            blue: scale('accent'),
+                            'blue-fixed': {
+                                50: '#eff6ff', 100: '#dbeafe', 200: '#bfdbfe', 300: '#93c5fd',
+                                400: '#60a5fa', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8',
+                                800: '#1e40af', 900: '#1e3a8a', 950: '#172554',
+                            },
+                        },
+                    },
+                },
+            };
+        })();
+    </script>
 
     <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url('static/css/themes.css') }}?v={{ asset_version('static/css/themes.css') }}">
     <link rel="stylesheet" href="{{ url('static/css/style.css') }}?v={{ asset_version('static/css/style.css') }}">
     <style>
         [x-cloak] { display: none !important; }
