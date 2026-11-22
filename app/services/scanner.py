@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
+from app.core import setting_keys
 from app.core.settings_loader import get_cached_setting
 from app.core.path_utils import compute_relative_path
 from app.models.library import Library
@@ -197,12 +198,12 @@ class LibraryScanner:
             writer_proc.start()
 
             summary_timeout = int(
-                get_cached_setting("system.parallel_metadata_writer_summary_timeout_seconds", 180)
+                get_cached_setting(setting_keys.SYSTEM_PARALLEL_METADATA_WRITER_SUMMARY_TIMEOUT_SECONDS, 180)
             )
             summary_timeout = max(10, summary_timeout)
 
             join_timeout = int(
-                get_cached_setting("system.parallel_metadata_writer_join_timeout_seconds", 30)
+                get_cached_setting(setting_keys.SYSTEM_PARALLEL_METADATA_WRITER_JOIN_TIMEOUT_SECONDS, 30)
             )
             join_timeout = max(1, join_timeout)
 
@@ -216,7 +217,7 @@ class LibraryScanner:
                     else:
                         self.logger.info(f"Using exactly {worker_limit} worker(s) for metadata extraction")
                 else:
-                    requested_workers = int(get_cached_setting("system.parallel_metadata_workers", 0))
+                    requested_workers = int(get_cached_setting(setting_keys.SYSTEM_PARALLEL_METADATA_WORKERS, 0))
                     requested_label = "(Auto)" if requested_workers <= 0 else requested_workers
                     self.logger.info(
                         f"Requested {requested_label} worker(s) for parallel metadata extraction"

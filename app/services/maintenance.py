@@ -6,6 +6,7 @@ import logging
 import os
 
 from app.config import settings
+from app.core import setting_keys
 from app.core.settings_loader import get_system_setting
 from app.core.path_utils import resolve_absolute_path
 from app.models.tags import Character, Team, Location, Genre
@@ -326,7 +327,7 @@ class MaintenanceService:
         """
         Delete terminal job history rows older than the configured retention window.
         """
-        retention_days = max(1, get_system_setting("jobs.retention_days", 30))
+        retention_days = max(1, get_system_setting(setting_keys.JOBS_RETENTION_DAYS, 30))
 
         cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
 

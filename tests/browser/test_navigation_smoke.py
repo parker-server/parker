@@ -1,10 +1,10 @@
 import pytest
 
+from app.core import setting_keys
 from app.models.collection import Collection, CollectionItem
 from app.models.comic import Comic, Volume
 from app.models.series import Series
 from app.models.tags import Character
-from app.core.comic_helpers import DOWNLOADS_ENABLED_SETTING
 from app.models.setting import SystemSetting
 from app.models.user import User
 from tests.factories import create_comic
@@ -305,9 +305,9 @@ def test_comic_detail_download_option_follows_user_permission(page, browser_serv
 def _set_downloads_enabled(browser_server, enabled: bool) -> None:
     session = browser_server["db_factory"]()
     try:
-        setting = session.query(SystemSetting).filter(SystemSetting.key == DOWNLOADS_ENABLED_SETTING).first()
+        setting = session.query(SystemSetting).filter(SystemSetting.key == setting_keys.SERVER_DOWNLOADS_ENABLED).first()
         if setting is None:
-            setting = SystemSetting(key=DOWNLOADS_ENABLED_SETTING, value="", category="server", data_type="bool")
+            setting = SystemSetting(key=setting_keys.SERVER_DOWNLOADS_ENABLED, value="", category="server", data_type="bool")
             session.add(setting)
         setting.value = "true" if enabled else "false"
         session.commit()

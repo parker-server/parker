@@ -3,6 +3,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy.orm import Session
 
+from app.core import setting_keys
 from app.database import SessionLocal
 from app.services.backup import BackupService
 from app.services.notifications import run_notification_checks
@@ -79,8 +80,8 @@ class SchedulerService:
         logger.info("Rescheduling system tasks...")
 
         for job_id, config in self._TASK_REGISTRY.items():
-            # 1. Construct the convention-based key
-            setting_key = f"system.task.{job_id}.interval"
+            # 1. Look up the task's interval setting
+            setting_key = setting_keys.task_interval(job_id)
 
             # 2. Fetch value (or default)
             interval = self._get_setting_value(setting_key, config["default_interval"])

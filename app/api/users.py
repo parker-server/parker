@@ -11,6 +11,7 @@ from sqlalchemy import func, not_, and_
 
 from app.api.deps import SessionDep, AdminUser, CurrentUser, PaginatedResponse, PaginationParams, release_db_connection
 from app.config import settings
+from app.core import setting_keys
 from app.core.comic_helpers import get_thumbnail_url, get_banned_comic_condition, get_series_age_restriction
 from app.core.security import verify_password, get_password_hash, forget_password_change_status
 from app.models.comic import Comic, Volume
@@ -33,7 +34,7 @@ MAX_AVATAR_SIZE_BYTES = 5 * 1024 * 1024 # 5 MB
 
 
 def _ensure_opds_enabled(db: SessionDep) -> None:
-    if not SettingsService(db).get("server.opds_enabled"):
+    if not SettingsService(db).get(setting_keys.SERVER_OPDS_ENABLED):
         raise HTTPException(status_code=503, detail="OPDS Support is disabled on this server.")
 
 # Schemas
@@ -113,7 +114,7 @@ async def get_user_dashboard(db: SessionDep, current_user: CurrentUser):
     """
 
     settings_svc = SettingsService(db)
-    opds_enabled = settings_svc.get("server.opds_enabled")
+    opds_enabled = settings_svc.get(setting_keys.SERVER_OPDS_ENABLED)
 
     stats_service = StatisticsService(db, current_user)
     dashboard_payload = stats_service.get_dashboard_payload()

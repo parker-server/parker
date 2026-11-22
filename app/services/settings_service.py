@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 import multiprocessing
+from app.core import setting_keys
 from app.models.setting import SystemSetting
 from typing import Any, List, Dict, Optional
 
@@ -10,10 +11,6 @@ from app.core.login_backgrounds import SOLID_COLORS, STATIC_COVERS
 SERVER_DISPLAY_NAME_MAX_LENGTH = 32
 SCANNING_BATCH_WINDOW_MIN_SECONDS = 60
 SETTING_RUNTIME_METADATA_FIELDS = ("min_value", "display_group")
-
-# Declared here, next to its default, so problem reports and the notification
-# registry can both import it without importing each other.
-PROBLEM_REPORTS_ENABLED_SETTING = "features.problem_reports_enabled"
 
 
 class SettingValidationError(ValueError):
@@ -71,13 +68,13 @@ class SettingsService:
     # Define defaults here. The app will ensure these exist on startup.
     DEFAULTS = [
         {
-            "key": "general.app_name", "value": "Parker",
+            "key": setting_keys.GENERAL_APP_NAME, "value": "Parker",
             "description": f"Display name shown on the login and About pages. Top navigation always uses Parker branding. Max {SERVER_DISPLAY_NAME_MAX_LENGTH} characters.",
             "category": "general", "data_type": "string",
             "label": "Server Display Name"
         },
         {
-            "key": "scanning.batch_window", "value": "600",
+            "key": setting_keys.SCANNING_BATCH_WINDOW, "value": "600",
             "category": "scanning", "data_type": "int",
             "label": "Scan Batch Window (Sec)",
             "description": f"Time to wait for file operations to settle. Minimum {SCANNING_BATCH_WINDOW_MIN_SECONDS} seconds.",
@@ -86,7 +83,7 @@ class SettingsService:
             "unit_label": "seconds",
         },
         {
-            "key": "ui.login_background_style", "value": "cycling_static_covers",
+            "key": setting_keys.UI_LOGIN_BACKGROUND_STYLE, "value": "cycling_static_covers",
             "category": "appearance", "data_type": "select",
             "label": "Login Background Style",
             "description": "Choose what appears behind the login form.",
@@ -99,30 +96,30 @@ class SettingsService:
             ]
         },
         {
-            "key": "ui.login_solid_color",
+            "key": setting_keys.UI_LOGIN_SOLID_COLOR,
             "value": "superman_classic",
             "category": "appearance",
             "data_type": "select",
             "label": "Login Solid Color",
             "description": "Choose a color gradient.",
             "display_group": "Login Page",
-            "depends_on": { "key": "ui.login_background_style", "value": "solid_color" },
+            "depends_on": { "key": setting_keys.UI_LOGIN_BACKGROUND_STYLE, "value": "solid_color" },
             "options": generate_color_options()
         },
         {
-            "key": "ui.login_static_cover",
+            "key": setting_keys.UI_LOGIN_STATIC_COVER,
             "value": "amazing-fantasy-15.webp",
             "category": "appearance",
             "data_type": "select",
             "label": "Login Static Cover",
             "description": "Choose an iconic comic cover.",
             "display_group": "Login Page",
-            "depends_on": { "key": "ui.login_background_style", "value": "static_cover" },
+            "depends_on": { "key": setting_keys.UI_LOGIN_BACKGROUND_STYLE, "value": "static_cover" },
             "options": generate_cover_options()
         },
 
         {
-            "key": "ui.background_style", "value": "NONE",
+            "key": setting_keys.UI_BACKGROUND_STYLE, "value": "NONE",
             "category": "appearance", "data_type": "select",
             "label": "Background Style",
             "display_group": "Library Presentation",
@@ -134,7 +131,7 @@ class SettingsService:
             ]
         },
         {
-            "key": "ui.pagination_mode",
+            "key": setting_keys.UI_PAGINATION_MODE,
             "value": "infinite",
             "category": "appearance",
             "data_type": "select",
@@ -147,7 +144,7 @@ class SettingsService:
             ]
         },
         {
-            "key": "ui.series_issue_volume_dividers",
+            "key": setting_keys.UI_SERIES_ISSUE_VOLUME_DIVIDERS,
             "value": "true",
             "category": "appearance",
             "data_type": "bool",
@@ -156,7 +153,7 @@ class SettingsService:
             "display_group": "Browsing Behavior",
         },
         {
-            "key": "ui.auto_redirect_single_volume_series",
+            "key": setting_keys.UI_AUTO_REDIRECT_SINGLE_VOLUME_SERIES,
             "value": "false",
             "category": "appearance",
             "data_type": "bool",
@@ -165,14 +162,14 @@ class SettingsService:
             "display_group": "Browsing Behavior",
         },
         {
-            "key": "ui.on_deck.staleness_weeks", "value": "4",
+            "key": setting_keys.UI_ON_DECK_STALENESS_WEEKS, "value": "4",
             "category": "appearance", "data_type": "int",
             "label": "On Deck Staleness (Weeks)",
             "description": "Hide 'Continue Reading' items if not touched for this many weeks. Set to 0 to disable.",
             "display_group": "Browsing Behavior",
         },
         {
-            "key": "system.task.backup.interval",
+            "key": setting_keys.SYSTEM_TASK_BACKUP_INTERVAL,
             "value": "weekly",
             "category": "system",
             "data_type": "select",
@@ -187,7 +184,7 @@ class SettingsService:
             ]
         },
         {
-            "key": "system.task.cleanup.interval",
+            "key": setting_keys.SYSTEM_TASK_CLEANUP_INTERVAL,
             "value": "monthly",
             "category": "system",
             "data_type": "select",
@@ -201,7 +198,7 @@ class SettingsService:
             ]
         },
         {
-            "key": "system.task.scan.interval",
+            "key": setting_keys.SYSTEM_TASK_SCAN_INTERVAL,
             "value": "daily",
             "category": "system",
             "data_type": "select",
@@ -215,7 +212,7 @@ class SettingsService:
             ]
         },
         {
-            "key": "jobs.retention_days",
+            "key": setting_keys.JOBS_RETENTION_DAYS,
             "value": "30",
             "category": "system",
             "data_type": "int",
@@ -227,7 +224,7 @@ class SettingsService:
             "unit_label": "day",
         },
         {
-            "key": "notifications.retention_days",
+            "key": setting_keys.NOTIFICATIONS_RETENTION_DAYS,
             "value": "30",
             "category": "system",
             "data_type": "int",
@@ -239,7 +236,7 @@ class SettingsService:
             "unit_label": "day",
         },
         {
-            "key": "system.parallel_metadata_processing",
+            "key": setting_keys.SYSTEM_PARALLEL_METADATA_PROCESSING,
             "value": "false",
             "category": "system",
             "data_type": "bool",
@@ -248,7 +245,7 @@ class SettingsService:
             "display_group": "Metadata Processing",
         },
         {
-            "key": "system.parallel_metadata_workers",
+            "key": setting_keys.SYSTEM_PARALLEL_METADATA_WORKERS,
             "value": "0",
             "category": "system",
             "data_type": "select",
@@ -258,7 +255,7 @@ class SettingsService:
             "options": generate_worker_options()
         },
         {
-            "key": "system.parallel_metadata_writer_summary_timeout_seconds",
+            "key": setting_keys.SYSTEM_PARALLEL_METADATA_WRITER_SUMMARY_TIMEOUT_SECONDS,
             "value": "180",
             "category": "system",
             "data_type": "int",
@@ -267,7 +264,7 @@ class SettingsService:
             "display_group": "Metadata Processing",
         },
         {
-            "key": "system.parallel_metadata_writer_join_timeout_seconds",
+            "key": setting_keys.SYSTEM_PARALLEL_METADATA_WRITER_JOIN_TIMEOUT_SECONDS,
             "value": "30",
             "category": "system",
             "data_type": "int",
@@ -276,7 +273,7 @@ class SettingsService:
             "display_group": "Metadata Processing",
         },
         {
-            "key": "system.parallel_image_processing",
+            "key": setting_keys.SYSTEM_PARALLEL_IMAGE_PROCESSING,
             "value": "false",
             "category": "system",
             "data_type": "bool",
@@ -285,7 +282,7 @@ class SettingsService:
             "display_group": "Thumbnail Processing",
         },
         {
-            "key": "system.parallel_image_workers",
+            "key": setting_keys.SYSTEM_PARALLEL_IMAGE_WORKERS,
             "value": "0",
             "category": "system",
             "data_type": "select",
@@ -295,7 +292,7 @@ class SettingsService:
             "options": generate_worker_options()
         },
         {
-            "key": "system.parallel_image_writer_summary_timeout_seconds",
+            "key": setting_keys.SYSTEM_PARALLEL_IMAGE_WRITER_SUMMARY_TIMEOUT_SECONDS,
             "value": "180",
             "category": "system",
             "data_type": "int",
@@ -304,7 +301,7 @@ class SettingsService:
             "display_group": "Thumbnail Processing",
         },
         {
-            "key": "system.parallel_image_writer_join_timeout_seconds",
+            "key": setting_keys.SYSTEM_PARALLEL_IMAGE_WRITER_JOIN_TIMEOUT_SECONDS,
             "value": "30",
             "category": "system",
             "data_type": "int",
@@ -314,12 +311,12 @@ class SettingsService:
         },
 
         {
-            "key": "backup.retention_days", "value": "7",
+            "key": setting_keys.BACKUP_RETENTION_DAYS, "value": "7",
             "category": "backup", "data_type": "int",
             "label": "Backup Retention (Days)"
         },
         {
-            "key": "general.log_level",
+            "key": setting_keys.GENERAL_LOG_LEVEL,
             "value": "INFO",
             "category": "general",
             "data_type": "select",
@@ -333,25 +330,25 @@ class SettingsService:
             ]
         },
         {
-            "key": "server.opds_enabled", "value": "false",
+            "key": setting_keys.SERVER_OPDS_ENABLED, "value": "false",
             "category": "server", "data_type": "bool",
             "label": "Enable OPDS Feed",
             "description": "Allows external readers (Chunky, Panels) to access library via /opds using Basic Auth."
         },
         {
-            "key": "server.downloads_enabled", "value": "true",
+            "key": setting_keys.SERVER_DOWNLOADS_ENABLED, "value": "true",
             "category": "server", "data_type": "bool",
             "label": "Allow Comic Downloads",
             "description": "Lets users download original comic files from the web UI and OPDS. Turn off per user in Users. OPDS readers need downloads to open comics. Admins can always download."
         },
         {
-            "key": "server.update_check_enabled", "value": "true",
+            "key": setting_keys.SERVER_UPDATE_CHECK_ENABLED, "value": "true",
             "category": "server", "data_type": "bool",
             "label": "Check for Updates",
             "description": "Checks GitHub for a newer Parker release once a day and notifies admins, and shows update badges on the admin dashboard and About page. Turning this off stops Parker contacting GitHub for updates."
         },
         {
-            "key": "integrations.external_reviews.enabled",
+            "key": setting_keys.INTEGRATIONS_EXTERNAL_REVIEWS_ENABLED,
             "value": "false",
             "category": "server",
             "data_type": "bool",
@@ -360,7 +357,7 @@ class SettingsService:
             "display_group": "External Reviews",
         },
         {
-            "key": "features.notifications_enabled",
+            "key": setting_keys.FEATURES_NOTIFICATIONS_ENABLED,
             "value": "true",
             "category": "features",
             "data_type": "bool",
@@ -368,7 +365,7 @@ class SettingsService:
             "description": "Shows the notification bell and lets Parker tell users about things like new features. Turning this off hides the bell and stops new notifications.",
         },
         {
-            "key": PROBLEM_REPORTS_ENABLED_SETTING,
+            "key": setting_keys.FEATURES_PROBLEM_REPORTS_ENABLED,
             "value": "true",
             "category": "features",
             "data_type": "bool",
@@ -377,7 +374,7 @@ class SettingsService:
         },
         {
             # Internal: the last version whose What's New entries were announced.
-            "key": "notifications.whats_new_last_version",
+            "key": setting_keys.NOTIFICATIONS_WHATS_NEW_LAST_VERSION,
             "value": "",
             "category": "system",
             "data_type": "string",
@@ -386,7 +383,7 @@ class SettingsService:
         },
         {
             # Internal: the last year whose Year in Review was announced.
-            "key": "notifications.year_in_review_last_year",
+            "key": setting_keys.NOTIFICATIONS_YEAR_IN_REVIEW_LAST_YEAR,
             "value": "0",
             "category": "system",
             "data_type": "int",
@@ -395,7 +392,7 @@ class SettingsService:
         },
         {
             # Internal: the last newer release admins were told about.
-            "key": "notifications.update_last_version",
+            "key": setting_keys.NOTIFICATIONS_UPDATE_LAST_VERSION,
             "value": "",
             "category": "system",
             "data_type": "string",
@@ -466,10 +463,10 @@ class SettingsService:
                 if "depends_on" in default:
                     setting.depends_on = default["depends_on"]
 
-                if key == "ui.login_static_cover" and setting.value not in STATIC_COVERS:
+                if key == setting_keys.UI_LOGIN_STATIC_COVER and setting.value not in STATIC_COVERS:
                     setting.value = default["value"]
 
-                if key == "ui.login_background_style" and setting.value == "random_covers":
+                if key == setting_keys.UI_LOGIN_BACKGROUND_STYLE and setting.value == "random_covers":
                     setting.value = default["value"]
 
                 if "min_value" in default:
@@ -519,7 +516,7 @@ class SettingsService:
         else:
             normalized_value = str(value).strip()
 
-            if key == "general.app_name" and len(normalized_value) > SERVER_DISPLAY_NAME_MAX_LENGTH:
+            if key == setting_keys.GENERAL_APP_NAME and len(normalized_value) > SERVER_DISPLAY_NAME_MAX_LENGTH:
                 raise SettingValidationError(
                     f"Server display name must be {SERVER_DISPLAY_NAME_MAX_LENGTH} characters or fewer"
                 )

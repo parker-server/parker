@@ -13,13 +13,14 @@ from typing import Any, Iterable, Optional
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
+from app.core import setting_keys
 from app.core.comic_helpers import get_comic_age_restriction
 from app.models.comic import Comic, Volume
 from app.models.problem_report import ProblemReport
 from app.models.series import Series
 from app.models.user import User
 from app.services.notifications import NotificationService
-from app.services.settings_service import PROBLEM_REPORTS_ENABLED_SETTING, SettingsService
+from app.services.settings_service import SettingsService
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +67,7 @@ def _utcnow() -> datetime:
 
 def problem_reports_enabled(db: Session) -> bool:
     # A missing setting counts as enabled so older installs keep working.
-    return SettingsService(db).get(PROBLEM_REPORTS_ENABLED_SETTING) is not False
+    return SettingsService(db).get(setting_keys.FEATURES_PROBLEM_REPORTS_ENABLED) is not False
 
 
 def user_can_report(user: User, db: Session) -> bool:

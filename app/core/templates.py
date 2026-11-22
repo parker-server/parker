@@ -5,6 +5,7 @@ from typing import NoReturn
 from fastapi.templating import Jinja2Templates
 from jinja2 import TemplateRuntimeError
 from app.config import settings
+from app.core import setting_keys
 from app.core.settings_loader import get_cached_setting
 from app.core.utils import get_route_map
 from app.services.notifications.kinds import FALLBACK_ICON, KINDS
@@ -77,7 +78,7 @@ def inject_ui_settings(request):
     This ensures changes in settings are reflected immediately.
     """
     return {
-        "background_style": get_cached_setting("ui.background_style")
+        "background_style": get_cached_setting(setting_keys.UI_BACKGROUND_STYLE)
     }
 
 # Register the processor by appending it to the list

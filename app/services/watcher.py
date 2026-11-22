@@ -5,6 +5,7 @@ from pathlib import Path
 from sqlalchemy.orm import selectinload
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+from app.core import setting_keys
 from app.database import SessionLocal
 from app.models.library import Library
 from app.services.scan_manager import scan_manager
@@ -252,11 +253,11 @@ library_watcher = LibraryWatcher()
 
 
 def _get_batch_window_seconds() -> int:
-    raw_value = get_cached_setting("scanning.batch_window", 600)
+    raw_value = get_cached_setting(setting_keys.SCANNING_BATCH_WINDOW, 600)
     try:
         seconds = int(raw_value)
     except (TypeError, ValueError):
         return 600
 
-    min_value = SettingsService.min_value_for("scanning.batch_window") or 0
+    min_value = SettingsService.min_value_for(setting_keys.SCANNING_BATCH_WINDOW) or 0
     return max(seconds, min_value)

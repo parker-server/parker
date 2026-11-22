@@ -4,6 +4,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from app.core import setting_keys
 from app.core.comic_helpers import get_smart_cover, user_can_download
 from app.api.deps import SessionDep, ComicDep, VolumeDep, SeriesDep, LibraryDep, CurrentUser
 from app.config import settings
@@ -188,7 +189,7 @@ def series_detail(
         show_series: bool = Query(False)
 ):
     """Series detail page"""
-    if not show_series and get_cached_setting("ui.auto_redirect_single_volume_series", False):
+    if not show_series and get_cached_setting(setting_keys.UI_AUTO_REDIRECT_SINGLE_VOLUME_SERIES, False):
         volume_ids = (
             db.query(Volume.id)
             .filter(Volume.series_id == series.id)
@@ -243,7 +244,7 @@ def comic_detail(request: Request, comic: ComicDep, db: SessionDep, user: Curren
 def login_page(request: Request, db: SessionDep):
 
     svc = SettingsService(db)
-    login_background_style = svc.get("ui.login_background_style")
+    login_background_style = svc.get(setting_keys.UI_LOGIN_BACKGROUND_STYLE)
     if login_background_style == "random_covers":
         login_background_style = "cycling_static_covers"
 
@@ -254,14 +255,14 @@ def login_page(request: Request, db: SessionDep):
 
     # Add specific context based on style
     if login_background_style == "solid_color":
-        color_key = svc.get("ui.login_solid_color") or "gotham_night"
+        color_key = svc.get(setting_keys.UI_LOGIN_SOLID_COLOR) or "gotham_night"
         if color_key not in SOLID_COLORS:
             color_key = "gotham_night"  # Handle stale DB values
         color_data = SOLID_COLORS.get(color_key)
         context["login_solid_color"] = color_data["gradient"]
 
     elif login_background_style == "static_cover":
-        cover_filename = svc.get("ui.login_static_cover") or "amazing-fantasy-15.webp"
+        cover_filename = svc.get(setting_keys.UI_LOGIN_STATIC_COVER) or "amazing-fantasy-15.webp"
         if cover_filename not in STATIC_COVERS:
             cover_filename = "amazing-fantasy-15.webp"  # Handle stale DB values
         context["login_static_cover"] = cover_filename
@@ -317,7 +318,7 @@ def following_page(request: Request, user: CurrentUser):
 
 @router.get("/user/settings", response_class=HTMLResponse, name="user_settings")
 def settings_page(request: Request, db: SessionDep, user: CurrentUser):
-    opds_enabled = bool(SettingsService(db).get("server.opds_enabled"))
+    opds_enabled = bool(SettingsService(db).get(setting_keys.SERVER_OPDS_ENABLED))
     return templates.TemplateResponse(
         request=request,
         name="user/settings.html",
@@ -345,7 +346,7 @@ def whats_new_page(request: Request, user: CurrentUser):
 
 @router.get("/user/opds-keys", response_class=HTMLResponse, name="user_opds_keys")
 def opds_keys_page(request: Request, db: SessionDep, user: CurrentUser):
-    if not SettingsService(db).get("server.opds_enabled"):
+    if not SettingsService(db).get(setting_keys.SERVER_OPDS_ENABLED):
         raise HTTPException(status_code=404, detail="OPDS keys not found")
     return templates.TemplateResponse(request=request, name="user/opds_keys.html")
 

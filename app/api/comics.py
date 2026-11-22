@@ -10,6 +10,7 @@ import random
 from pydantic import BaseModel, Field
 from PIL import Image
 
+from app.core import setting_keys
 from app.core.comic_helpers import (get_reading_time, get_format_sort_index, get_issue_number_sort_keys,
                                     REVERSE_NUMBERING_SERIES,
                                     assert_user_can_view_comic, get_comic_age_restriction,
@@ -39,7 +40,6 @@ from app.services.archive import ComicArchive
 from app.services.search import SearchService
 from app.services.comic_ratings import build_parker_rating_state
 from app.services.external_reviews import (
-    EXTERNAL_REVIEWS_ENABLED_SETTING,
     ExternalReviewService,
 )
 from app.services.scan_manager import scan_manager
@@ -105,7 +105,7 @@ def _get_web_link_presentation(web_url: str | None) -> tuple[str | None, str | N
 
 
 def _external_reviews_enabled(db: Session) -> bool:
-    return bool(SettingsService(db).get(EXTERNAL_REVIEWS_ENABLED_SETTING))
+    return bool(SettingsService(db).get(setting_keys.INTEGRATIONS_EXTERNAL_REVIEWS_ENABLED))
 
 @router.post("/search", response_model=SearchResponse, name="search")
 def search_comics(request: SearchRequest, db: SessionDep, current_user: CurrentUser):

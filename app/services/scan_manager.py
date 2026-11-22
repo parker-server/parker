@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from sqlalchemy import asc
 from sqlalchemy.exc import IntegrityError, OperationalError
 
+from app.core import setting_keys
 from app.core.settings_loader import get_cached_setting
 from app.database import SessionLocal, refresh_query_planner_statistics
 from app.models import ScanJob, Library
@@ -17,7 +18,6 @@ from app.services.thumbnailer import ThumbnailService
 from app.services.metadata import rehydrate_library_metadata_from_cache
 from app.services.external_reviews import (
     COMICBOOKROUNDUP_PROVIDER,
-    EXTERNAL_REVIEWS_ENABLED_SETTING,
     STATUS_FAILED as LOOKUP_STATUS_FAILED,
     refresh_external_reviews_for_comic,
 )
@@ -365,7 +365,7 @@ class ScanManager:
                 self.logger.info(f"Starting SCAN job {job_id}")
                 scanner = LibraryScanner(library, db_scan)
 
-                use_parallel = get_cached_setting("system.parallel_metadata_processing", False)
+                use_parallel = get_cached_setting(setting_keys.SYSTEM_PARALLEL_METADATA_PROCESSING, False)
 
                 self.logger.info(f"Parallel metadata processing is set to {use_parallel}")
 
@@ -456,7 +456,7 @@ class ScanManager:
             self.logger.info(f"Starting THUMBNAIL job {job_id}")
 
             service = ThumbnailService(db_thumb, library_id)
-            use_parallel = get_cached_setting('system.parallel_image_processing', False)
+            use_parallel = get_cached_setting(setting_keys.SYSTEM_PARALLEL_IMAGE_PROCESSING, False)
 
             self.logger.info(f"Parallel image processing is set to {use_parallel}")
 
@@ -597,7 +597,7 @@ class ScanManager:
         error = None
 
         try:
-            if not get_cached_setting(EXTERNAL_REVIEWS_ENABLED_SETTING, False):
+            if not get_cached_setting(setting_keys.INTEGRATIONS_EXTERNAL_REVIEWS_ENABLED, False):
                 summary["skipped"] = "External reviews are disabled"
             else:
                 self._wait_for_external_review_interval()

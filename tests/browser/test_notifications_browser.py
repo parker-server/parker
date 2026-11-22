@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 import pytest
 
+from app.core import setting_keys
 from app.core.security import create_access_token
 from app.core.templates import templates
 from app.models.comic import Volume
@@ -10,7 +11,7 @@ from app.models.notification import Notification
 from app.models.setting import SystemSetting
 from app.models.user import User
 from app.services.notifications.producers import ScanInfo, notify_follow_arrivals
-from app.services.notifications.service import NOTIFICATIONS_ENABLED_SETTING, NotificationService
+from app.services.notifications.service import NotificationService
 
 
 @pytest.fixture
@@ -19,7 +20,7 @@ def notifications_state(browser_server, monkeypatch):
     session = browser_server["db_factory"]()
     try:
         session.query(Notification).delete()
-        session.query(SystemSetting).filter(SystemSetting.key == NOTIFICATIONS_ENABLED_SETTING).delete()
+        session.query(SystemSetting).filter(SystemSetting.key == setting_keys.FEATURES_NOTIFICATIONS_ENABLED).delete()
         user = session.get(User, browser_server["seed"]["user_id"])
         user.notification_preferences = None
         username = user.username
@@ -33,7 +34,7 @@ def notifications_state(browser_server, monkeypatch):
     monkeypatch.setitem(
         templates.env.globals,
         "get_system_setting",
-        lambda key, default=None: True if key == NOTIFICATIONS_ENABLED_SETTING else original(key, default),
+        lambda key, default=None: True if key == setting_keys.FEATURES_NOTIFICATIONS_ENABLED else original(key, default),
     )
     return {"token": create_access_token(username)}
 
@@ -60,7 +61,7 @@ def _set_enabled(browser_server, enabled):
     session = browser_server["db_factory"]()
     try:
         session.add(SystemSetting(
-            key=NOTIFICATIONS_ENABLED_SETTING,
+            key=setting_keys.FEATURES_NOTIFICATIONS_ENABLED,
             value="true" if enabled else "false",
             category="features",
             data_type="bool",

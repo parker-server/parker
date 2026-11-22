@@ -4,6 +4,7 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from app.api.deps import SessionDep
+from app.core import setting_keys
 from app.models.user import User
 from app.core.security import verify_password
 from app.services.opds_tokens import authenticate_opds_token, mark_opds_token_used
@@ -24,7 +25,7 @@ def get_current_user_opds(
     """
     # 1. Check Global Setting
     settings_service = SettingsService(db)
-    if not settings_service.get("server.opds_enabled"):
+    if not settings_service.get(setting_keys.SERVER_OPDS_ENABLED):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="OPDS Support is disabled on this server."

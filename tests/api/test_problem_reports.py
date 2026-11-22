@@ -1,11 +1,12 @@
 from app.api.deps import get_current_user
+from app.core import setting_keys
 from app.main import app
 from app.models.comic import Volume
 from app.models.problem_report import ProblemReport
 from app.models.series import Series
 from app.models.setting import SystemSetting
 from app.models.user import User
-from app.services.problem_reports import PROBLEM_REPORTS_ENABLED_SETTING, ProblemReportService
+from app.services.problem_reports import ProblemReportService
 from tests.factories import create_comic, create_library_with_root
 
 
@@ -27,7 +28,7 @@ def _seed_comic(db, user=None, *, name="Saga", age_rating=None, grant_access=Tru
 
 def _turn_off(db):
     db.add(SystemSetting(
-        key=PROBLEM_REPORTS_ENABLED_SETTING,
+        key=setting_keys.FEATURES_PROBLEM_REPORTS_ENABLED,
         value="false",
         category="features",
         data_type="bool",

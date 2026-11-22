@@ -7,6 +7,7 @@ from sqlalchemy.orm import joinedload
 from fastapi import HTTPException
 
 from app.api.deps import SessionDep
+from app.core import setting_keys
 from app.models.comic import Comic, Volume
 from app.models.series import Series
 from app.models.tags import Character, Team, Location, Genre
@@ -110,9 +111,6 @@ def is_comic_age_restricted_for_user(comic: Comic, user) -> bool:
     return False
 
 
-DOWNLOADS_ENABLED_SETTING = "server.downloads_enabled"
-
-
 def user_can_download(user, db: SessionDep) -> bool:
     """Return True if the user may download original comic files."""
     if user.is_superuser:
@@ -122,7 +120,7 @@ def user_can_download(user, db: SessionDep) -> bool:
     from app.services.settings_service import SettingsService
 
     # A missing setting counts as enabled so older installs keep working.
-    if SettingsService(db).get(DOWNLOADS_ENABLED_SETTING) is False:
+    if SettingsService(db).get(setting_keys.SERVER_DOWNLOADS_ENABLED) is False:
         return False
 
     return bool(user.can_download)
