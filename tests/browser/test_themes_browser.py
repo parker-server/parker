@@ -11,6 +11,7 @@ def test_tailwind_gray_and_blue_follow_theme_variables(page, browser_server):
     eyebrow = "p.text-blue-300"
     card = "a[href$='/timelines']"
     creator_link = "a[href$='/insights/creator-chemistry'] .text-blue-fixed-300"
+    timeline_link = "a[href$='/timelines'] .text-gray-300"
 
     # Defaults match Tailwind's own palette, opacity classes included.
     assert _color(page, "body", "backgroundColor") == "rgb(17, 24, 39)"
@@ -34,8 +35,10 @@ def test_tailwind_gray_and_blue_follow_theme_variables(page, browser_server):
         timeout=2000,
     )
     assert _color(page, eyebrow, "color") == "rgb(7, 8, 9)"
-    # Creator chemistry keeps its own blue whatever the accent.
+    # Creator chemistry keeps its own blue whatever the accent, and the
+    # timeline card stays neutral so no accent matches a chemistry color.
     assert _color(page, creator_link, "color") == "rgb(147, 197, 253)"
+    assert _color(page, timeline_link, "color") == "rgb(209, 213, 219)"
 
 
 def _html_theme(page) -> list[str]:
