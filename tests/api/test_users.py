@@ -3,12 +3,14 @@ from pathlib import Path
 from unittest.mock import patch
 
 from app.api.users import MAX_AVATAR_SIZE_BYTES, get_stats_service
+from app.core import setting_keys
 from app.core.security import get_password_hash, verify_password
 from app.main import app
 from app.models.comic import Comic, Volume
 from app.models.pull_list import PullList, PullListItem
 from app.models.reading_progress import ReadingProgress
 from app.models.series import Series
+from app.models.setting import SystemSetting
 from app.models.user import User
 from app.services.opds_tokens import OPDS_TOKEN_PREFIX
 from tests.factories import create_library_with_root
@@ -170,13 +172,58 @@ def test_get_and_update_preferences(auth_client):
 
     after = auth_client.get("/api/users/me/preferences")
     assert after.status_code == 200
-    assert after.json() == {"social_insights_enabled": False, "monthly_reading_goal": 15}
+    assert after.json() == {
+        "social_insights_enabled": False,
+        "monthly_reading_goal": 15,
+        "appearance": {"theme": None, "accent": None},
+    }
 
 
 def test_update_preferences_rejects_invalid_goal(auth_client):
     response = auth_client.patch("/api/users/me/preferences", json={"monthly_reading_goal": 0})
 
     assert response.status_code == 422
+
+
+def test_update_preferences_saves_and_resets_appearance(auth_client, db, normal_user):
+    saved = auth_client.patch("/api/users/me/preferences", json={"appearance": {"theme": "noir", "accent": "red"}})
+    assert saved.status_code == 200
+    assert auth_client.get("/api/users/me/preferences").json()["appearance"] == {"theme": "noir", "accent": "red"}
+
+    # Other preference changes leave the theme alone.
+    auth_client.patch("/api/users/me/preferences", json={"monthly_reading_goal": 12})
+    db.refresh(normal_user)
+    assert normal_user.appearance == {"theme": "noir", "accent": "red"}
+
+    auth_client.patch("/api/users/me/preferences", json={"appearance": {"theme": None, "accent": "violet"}})
+    db.refresh(normal_user)
+    assert normal_user.appearance == {"accent": "violet"}
+
+    reset = auth_client.patch("/api/users/me/preferences", json={"appearance": None})
+    assert reset.status_code == 200
+    db.refresh(normal_user)
+    assert normal_user.appearance is None
+
+
+def test_update_preferences_rejects_unknown_theme_or_accent(auth_client):
+    theme = auth_client.patch("/api/users/me/preferences", json={"appearance": {"theme": "plaid"}})
+    accent = auth_client.patch("/api/users/me/preferences", json={"appearance": {"accent": "plaid"}})
+
+    assert theme.status_code == 422
+    assert accent.status_code == 422
+
+
+def test_update_preferences_refuses_appearance_when_user_themes_are_off(auth_client, db, normal_user):
+    db.add(SystemSetting(
+        key=setting_keys.FEATURES_USER_THEMES_ENABLED, value="false", category="features", data_type="bool",
+    ))
+    db.commit()
+
+    response = auth_client.patch("/api/users/me/preferences", json={"appearance": {"theme": "noir"}})
+
+    assert response.status_code == 403
+    db.refresh(normal_user)
+    assert normal_user.appearance is None
 
 
 def test_update_password_success_and_incorrect_current(auth_client, db, normal_user):

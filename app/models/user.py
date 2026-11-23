@@ -30,6 +30,9 @@ class User(Base):
     # Keyed by notification kind, then channel: {"follow_arrivals": {"in_app": false}}.
     # Missing keys mean the kind's default.
     notification_preferences = Column(JSON, nullable=True)
+    # The user's site theme: {"theme": "noir", "accent": "red"}.
+    # Missing keys mean the server default (see app/core/themes.py).
+    appearance = Column(JSON, nullable=True)
 
 
     # Permissions

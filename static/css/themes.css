@@ -4,10 +4,19 @@
  * base.html points Tailwind's `gray` and `blue` scales at these variables, so
  * every `bg-gray-*` / `text-blue-*` class follows the active theme. Values are
  * space-separated RGB channels so Tailwind's opacity classes (`bg-gray-900/50`)
- * keep working. The defaults below are Tailwind's own gray and blue.
+ * keep working.
+ *
+ * A theme (`data-theme`) sets the neutral scale and the detail-page backdrop;
+ * an accent (`data-accent`) sets the `blue` scale. Both attributes sit on
+ * <html>, and also on preview swatches in Settings, so every theme and accent
+ * spells out its full set. Names must match app/core/themes.py.
  */
-:root {
-    /* Neutral scale (Tailwind gray) */
+
+/* Themes */
+
+:root,
+[data-theme="default"] {
+    /* Tailwind gray */
     --gray-50: 249 250 251;
     --gray-100: 243 244 246;
     --gray-200: 229 231 235;
@@ -22,7 +31,80 @@
     --gray-900: 17 24 39;
     --gray-950: 3 7 18;
 
-    /* Accent scale (Tailwind blue), used by every `blue-*` class */
+    /* Detail-page backdrop (partials/dynamic_background.html) */
+    --backdrop-base-top: 17 24 39;
+    --backdrop-base-bottom: 0 0 0;
+    --backdrop-overlay: 17 24 39;
+}
+
+[data-theme="midnight"] {
+    /* Tailwind slate: deep navy */
+    --gray-50: 248 250 252;
+    --gray-100: 241 245 249;
+    --gray-200: 226 232 240;
+    --gray-300: 203 213 225;
+    --gray-400: 151 166 187;
+    --gray-500: 100 116 139;
+    --gray-600: 71 85 105;
+    --gray-650: 61 75 95;
+    --gray-700: 51 65 85;
+    --gray-750: 41 53 72;
+    --gray-800: 30 41 59;
+    --gray-900: 15 23 42;
+    --gray-950: 2 6 23;
+
+    --backdrop-base-top: 15 23 42;
+    --backdrop-base-bottom: 2 6 23;
+    --backdrop-overlay: 15 23 42;
+}
+
+[data-theme="noir"] {
+    /* Zinc, with the dark steps pushed toward true black */
+    --gray-50: 250 250 250;
+    --gray-100: 244 244 245;
+    --gray-200: 228 228 231;
+    --gray-300: 212 212 216;
+    --gray-400: 161 161 170;
+    --gray-500: 113 113 122;
+    --gray-600: 82 82 91;
+    --gray-650: 67 67 74;
+    --gray-700: 52 52 58;
+    --gray-750: 40 40 44;
+    --gray-800: 28 28 31;
+    --gray-900: 10 10 11;
+    --gray-950: 0 0 0;
+
+    --backdrop-base-top: 10 10 11;
+    --backdrop-base-bottom: 0 0 0;
+    --backdrop-overlay: 10 10 11;
+}
+
+[data-theme="newsprint"] {
+    /* Warm sepia browns */
+    --gray-50: 251 248 241;
+    --gray-100: 245 240 230;
+    --gray-200: 232 224 208;
+    --gray-300: 214 203 182;
+    --gray-400: 175 162 139;
+    --gray-500: 124 112 92;
+    --gray-600: 91 81 66;
+    --gray-650: 80 71 57;
+    --gray-700: 70 61 49;
+    --gray-750: 57 49 39;
+    --gray-800: 44 38 30;
+    --gray-900: 29 25 20;
+    --gray-950: 14 12 9;
+
+    --backdrop-base-top: 29 25 20;
+    --backdrop-base-bottom: 10 8 6;
+    --backdrop-overlay: 29 25 20;
+}
+
+/* Accents */
+
+:root,
+[data-accent="blue"] {
+    /* Tailwind blue */
     --accent-50: 239 246 255;
     --accent-100: 219 234 254;
     --accent-200: 191 219 254;
@@ -34,9 +116,64 @@
     --accent-800: 30 64 175;
     --accent-900: 30 58 138;
     --accent-950: 23 37 84;
+}
 
-    /* Detail-page backdrop (partials/dynamic_background.html) */
-    --backdrop-base-top: 17 24 39;
-    --backdrop-base-bottom: 0 0 0;
-    --backdrop-overlay: 17 24 39;
+[data-accent="red"] {
+    /* Tailwind red */
+    --accent-50: 254 242 242;
+    --accent-100: 254 226 226;
+    --accent-200: 254 202 202;
+    --accent-300: 252 165 165;
+    --accent-400: 248 113 113;
+    --accent-500: 239 68 68;
+    --accent-600: 220 38 38;
+    --accent-700: 185 28 28;
+    --accent-800: 153 27 27;
+    --accent-900: 127 29 29;
+    --accent-950: 69 10 10;
+}
+
+[data-accent="amber"] {
+    /* Tailwind amber; 500 and up are deepened so white button text stays readable */
+    --accent-50: 255 251 235;
+    --accent-100: 254 243 199;
+    --accent-200: 253 230 138;
+    --accent-300: 252 211 77;
+    --accent-400: 251 191 36;
+    --accent-500: 200 105 6;
+    --accent-600: 180 83 9;
+    --accent-700: 146 64 14;
+    --accent-800: 120 53 15;
+    --accent-900: 100 44 14;
+    --accent-950: 69 26 3;
+}
+
+[data-accent="emerald"] {
+    /* Tailwind emerald; 500 and up are deepened so white button text stays readable */
+    --accent-50: 236 253 245;
+    --accent-100: 209 250 229;
+    --accent-200: 167 243 208;
+    --accent-300: 110 231 183;
+    --accent-400: 52 211 153;
+    --accent-500: 5 150 105;
+    --accent-600: 4 120 87;
+    --accent-700: 6 95 70;
+    --accent-800: 6 78 59;
+    --accent-900: 4 62 47;
+    --accent-950: 2 44 34;
+}
+
+[data-accent="violet"] {
+    /* Tailwind violet */
+    --accent-50: 245 243 255;
+    --accent-100: 237 233 254;
+    --accent-200: 221 214 254;
+    --accent-300: 196 181 253;
+    --accent-400: 167 139 250;
+    --accent-500: 139 92 246;
+    --accent-600: 124 58 237;
+    --accent-700: 109 40 217;
+    --accent-800: 91 33 182;
+    --accent-900: 76 29 149;
+    --accent-950: 46 16 101;
 }

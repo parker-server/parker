@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" {% block theme_attributes %}data-theme="{{ ui_theme or 'default' }}" data-accent="{{ ui_accent or 'blue' }}"{% endblock %}>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">

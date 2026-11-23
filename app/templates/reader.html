@@ -2,6 +2,9 @@
 
 {% block title %}Reader - Parker{% endblock %}
 
+{# The reader always uses the default colors, whatever the user's theme. #}
+{% block theme_attributes %}data-theme="default" data-accent="blue"{% endblock %}
+
 {% block body_class %}bg-black text-gray-100 min-h-screen{% endblock %}
 {% block body_alpine %}{% endblock %}
 {% block site_nav %}{% endblock %}

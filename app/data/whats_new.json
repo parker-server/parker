@@ -1,5 +1,19 @@
 [
   {
+    "version": "0.1.52",
+    "audience": "all",
+    "title": "Pick your own theme",
+    "body": "Make Parker yours with a new site theme: Midnight, Noir or Newsprint, plus an accent color for buttons and links. Find them under Account Settings, Appearance. Your choice follows you to every device you sign in on. The reader keeps its usual colors.",
+    "link": "/user/settings#appearance"
+  },
+  {
+    "version": "0.1.52",
+    "audience": "admin",
+    "title": "Site themes",
+    "body": "Readers can now pick their own theme and accent color. Choose the default everyone else sees under Settings > Appearance, or turn user themes off under Settings > Features to show everyone the default.",
+    "link": "/admin/settings#ui.default_theme"
+  },
+  {
     "version": "0.1.50",
     "audience": "all",
     "title": "Report a problem with a comic",

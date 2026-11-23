@@ -7,6 +7,7 @@ from typing import Any, List, Dict, Optional
 from app.api.deps import SessionDep
 from app.core.settings_loader import invalidate_settings_cache
 from app.core.login_backgrounds import SOLID_COLORS, STATIC_COVERS
+from app.core.themes import ACCENTS, DEFAULT_ACCENT, DEFAULT_THEME, THEMES
 
 SERVER_DISPLAY_NAME_MAX_LENGTH = 32
 SCANNING_BATCH_WINDOW_MIN_SECONDS = 60
@@ -129,6 +130,22 @@ class SettingsService:
                 {"label": "Colorscape style (Plex)", "value": "COLORSCAPE"},
                 {"label": "Colorscape with Hero overlay", "value": "HYBRID"},
             ]
+        },
+        {
+            "key": setting_keys.UI_DEFAULT_THEME, "value": DEFAULT_THEME,
+            "category": "appearance", "data_type": "select",
+            "label": "Default Theme",
+            "description": "The site colors for readers who haven't picked their own theme, and for everyone when user themes are turned off.",
+            "display_group": "Site Theme",
+            "options": [{"label": label, "value": value} for value, label in THEMES.items()],
+        },
+        {
+            "key": setting_keys.UI_DEFAULT_ACCENT, "value": DEFAULT_ACCENT,
+            "category": "appearance", "data_type": "select",
+            "label": "Default Accent Color",
+            "description": "The color of buttons, links and highlights for readers who haven't picked their own.",
+            "display_group": "Site Theme",
+            "options": [{"label": label, "value": value} for value, label in ACCENTS.items()],
         },
         {
             "key": setting_keys.UI_PAGINATION_MODE,
@@ -371,6 +388,14 @@ class SettingsService:
             "data_type": "bool",
             "label": "Enable Problem Reports",
             "description": "Lets readers report a problem with a comic, such as missing pages or a bad scan, from the reader and the comic page. Turn off per user in Users. Turning this off hides the report buttons; existing reports stay under Admin > Problems.",
+        },
+        {
+            "key": setting_keys.FEATURES_USER_THEMES_ENABLED,
+            "value": "true",
+            "category": "features",
+            "data_type": "bool",
+            "label": "Enable User Themes",
+            "description": "Lets readers pick their own site theme and accent color in Account Settings. Turning this off hides those choices and shows everyone the default theme under Appearance; readers' picks are kept for when it's turned back on.",
         },
         {
             # Internal: the last version whose What's New entries were announced.

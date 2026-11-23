@@ -29,6 +29,7 @@ https://github.com/parker-server/parker/wiki/Getting-Started
   - Admin-enforced password changes for accounts created or reset with temporary passwords
   - Anonymous Social Insights participation is enabled for new users by default, with an account-level opt-out
   - Avatar uploads
+  - Site themes: each reader picks a theme (Default, Midnight, Noir, Newsprint) and an accent color (Blue, Red, Amber, Emerald, Violet) under Account Settings → Appearance. The choice is saved to their account and shown on every page except the reader. Admins set the default theme and accent under Settings → Appearance, and can turn user themes off under Settings → Features
   - Hybrid authentication (JWT + secure cookies)
 
 - **Notifications**
