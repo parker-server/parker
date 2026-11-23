@@ -35,7 +35,7 @@
                 <button
                     type="button"
                     class="rounded-md px-3 py-2 text-sm font-bold transition-colors"
-                    :class="subjectType === 'character' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white'"
+                    :class="subjectType === 'character' ? 'bg-blue-fixed-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white'"
                     @click="setSubjectType('character')"
                 >
                     Character
@@ -76,7 +76,7 @@
                             <span class="min-w-0 truncate font-semibold text-white" x-text="item.name"></span>
                             <span
                                 class="rounded-full border px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide"
-                                :class="item.type === 'character' ? 'border-blue-500/40 text-blue-300' : 'border-green-500/40 text-green-300'"
+                                :class="item.type === 'character' ? 'border-blue-fixed-500/40 text-blue-fixed-300' : 'border-green-500/40 text-green-300'"
                                 x-text="item.type"
                             ></span>
                         </button>
@@ -145,8 +145,8 @@
 
                 <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                     <template x-if="timeline.milestones.first_issue">
-                        <a :href="comicUrl(timeline.milestones.first_issue)" class="rounded-lg border border-blue-500/30 bg-blue-950/20 p-4 transition-colors hover:border-blue-400/70">
-                            <div class="text-xs font-bold uppercase tracking-wide text-blue-300">First in Library</div>
+                        <a :href="comicUrl(timeline.milestones.first_issue)" class="rounded-lg border border-blue-fixed-500/30 bg-blue-fixed-950/20 p-4 transition-colors hover:border-blue-fixed-400/70">
+                            <div class="text-xs font-bold uppercase tracking-wide text-blue-fixed-300">First in Library</div>
                             <div class="mt-2 font-bold text-white" x-text="issueLabel(timeline.milestones.first_issue)"></div>
                             <div class="mt-1 text-sm text-gray-400" x-text="timeline.milestones.first_issue.date_label || 'Undated'"></div>
                         </a>

@@ -41,6 +41,17 @@ def test_tailwind_gray_and_blue_follow_theme_variables(page, browser_server):
     assert _color(page, timeline_link, "color") == "rgb(209, 213, 219)"
 
 
+@pytest.mark.browser
+def test_timeline_color_pairs_keep_their_blue_whatever_the_accent(page, browser_server):
+    page.goto(f"{browser_server['base_url']}/timelines", wait_until="networkidle")
+    page.evaluate("document.documentElement.dataset.accent = 'emerald'")
+
+    # Page chrome follows the accent...
+    assert _color(page, "p.text-blue-300", "color") == "rgb(110, 231, 183)"
+    # ...but Character stays blue so it never matches Team's green.
+    assert _color(page, "button:has-text('Character')", "backgroundColor") == "rgb(37, 99, 235)"
+
+
 def _html_theme(page) -> list[str]:
     return page.evaluate("[document.documentElement.dataset.theme, document.documentElement.dataset.accent]")
 
