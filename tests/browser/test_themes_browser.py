@@ -52,6 +52,17 @@ def test_timeline_color_pairs_keep_their_blue_whatever_the_accent(page, browser_
     assert _color(page, "button:has-text('Character')", "backgroundColor") == "rgb(37, 99, 235)"
 
 
+@pytest.mark.browser
+def test_home_rail_icons_keep_their_own_color_whatever_the_accent(page, browser_server):
+    page.goto(f"{browser_server['base_url']}/", wait_until="networkidle")
+    heading = page.get_by_role("heading", name="Jump Back In")
+    heading.wait_for()
+    page.evaluate("document.documentElement.dataset.accent = 'emerald'")
+
+    # Each rail icon has its own color, so the accent never makes two of them match.
+    assert heading.locator("svg").evaluate("el => getComputedStyle(el).color") == "rgb(147, 197, 253)"
+
+
 def _html_theme(page) -> list[str]:
     return page.evaluate("[document.documentElement.dataset.theme, document.documentElement.dataset.accent]")
 
