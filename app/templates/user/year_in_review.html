@@ -4,7 +4,7 @@
 {% block title %}{{ year }} Year in Review - Parker{% endblock %}
 
 {% block content %}
-<div class="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900" x-data="yearInReview()">
+<div class="min-h-screen bg-gradient-to-br from-gray-900 via-blue-fixed-900 to-purple-900" x-data="yearInReview()">
 
     <!-- Navigation Header -->
     <div class="max-w-4xl mx-auto px-4 py-6">
@@ -41,7 +41,7 @@
 
             <!-- Comics Completed -->
             <div class="bg-white/5 backdrop-blur-md rounded-2xl p-8 border border-white/10 hover:bg-white/10 transition-all">
-                <div class="text-7xl md:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-br from-blue-400 to-purple-400" x-text="data?.stats?.comics_completed"></div>
+                <div class="text-7xl md:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-br from-blue-fixed-400 to-purple-400" x-text="data?.stats?.comics_completed"></div>
                 <div class="text-white text-2xl font-bold mt-2">Comics Completed</div>
                 <div class="text-white/60 text-sm mt-1">That's dedication!</div>
             </div>
@@ -78,7 +78,7 @@
                 <template x-if="data?.favorites?.top_writer?.name">
                     <div class="space-y-3">
                         <div class="flex items-center gap-2">
-                            {{ lucide_icon("pen-line", "h-6 w-6 flex-shrink-0 text-blue-200") }}
+                            {{ lucide_icon("pen-line", "h-6 w-6 flex-shrink-0 text-blue-fixed-200") }}
                             <span class="text-white/60 text-sm font-medium">Top Writer</span>
                         </div>
                         <div class="text-3xl font-bold text-white" x-text="data.favorites.top_writer.name"></div>
@@ -153,7 +153,7 @@
             <!-- Busiest Month -->
             <template x-if="data?.highlights?.busiest_month?.name">
                 <div class="flex items-start gap-4 p-4 bg-white/5 rounded-xl">
-                    {{ lucide_icon("calendar-days", "h-8 w-8 flex-shrink-0 text-blue-200") }}
+                    {{ lucide_icon("calendar-days", "h-8 w-8 flex-shrink-0 text-blue-fixed-200") }}
                     <div>
                         <div class="text-white font-bold text-lg">Busiest Reading Month</div>
                         <div class="text-white/80 text-xl mt-1" x-text="data.highlights.busiest_month.name"></div>
@@ -199,7 +199,7 @@
 
             <template x-if="data?.fun_facts?.if_this_was_novels">
                 <div class="flex items-center gap-3 text-white/90 text-lg p-4 bg-white/5 rounded-xl">
-                    {{ lucide_icon("book-open", "h-5 w-5 flex-shrink-0 text-blue-200") }}
+                    {{ lucide_icon("book-open", "h-5 w-5 flex-shrink-0 text-blue-fixed-200") }}
                     <span x-text="data.fun_facts.if_this_was_novels"></span>
                 </div>
             </template>
@@ -251,7 +251,7 @@
         <div class="text-center py-8">
             <button
                 x-on:click="shareStats()"
-                class="inline-flex items-center gap-2 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white px-8 py-4 rounded-full font-bold text-lg transition-all shadow-lg hover:shadow-xl"
+                class="inline-flex items-center gap-2 bg-gradient-to-r from-blue-fixed-500 to-purple-500 hover:from-blue-fixed-600 hover:to-purple-600 text-white px-8 py-4 rounded-full font-bold text-lg transition-all shadow-lg hover:shadow-xl"
             >
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
                 Share Your Stats
@@ -265,7 +265,7 @@
         {{ lucide_icon("book-open", "mx-auto mb-4 h-14 w-14 text-white/50") }}
         <h2 class="text-2xl font-bold text-white mb-4">No Reading Data Yet</h2>
         <p class="text-white/60 mb-8">Start reading some comics to generate your year in review!</p>
-        <a :href="window.parker.route('pages.user_dashboard')" class="inline-block bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-bold transition-colors">
+        <a :href="window.parker.route('pages.user_dashboard')" class="inline-block bg-blue-fixed-600 hover:bg-blue-fixed-700 text-white px-6 py-3 rounded-lg font-bold transition-colors">
             Go to Dashboard
         </a>
     </div>
