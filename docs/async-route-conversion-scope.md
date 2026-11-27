@@ -90,7 +90,7 @@ Batches, busiest pages first. Run the related tests after each batch.
 
 - [x] `routers/pages.py` (37)
 - [x] `api/series.py` (8), `api/comics.py` (8), `api/volumes.py` (5), `api/progress.py` (6), `api/reader.py` (1)
-- [ ] `routers/opds.py` (12)
+- [x] `routers/opds.py` (12), in 0.1.51
 - [ ] `api/libraries.py` (17), `api/users.py` (12)
 - [ ] `routers/admin.py` (20), `api/reports.py` (7), `api/jobs.py` (5), `api/tasks.py` (3), `api/stats.py` (4)
 - [ ] The rest of `app/api/`: bookmarks, reading lists, collections, saved searches, auth, search, batch, people, CBL sources (26)
